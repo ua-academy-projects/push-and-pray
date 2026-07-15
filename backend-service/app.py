@@ -1,11 +1,17 @@
+import os
+
 import requests
 from flask import Flask, jsonify, request
-
 
 app = Flask(__name__)
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+
+HISTORY_URL = os.getenv(
+    "HISTORY_URL",
+    "http://127.0.0.1:5002",
+)
 
 
 @app.get("/health")
@@ -79,12 +85,43 @@ def weather():
             "source": "open-meteo",
         }
 
+        save_response = requests.post(
+            f"{HISTORY_URL}/history",
+            json={
+                "query": city,
+                "response_data": result,
+                "source": "open-meteo",
+                "status": "success",
+            },
+            timeout=10,
+        )
+
+        save_response.raise_for_status()
+
         return jsonify(result)
 
     except requests.RequestException:
         return jsonify({
-            "error": "Public weather API is unavailable."
+            "error": "A required external service is unavailable."
         }), 502
+
+
+@app.get("/api/history")
+def history():
+    try:
+        response = requests.get(
+            f"{HISTORY_URL}/history",
+            timeout=10,
+        )
+
+        response.raise_for_status()
+
+        return jsonify(response.json())
+
+    except requests.RequestException:
+        return jsonify({
+            "error": "History Service is unavailable."
+        }), 503
 
 
 if __name__ == "__main__":
