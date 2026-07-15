@@ -6,25 +6,155 @@
         name="viewport"
         content="width=device-width, initial-scale=1.0"
     >
+
     <title>Weather App</title>
 </head>
 
 <body>
     <h1>Weather App</h1>
-    <p>
-        This is the UI Service for the DevOps Academy project.
-    </p>
-    <form>
-        <label for="city">City:</label>
+
+    <form id="weather-form">
+        <label for="city-input">City:</label>
+
         <input
-            id="city"
+            id="city-input"
             name="city"
             type="text"
-            placeholder="Enter city"
+            required
         >
+
         <button type="submit">
             Get weather
         </button>
+
+        <button id="refresh-button" type="button">
+            Refresh
+        </button>
     </form>
+
+    <p id="message"></p>
+
+    <section>
+        <h2>Current weather</h2>
+        <div id="weather-result">
+            No weather data loaded.
+        </div>
+    </section>
+
+    <section>
+        <h2>Request history</h2>
+
+        <button id="history-button" type="button">
+            Load history
+        </button>
+
+        <div id="history-result">
+            No history loaded.
+        </div>
+    </section>
+
+    <script>
+        const weatherForm =
+            document.getElementById("weather-form");
+
+        const cityInput =
+            document.getElementById("city-input");
+
+        const refreshButton =
+            document.getElementById("refresh-button");
+
+        const historyButton =
+            document.getElementById("history-button");
+
+        const message =
+            document.getElementById("message");
+
+        const weatherResult =
+            document.getElementById("weather-result");
+
+        const historyResult =
+            document.getElementById("history-result");
+
+
+        async function loadWeather() {
+            const city = cityInput.value.trim();
+
+            if (!city) {
+                message.textContent = "Please enter a city.";
+                return;
+            }
+
+            message.textContent = "Loading...";
+
+            try {
+                const response = await fetch(
+                    `/api/weather?city=${encodeURIComponent(city)}`
+                );
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    message.textContent =
+                        data.error || "Unable to load weather.";
+
+                    return;
+                }
+
+                weatherResult.textContent =
+                    JSON.stringify(data, null, 2);
+
+                message.textContent = "Weather loaded.";
+
+            } catch (error) {
+                message.textContent =
+                    "UI could not complete the request.";
+            }
+        }
+
+
+        async function loadHistory() {
+            historyResult.textContent = "Loading...";
+
+            try {
+                const response = await fetch("/api/history");
+                const data = await response.json();
+
+                if (!response.ok) {
+                    historyResult.textContent =
+                        data.error || "Unable to load history.";
+
+                    return;
+                }
+
+                historyResult.textContent =
+                    JSON.stringify(data, null, 2);
+
+            } catch (error) {
+                historyResult.textContent =
+                    "UI could not complete the request.";
+            }
+        }
+
+
+        weatherForm.addEventListener(
+            "submit",
+            function (event) {
+                event.preventDefault();
+                loadWeather();
+            }
+        );
+
+
+        refreshButton.addEventListener(
+            "click",
+            loadWeather
+        );
+
+
+        historyButton.addEventListener(
+            "click",
+            loadHistory
+        );
+    </script>
 </body>
 </html>
