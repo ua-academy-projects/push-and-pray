@@ -144,6 +144,29 @@ def get_history():
             "error": "Could not load history."
         }), 500
 
+@app.delete("/history")
+def clear_history():
+    try:
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM weather_requests
+                    RETURNING id;
+                    """
+                )
+
+                deleted_records = cursor.fetchall()
+
+        return jsonify({
+            "message": "History cleared.",
+            "deleted_count": len(deleted_records),
+        })
+
+    except psycopg.Error:
+        return jsonify({
+            "error": "Could not clear history."
+        }), 500
 
 if __name__ == "__main__":
     if not DATABASE_URL:

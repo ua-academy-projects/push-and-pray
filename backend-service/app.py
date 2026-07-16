@@ -123,6 +123,22 @@ def history():
             "error": "History Service is unavailable."
         }), 503
 
+@app.delete("/api/history")
+def clear_history():
+    try:
+        response = requests.delete(
+            f"{HISTORY_URL}/history",
+            timeout=10,
+        )
+
+        response.raise_for_status()
+
+        return jsonify(response.json())
+
+    except requests.RequestException:
+        return jsonify({
+            "error": "History Service is unavailable."
+        }), 503
 
 if __name__ == "__main__":
     app.run(

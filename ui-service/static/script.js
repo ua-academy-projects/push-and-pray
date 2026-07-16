@@ -1,0 +1,417 @@
+const weatherForm =
+    document.getElementById("weather-form");
+
+const cityInput =
+    document.getElementById("city-input");
+
+const refreshButton =
+    document.getElementById("refresh-button");
+
+const historyButton =
+    document.getElementById("history-button");
+
+const clearHistoryButton =
+    document.getElementById("clear-history-button");
+
+const message =
+    document.getElementById("message");
+
+const weatherResult =
+    document.getElementById("weather-result");
+
+const historyResult =
+    document.getElementById("history-result");
+
+
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+
+function valueOrDash(value) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return "—";
+    }
+
+    return escapeHtml(value);
+}
+
+
+function formatDate(value) {
+    if (!value) {
+        return "Unknown time";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return escapeHtml(value);
+    }
+
+    return date.toLocaleString();
+}
+
+
+function renderWeather(data, fallbackCity) {
+    const location = data.location || {};
+    const current = data.current || {};
+    const units = data.current_units || {};
+
+    const cityName =
+        location.name ||
+        fallbackCity ||
+        "Unknown city";
+
+    const country = location.country
+        ? `, ${escapeHtml(location.country)}`
+        : "";
+
+    weatherResult.classList.remove("empty-state");
+
+    weatherResult.innerHTML = `
+        <div class="weather-location">
+            ${escapeHtml(cityName)}${country}
+        </div>
+
+        <div class="temperature">
+            ${valueOrDash(current.temperature_2m)}
+            <span>
+                ${valueOrDash(units.temperature_2m)}
+            </span>
+        </div>
+
+        <div class="weather-details">
+            <div class="detail-item">
+                <span>Humidity</span>
+                <strong>
+                    ${valueOrDash(
+                        current.relative_humidity_2m
+                    )}
+                    ${valueOrDash(
+                        units.relative_humidity_2m
+                    )}
+                </strong>
+            </div>
+
+            <div class="detail-item">
+                <span>Wind speed</span>
+                <strong>
+                    ${valueOrDash(
+                        current.wind_speed_10m
+                    )}
+                    ${valueOrDash(
+                        units.wind_speed_10m
+                    )}
+                </strong>
+            </div>
+
+            <div class="detail-item">
+                <span>Source</span>
+                <strong>
+                    ${valueOrDash(data.source)}
+                </strong>
+            </div>
+        </div>
+    `;
+}
+
+
+function renderHistory(data) {
+    const items = Array.isArray(data.items)
+        ? data.items
+        : [];
+
+    if (items.length === 0) {
+        historyResult.classList.add("empty-state");
+        historyResult.textContent =
+            "No saved requests yet.";
+
+        return;
+    }
+
+    historyResult.classList.remove("empty-state");
+
+    historyResult.innerHTML = items
+        .map((item) => {
+            const responseData =
+                item.response_data || {};
+
+            const location =
+                responseData.location || {};
+
+            const current =
+                responseData.current || {};
+
+            const units =
+                responseData.current_units || {};
+
+            const cityName =
+                location.name ||
+                item.query ||
+                "Unknown city";
+
+            const country = location.country
+                ? `, ${escapeHtml(
+                    location.country
+                )}`
+                : "";
+
+            return `
+                <article class="history-item">
+                    <div class="history-header">
+                        <div>
+                            <h3>
+                                ${escapeHtml(cityName)}
+                                ${country}
+                            </h3>
+
+                            <p>
+                                ${formatDate(
+                                    item.requested_at
+                                )}
+                            </p>
+                        </div>
+
+                        <span class="status">
+                            ${valueOrDash(item.status)}
+                        </span>
+                    </div>
+
+                    <div class="history-details">
+                        <div>
+                            <span>Temperature</span>
+                            <strong>
+                                ${valueOrDash(
+                                    current.temperature_2m
+                                )}
+                                ${valueOrDash(
+                                    units.temperature_2m
+                                )}
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>Humidity</span>
+                            <strong>
+                                ${valueOrDash(
+                                    current.relative_humidity_2m
+                                )}
+                                ${valueOrDash(
+                                    units.relative_humidity_2m
+                                )}
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>Wind</span>
+                            <strong>
+                                ${valueOrDash(
+                                    current.wind_speed_10m
+                                )}
+                                ${valueOrDash(
+                                    units.wind_speed_10m
+                                )}
+                            </strong>
+                        </div>
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+}
+
+
+async function loadWeather() {
+    const city = cityInput.value.trim();
+
+    if (!city) {
+        message.textContent =
+            "Please enter a city.";
+
+        message.className =
+            "message message-error";
+
+        cityInput.focus();
+        return;
+    }
+
+    message.textContent =
+        "Loading weather...";
+
+    message.className = "message";
+
+    weatherResult.classList.add("empty-state");
+    weatherResult.textContent = "Loading...";
+
+    try {
+        const response = await fetch(
+            `/api/weather?city=${
+                encodeURIComponent(city)
+            }`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            weatherResult.textContent =
+                "No weather data loaded.";
+
+            message.textContent =
+                data.error ||
+                "Unable to load weather.";
+
+            message.className =
+                "message message-error";
+
+            return;
+        }
+
+        renderWeather(data, city);
+
+        message.textContent =
+            "Weather loaded successfully.";
+
+        message.className =
+            "message message-success";
+
+    } catch (error) {
+        weatherResult.textContent =
+            "No weather data loaded.";
+
+        message.textContent =
+            "UI could not complete the request.";
+
+        message.className =
+            "message message-error";
+    }
+}
+
+
+async function loadHistory() {
+    historyResult.classList.add("empty-state");
+    historyResult.textContent =
+        "Loading history...";
+
+    historyButton.disabled = true;
+    historyButton.textContent = "Loading...";
+
+    try {
+        const response = await fetch("/api/history");
+        const data = await response.json();
+
+        if (!response.ok) {
+            historyResult.textContent =
+                data.error ||
+                "Unable to load history.";
+
+            return;
+        }
+
+        renderHistory(data);
+
+    } catch (error) {
+        historyResult.textContent =
+            "UI could not complete the request.";
+
+    } finally {
+        historyButton.disabled = false;
+        historyButton.textContent =
+            "Load history";
+    }
+}
+
+
+async function clearHistory() {
+    const confirmed = window.confirm(
+        "Are you sure you want to delete all history?"
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    clearHistoryButton.disabled = true;
+    clearHistoryButton.textContent =
+        "Clearing...";
+
+    try {
+        const response = await fetch(
+            "/api/history",
+            {
+                method: "DELETE",
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            historyResult.classList.add(
+                "empty-state"
+            );
+
+            historyResult.textContent =
+                data.error ||
+                "Unable to clear history.";
+
+            return;
+        }
+
+        historyResult.classList.add(
+            "empty-state"
+        );
+
+        historyResult.textContent =
+            `History cleared. Deleted records: ${
+                data.deleted_count ?? 0
+            }.`;
+
+    } catch (error) {
+        historyResult.classList.add(
+            "empty-state"
+        );
+
+        historyResult.textContent =
+            "UI could not complete the request.";
+
+    } finally {
+        clearHistoryButton.disabled = false;
+        clearHistoryButton.textContent =
+            "Clear history";
+    }
+}
+
+
+weatherForm.addEventListener(
+    "submit",
+    function (event) {
+        event.preventDefault();
+        loadWeather();
+    }
+);
+
+
+refreshButton.addEventListener(
+    "click",
+    loadWeather
+);
+
+
+historyButton.addEventListener(
+    "click",
+    loadHistory
+);
+
+
+clearHistoryButton.addEventListener(
+    "click",
+    clearHistory
+);
