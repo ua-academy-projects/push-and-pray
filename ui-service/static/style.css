@@ -76,7 +76,8 @@ input:focus {
     border-width: 2px;
 }
 
-.form-buttons {
+.form-buttons,
+.history-buttons {
     display: flex;
     justify-content: center;
     gap: 12px;
@@ -95,6 +96,11 @@ button {
 button:hover {
     background: var(--background);
     color: var(--primary);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .secondary-button {
@@ -256,11 +262,13 @@ button:hover {
         font-size: 32px;
     }
 
-    .form-buttons {
+    .form-buttons,
+    .history-buttons {
         flex-direction: column;
     }
 
-    .form-buttons button {
+    .form-buttons button,
+    .history-buttons button {
         width: 100%;
     }
 

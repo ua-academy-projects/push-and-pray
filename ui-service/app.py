@@ -63,6 +63,22 @@ def history():
             "error": "Backend Service is unavailable."
         }), 503
 
+@app.delete("/api/history")
+def clear_history():
+    try:
+        response = requests.delete(
+            f"{BACKEND_URL}/api/history",
+            timeout=10,
+        )
+
+        return jsonify(
+            response.json()
+        ), response.status_code
+
+    except requests.RequestException:
+        return jsonify({
+            "error": "Backend Service is unavailable."
+        }), 503
 
 if __name__ == "__main__":
     app.run(
