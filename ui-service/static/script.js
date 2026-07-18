@@ -11,7 +11,9 @@ const historyButton =
     document.getElementById("history-button");
 
 const clearHistoryButton =
-    document.getElementById("clear-history-button");
+    document.getElementById(
+        "clear-history-button"
+    );
 
 const message =
     document.getElementById("message");
@@ -75,7 +77,9 @@ function renderWeather(data, fallbackCity) {
         ? `, ${escapeHtml(location.country)}`
         : "";
 
-    weatherResult.classList.remove("empty-state");
+    weatherResult.classList.remove(
+        "empty-state"
+    );
 
     weatherResult.innerHTML = `
         <div class="weather-location">
@@ -84,6 +88,7 @@ function renderWeather(data, fallbackCity) {
 
         <div class="temperature">
             ${valueOrDash(current.temperature_2m)}
+
             <span>
                 ${valueOrDash(units.temperature_2m)}
             </span>
@@ -92,10 +97,12 @@ function renderWeather(data, fallbackCity) {
         <div class="weather-details">
             <div class="detail-item">
                 <span>Humidity</span>
+
                 <strong>
                     ${valueOrDash(
                         current.relative_humidity_2m
                     )}
+
                     ${valueOrDash(
                         units.relative_humidity_2m
                     )}
@@ -104,10 +111,12 @@ function renderWeather(data, fallbackCity) {
 
             <div class="detail-item">
                 <span>Wind speed</span>
+
                 <strong>
                     ${valueOrDash(
                         current.wind_speed_10m
                     )}
+
                     ${valueOrDash(
                         units.wind_speed_10m
                     )}
@@ -116,6 +125,7 @@ function renderWeather(data, fallbackCity) {
 
             <div class="detail-item">
                 <span>Source</span>
+
                 <strong>
                     ${valueOrDash(data.source)}
                 </strong>
@@ -131,14 +141,19 @@ function renderHistory(data) {
         : [];
 
     if (items.length === 0) {
-        historyResult.classList.add("empty-state");
+        historyResult.classList.add(
+            "empty-state"
+        );
+
         historyResult.textContent =
             "No saved requests yet.";
 
         return;
     }
 
-    historyResult.classList.remove("empty-state");
+    historyResult.classList.remove(
+        "empty-state"
+    );
 
     historyResult.innerHTML = items
         .map((item) => {
@@ -182,17 +197,23 @@ function renderHistory(data) {
                         </div>
 
                         <span class="status">
-                            ${valueOrDash(item.status)}
+                            ${valueOrDash(
+                                item.status
+                            )}
                         </span>
                     </div>
 
                     <div class="history-details">
                         <div>
-                            <span>Temperature</span>
+                            <span>
+                                Temperature
+                            </span>
+
                             <strong>
                                 ${valueOrDash(
                                     current.temperature_2m
                                 )}
+
                                 ${valueOrDash(
                                     units.temperature_2m
                                 )}
@@ -200,23 +221,33 @@ function renderHistory(data) {
                         </div>
 
                         <div>
-                            <span>Humidity</span>
+                            <span>
+                                Humidity
+                            </span>
+
                             <strong>
                                 ${valueOrDash(
-                                    current.relative_humidity_2m
+                                    current
+                                        .relative_humidity_2m
                                 )}
+
                                 ${valueOrDash(
-                                    units.relative_humidity_2m
+                                    units
+                                        .relative_humidity_2m
                                 )}
                             </strong>
                         </div>
 
                         <div>
-                            <span>Wind</span>
+                            <span>
+                                Wind
+                            </span>
+
                             <strong>
                                 ${valueOrDash(
                                     current.wind_speed_10m
                                 )}
+
                                 ${valueOrDash(
                                     units.wind_speed_10m
                                 )}
@@ -241,6 +272,7 @@ async function loadWeather() {
             "message message-error";
 
         cityInput.focus();
+
         return;
     }
 
@@ -249,8 +281,12 @@ async function loadWeather() {
 
     message.className = "message";
 
-    weatherResult.classList.add("empty-state");
-    weatherResult.textContent = "Loading...";
+    weatherResult.classList.add(
+        "empty-state"
+    );
+
+    weatherResult.textContent =
+        "Loading...";
 
     try {
         const response = await fetch(
@@ -297,15 +333,22 @@ async function loadWeather() {
 
 
 async function loadHistory() {
-    historyResult.classList.add("empty-state");
+    historyResult.classList.add(
+        "empty-state"
+    );
+
     historyResult.textContent =
         "Loading history...";
 
     historyButton.disabled = true;
-    historyButton.textContent = "Loading...";
+    historyButton.textContent =
+        "Loading...";
 
     try {
-        const response = await fetch("/api/history");
+        const response = await fetch(
+            "/api/history"
+        );
+
         const data = await response.json();
 
         if (!response.ok) {
@@ -324,6 +367,7 @@ async function loadHistory() {
 
     } finally {
         historyButton.disabled = false;
+
         historyButton.textContent =
             "Load history";
     }
@@ -340,6 +384,7 @@ async function clearHistory() {
     }
 
     clearHistoryButton.disabled = true;
+
     clearHistoryButton.textContent =
         "Clearing...";
 
@@ -384,6 +429,7 @@ async function clearHistory() {
 
     } finally {
         clearHistoryButton.disabled = false;
+
         clearHistoryButton.textContent =
             "Clear history";
     }

@@ -11,7 +11,17 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 HISTORY_URL = os.getenv(
     "HISTORY_URL",
     "http://127.0.0.1:5002",
-)
+).rstrip("/")
+
+REQUEST_TIMEOUT = 10
+
+
+def is_debug_enabled():
+    return os.getenv("FLASK_DEBUG", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 @app.get("/health")
@@ -40,7 +50,7 @@ def weather():
                 "language": "en",
                 "format": "json",
             },
-            timeout=10,
+            timeout=REQUEST_TIMEOUT,
         )
 
         location_response.raise_for_status()
@@ -66,25 +76,41 @@ def weather():
                     "wind_speed_10m"
                 ),
             },
-            timeout=10,
+            timeout=REQUEST_TIMEOUT,
         )
 
         weather_response.raise_for_status()
         weather_data = weather_response.json()
 
-        result = {
-            "query": city,
-            "location": {
-                "name": location["name"],
-                "country": location.get("country"),
-                "latitude": location["latitude"],
-                "longitude": location["longitude"],
-            },
-            "current": weather_data.get("current", {}),
-            "current_units": weather_data.get("current_units", {}),
-            "source": "open-meteo",
-        }
+    except (
+        requests.RequestException,
+        KeyError,
+        ValueError,
+    ):
+        return jsonify({
+            "error": (
+                "The public weather API is unavailable "
+                "or returned invalid data."
+            )
+        }), 502
 
+    result = {
+        "query": city,
+        "location": {
+            "name": location.get("name", city),
+            "country": location.get("country"),
+            "latitude": location["latitude"],
+            "longitude": location["longitude"],
+        },
+        "current": weather_data.get("current", {}),
+        "current_units": weather_data.get(
+            "current_units",
+            {},
+        ),
+        "source": "open-meteo",
+    }
+
+    try:
         save_response = requests.post(
             f"{HISTORY_URL}/history",
             json={
@@ -93,17 +119,20 @@ def weather():
                 "source": "open-meteo",
                 "status": "success",
             },
-            timeout=10,
+            timeout=REQUEST_TIMEOUT,
         )
 
         save_response.raise_for_status()
 
-        return jsonify(result)
-
     except requests.RequestException:
         return jsonify({
-            "error": "A required external service is unavailable."
-        }), 502
+            "error": (
+                "Weather data was received, but the "
+                "History Service could not save the request."
+            )
+        }), 503
+
+    return jsonify(result)
 
 
 @app.get("/api/history")
@@ -111,38 +140,46 @@ def history():
     try:
         response = requests.get(
             f"{HISTORY_URL}/history",
-            timeout=10,
+            timeout=REQUEST_TIMEOUT,
         )
 
         response.raise_for_status()
 
         return jsonify(response.json())
 
-    except requests.RequestException:
+    except (
+        requests.RequestException,
+        ValueError,
+    ):
         return jsonify({
             "error": "History Service is unavailable."
         }), 503
+
 
 @app.delete("/api/history")
 def clear_history():
     try:
         response = requests.delete(
             f"{HISTORY_URL}/history",
-            timeout=10,
+            timeout=REQUEST_TIMEOUT,
         )
 
         response.raise_for_status()
 
         return jsonify(response.json())
 
-    except requests.RequestException:
+    except (
+        requests.RequestException,
+        ValueError,
+    ):
         return jsonify({
             "error": "History Service is unavailable."
         }), 503
 
+
 if __name__ == "__main__":
     app.run(
-        host="127.0.0.1",
-        port=5001,
-        debug=True,
+        host=os.getenv("APP_HOST", "127.0.0.1"),
+        port=int(os.getenv("APP_PORT", "5001")),
+        debug=is_debug_enabled(),
     )
