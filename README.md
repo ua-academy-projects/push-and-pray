@@ -1,204 +1,139 @@
-# Weather Multi-Service Application
+# Weather App
 
-A small multi-service weather application created for DevOps Academy Assignment 1.
+Weather App is a small microservice-based application for retrieving weather information and storing the request history.
 
-## Project goal
-
-The project demonstrates a simple application composed of three independent HTTP services and a PostgreSQL database.
-
-The user can:
-
-- request current weather for a city;
-- refresh the displayed weather;
-- view previously saved successful requests;
-- clear saved history.
+The project is divided into separate services and runs with Docker Compose.
 
 ## Architecture
 
-The application contains:
+The application consists of four services:
 
-1. **UI Service** - serves the web page and communicates only with the Backend Service.
-2. **Backend / Proxy Service** - receives UI requests, calls the Open-Meteo public API, and sends successful results to the History Service.
-3. **History Service** - owns persistence, saves weather requests, and returns saved history.
-4. **PostgreSQL** - stores request timestamps, queries, response data, source, and status.
-5. **Open-Meteo API** - provides city geocoding and current weather data.
+- **UI service** — web interface available on port `5000`.
+- **Backend service** — processes weather requests on port `5001`.
+- **History service** — stores and returns request history on port `5002`.
+- **PostgreSQL** — stores history-service data.
+
+Service communication:
 
 ```text
-Browser
-   |
-   v
-UI Service :5000
-   |
-   v
-Backend Service :5001
-   | \
-   |  +----> Open-Meteo API
-   |
-   v
-History Service :5002
-   |
-   v
-PostgreSQL :5432
+User
+  |
+  v
+UI service
+  |
+  v
+Backend service
+  |
+  v
+History service
+  |
+  v
+PostgreSQL
 ```
 
-The browser never calls Open-Meteo or PostgreSQL directly. The UI communicates only with the Backend Service, and only the History Service communicates with the database.
+Inside the Docker network, services communicate using their Compose service names:
 
-## Repository structure
+```text
+UI -> http://backend:5001
+Backend -> http://history:5002
+History -> postgres:5432
+```
+
+## Project structure
 
 ```text
 weather-app/
-├── backend-service/
-│   ├── app.py
-│   └── requirements.txt
-├── history-service/
-│   ├── .env.example
-│   ├── app.py
-│   └── requirements.txt
+├── docker-compose.yml
+├── README.md
+├── .gitignore
+│
 ├── ui-service/
-│   ├── static/
-│   │   ├── script.js
-│   │   └── style.css
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── app.py
+│   ├── requirements.txt
 │   ├── templates/
 │   │   └── index.html
+│   └── static/
+│       ├── script.js
+│       └── style.css
+│
+├── backend-service/
+│   ├── Dockerfile
+│   ├── .dockerignore
 │   ├── app.py
 │   └── requirements.txt
-├── .gitignore
-└── README.md
+│
+└── history-service/
+    ├── Dockerfile
+    ├── .dockerignore
+    ├── .env.example
+    ├── app.py
+    └── requirements.txt
 ```
 
 ## Requirements
 
-- Ubuntu Server
-- Python 3.10 or newer
-- PostgreSQL
-- Internet access for Open-Meteo
+To run the project, install:
 
-## 1. Install system packages
+- Docker
+- Docker Compose
 
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip postgresql postgresql-contrib
-```
-
-Check PostgreSQL:
+Check that they are available:
 
 ```bash
-sudo systemctl status postgresql --no-pager
+docker --version
+docker compose version
 ```
 
-## 2. Create the PostgreSQL database and user
+## Run the project
 
-Open the PostgreSQL console:
+Open the project directory:
 
 ```bash
-sudo -u postgres psql
+cd weather-app
 ```
 
-Run these SQL commands. Replace `StrongPassword123` with your own password:
-
-```sql
-CREATE USER weather_user WITH PASSWORD 'StrongPassword123';
-CREATE DATABASE weather_history OWNER weather_user;
-\q
-```
-
-Test the connection:
+Build the images and start all containers:
 
 ```bash
-psql "postgresql://weather_user:StrongPassword123@127.0.0.1:5432/weather_history"
+docker compose up -d --build
 ```
 
-Exit with:
+The `--build` option rebuilds the application images.
+
+The `-d` option starts the containers in the background.
+
+## Check container status
+
+```bash
+docker compose ps
+```
+
+The following services should be running:
 
 ```text
-\q
+postgres
+history
+backend
+ui
 ```
 
-## 3. Configure the History Service
+## Open the application
 
-```bash
-cd history-service
-cp .env.example .env
-nano .env
+When running Docker directly on your computer:
+
+```text
+http://localhost:5000
 ```
 
-Set the connection string:
-
-```dotenv
-DATABASE_URL=postgresql://weather_user:StrongPassword123@127.0.0.1:5432/weather_history
-```
-
-Save in nano with `Ctrl+O`, press `Enter`, and exit with `Ctrl+X`.
-
-## 4. Create virtual environments and install dependencies
-
-Run from the project root:
-
-```bash
-cd history-service
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-deactivate
-
-cd ../backend-service
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-deactivate
-
-cd ../ui-service
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-deactivate
-
-cd ..
-```
-
-## 5. Run the application
-
-Open three SSH terminal windows connected to the Ubuntu VM.
-
-### Terminal 1 - History Service
-
-```bash
-cd ~/weather-app/history-service
-source .venv/bin/activate
-python app.py
-```
-
-The service starts on `127.0.0.1:5002` and creates the `weather_requests` table automatically.
-
-### Terminal 2 - Backend Service
-
-```bash
-cd ~/weather-app/backend-service
-source .venv/bin/activate
-python app.py
-```
-
-The service starts on `127.0.0.1:5001`.
-
-### Terminal 3 - UI Service
-
-```bash
-cd ~/weather-app/ui-service
-source .venv/bin/activate
-python app.py
-```
-
-The UI starts on `0.0.0.0:5000`.
-
-## 6. Open the application from the MacBook
-
-Find the Ubuntu VM IP address:
+When Docker is running inside an Ubuntu virtual machine, find the VM IP:
 
 ```bash
 hostname -I
 ```
 
-Open this address in the MacBook browser:
+Then open:
 
 ```text
 http://VM_IP_ADDRESS:5000
@@ -207,94 +142,136 @@ http://VM_IP_ADDRESS:5000
 Example:
 
 ```text
-http://192.168.64.5:5000
+http://192.168.69.141:5000
 ```
 
-## 7. Verify the services
+Do not use container addresses such as `172.18.0.x` in a browser outside the Ubuntu virtual machine. Those addresses are available only inside the Docker network.
 
-Run on the Ubuntu VM:
+## View logs
+
+View logs from all services:
 
 ```bash
-curl http://127.0.0.1:5002/health
-curl http://127.0.0.1:5001/health
-curl http://127.0.0.1:5000/health
+docker compose logs -f
 ```
 
-Expected service status is `ok`.
-
-Test weather through the UI Service route:
+View logs from one service:
 
 ```bash
-curl "http://127.0.0.1:5000/api/weather?city=Kyiv"
+docker compose logs -f ui
+docker compose logs -f backend
+docker compose logs -f history
+docker compose logs -f postgres
 ```
 
-Load history:
+Press `Ctrl+C` to exit log viewing.
+
+## Stop the project
+
+Stop and remove the containers and Docker network:
 
 ```bash
-curl http://127.0.0.1:5000/api/history
+docker compose down
 ```
 
-Check saved rows directly in PostgreSQL:
+The PostgreSQL data remains stored in the Docker volume.
+
+To remove the containers together with the PostgreSQL data:
 
 ```bash
-psql "postgresql://weather_user:StrongPassword123@127.0.0.1:5432/weather_history" \
-  -c "SELECT id, requested_at, query, source, status FROM weather_requests ORDER BY requested_at DESC;"
+docker compose down -v
 ```
 
-## API endpoints
+## Restart the project
 
-### UI Service
-
-- `GET /` - web page
-- `GET /health` - UI health check
-- `GET /api/weather?city=Kyiv` - proxies a weather request to Backend
-- `GET /api/history` - proxies history retrieval to Backend
-- `DELETE /api/history` - proxies history deletion to Backend
-
-### Backend Service
-
-- `GET /health` - Backend health check
-- `GET /api/weather?city=Kyiv` - gets current weather and asks History Service to save it
-- `GET /api/history` - retrieves history through History Service
-- `DELETE /api/history` - deletes history through History Service
-
-### History Service
-
-- `GET /health` - checks the service and database connection
-- `POST /history` - saves one successful weather request
-- `GET /history` - returns the newest 50 requests
-- `DELETE /history` - clears all saved requests
-
-## Database schema
-
-The History Service automatically creates this table:
-
-```sql
-CREATE TABLE IF NOT EXISTS weather_requests (
-    id BIGSERIAL PRIMARY KEY,
-    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    query TEXT NOT NULL,
-    response_data JSONB NOT NULL,
-    source TEXT,
-    status TEXT NOT NULL
-);
+```bash
+docker compose restart
 ```
 
-This satisfies the assignment requirements by storing:
+## Rebuild after code changes
 
-- request timestamp;
-- requested city;
-- response data;
-- source metadata;
-- request status.
+After changing application code, dependencies, or Dockerfiles:
 
-## Service boundaries
+```bash
+docker compose up -d --build
+```
 
-- **UI Service** owns presentation and browser interaction.
-- **Backend Service** owns external API calls and request orchestration.
-- **History Service** owns all database operations.
-- **PostgreSQL** is never accessed directly by UI or Backend.
+## Environment variables
 
-## Stop the application
+Docker Compose passes the following variables to the services:
 
-Press `Ctrl+C` in each of the three terminal windows.
+### UI service
+
+```text
+APP_HOST=0.0.0.0
+APP_PORT=5000
+BACKEND_URL=http://backend:5001
+```
+
+### Backend service
+
+```text
+APP_HOST=0.0.0.0
+APP_PORT=5001
+HISTORY_URL=http://history:5002
+```
+
+### History service
+
+```text
+APP_HOST=0.0.0.0
+APP_PORT=5002
+DATABASE_URL=postgresql://weather_user:weather_password@postgres:5432/weather_history
+```
+
+### PostgreSQL
+
+```text
+POSTGRES_DB=weather_history
+POSTGRES_USER=weather_user
+POSTGRES_PASSWORD=weather_password
+```
+
+The credentials in `docker-compose.yml` are intended for local development and learning purposes only.
+
+## PostgreSQL data
+
+PostgreSQL data is stored in the named Docker volume:
+
+```text
+postgres_data
+```
+
+This allows the database data to remain available after running:
+
+```bash
+docker compose down
+```
+
+## Useful commands
+
+```bash
+# Validate docker-compose.yml
+docker compose config
+
+# Build application images
+docker compose build
+
+# Start all services
+docker compose up -d
+
+# Build and start all services
+docker compose up -d --build
+
+# Display running services
+docker compose ps
+
+# Display logs
+docker compose logs -f
+
+# Stop the project
+docker compose down
+
+# Stop the project and remove database data
+docker compose down -v
+```
