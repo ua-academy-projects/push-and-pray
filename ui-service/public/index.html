@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Актуальні та історичні курси криптовалют і фіатних валют">
+  <title>Rateboard — курси валют</title>
+  <script>
+    (() => { const saved = localStorage.getItem('rateboard-theme'); const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); document.documentElement.dataset.theme = theme; })();
+  </script>
+  <link rel="stylesheet" href="css/styles.css?v=7">
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+  <script type="module" src="js/app.js?v=15"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти до вмісту</a>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Rateboard, головна">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <span>Rateboard</span>
+    </a>
+    <nav class="tabs" aria-label="Головна навігація" role="tablist">
+      <button class="tab active" id="overview-tab" role="tab" aria-selected="true" aria-controls="overview-panel" data-tab="overview">Огляд</button>
+      <button class="tab" id="history-tab" role="tab" aria-selected="false" aria-controls="history-panel" data-tab="history">Історія</button>
+      <button class="tab" id="market-map-tab" role="tab" aria-selected="false" aria-controls="market-map-panel" data-tab="market-map">Капіталізація</button>
+    </nav>
+    <div class="header-actions">
+      <button class="button secondary header-export" id="export-pdf-global" type="button">Експорт PDF</button>
+      <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-pressed="false">
+        <span class="theme-icon" aria-hidden="true"></span><span class="theme-label">Темна тема</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="main-shell">
+    <div id="global-error" class="alert" role="alert" hidden></div>
+
+    <section id="overview-panel" role="tabpanel" aria-labelledby="overview-tab">
+      <div class="section-heading">
+        <div><p class="eyebrow">Ринок зараз</p><h1>Курси без зайвого шуму</h1><p class="subtitle">Криптовалюти та офіційні фіатні курси в одному місці.</p></div>
+        <button class="button secondary" id="refresh-button" type="button"><span aria-hidden="true">↻</span> Оновити</button>
+      </div>
+
+      <div class="hero-grid" id="hero-grid" aria-live="polite">
+        <article class="rate-card hero-card skeleton" id="primary-card"><p>Завантаження…</p></article>
+        <button class="compare-card" id="add-compare" type="button"><span class="plus" aria-hidden="true">+</span><strong>Додати ще один курс</strong></button>
+      </div>
+
+      <div class="lists-grid">
+        <section class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">За капіталізацією</p><h2>Топ-10 криптовалют</h2></div><span class="source-chip">CoinGecko</span></div>
+          <div class="market-list" id="crypto-list" aria-live="polite"><p class="empty">Завантаження…</p></div>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">Відносно гривні</p><h2>Фіатні валюти</h2></div><span class="source-chip">Frankfurter</span></div>
+          <div class="market-list" id="fiat-list" aria-live="polite"><p class="empty">Завантаження…</p></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden>
+      <div class="section-heading"><div><p class="eyebrow">Аналітика</p><h1>Історія курсів</h1><p class="subtitle">Порівнюйте до п’яти інструментів у ціні або відсотках. Побудовані графіки оновлюються автоматично кожні 5 хвилин.</p></div></div>
+      <section class="panel controls-panel" aria-label="Налаштування графіка">
+        <div class="control wide"><span class="control-label">Валютні пари</span><button class="instrument-trigger" id="instrument-trigger" type="button" aria-expanded="false" aria-controls="instrument-picker">Оберіть до 5 валют</button><div class="instrument-picker" id="instrument-picker" hidden><input id="instrument-search" type="search" placeholder="Пошук валюти…"><div id="instrument-options"></div></div><small id="selection-help">Обрано: <span id="selection-count">0</span>/5</small></div>
+        <fieldset class="control range-control"><legend>Період даних</legend><div class="segmented" id="period-buttons"><button class="active" type="button" data-period="1d">1Д</button><button type="button" data-period="7d">7Д</button><button type="button" data-period="30d">30Д</button><button type="button" data-period="90d">90Д</button><button type="button" data-period="365d">1Р</button></div></fieldset>
+        <fieldset class="control step-control"><legend>Крок графіка</legend><div class="segmented" id="step-buttons"><button class="active" type="button" data-step="5m">5ХВ</button><button type="button" data-step="30m">30ХВ</button><button type="button" data-step="1h">1Г</button><button type="button" data-step="4h">4Г</button><button type="button" data-step="1d">1Д</button></div></fieldset>
+        <fieldset class="control"><legend>Відображення</legend><div class="segmented" id="mode-buttons"><button class="active" type="button" data-mode="price">Ціна</button><button type="button" data-mode="percent">Зміна, %</button></div></fieldset>
+        <button class="button primary load-chart" id="load-chart" type="button">Побудувати графік</button>
+      </section>
+
+      <div class="chart-actions"><button class="button primary" id="refresh-charts" type="button">Оновити всі графіки</button><button class="button ghost danger" id="reset-charts" type="button">Скинути всі графіки</button></div>
+      <div id="charts-container" class="charts-container" aria-live="polite"></div>
+    </section>
+
+    <section id="market-map-panel" role="tabpanel" aria-labelledby="market-map-tab" hidden>
+      <div class="section-heading"><div><p class="eyebrow">Структура ринку</p><h1>Карта капіталізації</h1><p class="subtitle">Розмір блока відповідає ринковій капіталізації, колір — її зміні за обраний період.</p></div></div>
+      <section class="panel market-map-controls" aria-label="Налаштування карти капіталізації">
+        <fieldset class="control"><legend>Період зміни</legend><div class="segmented" id="market-period-buttons"><button type="button" data-period="1h">1Г</button><button type="button" data-period="4h">4Г</button><button class="active" type="button" data-period="1d">1Д</button><button type="button" data-period="7d">7Д</button><button type="button" data-period="30d">30Д</button><button type="button" data-period="1y">1Р</button></div></fieldset>
+        <button class="button primary" id="add-market-map" type="button">Додати карту</button>
+      </section>
+      <div class="chart-actions"><button class="button primary" id="refresh-market-maps" type="button">Оновити всі карти</button><button class="button ghost danger" id="reset-market-maps" type="button">Скинути всі карти</button></div>
+      <div id="market-maps-container" class="market-maps-container" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><span>© Rateboard 2026</span></footer>
+
+  <section id="pdf-report" class="pdf-report" aria-hidden="true"></section>
+
+  <dialog id="compare-dialog">
+    <form method="dialog" class="dialog-card">
+      <div class="panel-heading"><div><p class="eyebrow">Порівняння</p><h2>Додати курс</h2></div><button class="icon-button" value="cancel" aria-label="Закрити">×</button></div>
+      <label for="compare-search">Пошук валюти</label><input id="compare-search" type="search" placeholder="Bitcoin, USD/UAH…" autocomplete="off">
+      <div class="picker-list" id="compare-options"></div>
+    </form>
+  </dialog>
+</body>
+</html>
