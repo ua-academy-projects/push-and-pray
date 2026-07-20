@@ -1,88 +1,166 @@
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     BigInteger,
-    CheckConstraint,
+    Boolean,
     DateTime,
-    Identity,
-    Integer,
+    Float,
+    ForeignKey,
     SmallInteger,
     String,
-    text,
+    UniqueConstraint,
+    func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
-class HistoryRecord(Base):
-    """SQLAlchemy mapping for the history_records PostgreSQL table."""
-
-    __tablename__ = "history_records"
-
-    __table_args__ = (
-        CheckConstraint(
-            "length(trim(request_type)) > 0",
-            name="history_records_request_type_not_blank",
-        ),
-        CheckConstraint(
-            "length(trim(source)) > 0",
-            name="history_records_source_not_blank",
-        ),
-        CheckConstraint(
-            "result_count >= 0",
-            name="history_records_result_count_non_negative",
-        ),
-        CheckConstraint(
-            "source_status_code BETWEEN 100 AND 599",
-            name="history_records_source_status_code_valid",
-        ),
-    )
+class City(Base):
+    __tablename__ = "cities"
 
     id: Mapped[int] = mapped_column(
         BigInteger,
-        Identity(always=True),
         primary_key=True,
+    )
+
+    code: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        unique=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    country: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="Ukraine",
+    )
+
+    latitude: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    longitude: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    timezone: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
+        server_default=func.now(),
     )
 
-    request_type: Mapped[str] = mapped_column(
-        String(50),
+    measurements: Mapped[list["AirQualityMeasurement"]] = relationship(
+        back_populates="city",
+        cascade="all, delete-orphan",
+    )
+
+
+class AirQualityMeasurement(Base):
+    __tablename__ = "air_quality_measurements"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "city_id",
+            "observed_at",
+            name="measurements_unique_city_time",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+    )
+
+    city_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "cities.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
     )
 
-    query_parameters: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=text("'{}'::jsonb"),
-    )
-
-    response_data: Mapped[dict[str, Any] | list[Any]] = mapped_column(
-        JSONB,
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
     )
 
-    result_count: Mapped[int] = mapped_column(
-        Integer,
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
-        default=0,
-        server_default=text("0"),
+        server_default=func.now(),
+    )
+
+    european_aqi: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    us_aqi: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    pm2_5: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    pm10: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    nitrogen_dioxide: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    ozone: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    carbon_monoxide: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    uv_index: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
     )
 
     source: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
+        default="open-meteo",
     )
 
     source_status_code: Mapped[int] = mapped_column(
         SmallInteger,
         nullable=False,
+        default=200,
+    )
+
+    city: Mapped[City] = relationship(
+        back_populates="measurements",
     )

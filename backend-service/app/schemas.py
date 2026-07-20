@@ -1,82 +1,115 @@
 from datetime import datetime
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-
-class HistoryRecordCreate(BaseModel):
-    """Payload used to create a history record."""
-
-    request_type: str = Field(
-        min_length=1,
-        max_length=50,
-        examples=["air_quality"],
-    )
-
-    query_parameters: dict[str, Any]
-
-    response_data: dict[str, Any] | list[Any]
-
-    result_count: int = Field(
-        ge=0,
-        examples=[1],
-    )
-
-    source: str = Field(
-        min_length=1,
-        max_length=50,
-        examples=["open-meteo"],
-    )
-
-    source_status_code: int = Field(
-        ge=100,
-        le=599,
-        examples=[200],
-    )
-
-    @field_validator("request_type", "source")
-    @classmethod
-    def normalize_non_blank_strings(cls, value: str) -> str:
-        normalized_value = value.strip()
-
-        if not normalized_value:
-            raise ValueError("must not be blank")
-
-        return normalized_value
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class HistoryRecordCreated(BaseModel):
-    """Response returned after creating a record."""
-
-    id: int
-    created_at: datetime
-    message: str
-
-
-class HistoryRecordSummary(BaseModel):
-    """Short representation used in history lists."""
-
+class CityResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    created_at: datetime
-    request_type: str
-    query_parameters: dict[str, Any]
-    result_count: int
+    code: str
+    name: str
+    country: str
+    latitude: float
+    longitude: float
+    timezone: str | None
+    is_active: bool
+
+
+class MeasurementCreate(BaseModel):
+    city_code: str = Field(
+        min_length=1,
+        max_length=50,
+    )
+
+    observed_at: datetime
+
+    european_aqi: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    us_aqi: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    pm2_5: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    pm10: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    nitrogen_dioxide: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    ozone: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    carbon_monoxide: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    uv_index: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    source: str = Field(
+        default="open-meteo",
+        min_length=1,
+        max_length=50,
+    )
+
+    source_status_code: int = Field(
+        default=200,
+        ge=100,
+        le=599,
+    )
+
+
+class MeasurementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    observed_at: datetime
+    fetched_at: datetime
+
+    european_aqi: float | None
+    us_aqi: float | None
+
+    pm2_5: float | None
+    pm10: float | None
+
+    nitrogen_dioxide: float | None
+    ozone: float | None
+    carbon_monoxide: float | None
+    uv_index: float | None
+
     source: str
     source_status_code: int
 
 
-class HistoryRecordDetail(HistoryRecordSummary):
-    """Complete history record."""
-
-    response_data: dict[str, Any] | list[Any]
+class MeasurementWithCityResponse(MeasurementResponse):
+    city: CityResponse
 
 
-class HistoryRecordList(BaseModel):
-    """Paginated history response."""
+class MeasurementCreateResult(BaseModel):
+    created: bool
+    measurement: MeasurementWithCityResponse
 
-    items: list[HistoryRecordSummary]
-    total: int
-    limit: int
-    offset: int
+
+class DashboardResponse(BaseModel):
+    city: CityResponse
+    hours: int
+    latest: MeasurementResponse | None
+    history: list[MeasurementResponse]

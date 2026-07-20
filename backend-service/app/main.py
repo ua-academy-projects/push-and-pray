@@ -1,25 +1,28 @@
-from typing import Annotated
+import logging
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
-from app.database import get_db_session
-from app.routers.history import router as history_router
+from app.database import SessionLocal
+from app.routers.cities import router as cities_router
+from app.routers.measurements import router as measurements_router
+
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
-    title="Air Quality History Service",
+    title="AirAware Backend Service",
     description=(
-        "Stores and returns successful air-quality request history."
+        "Stores air-quality measurements and provides "
+        "dashboard data to the Frontend Service."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
-app.include_router(history_router)
-
-DatabaseSession = Annotated[Session, Depends(get_db_session)]
+app.include_router(cities_router)
+app.include_router(measurements_router)
 
 
 @app.get(
@@ -27,10 +30,8 @@ DatabaseSession = Annotated[Session, Depends(get_db_session)]
     tags=["health"],
 )
 def health_check() -> dict[str, str]:
-    """Check whether the application process is running."""
-
     return {
-        "service": "history-service",
+        "service": "backend-service",
         "status": "healthy",
     }
 
@@ -39,21 +40,23 @@ def health_check() -> dict[str, str]:
     "/health/ready",
     tags=["health"],
 )
-def readiness_check(
-    session: DatabaseSession,
-) -> dict[str, str]:
-    """Check whether the application can connect to PostgreSQL."""
-
+def readiness_check() -> dict[str, str]:
     try:
-        session.execute(text("SELECT 1"))
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+
     except SQLAlchemyError as exc:
+        logger.exception(
+            "Database readiness check failed"
+        )
+
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database is unavailable",
         ) from exc
 
     return {
-        "service": "history-service",
+        "service": "backend-service",
         "status": "ready",
         "database": "connected",
     }
