@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .clients import CoinGeckoClient, FrankfurterClient, HistoryClient, ProviderError
+from .clients import CoinGeckoClient, FrankfurterClient, HistoryClient, ObservationPublisher, ProviderError
 from .config import get_settings
 from .models import BackfillRequest, RefreshRequest
 from .services import FIAT_BASES, RateService
@@ -42,7 +42,7 @@ async def collector_loop(app: FastAPI):
             try:
                 rate = await app.state.rates.current(item["instrument_id"], refresh=True)
                 rate = rate.model_copy(update={"requested_at": cycle_timestamp})
-                if await app.state.history.save(rate, request_id):
+                if await app.state.history.save(rate, request_id) in ("queued", "saved"):
                     saved += 1
                 else:
                     failed += 1
@@ -61,7 +61,10 @@ async def collector_loop(app: FastAPI):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     http = httpx.AsyncClient(timeout=httpx.Timeout(10, connect=5))
-    history = HistoryClient(http, settings)
+    publisher = ObservationPublisher(settings) if settings.rabbitmq_enabled else None
+    if publisher:
+        await publisher.connect()
+    history = HistoryClient(http, settings, publisher)
     app.state.history = history
     app.state.rates = RateService(CoinGeckoClient(http, settings), FrankfurterClient(http, settings), history)
     collector_task = asyncio.create_task(collector_loop(app)) if settings.collector_enabled else None
@@ -72,6 +75,8 @@ async def lifespan(app: FastAPI):
             await collector_task
         except asyncio.CancelledError:
             pass
+    if publisher:
+        await publisher.close()
     await http.aclose()
 
 
@@ -123,7 +128,7 @@ async def market_map(request: Request, period: str = "1d"):
 
 async def persist(rates, request: Request):
     results = await asyncio.gather(*(request.app.state.history.save(rate, request.state.request_id) for rate in rates))
-    return [rate.model_copy(update={"persistence_status": "saved" if saved else "failed"}) for rate, saved in zip(rates, results)]
+    return [rate.model_copy(update={"persistence_status": status}) for rate, status in zip(rates, results)]
 
 
 @app.get("/api/v1/overview")
@@ -173,7 +178,12 @@ async def backfill(payload: BackfillRequest, request: Request):
     for instrument_id in payload.instruments:
         try:
             fetched, saved = await request.app.state.rates.backfill(instrument_id, start, end, request.state.request_id)
-            results.append({"instrument_id": instrument_id, "fetched": fetched, "inserted": saved, "duplicates": fetched - saved})
+            result = {"instrument_id": instrument_id, "fetched": fetched}
+            if settings.rabbitmq_enabled:
+                result.update({"queued": saved, "persistence_status": "queued"})
+            else:
+                result.update({"inserted": saved, "duplicates": fetched - saved, "persistence_status": "saved"})
+            results.append(result)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except httpx.HTTPError as exc:

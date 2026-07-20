@@ -66,7 +66,7 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	var item repository.Observation
-	if err := decode(r, &item); err != nil || !valid(item) {
+	if err := decode(r, &item); err != nil || !repository.Valid(item) {
 		writeJSON(w, 400, map[string]any{"error": "invalid observation"})
 		return
 	}
@@ -88,7 +88,7 @@ func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 	}
 	created := 0
 	for _, item := range payload.Items {
-		if !valid(item) {
+		if !repository.Valid(item) {
 			writeJSON(w, 400, map[string]any{"error": "invalid observation"})
 			return
 		}
@@ -128,10 +128,6 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		next = items[len(items)-1].RequestedAt.Format(time.RFC3339Nano)
 	}
 	writeJSON(w, 200, map[string]any{"items": items, "next_cursor": next})
-}
-
-func valid(item repository.Observation) bool {
-	return item.InstrumentID != "" && (item.Kind == "crypto" || item.Kind == "fiat") && item.Base != "" && item.Quote != "" && item.Price != "" && item.Source != "" && !item.SourceTimestamp.IsZero() && !item.RequestedAt.IsZero() && item.RequestID != ""
 }
 
 func (s *Server) authorize(next http.Handler) http.Handler {

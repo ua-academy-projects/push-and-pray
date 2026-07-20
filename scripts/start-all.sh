@@ -24,6 +24,15 @@ set +a
 : "${DATABASE_URL:?DATABASE_URL must be set in .env}"
 : "${BACKFILL_YEAR_ON_START:?BACKFILL_YEAR_ON_START must be set in .env}"
 : "${POSTGRES_BIN_DIR:?POSTGRES_BIN_DIR must be set in .env}"
+: "${RABBITMQ_ENABLED:?RABBITMQ_ENABLED must be set in .env}"
+: "${RABBITMQ_URL:?RABBITMQ_URL must be set in .env}"
+: "${RABBITMQ_EXCHANGE:?RABBITMQ_EXCHANGE must be set in .env}"
+: "${RABBITMQ_QUEUE:?RABBITMQ_QUEUE must be set in .env}"
+: "${RABBITMQ_ROUTING_KEY:?RABBITMQ_ROUTING_KEY must be set in .env}"
+: "${RABBITMQ_BIN_DIR:?RABBITMQ_BIN_DIR must be set in .env}"
+: "${RABBITMQ_SERVICE_NAME:?RABBITMQ_SERVICE_NAME must be set in .env}"
+: "${RABBITMQ_HOST:?RABBITMQ_HOST must be set in .env}"
+: "${RABBITMQ_PORT:?RABBITMQ_PORT must be set in .env}"
 : "${SERVICE_CHECK_TIMEOUT_SECONDS:?SERVICE_CHECK_TIMEOUT_SECONDS must be set in .env}"
 : "${SERVICE_START_ATTEMPTS:?SERVICE_START_ATTEMPTS must be set in .env}"
 : "${SERVICE_START_INTERVAL_SECONDS:?SERVICE_START_INTERVAL_SECONDS must be set in .env}"
@@ -33,6 +42,9 @@ set +a
 if [[ -d "${POSTGRES_BIN_DIR}" ]]; then
   export PATH="${POSTGRES_BIN_DIR}:${PATH}"
 fi
+if [[ -d "${RABBITMQ_BIN_DIR}" ]]; then
+  export PATH="${RABBITMQ_BIN_DIR}:${PATH}"
+fi
 
 for command in python3 go psql pg_isready curl; do
   if ! command -v "${command}" >/dev/null 2>&1; then
@@ -40,6 +52,14 @@ for command in python3 go psql pg_isready curl; do
     exit 1
   fi
 done
+if [[ "${RABBITMQ_ENABLED}" == "true" ]]; then
+  for command in rabbitmq-diagnostics nc; do
+    if ! command -v "${command}" >/dev/null 2>&1; then
+      echo "RabbitMQ is enabled but ${command} is not installed." >&2
+      exit 1
+    fi
+  done
+fi
 
 mkdir -p "${RUN_DIR}"
 
@@ -73,6 +93,26 @@ if ! pg_isready --dbname="${DATABASE_URL}" >/dev/null 2>&1; then
     brew services start postgresql@16 >/dev/null
   else
     echo "PostgreSQL is not ready. Start it and run this script again." >&2
+    exit 1
+  fi
+fi
+
+if [[ "${RABBITMQ_ENABLED}" == "true" ]] && ! nc -z -w "${SERVICE_CHECK_TIMEOUT_SECONDS}" "${RABBITMQ_HOST}" "${RABBITMQ_PORT}" >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1 && brew list "${RABBITMQ_SERVICE_NAME}" >/dev/null 2>&1; then
+    echo "Starting RabbitMQ..."
+    brew services start "${RABBITMQ_SERVICE_NAME}" >/dev/null
+    rabbit_attempts="${SERVICE_START_ATTEMPTS}"
+    while (( rabbit_attempts > 0 )); do
+      nc -z -w "${SERVICE_CHECK_TIMEOUT_SECONDS}" "${RABBITMQ_HOST}" "${RABBITMQ_PORT}" >/dev/null 2>&1 && break
+      rabbit_attempts=$((rabbit_attempts - 1))
+      sleep "${SERVICE_START_INTERVAL_SECONDS}"
+    done
+    if ! nc -z -w "${SERVICE_CHECK_TIMEOUT_SECONDS}" "${RABBITMQ_HOST}" "${RABBITMQ_PORT}" >/dev/null 2>&1; then
+      echo "RabbitMQ did not become ready." >&2
+      exit 1
+    fi
+  else
+    echo "RabbitMQ is enabled but not running. Start it and run this script again." >&2
     exit 1
   fi
 fi

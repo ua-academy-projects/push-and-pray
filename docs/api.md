@@ -37,7 +37,7 @@ Query parameters:
 - `instruments`: comma-separated IDs, required, 1–10;
 - `refresh`: boolean, default `false`.
 
-When `refresh=false`, Backend may serve its in-memory current cache and does not persist. When `true`, it bypasses cache and persists each returned observation through History.
+When `refresh=false`, Backend may serve its in-memory current cache and does not persist. When `true`, it bypasses cache and queues each returned observation for History.
 
 ### `POST /api/v1/rates/refresh`
 
@@ -86,7 +86,7 @@ Body, 1–20 instruments and at most 366 days:
 }
 ```
 
-Returns per-instrument `fetched`, `inserted`, and `duplicates` counts. It fetches sequentially and sends observations to History in chunks of 100.
+With RabbitMQ enabled, returns per-instrument `fetched`, `queued`, and `persistence_status` values. Without RabbitMQ it returns synchronous `inserted` and `duplicates` counts.
 
 ### `GET /api/v1/requests/history`
 
@@ -118,11 +118,17 @@ Decimal fields are JSON strings:
   "source_timestamp": "2026-07-17T09:30:00Z",
   "requested_at": "2026-07-17T09:30:03Z",
   "stale": false,
-  "persistence_status": "saved"
+  "persistence_status": "queued"
 }
 ```
 
 Fiat change/market/rank values are normally `null`. `change_1h_percent` is returned to UI but the current PostgreSQL schema does not persist it.
+
+`persistence_status` is `queued` after a confirmed RabbitMQ publish, `saved` after synchronous HTTP fallback, `failed` when neither path succeeds, and `skipped` for reads that are intentionally not persisted.
+
+## RabbitMQ observation events
+
+Backend publishes persistent JSON messages to the durable direct exchange `rates.events` with routing key `observation.persist`. History consumes `rates.observations`, acknowledges only after the PostgreSQL insert, and dead-letters a repeatedly failed delivery to `rates.observations.dlq`. Queue names and the broker URL are configurable through `RABBITMQ_*` variables.
 
 ## Provider error shape
 

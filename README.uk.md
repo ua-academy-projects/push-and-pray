@@ -7,7 +7,8 @@ Rateboard — трисервісний застосунок для перегл�
 ```text
 Браузер → UI (HTML/CSS/JS) → Backend (Python/FastAPI) → CoinGecko / Frankfurter
                                   │
-                                  └→ History (Go) → PostgreSQL
+                                  ├→ RabbitMQ → History (Go) → PostgreSQL
+                                  └→ History HTTP (читання та fallback запису)
 ```
 
 Браузер отримує прикладні дані тільки від Backend. Backend відповідає за інтеграцію із зовнішніми API, нормалізацію та координацію. History service — єдиний компонент, який напряму працює з PostgreSQL.
@@ -30,6 +31,7 @@ Rateboard — трисервісний застосунок для перегл�
 - Python 3.12+
 - Go 1.23+
 - PostgreSQL 16+
+- RabbitMQ 4+
 - `psql`, `pg_isready`, `curl`
 - браузер та інтернет для зовнішніх API і CDN-залежностей графіків
 
@@ -56,7 +58,7 @@ postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable
 Скрипт:
 
 1. завантажує `.env` і перевіряє залежності;
-2. перевіряє PostgreSQL;
+2. перевіряє PostgreSQL і RabbitMQ та за можливості запускає Homebrew-сервіси;
 3. застосовує міграції `001_init.sql`, `002_sampling.sql` і `003_backfill_timestamps.sql`;
 4. запускає History service;
 5. створює Python virtualenv за потреби та запускає Backend;
@@ -76,11 +78,13 @@ postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable
 ./scripts/stop-all.sh
 ```
 
-PostgreSQL при цьому продовжує працювати.
+PostgreSQL і RabbitMQ при цьому продовжують працювати як інфраструктурні залежності.
 
 ## Ручний запуск
 
-Порядок: PostgreSQL → History → Backend → UI.
+Порядок: PostgreSQL → RabbitMQ → History → Backend → UI.
+
+RabbitMQ доставляє нормалізовані спостереження від Backend до History через durable exchange `rates.events` і чергу `rates.observations`. History підтверджує повідомлення лише після запису в PostgreSQL; повторно невдале повідомлення переходить у `rates.observations.dlq`. Якщо публікація недоступна, Backend використовує захищений HTTP endpoint History як fallback.
 
 ```bash
 set -a; source .env; set +a

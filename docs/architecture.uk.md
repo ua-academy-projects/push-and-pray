@@ -10,13 +10,15 @@
        └─ HTTP :8000 → Python Backend / Proxy
             ├─ HTTPS → CoinGecko
             ├─ HTTPS → Frankfurter
-            └─ HTTP :8081 + bearer token → Go History service
+            ├─ AMQP :5672 → RabbitMQ → Go History consumer
+            └─ HTTP :8081 + bearer token → Go History service (читання/fallback)
                  └─ PostgreSQL :5432 → PostgreSQL 16
 ```
 
 - **UI** відображає картки, карти капіталізації та Chart.js-графіки. Він не має ключів провайдерів або доступу до БД і викликає тільки Backend.
 - **Backend** перевіряє instrument ID, нормалізує відповіді, обслуговує публічне API, запускає backfill і п’ятихвилинний колектор.
 - **History** перевіряє нормалізовані спостереження та одноосібно володіє PostgreSQL-запитами. Внутрішні endpoint захищені bearer token.
+- **RabbitMQ** надійно буферизує записи explicit refresh, collector і backfill. Основна черга — `rates.observations`, DLQ — `rates.observations.dlq`.
 - **PostgreSQL** зберігає точні `NUMERIC` і `TIMESTAMPTZ`. Унікальність `(source, instrument_id, source_timestamp, requested_at)` робить повтор одного знімка ідемпотентним і дозволяє наступний п’ятихвилинний знімок.
 
 ## Основні потоки
@@ -26,8 +28,8 @@
 1. Колектор Backend запускається на `:00`, `:05`, `:10`, `:15` тощо.
 2. Backend обходить кеш і запитує CoinGecko та Frankfurter.
 3. Різні формати перетворюються на єдину модель `Rate`.
-4. Backend передає спостереження до History.
-5. History зберігає їх у PostgreSQL із вирівняним `requested_at`.
+4. Backend публікує persistent-повідомлення в RabbitMQ.
+5. History споживає повідомлення, зберігає його в PostgreSQL із вирівняним `requested_at` і лише тоді надсилає ACK. Якщо publish не працює, Backend використовує HTTP fallback.
 
 Помилка одного інструмента журналюється, але не зупиняє весь цикл. Frankfurter може зберігати однакове значення протягом дня; це не заважає фіксувати час кожного локального знімка.
 
@@ -56,15 +58,15 @@ Backend отримує поточну топ-10 капіталізацію та 
 
 ### Річний backfill
 
-`scripts/backfill-year.sh` викликає Backend, який послідовно отримує історію провайдерів і передає її до History пакетами до 100 елементів. Рідна деталізація провайдерів зберігається; відсутні п’ятихвилинні точки не вигадуються.
+`scripts/backfill-year.sh` викликає Backend, який послідовно отримує історію провайдерів і ставить нормалізовані точки в RabbitMQ. Рідна деталізація провайдерів зберігається; відсутні п’ятихвилинні точки не вигадуються.
 
 ## Час, точність і відмови
 
 - Сервіси використовують UTC; браузер форматує час локально.
 - Decimal-поля передаються JSON-рядками; UI тільки округлює їх до двох знаків.
 - Provider GET має timeout, обмежені повтори для network error, `429` і `5xx`.
-- Якщо History недоступний під час читання, Backend повертає `503`, а UI не очищає останні коректні дані.
-- Для невдалого collector/backfill немає durable queue або replay worker.
+- Успішна публікація повертає `persistence_status: queued`; HTTP fallback повертає `saved` або `failed`. Якщо History недоступний під час читання, Backend повертає `503`, а UI не очищає останні коректні дані.
+- Помилка запису повторюється один раз через redelivery; наступна невдача переводить повідомлення в durable DLQ.
 
 ## Безпека й запуск
 

@@ -10,13 +10,15 @@ Browser
        └─ HTTP :8000 → Python Backend / Proxy
             ├─ HTTPS → CoinGecko
             ├─ HTTPS → Frankfurter
-            └─ HTTP :8081 + bearer token → Go History service
+            ├─ AMQP :5672 → RabbitMQ → Go History consumer
+            └─ HTTP :8081 + bearer token → Go History service (reads/write fallback)
                  └─ PostgreSQL protocol :5432 → PostgreSQL 16
 ```
 
 - **UI** renders overview cards and dynamic Chart.js charts. It has no provider/database credentials and calls only Backend. Chart.js 4.4.7 and chartjs-plugin-zoom 2.2.0 are pinned CDN dependencies.
 - **Backend** validates instrument IDs, calls both providers, normalizes decimals/timestamps, serves UI APIs, runs manual backfill orchestration, and owns the periodic collector.
 - **History** validates normalized observations and exclusively owns PostgreSQL queries. Internal endpoints require `Authorization: Bearer <HISTORY_SERVICE_TOKEN>`.
+- **RabbitMQ** durably buffers explicit refresh, collector, and backfill observations. The main queue is `rates.observations`; repeatedly failed messages are dead-lettered to `rates.observations.dlq`.
 - **PostgreSQL** stores observations in `NUMERIC`/`TIMESTAMPTZ` columns. `(source, instrument_id, source_timestamp, requested_at)` makes a sampled point idempotent while allowing a new observation every five minutes.
 
 ## Main flows
@@ -24,8 +26,9 @@ Browser
 ### Provider collection and current reads
 
 1. The scheduled collector or explicit provider-refresh endpoint calls CoinGecko and/or Frankfurter.
-2. Backend normalizes the response and sends successful observations to History.
-3. History inserts the sampled observation and ignores an exact duplicate of the same sample.
+2. Backend normalizes the response and publishes a persistent observation event to RabbitMQ.
+3. History consumes the event, inserts the sample, and sends `ACK` only after PostgreSQL accepts it. Exact duplicates are harmless because the database uses `ON CONFLICT DO NOTHING`.
+4. If RabbitMQ publishing fails, Backend falls back to the authenticated synchronous History HTTP endpoint.
 4. The UI Overview refresh button follows a separate read-only path through `stored-current` and never calls a provider.
 
 The top-10 overview request asks CoinGecko `/coins/markets` for `sparkline=true` and `price_change_percentage=1h,24h`, so weekly sparklines and both short changes arrive in the same provider call.
@@ -65,8 +68,8 @@ The capitalization tab calls `GET /api/v1/market-map` for a selected period. Bac
 - Decimal JSON fields are strings. UI rounds displayed rates to two decimals only.
 - Provider GETs use a 5-second connect/10-second client timeout target and retry timeouts/network errors/429/5xx up to two times with backoff.
 - Provider errors use Backend's structured provider error envelope. Standard FastAPI validation/HTTP errors use FastAPI's `detail` response shape.
-- If the explicit provider-refresh endpoint retrieves a rate but History saving fails, Backend returns it with `persistence_status: failed`. If the UI database refresh cannot reach History, Backend returns `503` and UI preserves its last valid state.
-- Collector/backfill failures are logged or returned; there is no queue or replay worker.
+- A successfully published observation returns `persistence_status: queued`; synchronous fallback returns `saved` or `failed`. If the UI database refresh cannot reach History, Backend returns `503` and UI preserves its last valid state.
+- RabbitMQ retries a database failure once through redelivery; another failure routes the message to the durable dead-letter queue.
 
 ## Runtime and security
 

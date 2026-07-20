@@ -7,7 +7,8 @@ Rateboard is a three-service cryptocurrency and fiat dashboard built for DevOps 
 ```text
 Browser -> UI (HTML/CSS/JS) -> Backend (Python/FastAPI) -> CoinGecko / Frankfurter
                                     |
-                                    +-> History (Go) -> PostgreSQL
+                                    +-> RabbitMQ -> History (Go) -> PostgreSQL
+                                    +-> History HTTP (reads and write fallback)
 ```
 
 The browser obtains all application data only from Backend; it additionally loads pinned Chart.js assets from jsDelivr. Backend owns public-provider access and orchestration. History is the only service that accesses PostgreSQL.
@@ -34,10 +35,11 @@ The browser obtains all application data only from Backend; it additionally load
 - Python 3.12+
 - Go 1.23+
 - PostgreSQL 16+
+- RabbitMQ 4+
 - `psql`, `pg_isready`, and `curl`
 - A browser and internet access for providers and pinned Chart.js CDN assets
 
-On macOS/Homebrew, `start-all.sh` detects the keg-only PostgreSQL 16 path and can start an already installed `postgresql@16` service. On other systems PostgreSQL must already be running.
+On macOS/Homebrew, `start-all.sh` can start installed PostgreSQL 16 and RabbitMQ services. On other systems both must already be running when RabbitMQ is enabled.
 
 ## First-time setup
 
@@ -66,7 +68,7 @@ Then either use automatic start or run each service manually.
 The script:
 
 1. loads `.env`, validates all service/orchestration settings, and checks required commands;
-2. checks PostgreSQL and starts Homebrew `postgresql@16` when available;
+2. checks PostgreSQL and RabbitMQ and starts their Homebrew services when available;
 3. applies all History migrations (`001_init.sql`, `002_sampling.sql`, and `003_backfill_timestamps.sql`);
 4. downloads Go modules and starts History;
 5. creates/installs the Python virtualenv when missing and starts Backend;
@@ -76,7 +78,7 @@ The script:
 
 Startup probes, graceful-shutdown retries, their intervals, and the optional Homebrew PostgreSQL binary directory are configured through the `SERVICE_*` and `POSTGRES_BIN_DIR` values documented in `.env.example`; `start-all.sh` does not provide hidden configuration defaults.
 
-PostgreSQL is managed separately and is not stopped by the script.
+PostgreSQL and RabbitMQ are infrastructure dependencies and are not stopped by the script.
 
 To stop any Rateboard listeners and free ports `3000`, `8000`, and `8081`:
 
@@ -126,7 +128,9 @@ cd ui-service/public
 python3 -m http.server 3000 --bind 127.0.0.1
 ```
 
-Start order: PostgreSQL → History → Backend → UI.
+Start order: PostgreSQL → RabbitMQ → History → Backend → UI.
+
+RabbitMQ carries durable observation writes from Backend to History. The durable direct exchange is `rates.events`, the main queue is `rates.observations`, and failed redeliveries go to `rates.observations.dlq`. History acknowledges a message only after PostgreSQL accepts the insert. If publishing fails, Backend falls back to the authenticated History HTTP write endpoint.
 
 ## Automatic collection
 

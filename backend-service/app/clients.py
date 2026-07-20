@@ -1,9 +1,12 @@
 import asyncio
+import json
 import random
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import httpx
+import aio_pika
+from aio_pika import DeliveryMode, ExchangeType, Message
 
 from .config import Settings
 from .models import HistoryPoint, HistorySeries, Rate
@@ -150,10 +153,11 @@ class FrankfurterClient:
 
 
 class HistoryClient:
-    def __init__(self, http: httpx.AsyncClient, settings: Settings):
+    def __init__(self, http: httpx.AsyncClient, settings: Settings, publisher: "ObservationPublisher | None" = None):
         self.http = http
         self.base_url = settings.history_service_url.rstrip("/")
         self.headers = {"Authorization": f"Bearer {settings.history_service_token}"}
+        self.publisher = publisher
 
     async def ready(self) -> bool:
         try:
@@ -161,25 +165,40 @@ class HistoryClient:
         except httpx.HTTPError:
             return False
 
-    async def save(self, rate: Rate, request_id: str) -> bool:
-        payload = rate.model_dump(mode="json", exclude={"stale", "persistence_status"})
+    async def save(self, rate: Rate, request_id: str) -> str:
+        payload = rate.model_dump(mode="json", exclude={"stale", "persistence_status", "sparkline_7d"})
         payload["request_id"] = request_id
+        idempotency_key = f"{rate.source}:{rate.instrument_id}:{rate.source_timestamp.isoformat()}:{rate.requested_at.isoformat()}"
+        if self.publisher:
+            try:
+                await self.publisher.publish(payload, request_id, idempotency_key)
+                return "queued"
+            except Exception:
+                # RabbitMQ is an optimization for durable asynchronous writes.
+                # Preserve the existing synchronous path when publishing fails.
+                pass
         try:
             response = await self.http.post(
                 f"{self.base_url}/internal/v1/observations", json=payload,
-                headers={**self.headers, "Idempotency-Key": f"{rate.source}:{rate.instrument_id}:{rate.source_timestamp.isoformat()}:{rate.requested_at.isoformat()}"},
+                headers={**self.headers, "Idempotency-Key": idempotency_key},
                 timeout=5,
             )
-            return response.status_code in (200, 201)
+            return "saved" if response.status_code in (200, 201) else "failed"
         except httpx.HTTPError:
-            return False
+            return "failed"
 
     async def save_batch(self, rates: list[Rate], request_id: str) -> int:
+        if self.publisher:
+            accepted = 0
+            for rate in rates:
+                if await self.save(rate, request_id) in ("queued", "saved"):
+                    accepted += 1
+            return accepted
         saved = 0
         for offset in range(0, len(rates), 100):
             items = []
             for rate in rates[offset:offset + 100]:
-                payload = rate.model_dump(mode="json", exclude={"stale", "persistence_status"})
+                payload = rate.model_dump(mode="json", exclude={"stale", "persistence_status", "sparkline_7d"})
                 payload["request_id"] = request_id
                 items.append(payload)
             response = await self.http.post(
@@ -203,6 +222,59 @@ class HistoryClient:
         )
         response.raise_for_status()
         return response.json().get("series", [])
+
+
+class ObservationPublisher:
+    def __init__(self, settings: Settings):
+        self.url = settings.rabbitmq_url
+        self.exchange_name = settings.rabbitmq_exchange
+        self.queue_name = settings.rabbitmq_queue
+        self.routing_key = settings.rabbitmq_routing_key
+        self.connection = None
+        self.channel = None
+        self.exchange = None
+
+    async def connect(self) -> None:
+        self.connection = await aio_pika.connect_robust(self.url)
+        self.channel = await self.connection.channel(publisher_confirms=True)
+        self.exchange = await self.channel.declare_exchange(self.exchange_name, ExchangeType.DIRECT, durable=True)
+        dead_letter_exchange = await self.channel.declare_exchange(f"{self.exchange_name}.dlx", ExchangeType.DIRECT, durable=True)
+        dead_letter_queue = await self.channel.declare_queue(f"{self.queue_name}.dlq", durable=True)
+        await dead_letter_queue.bind(dead_letter_exchange, self.queue_name)
+        queue = await self.channel.declare_queue(
+            self.queue_name,
+            durable=True,
+            arguments={
+                "x-dead-letter-exchange": f"{self.exchange_name}.dlx",
+                "x-dead-letter-routing-key": self.queue_name,
+            },
+        )
+        await queue.bind(self.exchange, self.routing_key)
+
+    async def publish(self, observation: dict, request_id: str, idempotency_key: str) -> None:
+        if not self.exchange:
+            raise RuntimeError("RabbitMQ publisher is not connected")
+        body = json.dumps({
+            "event_id": idempotency_key,
+            "request_id": request_id,
+            "idempotency_key": idempotency_key,
+            "observation": observation,
+        }, separators=(",", ":"), ensure_ascii=False).encode()
+        await self.exchange.publish(
+            Message(
+                body,
+                content_type="application/json",
+                delivery_mode=DeliveryMode.PERSISTENT,
+                message_id=idempotency_key,
+                correlation_id=request_id,
+            ),
+            routing_key=self.routing_key,
+            mandatory=True,
+        )
+
+    async def close(self) -> None:
+        if self.connection:
+            await self.connection.close()
 
 
 def _decimal(value) -> Decimal | None:

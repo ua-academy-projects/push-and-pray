@@ -10,6 +10,7 @@ import (
 
 	"rateboard/history-service/internal/api"
 	"rateboard/history-service/internal/config"
+	queue "rateboard/history-service/internal/messaging"
 	"rateboard/history-service/internal/repository"
 )
 
@@ -22,6 +23,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer store.Close()
+	if cfg.RabbitMQEnabled {
+		consumer := &queue.Consumer{
+			URL: cfg.RabbitMQURL, Exchange: cfg.RabbitMQExchange, Queue: cfg.RabbitMQQueue,
+			RoutingKey: cfg.RabbitMQRoutingKey, Store: store,
+		}
+		go consumer.Run(ctx)
+	}
 	server := &http.Server{Addr: cfg.Address, Handler: (&api.Server{Store: store, Token: cfg.Token}).Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		log.Printf("history service listening on %s", cfg.Address)

@@ -23,7 +23,7 @@ class Rate(BaseModel):
     source_timestamp: datetime
     requested_at: datetime
     stale: bool = False
-    persistence_status: Literal["saved", "failed", "skipped"] = "skipped"
+    persistence_status: Literal["queued", "saved", "failed", "skipped"] = "skipped"
 
     @field_serializer("price", "change_1h_percent", "change_24h_percent", "market_cap")
     def serialize_decimal(self, value: Decimal | None) -> str | None:

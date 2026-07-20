@@ -31,7 +31,7 @@
 - `instruments`: 1–10 ID через кому;
 - `refresh`: `false` за замовчуванням.
 
-`refresh=false` дозволяє кеш. `refresh=true` примусово викликає провайдера і передає успішні результати до History.
+`refresh=false` дозволяє кеш. `refresh=true` примусово викликає провайдера і ставить успішні результати в RabbitMQ для History.
 
 ### `POST /api/v1/rates/refresh`
 
@@ -78,7 +78,7 @@ Backend не викликає провайдерів. Він отримує seri
 }
 ```
 
-Приймає 1–20 інструментів і проміжок до 366 днів. Повертає `fetched`, `inserted` та `duplicates`. Історія надсилається до History пакетами до 100 елементів.
+Приймає 1–20 інструментів і проміжок до 366 днів. З RabbitMQ повертає `fetched`, `queued` та `persistence_status`; без RabbitMQ — синхронні `inserted` і `duplicates`.
 
 ### `GET /api/v1/requests/history`
 
@@ -105,7 +105,7 @@ Backend не викликає провайдерів. Він отримує seri
   "source": "coingecko",
   "source_timestamp": "2026-07-17T09:25:00Z",
   "requested_at": "2026-07-17T09:25:00Z",
-  "persistence_status": "saved"
+  "persistence_status": "queued"
 }
 ```
 
@@ -125,6 +125,12 @@ Decimal-поля передаються рядками для уникнення
 ```
 
 Валідаційні та явні FastAPI-помилки можуть використовувати поле `detail`. History-unavailable повертає `503`.
+
+`persistence_status` має значення `queued` після підтвердженої публікації в RabbitMQ, `saved` після HTTP fallback, `failed`, якщо обидва шляхи не спрацювали, або `skipped` для читань без persistence.
+
+## RabbitMQ
+
+Backend публікує persistent JSON-повідомлення в durable direct exchange `rates.events` з routing key `observation.persist`. History читає чергу `rates.observations`, надсилає ACK після запису в PostgreSQL, а повторно невдале повідомлення переходить у `rates.observations.dlq`.
 
 ## Внутрішній History API
 

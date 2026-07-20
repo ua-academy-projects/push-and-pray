@@ -39,6 +39,12 @@ type Series struct {
 	Points       []SeriesPoint `json:"points"`
 }
 
+func Valid(item Observation) bool {
+	return item.InstrumentID != "" && (item.Kind == "crypto" || item.Kind == "fiat") &&
+		item.Base != "" && item.Quote != "" && item.Price != "" && item.Source != "" &&
+		!item.SourceTimestamp.IsZero() && !item.RequestedAt.IsZero() && item.RequestID != ""
+}
+
 func New(ctx context.Context, databaseURL string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {

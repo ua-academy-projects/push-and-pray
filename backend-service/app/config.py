@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     ui_origin: str = "http://127.0.0.1:3000"
     history_service_url: str = "http://127.0.0.1:8081"
     history_service_token: str = "change-me"
+    rabbitmq_enabled: bool = False
+    rabbitmq_url: str = "amqp://guest:guest@127.0.0.1:5672/"
+    rabbitmq_exchange: str = "rates.events"
+    rabbitmq_queue: str = "rates.observations"
+    rabbitmq_routing_key: str = "observation.persist"
     coingecko_base_url: str = "https://api.coingecko.com/api/v3"
     coingecko_api_key: str = ""
     frankfurter_base_url: str = "https://api.frankfurter.dev/v2"
