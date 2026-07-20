@@ -1,277 +1,182 @@
 # Weather App
 
-Weather App is a small microservice-based application for retrieving weather information and storing the request history.
+Weather App is a microservice-based application that automatically
+collects weather data for **Nadvirna**, stores it in PostgreSQL, and
+displays both the latest weather and a temperature history chart.
 
-The project is divided into separate services and runs with Docker Compose.
+## Features
+
+-   Automatic weather collection every **30 minutes**
+-   Fixed location: **Nadvirna, Ukraine**
+-   Weather data from **Open-Meteo API**
+-   History stored in **PostgreSQL**
+-   Temperature history chart built from database records
+-   Browser refreshes data every **60 seconds**
+-   Opening or refreshing the page **does not call the external API**
+-   Protection against duplicate measurements
+-   One-click history cleanup with immediate collection of a new
+    measurement
 
 ## Architecture
 
-The application consists of four services:
+``` text
+                 +----------------+
+                 |  Open-Meteo API|
+                 +--------+-------+
+                          ^
+                          |
+                  (every 30 minutes)
+                          |
++---------+      +--------+--------+      +----------------+      +--------------+
+| Browser | ---> | Backend Service | ---> | History Service| ---> | PostgreSQL   |
++---------+      +--------+--------+      +----------------+      +--------------+
+       ^                   |
+       |                   |
+       +--------- UI Service+
+```
 
-- **UI service** — web interface available on port `5000`.
-- **Backend service** — processes weather requests on port `5001`.
-- **History service** — stores and returns request history on port `5002`.
-- **PostgreSQL** — stores history-service data.
+When the page is opened:
 
-Service communication:
-
-```text
-User
-  |
-  v
-UI service
-  |
-  v
-Backend service
-  |
-  v
-History service
-  |
-  v
+``` text
+Browser
+   |
+   v
+UI Service
+   |
+   v
+Backend
+   |
+   v
+History Service
+   |
+   v
 PostgreSQL
 ```
 
-Inside the Docker network, services communicate using their Compose service names:
-
-```text
-UI -> http://backend:5001
-Backend -> http://history:5002
-History -> postgres:5432
-```
+The frontend **never calls Open-Meteo directly**.
 
 ## Project structure
 
-```text
+``` text
 weather-app/
 ├── docker-compose.yml
 ├── README.md
-├── .gitignore
-│
 ├── ui-service/
-│   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── app.py
-│   ├── requirements.txt
-│   ├── templates/
-│   │   └── index.html
-│   └── static/
-│       ├── script.js
-│       └── style.css
-│
 ├── backend-service/
-│   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── app.py
-│   └── requirements.txt
-│
 └── history-service/
-    ├── Dockerfile
-    ├── .dockerignore
-    ├── .env.example
-    ├── app.py
-    └── requirements.txt
 ```
 
 ## Requirements
 
-To run the project, install:
+-   Docker
+-   Docker Compose
 
-- Docker
-- Docker Compose
-
-Check that they are available:
-
-```bash
+``` bash
 docker --version
 docker compose version
 ```
 
-## Run the project
+## Run
 
-Open the project directory:
-
-```bash
-cd weather-app
-```
-
-Build the images and start all containers:
-
-```bash
+``` bash
 docker compose up -d --build
 ```
 
-The `--build` option rebuilds the application images.
+Check services:
 
-The `-d` option starts the containers in the background.
-
-## Check container status
-
-```bash
+``` bash
 docker compose ps
 ```
 
-The following services should be running:
+Open:
 
-```text
-postgres
-history
-backend
-ui
-```
-
-## Open the application
-
-When running Docker directly on your computer:
-
-```text
+``` text
 http://localhost:5000
 ```
 
-When Docker is running inside an Ubuntu virtual machine, find the VM IP:
+or (Ubuntu VM)
 
-```bash
+``` bash
 hostname -I
-```
-
-Then open:
-
-```text
-http://VM_IP_ADDRESS:5000
 ```
 
 Example:
 
-```text
+``` text
 http://192.168.69.141:5000
 ```
 
-Do not use container addresses such as `172.18.0.x` in a browser outside the Ubuntu virtual machine. Those addresses are available only inside the Docker network.
+## Automatic weather collection
 
-## View logs
+Configured in:
 
-View logs from all services:
+``` text
+backend-service/app.py
+```
 
-```bash
+``` python
+COLLECTION_INTERVAL_MINUTES = 30
+MINIMUM_INTERVAL_MINUTES = 25
+```
+
+## Automatic page refresh
+
+Configured in:
+
+``` text
+ui-service/static/script.js
+```
+
+``` javascript
+const AUTO_REFRESH_INTERVAL_MS = 60000;
+```
+
+This refresh only reads data from PostgreSQL.
+
+## Services
+
+-   UI -- port 5000
+-   Backend -- port 5001
+-   History -- port 5002
+-   PostgreSQL -- port 5432
+
+## Logs
+
+``` bash
 docker compose logs -f
-```
-
-View logs from one service:
-
-```bash
-docker compose logs -f ui
 docker compose logs -f backend
-docker compose logs -f history
-docker compose logs -f postgres
 ```
 
-Press `Ctrl+C` to exit log viewing.
+## Stop
 
-## Stop the project
-
-Stop and remove the containers and Docker network:
-
-```bash
+``` bash
 docker compose down
 ```
 
-The PostgreSQL data remains stored in the Docker volume.
+Remove database too:
 
-To remove the containers together with the PostgreSQL data:
-
-```bash
+``` bash
 docker compose down -v
-```
-
-## Restart the project
-
-```bash
-docker compose restart
-```
-
-## Rebuild after code changes
-
-After changing application code, dependencies, or Dockerfiles:
-
-```bash
-docker compose up -d --build
-```
-
-## Environment variables
-
-Docker Compose passes the following variables to the services:
-
-### UI service
-
-```text
-APP_HOST=0.0.0.0
-APP_PORT=5000
-BACKEND_URL=http://backend:5001
-```
-
-### Backend service
-
-```text
-APP_HOST=0.0.0.0
-APP_PORT=5001
-HISTORY_URL=http://history:5002
-```
-
-### History service
-
-```text
-APP_HOST=0.0.0.0
-APP_PORT=5002
-DATABASE_URL=postgresql://weather_user:weather_password@postgres:5432/weather_history
-```
-
-### PostgreSQL
-
-```text
-POSTGRES_DB=weather_history
-POSTGRES_USER=weather_user
-POSTGRES_PASSWORD=weather_password
-```
-
-The credentials in `docker-compose.yml` are intended for local development and learning purposes only.
-
-## PostgreSQL data
-
-PostgreSQL data is stored in the named Docker volume:
-
-```text
-postgres_data
-```
-
-This allows the database data to remain available after running:
-
-```bash
-docker compose down
 ```
 
 ## Useful commands
 
-```bash
-# Validate docker-compose.yml
-docker compose config
-
-# Build application images
-docker compose build
-
-# Start all services
-docker compose up -d
-
-# Build and start all services
+``` bash
 docker compose up -d --build
-
-# Display running services
 docker compose ps
-
-# Display logs
 docker compose logs -f
-
-# Stop the project
+docker compose restart
 docker compose down
-
-# Stop the project and remove database data
 docker compose down -v
 ```
+
+## Note
+
+Automatic weather collection works only while the Docker containers are
+running.
+
+If the project runs inside VMware Fusion, the Mac, virtual machine and
+Docker containers must remain running.
+
+For 24/7 collection, deploy the project to a server such as AWS EC2,
+Azure VM, Google Compute Engine or another VPS.

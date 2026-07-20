@@ -1,12 +1,7 @@
 import os
 
 import requests
-from flask import (
-    Flask,
-    jsonify,
-    render_template,
-    request,
-)
+from flask import Flask, jsonify, render_template
 
 app = Flask(__name__)
 
@@ -56,19 +51,9 @@ def health():
 
 @app.get("/api/weather")
 def weather():
-    city = request.args.get("city", "").strip()
-
-    if not city:
-        return jsonify({
-            "error": "City is required."
-        }), 400
-
     try:
         response = requests.get(
             f"{BACKEND_URL}/api/weather",
-            params={
-                "city": city,
-            },
             timeout=REQUEST_TIMEOUT,
         )
 

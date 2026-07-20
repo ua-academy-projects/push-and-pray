@@ -1,28 +1,28 @@
-const weatherForm =
-    document.getElementById("weather-form");
-
-const cityInput =
-    document.getElementById("city-input");
-
-const refreshButton =
-    document.getElementById("refresh-button");
-
-const historyButton =
-    document.getElementById("history-button");
+const AUTO_REFRESH_INTERVAL_MS = 60_000;
 
 const clearHistoryButton =
     document.getElementById(
         "clear-history-button"
     );
 
-const message =
-    document.getElementById("message");
-
 const weatherResult =
     document.getElementById("weather-result");
 
 const historyResult =
     document.getElementById("history-result");
+
+const chartEmpty =
+    document.getElementById("chart-empty");
+
+const chartContainer =
+    document.getElementById("chart-container");
+
+const temperatureChart =
+    document.getElementById(
+        "temperature-chart"
+    );
+
+let isLoading = false;
 
 
 function escapeHtml(value) {
@@ -50,7 +50,7 @@ function valueOrDash(value) {
 
 function formatDate(value) {
     if (!value) {
-        return "Unknown time";
+        return "Невідомий час";
     }
 
     const date = new Date(value);
@@ -59,23 +59,37 @@ function formatDate(value) {
         return escapeHtml(value);
     }
 
-    return date.toLocaleString();
+    return date.toLocaleString(
+        "uk-UA",
+        {
+            dateStyle: "short",
+            timeStyle: "short",
+        }
+    );
 }
 
 
-function renderWeather(data, fallbackCity) {
+function formatChartTime(value) {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    return date.toLocaleTimeString(
+        "uk-UA",
+        {
+            hour: "2-digit",
+            minute: "2-digit",
+        }
+    );
+}
+
+
+function renderWeather(data) {
     const location = data.location || {};
     const current = data.current || {};
     const units = data.current_units || {};
-
-    const cityName =
-        location.name ||
-        fallbackCity ||
-        "Unknown city";
-
-    const country = location.country
-        ? `, ${escapeHtml(location.country)}`
-        : "";
 
     weatherResult.classList.remove(
         "empty-state"
@@ -83,20 +97,34 @@ function renderWeather(data, fallbackCity) {
 
     weatherResult.innerHTML = `
         <div class="weather-location">
-            ${escapeHtml(cityName)}${country}
+            ${valueOrDash(
+                location.name || "Надвірна"
+            )}
+
+            ${
+                location.country
+                    ? `, ${escapeHtml(
+                        location.country
+                    )}`
+                    : ""
+            }
         </div>
 
         <div class="temperature">
-            ${valueOrDash(current.temperature_2m)}
+            ${valueOrDash(
+                current.temperature_2m
+            )}
 
             <span>
-                ${valueOrDash(units.temperature_2m)}
+                ${valueOrDash(
+                    units.temperature_2m
+                )}
             </span>
         </div>
 
         <div class="weather-details">
             <div class="detail-item">
-                <span>Humidity</span>
+                <span>Вологість</span>
 
                 <strong>
                     ${valueOrDash(
@@ -110,7 +138,7 @@ function renderWeather(data, fallbackCity) {
             </div>
 
             <div class="detail-item">
-                <span>Wind speed</span>
+                <span>Швидкість вітру</span>
 
                 <strong>
                     ${valueOrDash(
@@ -124,10 +152,14 @@ function renderWeather(data, fallbackCity) {
             </div>
 
             <div class="detail-item">
-                <span>Source</span>
+                <span>Час вимірювання</span>
 
                 <strong>
-                    ${valueOrDash(data.source)}
+                    ${formatDate(
+                        data.requested_at ||
+                        data.collected_at ||
+                        current.time
+                    )}
                 </strong>
             </div>
         </div>
@@ -135,18 +167,64 @@ function renderWeather(data, fallbackCity) {
 }
 
 
-function renderHistory(data) {
+function getHistoryPoints(data) {
     const items = Array.isArray(data.items)
         ? data.items
         : [];
 
-    if (items.length === 0) {
+    return items
+        .map((item) => {
+            const responseData =
+                item.response_data || {};
+
+            const current =
+                responseData.current || {};
+
+            const temperature = Number(
+                current.temperature_2m
+            );
+
+            const time =
+                item.requested_at ||
+                responseData.collected_at ||
+                current.time;
+
+            if (
+                !Number.isFinite(temperature) ||
+                !time
+            ) {
+                return null;
+            }
+
+            return {
+                id: item.id,
+                temperature,
+                time,
+                humidity:
+                    current.relative_humidity_2m,
+                wind:
+                    current.wind_speed_10m,
+                units:
+                    responseData.current_units || {},
+            };
+        })
+        .filter(Boolean)
+        .sort(
+            (first, second) =>
+                new Date(first.time) -
+                new Date(second.time)
+        );
+}
+
+
+function renderHistory(points) {
+    if (points.length === 0) {
         historyResult.classList.add(
             "empty-state"
         );
 
         historyResult.textContent =
-            "No saved requests yet.";
+            "У базі даних ще немає вимірювань.";
 
         return;
     }
@@ -155,228 +233,488 @@ function renderHistory(data) {
         "empty-state"
     );
 
-    historyResult.innerHTML = items
-        .map((item) => {
-            const responseData =
-                item.response_data || {};
+    historyResult.innerHTML = [...points]
+        .reverse()
+        .map((point) => `
+            <article class="history-item">
+                <div class="history-header">
+                    <div>
+                        <h3>Надвірна</h3>
 
-            const location =
-                responseData.location || {};
+                        <p>
+                            ${formatDate(point.time)}
+                        </p>
+                    </div>
 
-            const current =
-                responseData.current || {};
+                    <span class="status">
+                        Збережено
+                    </span>
+                </div>
 
-            const units =
-                responseData.current_units || {};
+                <div class="history-details">
+                    <div>
+                        <span>Температура</span>
 
-            const cityName =
-                location.name ||
-                item.query ||
-                "Unknown city";
-
-            const country = location.country
-                ? `, ${escapeHtml(
-                    location.country
-                )}`
-                : "";
-
-            return `
-                <article class="history-item">
-                    <div class="history-header">
-                        <div>
-                            <h3>
-                                ${escapeHtml(cityName)}
-                                ${country}
-                            </h3>
-
-                            <p>
-                                ${formatDate(
-                                    item.requested_at
-                                )}
-                            </p>
-                        </div>
-
-                        <span class="status">
+                        <strong>
                             ${valueOrDash(
-                                item.status
+                                point.temperature
                             )}
-                        </span>
+
+                            ${valueOrDash(
+                                point.units
+                                    .temperature_2m
+                            )}
+                        </strong>
                     </div>
 
-                    <div class="history-details">
-                        <div>
-                            <span>
-                                Temperature
-                            </span>
+                    <div>
+                        <span>Вологість</span>
 
-                            <strong>
-                                ${valueOrDash(
-                                    current.temperature_2m
-                                )}
+                        <strong>
+                            ${valueOrDash(
+                                point.humidity
+                            )}
 
-                                ${valueOrDash(
-                                    units.temperature_2m
-                                )}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>
-                                Humidity
-                            </span>
-
-                            <strong>
-                                ${valueOrDash(
-                                    current
-                                        .relative_humidity_2m
-                                )}
-
-                                ${valueOrDash(
-                                    units
-                                        .relative_humidity_2m
-                                )}
-                            </strong>
-                        </div>
-
-                        <div>
-                            <span>
-                                Wind
-                            </span>
-
-                            <strong>
-                                ${valueOrDash(
-                                    current.wind_speed_10m
-                                )}
-
-                                ${valueOrDash(
-                                    units.wind_speed_10m
-                                )}
-                            </strong>
-                        </div>
+                            ${valueOrDash(
+                                point.units
+                                    .relative_humidity_2m
+                            )}
+                        </strong>
                     </div>
-                </article>
-            `;
-        })
+
+                    <div>
+                        <span>Вітер</span>
+
+                        <strong>
+                            ${valueOrDash(
+                                point.wind
+                            )}
+
+                            ${valueOrDash(
+                                point.units
+                                    .wind_speed_10m
+                            )}
+                        </strong>
+                    </div>
+                </div>
+            </article>
+        `)
         .join("");
 }
 
 
-async function loadWeather() {
-    const city = cityInput.value.trim();
+function createSvgElement(name, attributes = {}) {
+    const element = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        name
+    );
 
-    if (!city) {
-        message.textContent =
-            "Please enter a city.";
+    Object.entries(attributes).forEach(
+        ([key, value]) => {
+            element.setAttribute(key, value);
+        }
+    );
 
-        message.className =
-            "message message-error";
+    return element;
+}
 
-        cityInput.focus();
+
+function renderChart(points) {
+    temperatureChart.replaceChildren();
+
+    if (points.length === 0) {
+        chartContainer.hidden = true;
+        chartEmpty.hidden = false;
+
+        chartEmpty.textContent =
+            "Недостатньо даних для графіка.";
 
         return;
     }
 
-    message.textContent =
-        "Loading weather...";
+    chartEmpty.hidden = true;
+    chartContainer.hidden = false;
 
-    message.className = "message";
+    const width = 800;
+    const height = 360;
 
-    weatherResult.classList.add(
-        "empty-state"
+    const padding = {
+        top: 30,
+        right: 30,
+        bottom: 65,
+        left: 115,
+    };
+
+    const chartWidth =
+        width - padding.left - padding.right;
+
+    const chartHeight =
+        height - padding.top - padding.bottom;
+
+    const temperatures = points.map(
+        (point) => point.temperature
     );
 
-    weatherResult.textContent =
-        "Loading...";
+    let minimum = Math.min(...temperatures);
+    let maximum = Math.max(...temperatures);
+
+    if (minimum === maximum) {
+        minimum -= 1;
+        maximum += 1;
+    } else {
+        minimum = Math.floor(minimum - 1);
+        maximum = Math.ceil(maximum + 1);
+    }
+
+    const xPosition = (index) => {
+        if (points.length === 1) {
+            return padding.left +
+                chartWidth / 2;
+        }
+
+        return padding.left +
+            (
+                index /
+                (points.length - 1)
+            ) * chartWidth;
+    };
+
+    const yPosition = (temperature) => {
+        const percentage =
+            (temperature - minimum) /
+            (maximum - minimum);
+
+        return padding.top +
+            chartHeight -
+            percentage * chartHeight;
+    };
+
+    const background = createSvgElement(
+        "rect",
+        {
+            x: padding.left,
+            y: padding.top,
+            width: chartWidth,
+            height: chartHeight,
+            class: "chart-background",
+        }
+    );
+
+    temperatureChart.appendChild(background);
+
+    const horizontalLines = 5;
+
+    for (
+        let index = 0;
+        index <= horizontalLines;
+        index += 1
+    ) {
+        const percentage =
+            index / horizontalLines;
+
+        const y =
+            padding.top +
+            percentage * chartHeight;
+
+        const temperature =
+            maximum -
+            percentage * (maximum - minimum);
+
+        const line = createSvgElement(
+            "line",
+            {
+                x1: padding.left,
+                y1: y,
+                x2: width - padding.right,
+                y2: y,
+                class: "chart-grid-line",
+            }
+        );
+
+        const label = createSvgElement(
+            "text",
+            {
+                x: padding.left - 12,
+                y: y + 5,
+                class: (
+                    "chart-label " +
+                    "chart-label-y"
+                ),
+            }
+        );
+
+        label.textContent =
+            `${temperature.toFixed(1)}°C`;
+
+        temperatureChart.appendChild(line);
+        temperatureChart.appendChild(label);
+    }
+
+    const labelIndexes = new Set([
+        0,
+        Math.floor(
+            (points.length - 1) / 2
+        ),
+        points.length - 1,
+    ]);
+
+    labelIndexes.forEach((index) => {
+        const x = xPosition(index);
+
+        const line = createSvgElement(
+            "line",
+            {
+                x1: x,
+                y1: padding.top,
+                x2: x,
+                y2: height - padding.bottom,
+                class: "chart-grid-line",
+            }
+        );
+
+        const label = createSvgElement(
+            "text",
+            {
+                x,
+                y: (
+                    height -
+                    padding.bottom +
+                    30
+                ),
+                class: (
+                    "chart-label " +
+                    "chart-label-x"
+                ),
+            }
+        );
+
+        label.textContent =
+            formatChartTime(
+                points[index].time
+            );
+
+        temperatureChart.appendChild(line);
+        temperatureChart.appendChild(label);
+    });
+
+    const polyline = createSvgElement(
+        "polyline",
+        {
+            points: points
+                .map(
+                    (point, index) =>
+                        `${xPosition(index)},${
+                            yPosition(
+                                point.temperature
+                            )
+                        }`
+                )
+                .join(" "),
+            class: "temperature-line",
+        }
+    );
+
+    temperatureChart.appendChild(polyline);
+
+    points.forEach((point, index) => {
+        const circle = createSvgElement(
+            "circle",
+            {
+                cx: xPosition(index),
+                cy: yPosition(
+                    point.temperature
+                ),
+                r: 5,
+                class: "temperature-point",
+            }
+        );
+
+        const title = createSvgElement(
+            "title"
+        );
+
+        title.textContent =
+            `${formatDate(point.time)}: ` +
+            `${point.temperature}°C`;
+
+        circle.appendChild(title);
+        temperatureChart.appendChild(circle);
+    });
+
+    const xTitle = createSvgElement(
+        "text",
+        {
+            x: width / 2,
+            y: height - 10,
+            class: "chart-axis-title",
+        }
+    );
+
+    xTitle.textContent = "Час";
+
+    const yTitleX = 28;
+
+    const yTitle = createSvgElement(
+    "text",
+    {
+        x: yTitleX,
+        y: height / 2,
+        class: "chart-axis-title",
+        transform:
+            `rotate(-90 ${yTitleX} ${height / 2})`,
+    }
+);
+
+    yTitle.textContent = "Температура";
+
+    temperatureChart.appendChild(xTitle);
+    temperatureChart.appendChild(yTitle);
+}
+
+
+async function loadWeather(
+    showLoading = false
+) {
+    if (showLoading) {
+        weatherResult.classList.add(
+            "empty-state"
+        );
+
+        weatherResult.textContent =
+            "Завантаження останніх даних...";
+    }
 
     try {
         const response = await fetch(
-            `/api/weather?city=${
-                encodeURIComponent(city)
-            }`
+            "/api/weather",
+            {
+                cache: "no-store",
+            }
         );
 
         const data = await response.json();
 
         if (!response.ok) {
+            weatherResult.classList.add(
+                "empty-state"
+            );
+
             weatherResult.textContent =
-                "No weather data loaded.";
-
-            message.textContent =
                 data.error ||
-                "Unable to load weather.";
-
-            message.className =
-                "message message-error";
+                "Не вдалося завантажити погоду.";
 
             return;
         }
 
-        renderWeather(data, city);
-
-        message.textContent =
-            "Weather loaded successfully.";
-
-        message.className =
-            "message message-success";
+        renderWeather(data);
 
     } catch (error) {
+        weatherResult.classList.add(
+            "empty-state"
+        );
+
         weatherResult.textContent =
-            "No weather data loaded.";
-
-        message.textContent =
-            "UI could not complete the request.";
-
-        message.className =
-            "message message-error";
+            "Не вдалося зв’язатися із сервером.";
     }
 }
 
 
-async function loadHistory() {
-    historyResult.classList.add(
-        "empty-state"
-    );
+async function loadHistory(
+    showLoading = false
+) {
+    if (showLoading) {
+        historyResult.classList.add(
+            "empty-state"
+        );
 
-    historyResult.textContent =
-        "Loading history...";
+        historyResult.textContent =
+            "Завантаження історії...";
 
-    historyButton.disabled = true;
-    historyButton.textContent =
-        "Loading...";
+        chartContainer.hidden = true;
+        chartEmpty.hidden = false;
+
+        chartEmpty.textContent =
+            "Завантаження графіка...";
+    }
 
     try {
         const response = await fetch(
-            "/api/history"
+            "/api/history",
+            {
+                cache: "no-store",
+            }
         );
 
         const data = await response.json();
 
         if (!response.ok) {
-            historyResult.textContent =
+            const errorMessage =
                 data.error ||
-                "Unable to load history.";
+                "Не вдалося завантажити історію.";
+
+            historyResult.classList.add(
+                "empty-state"
+            );
+
+            historyResult.textContent =
+                errorMessage;
+
+            chartContainer.hidden = true;
+            chartEmpty.hidden = false;
+            chartEmpty.textContent =
+                errorMessage;
 
             return;
         }
 
-        renderHistory(data);
+        const points =
+            getHistoryPoints(data);
+
+        renderHistory(points);
+        renderChart(points);
 
     } catch (error) {
+        historyResult.classList.add(
+            "empty-state"
+        );
+
         historyResult.textContent =
-            "UI could not complete the request.";
+            "Не вдалося зв’язатися із сервером.";
+
+        chartContainer.hidden = true;
+        chartEmpty.hidden = false;
+
+        chartEmpty.textContent =
+            "Не вдалося завантажити графік.";
+    }
+}
+
+
+async function loadPageData(
+    showLoading = false
+) {
+    if (isLoading) {
+        return;
+    }
+
+    isLoading = true;
+
+    try {
+        await Promise.all([
+            loadWeather(showLoading),
+            loadHistory(showLoading),
+        ]);
 
     } finally {
-        historyButton.disabled = false;
-
-        historyButton.textContent =
-            "Load history";
+        isLoading = false;
     }
 }
 
 
 async function clearHistory() {
     const confirmed = window.confirm(
-        "Are you sure you want to delete all history?"
+        "Очистити історію та одразу " +
+        "отримати нові погодні дані?"
     );
 
     if (!confirmed) {
@@ -384,80 +722,69 @@ async function clearHistory() {
     }
 
     clearHistoryButton.disabled = true;
-
     clearHistoryButton.textContent =
-        "Clearing...";
+        "Очищення...";
+
+    weatherResult.classList.add(
+        "empty-state"
+    );
+
+    weatherResult.textContent =
+        "Отримання нових погодних даних...";
 
     try {
         const response = await fetch(
             "/api/history",
             {
                 method: "DELETE",
+                cache: "no-store",
             }
         );
 
         const data = await response.json();
 
         if (!response.ok) {
-            historyResult.classList.add(
-                "empty-state"
-            );
-
-            historyResult.textContent =
+            weatherResult.textContent =
                 data.error ||
-                "Unable to clear history.";
+                "Не вдалося очистити історію.";
 
             return;
         }
 
-        historyResult.classList.add(
-            "empty-state"
-        );
-
-        historyResult.textContent =
-            `History cleared. Deleted records: ${
-                data.deleted_count ?? 0
-            }.`;
+        await loadPageData(true);
 
     } catch (error) {
-        historyResult.classList.add(
-            "empty-state"
-        );
-
-        historyResult.textContent =
-            "UI could not complete the request.";
+        weatherResult.textContent =
+            "Не вдалося зв’язатися із сервером.";
 
     } finally {
         clearHistoryButton.disabled = false;
 
         clearHistoryButton.textContent =
-            "Clear history";
+            "Очистити історію";
     }
 }
 
 
-weatherForm.addEventListener(
-    "submit",
-    function (event) {
-        event.preventDefault();
-        loadWeather();
-    }
-);
-
-
-refreshButton.addEventListener(
-    "click",
-    loadWeather
-);
-
-
-historyButton.addEventListener(
-    "click",
-    loadHistory
-);
+function startAutomaticRefresh() {
+    window.setInterval(
+        () => {
+            loadPageData(false);
+        },
+        AUTO_REFRESH_INTERVAL_MS
+    );
+}
 
 
 clearHistoryButton.addEventListener(
     "click",
     clearHistory
+);
+
+document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+        loadPageData(true);
+        startAutomaticRefresh();
+    }
 );

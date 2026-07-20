@@ -1,6 +1,8 @@
 :root {
     --primary: #0f766e;
     --background: #ffffff;
+    --surface: #f0fdfa;
+    --grid: #99d5cf;
 }
 
 * {
@@ -18,7 +20,7 @@ body {
 
 .container {
     width: 100%;
-    max-width: 780px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 32px;
     border: 2px solid var(--primary);
@@ -46,41 +48,9 @@ h2 {
     font-size: 25px;
 }
 
-.weather-form {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-label {
-    font-weight: bold;
-}
-
-input {
-    width: 100%;
-    padding: 13px 14px;
-    border: 1px solid var(--primary);
-    border-radius: 8px;
-    background: var(--background);
-    color: var(--primary);
-    font-size: 16px;
-    outline: none;
-}
-
-input::placeholder {
-    color: var(--primary);
-    opacity: 0.6;
-}
-
-input:focus {
-    border-width: 2px;
-}
-
-.form-buttons,
-.history-buttons {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
+.section-description {
+    margin: 8px 0 0;
+    line-height: 1.5;
 }
 
 button {
@@ -188,6 +158,66 @@ button:disabled {
     font-size: 14px;
 }
 
+.chart-container {
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--primary);
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+.temperature-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.chart-background {
+    fill: var(--background);
+    stroke: var(--primary);
+    stroke-width: 1;
+}
+
+.chart-grid-line {
+    stroke: var(--grid);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+}
+
+.temperature-line {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.temperature-point {
+    fill: var(--background);
+    stroke: var(--primary);
+    stroke-width: 3;
+}
+
+.chart-label {
+    fill: var(--primary);
+    font-size: 14px;
+}
+
+.chart-label-y {
+    text-anchor: end;
+}
+
+.chart-label-x {
+    text-anchor: middle;
+}
+
+.chart-axis-title {
+    fill: var(--primary);
+    font-size: 15px;
+    font-weight: bold;
+    text-anchor: middle;
+}
+
 .history-result {
     display: flex;
     flex-direction: column;
@@ -262,20 +292,14 @@ button:disabled {
         font-size: 32px;
     }
 
-    .form-buttons,
-    .history-buttons {
-        flex-direction: column;
-    }
-
-    .form-buttons button,
-    .history-buttons button {
-        width: 100%;
-    }
-
     .section-header {
         flex-direction: column;
         align-items: stretch;
         text-align: center;
+    }
+
+    .section-header button {
+        width: 100%;
     }
 
     .weather-details,
@@ -289,5 +313,9 @@ button:disabled {
 
     .status {
         align-self: flex-start;
+    }
+
+    .chart-label {
+        font-size: 16px;
     }
 }
