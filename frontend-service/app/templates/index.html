@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>AirAware</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='styles.css') }}"
+    >
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="container">
+            <p class="eyebrow">Air quality monitoring</p>
+            <h1>AirAware</h1>
+
+            <p class="subtitle">
+                Check current air-quality conditions and review
+                your previous requests.
+            </p>
+        </div>
+    </header>
+
+    <main class="container main-content">
+        <section class="panel search-panel">
+            <h2>Search by city</h2>
+
+            <form id="search-form" class="search-form">
+                <label for="city-input">City name</label>
+
+                <div class="search-controls">
+                    <input
+                        id="city-input"
+                        name="city"
+                        type="text"
+                        minlength="2"
+                        maxlength="100"
+                        placeholder="For example: Kyiv"
+                        autocomplete="off"
+                        required
+                    >
+
+                    <button id="search-button" type="submit">
+                        Check air quality
+                    </button>
+
+                    <button
+                        id="refresh-button"
+                        class="secondary-button"
+                        type="button"
+                        disabled
+                    >
+                        Refresh
+                    </button>
+                </div>
+            </form>
+
+            <div
+                id="status-message"
+                class="status-message"
+                role="status"
+                aria-live="polite"
+            ></div>
+        </section>
+
+        <section
+            id="current-section"
+            class="panel hidden"
+            aria-labelledby="current-heading"
+        >
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">Current conditions</p>
+                    <h2 id="current-heading">Air quality</h2>
+                </div>
+
+                <span
+                    id="history-save-state"
+                    class="status-badge"
+                ></span>
+            </div>
+
+            <div id="location-details" class="location-details"></div>
+
+            <div id="aqi-summary" class="aqi-summary"></div>
+
+            <div id="metrics-grid" class="metrics-grid"></div>
+
+            <p class="source-note">
+                Source:
+                <a
+                    href="https://open-meteo.com/"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    Open-Meteo
+                </a>
+            </p>
+        </section>
+
+        <section
+            class="panel"
+            aria-labelledby="history-heading"
+        >
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">Saved requests</p>
+                    <h2 id="history-heading">History</h2>
+                </div>
+
+                <button
+                    id="reload-history-button"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Reload history
+                </button>
+            </div>
+
+            <div id="history-message" class="status-message"></div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Requested at</th>
+                            <th>City</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="history-table-body"></tbody>
+                </table>
+            </div>
+
+            <div class="pagination">
+                <button
+                    id="previous-page-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Previous
+                </button>
+
+                <span id="page-information">Page 1</span>
+
+                <button
+                    id="next-page-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Next
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <dialog id="history-dialog">
+        <div class="dialog-header">
+            <h2>History record</h2>
+
+            <button
+                id="close-dialog-button"
+                class="icon-button"
+                type="button"
+                aria-label="Close"
+            >
+                ×
+            </button>
+        </div>
+
+        <div id="history-dialog-content"></div>
+    </dialog>
+
+    <script
+        src="{{ url_for('static', filename='app.js') }}"
+        defer
+    ></script>
+</body>
+</html>
