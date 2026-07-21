@@ -6,12 +6,14 @@ from app.config import Settings
 from app.exceptions import (
     ExternalServiceResponseError,
     ExternalServiceTimeoutError,
-    LocationNotFoundError,
 )
-from app.schemas import AirQualityData, Location
+from app.schemas import (
+    AirQualityMeasurementCreate,
+    City,
+)
 
 
-AIR_QUALITY_VARIABLES = (
+CURRENT_VARIABLES = (
     "european_aqi",
     "us_aqi",
     "pm2_5",
@@ -24,99 +26,66 @@ AIR_QUALITY_VARIABLES = (
 
 
 class OpenMeteoClient:
-    """HTTP client for Open-Meteo APIs."""
+    """Client for the Open-Meteo Air Quality API."""
 
     def __init__(self, settings: Settings) -> None:
-        self._geocoding_url = settings.open_meteo_geocoding_url
-        self._air_quality_url = settings.open_meteo_air_quality_url
+        self._url = settings.open_meteo_air_quality_url
         self._timeout = settings.http_timeout_seconds
 
-    async def geocode_city(self, city: str) -> Location:
-        """Resolve a city name to coordinates."""
-
-        params = {
-            "name": city,
-            "count": 1,
-            "language": "en",
-            "format": "json",
-        }
-
-        payload = await self._get_json(
-            self._geocoding_url,
-            params=params,
-        )
-
-        results = payload.get("results")
-
-        if not isinstance(results, list) or not results:
-            raise LocationNotFoundError(
-                f"Location '{city}' was not found"
-            )
-
-        result = results[0]
-
-        try:
-            return Location(
-                name=result["name"],
-                country=result.get("country"),
-                admin1=result.get("admin1"),
-                latitude=result["latitude"],
-                longitude=result["longitude"],
-                timezone=result.get("timezone"),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ExternalServiceResponseError(
-                "Open-Meteo returned invalid geocoding data"
-            ) from exc
-
-    async def get_current_air_quality(
+    async def fetch_current_measurement(
         self,
-        location: Location,
-    ) -> AirQualityData:
-        """Retrieve current air-quality conditions."""
-
+        city: City,
+    ) -> AirQualityMeasurementCreate:
         params = {
-            "latitude": location.latitude,
-            "longitude": location.longitude,
-            "current": ",".join(AIR_QUALITY_VARIABLES),
-            "timezone": "auto",
+            "latitude": city.latitude,
+            "longitude": city.longitude,
+            "current": ",".join(CURRENT_VARIABLES),
+            "timezone": "UTC",
         }
 
-        payload = await self._get_json(
-            self._air_quality_url,
-            params=params,
-        )
+        payload = await self._get_json(params)
 
         current = payload.get("current")
 
         if not isinstance(current, dict):
             raise ExternalServiceResponseError(
-                "Open-Meteo response does not contain current air-quality data"
+                "Open-Meteo response does not contain current data"
             )
 
         observed_at = current.get("time")
 
-        if not observed_at:
+        if not isinstance(observed_at, str) or not observed_at:
             raise ExternalServiceResponseError(
-                "Open-Meteo response does not contain an observation time"
+                "Open-Meteo response does not contain observation time"
             )
 
-        return AirQualityData(
-            observed_at=observed_at,
-            european_aqi=current.get("european_aqi"),
-            us_aqi=current.get("us_aqi"),
-            pm2_5=current.get("pm2_5"),
-            pm10=current.get("pm10"),
-            nitrogen_dioxide=current.get("nitrogen_dioxide"),
-            ozone=current.get("ozone"),
-            carbon_monoxide=current.get("carbon_monoxide"),
-            uv_index=current.get("uv_index"),
-        )
+        try:
+            return AirQualityMeasurementCreate(
+                city_code=city.code,
+                observed_at=observed_at,
+                european_aqi=current.get("european_aqi"),
+                us_aqi=current.get("us_aqi"),
+                pm2_5=current.get("pm2_5"),
+                pm10=current.get("pm10"),
+                nitrogen_dioxide=current.get(
+                    "nitrogen_dioxide"
+                ),
+                ozone=current.get("ozone"),
+                carbon_monoxide=current.get(
+                    "carbon_monoxide"
+                ),
+                uv_index=current.get("uv_index"),
+                source="open-meteo",
+                source_status_code=200,
+            )
+
+        except ValueError as exc:
+            raise ExternalServiceResponseError(
+                "Open-Meteo returned invalid measurement values"
+            ) from exc
 
     async def _get_json(
         self,
-        url: str,
-        *,
         params: dict[str, Any],
     ) -> dict[str, Any]:
         try:
@@ -124,7 +93,7 @@ class OpenMeteoClient:
                 timeout=self._timeout,
             ) as client:
                 response = await client.get(
-                    url,
+                    self._url,
                     params=params,
                 )
 
@@ -137,7 +106,8 @@ class OpenMeteoClient:
 
         except httpx.HTTPStatusError as exc:
             raise ExternalServiceResponseError(
-                "Open-Meteo returned an unsuccessful status"
+                f"Open-Meteo returned HTTP "
+                f"{exc.response.status_code}"
             ) from exc
 
         except httpx.RequestError as exc:

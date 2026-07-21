@@ -1,22 +1,24 @@
 from datetime import datetime
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
-class Location(BaseModel):
+class City(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    code: str
     name: str
-    country: str | None = None
-    admin1: str | None = None
-
+    country: str
     latitude: float
     longitude: float
-
     timezone: str | None = None
+    is_active: bool
 
 
-class AirQualityData(BaseModel):
-    observed_at: datetime | str
+class AirQualityMeasurementCreate(BaseModel):
+    city_code: str
+    observed_at: datetime
 
     european_aqi: float | None = None
     us_aqi: float | None = None
@@ -29,50 +31,48 @@ class AirQualityData(BaseModel):
     carbon_monoxide: float | None = None
     uv_index: float | None = None
 
-
-class AirQualityResponse(BaseModel):
-    location: Location
-    air_quality: AirQualityData
-
     source: str = "open-meteo"
-    history_saved: bool
+    source_status_code: int = 200
 
 
-class HistoryCreatePayload(BaseModel):
-    request_type: str
-    query_parameters: dict[str, Any]
-    response_data: dict[str, Any] | list[Any]
-
-    result_count: int = Field(ge=0)
-
-    source: str
-    source_status_code: int = Field(ge=100, le=599)
-
-
-class HistoryRecordCreated(BaseModel):
-    id: int
-    created_at: datetime
-    message: str
-
-
-class HistoryRecordSummary(BaseModel):
+class SavedMeasurement(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: int
-    created_at: datetime
-    request_type: str
-    query_parameters: dict[str, Any]
-    result_count: int
-    source: str
-    source_status_code: int
+    observed_at: datetime
 
 
-class HistoryRecordList(BaseModel):
-    items: list[HistoryRecordSummary]
-    total: int
-    limit: int
-    offset: int
+class MeasurementSaveResult(BaseModel):
+    created: bool
+    measurement: SavedMeasurement
 
 
-class HistoryRecordDetail(HistoryRecordSummary):
-    response_data: dict[str, Any] | list[Any]
+class CityFetchResult(BaseModel):
+    city_code: str
+    city_name: str
+
+    status: str
+    created: bool | None = None
+    measurement_id: int | None = None
+    observed_at: datetime | None = None
+    error: str | None = None
+
+
+class FetchRunResult(BaseModel):
+    started_at: datetime
+    finished_at: datetime
+
+    total_cities: int
+    successful: int
+    failed: int
+    created: int
+    duplicates: int
+
+    results: list[CityFetchResult]
+
+
+class FetchStatus(BaseModel):
+    running: bool
+    last_started_at: datetime | None = None
+    last_finished_at: datetime | None = None
+    last_result: FetchRunResult | None = None

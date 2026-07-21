@@ -5,16 +5,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """API Service configuration."""
-
-    open_meteo_geocoding_url: str
     open_meteo_air_quality_url: str
-    history_service_url: str
+    backend_service_url: str
 
     http_timeout_seconds: float = Field(
-        default=10.0,
+        default=15.0,
         gt=0,
+        le=120,
     )
+
+    fetch_minute_of_hour: int = Field(
+        default=5,
+        ge=0,
+        le=59,
+    )
+
+    fetch_on_startup: bool = True
+    scheduler_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -25,6 +32,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return one cached settings object."""
-
     return Settings()

@@ -1,14 +1,14 @@
 class ExternalServiceError(Exception):
-    """Base exception for external HTTP services."""
+    """Base exception for external service failures."""
 
 
 class ExternalServiceTimeoutError(ExternalServiceError):
-    """Raised when an external request times out."""
+    """Raised when an HTTP request times out."""
 
 
 class ExternalServiceResponseError(ExternalServiceError):
-    """Raised when an external service returns an invalid response."""
+    """Raised when a service returns invalid or unsuccessful data."""
 
 
-class LocationNotFoundError(Exception):
-    """Raised when a city cannot be resolved."""
+class BackendServiceError(Exception):
+    """Raised when the Backend Service request fails."""
