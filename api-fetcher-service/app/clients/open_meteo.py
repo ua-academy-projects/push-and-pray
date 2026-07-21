@@ -12,6 +12,8 @@ from app.schemas import (
     City,
 )
 
+from datetime import datetime, timezone
+
 
 CURRENT_VARIABLES = (
     "european_aqi",
@@ -52,12 +54,27 @@ class OpenMeteoClient:
                 "Open-Meteo response does not contain current data"
             )
 
-        observed_at = current.get("time")
+        observed_at_raw = current.get("time")
 
-        if not isinstance(observed_at, str) or not observed_at:
+        if not isinstance(observed_at_raw, str) or not observed_at_raw:
             raise ExternalServiceResponseError(
                 "Open-Meteo response does not contain observation time"
             )
+
+        try:
+            observed_at = datetime.fromisoformat(
+                observed_at_raw.replace("Z", "+00:00")
+            )
+
+            if observed_at.tzinfo is None:
+                observed_at = observed_at.replace(
+                    tzinfo=timezone.utc
+                )
+
+        except ValueError as exc:
+            raise ExternalServiceResponseError(
+                "Open-Meteo returned an invalid observation time"
+            ) from exc
 
         try:
             return AirQualityMeasurementCreate(
@@ -67,13 +84,9 @@ class OpenMeteoClient:
                 us_aqi=current.get("us_aqi"),
                 pm2_5=current.get("pm2_5"),
                 pm10=current.get("pm10"),
-                nitrogen_dioxide=current.get(
-                    "nitrogen_dioxide"
-                ),
+                nitrogen_dioxide=current.get("nitrogen_dioxide"),
                 ozone=current.get("ozone"),
-                carbon_monoxide=current.get(
-                    "carbon_monoxide"
-                ),
+                carbon_monoxide=current.get("carbon_monoxide"),
                 uv_index=current.get("uv_index"),
                 source="open-meteo",
                 source_status_code=200,

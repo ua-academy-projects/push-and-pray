@@ -283,9 +283,9 @@ function renderDashboard(payload) {
     currentSection.classList.remove("hidden");
     historySection.classList.remove("hidden");
 
-    lastUpdated.textContent = formatDateTime(
-        latest.observed_at
-    );
+    lastUpdated.textContent =
+        `${formatDateTime(latest.observed_at)} `
+        + `(${city.timezone || "local time"})`;
 
     primaryAqiValue.textContent = formatValue(
         latest.european_aqi
@@ -359,13 +359,13 @@ function renderChart(history, metricName) {
         })
         .map((measurement) => {
             return {
-                time: new Date(measurement.observed_at),
+                time: parseTimestamp(measurement.observed_at),
                 value: Number(measurement[metricName]),
             };
         })
         .filter((point) => {
             return (
-                !Number.isNaN(point.time.getTime())
+                point.time !== null
                 && Number.isFinite(point.value)
             );
         });
@@ -779,17 +779,46 @@ function formatAxisValue(value, unit) {
 }
 
 
-function formatDateTime(value) {
+function parseTimestamp(value) {
     if (!value) {
-        return "Unknown";
+        return null;
     }
 
-    const date = value instanceof Date
-        ? value
-        : new Date(value);
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime())
+            ? null
+            : value;
+    }
 
-    if (Number.isNaN(date.getTime())) {
-        return String(value);
+    let normalizedValue = String(value);
+
+    const hasTimezone =
+        normalizedValue.endsWith("Z")
+        || /[+-]\d{2}:\d{2}$/.test(normalizedValue);
+
+    if (!hasTimezone) {
+        normalizedValue += "Z";
+    }
+
+    const date = new Date(normalizedValue);
+
+    return Number.isNaN(date.getTime())
+        ? null
+        : date;
+}
+
+
+function getSelectedTimezone() {
+    return dashboardData?.city?.timezone
+        || "Europe/Kyiv";
+}
+
+
+function formatDateTime(value) {
+    const date = parseTimestamp(value);
+
+    if (!date) {
+        return value ? String(value) : "Unknown";
     }
 
     return new Intl.DateTimeFormat(
@@ -797,19 +826,27 @@ function formatDateTime(value) {
         {
             dateStyle: "medium",
             timeStyle: "short",
+            timeZone: getSelectedTimezone(),
         }
     ).format(date);
 }
 
 
 function formatChartTime(date) {
+    const parsedDate = parseTimestamp(date);
+
+    if (!parsedDate) {
+        return "Unknown";
+    }
+
     return new Intl.DateTimeFormat(
         undefined,
         {
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: getSelectedTimezone(),
         }
-    ).format(date);
+    ).format(parsedDate);
 }
 
 
