@@ -1,491 +1,720 @@
-const searchForm = document.querySelector("#search-form");
-const cityInput = document.querySelector("#city-input");
-const searchButton = document.querySelector("#search-button");
+const citySwitcher = document.querySelector("#city-switcher");
 const refreshButton = document.querySelector("#refresh-button");
-
-const statusMessage = document.querySelector("#status-message");
+const pageMessage = document.querySelector("#page-message");
 
 const currentSection = document.querySelector("#current-section");
-const currentHeading = document.querySelector("#current-heading");
-const locationDetails = document.querySelector("#location-details");
-const aqiSummary = document.querySelector("#aqi-summary");
-const metricsGrid = document.querySelector("#metrics-grid");
-const historySaveState = document.querySelector("#history-save-state");
+const currentCityHeading = document.querySelector(
+    "#current-city-heading"
+);
+const locationDescription = document.querySelector(
+    "#location-description"
+);
+const lastUpdated = document.querySelector("#last-updated");
+const primaryAqiValue = document.querySelector(
+    "#primary-aqi-value"
+);
+const primaryAqiClassification = document.querySelector(
+    "#primary-aqi-classification"
+);
+const latestMetrics = document.querySelector("#latest-metrics");
 
-const historyMessage = document.querySelector("#history-message");
-const historyTableBody = document.querySelector("#history-table-body");
-const reloadHistoryButton = document.querySelector(
-    "#reload-history-button"
+const historySection = document.querySelector("#history-section");
+const historyHeading = document.querySelector("#history-heading");
+const metricSelect = document.querySelector("#metric-select");
+const periodButtons = document.querySelectorAll(".period-button");
+const chartMessage = document.querySelector("#chart-message");
+const historyChart = document.querySelector("#history-chart");
+const chartRangeDescription = document.querySelector(
+    "#chart-range-description"
+);
+const chartPointCount = document.querySelector(
+    "#chart-point-count"
 );
 
-const previousPageButton = document.querySelector(
-    "#previous-page-button"
-);
-const nextPageButton = document.querySelector(
-    "#next-page-button"
-);
-const pageInformation = document.querySelector("#page-information");
-
-const historyDialog = document.querySelector("#history-dialog");
-const historyDialogContent = document.querySelector(
-    "#history-dialog-content"
-);
-const closeDialogButton = document.querySelector(
-    "#close-dialog-button"
-);
-
-const historyPageSize = 10;
-
-let lastSearchedCity = "";
-let historyOffset = 0;
-let historyTotal = 0;
+const emptyState = document.querySelector("#empty-state");
 
 
-searchForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+const metricDefinitions = {
+    european_aqi: {
+        label: "European AQI",
+        unit: "",
+    },
+    us_aqi: {
+        label: "US AQI",
+        unit: "",
+    },
+    pm2_5: {
+        label: "PM2.5",
+        unit: "μg/m³",
+    },
+    pm10: {
+        label: "PM10",
+        unit: "μg/m³",
+    },
+    nitrogen_dioxide: {
+        label: "Nitrogen dioxide",
+        unit: "μg/m³",
+    },
+    ozone: {
+        label: "Ozone",
+        unit: "μg/m³",
+    },
+    carbon_monoxide: {
+        label: "Carbon monoxide",
+        unit: "μg/m³",
+    },
+    uv_index: {
+        label: "UV index",
+        unit: "",
+    },
+};
 
-    const city = cityInput.value.trim();
 
-    if (city.length < 2) {
-        showStatus(
-            statusMessage,
-            "Enter at least two non-space characters.",
-            "error"
-        );
-        return;
-    }
-
-    lastSearchedCity = city;
-    await loadAirQuality(city);
-});
+let cities = [];
+let selectedCityCode = null;
+let selectedHours = 24;
+let dashboardData = null;
+let isLoading = false;
 
 
 refreshButton.addEventListener("click", async () => {
-    if (!lastSearchedCity) {
+    if (!selectedCityCode || isLoading) {
         return;
     }
 
-    await loadAirQuality(lastSearchedCity);
+    await loadDashboard();
 });
 
 
-reloadHistoryButton.addEventListener("click", async () => {
-    historyOffset = 0;
-    await loadHistory();
+periodButtons.forEach((button) => {
+    button.addEventListener("click", async () => {
+        const hours = Number(button.dataset.hours);
+
+        if (hours === selectedHours || isLoading) {
+            return;
+        }
+
+        selectedHours = hours;
+
+        periodButtons.forEach((item) => {
+            item.classList.toggle(
+                "active",
+                Number(item.dataset.hours) === selectedHours
+            );
+        });
+
+        await loadDashboard();
+    });
 });
 
 
-previousPageButton.addEventListener("click", async () => {
-    historyOffset = Math.max(
-        0,
-        historyOffset - historyPageSize
+metricSelect.addEventListener("change", () => {
+    if (!dashboardData) {
+        return;
+    }
+
+    renderChart(
+        dashboardData.history,
+        metricSelect.value
     );
-
-    await loadHistory();
 });
 
 
-nextPageButton.addEventListener("click", async () => {
-    if (historyOffset + historyPageSize >= historyTotal) {
-        return;
+async function initialize() {
+    try {
+        const response = await fetch("/api/cities");
+        const payload = await readJsonResponse(response);
+
+        if (!response.ok) {
+            throw new Error(extractErrorMessage(payload));
+        }
+
+        if (!Array.isArray(payload) || payload.length === 0) {
+            throw new Error(
+                "No active cities are configured in the Backend Service."
+            );
+        }
+
+        cities = payload;
+        renderCitySwitcher();
+
+        selectedCityCode = cities[0].code;
+
+        updateActiveCityButton();
+
+        await loadDashboard();
+
+    } catch (error) {
+        showMessage(
+            pageMessage,
+            error.message || "Could not load configured cities.",
+            "error"
+        );
     }
-
-    historyOffset += historyPageSize;
-    await loadHistory();
-});
+}
 
 
-closeDialogButton.addEventListener("click", () => {
-    historyDialog.close();
-});
+function renderCitySwitcher() {
+    const buttons = cities.map((city) => {
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.className = "city-button";
+        button.dataset.cityCode = city.code;
+        button.textContent = city.name;
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", "false");
+
+        button.addEventListener("click", async () => {
+            if (
+                city.code === selectedCityCode
+                || isLoading
+            ) {
+                return;
+            }
+
+            selectedCityCode = city.code;
+            updateActiveCityButton();
+
+            await loadDashboard();
+        });
+
+        return button;
+    });
+
+    citySwitcher.replaceChildren(...buttons);
+}
 
 
-historyDialog.addEventListener("click", (event) => {
-    if (event.target === historyDialog) {
-        historyDialog.close();
-    }
-});
+function updateActiveCityButton() {
+    citySwitcher
+        .querySelectorAll(".city-button")
+        .forEach((button) => {
+            const isActive =
+                button.dataset.cityCode === selectedCityCode;
+
+            button.classList.toggle("active", isActive);
+            button.setAttribute(
+                "aria-selected",
+                String(isActive)
+            );
+        });
+}
 
 
-async function loadAirQuality(city) {
-    setSearchLoading(true);
+async function loadDashboard() {
+    setLoading(true);
 
-    showStatus(
-        statusMessage,
-        `Loading air-quality data for ${city}...`
+    showMessage(
+        pageMessage,
+        "Loading stored air-quality data..."
     );
 
     try {
+        const query = new URLSearchParams({
+            city: selectedCityCode,
+            hours: String(selectedHours),
+        });
+
         const response = await fetch(
-            `/api/air-quality?city=${encodeURIComponent(city)}`
+            `/api/dashboard?${query.toString()}`
         );
 
         const payload = await readJsonResponse(response);
 
         if (!response.ok) {
-            throw new Error(
-                extractErrorMessage(payload)
-            );
+            throw new Error(extractErrorMessage(payload));
         }
 
-        renderAirQuality(payload);
+        dashboardData = payload;
 
-        showStatus(
-            statusMessage,
-            "Current air-quality data loaded.",
+        renderDashboard(payload);
+
+        showMessage(
+            pageMessage,
+            "Dashboard data loaded.",
             "success"
         );
 
-        await loadHistory();
-
     } catch (error) {
-        showStatus(
-            statusMessage,
-            error.message || "Could not load air-quality data.",
+        dashboardData = null;
+
+        hideDashboard();
+
+        showMessage(
+            pageMessage,
+            error.message || "Could not load dashboard data.",
             "error"
         );
+
     } finally {
-        setSearchLoading(false);
+        setLoading(false);
     }
 }
 
 
-function renderAirQuality(payload) {
-    const location = payload.location;
-    const airQuality = payload.air_quality;
+function renderDashboard(payload) {
+    const city = payload.city;
+    const latest = payload.latest;
+    const history = Array.isArray(payload.history)
+        ? payload.history
+        : [];
 
-    currentHeading.textContent =
-        `Air quality in ${location.name}`;
+    currentCityHeading.textContent =
+        `Current air quality in ${city.name}`;
 
-    const locationParts = [
-        location.admin1,
-        location.country,
-        location.timezone,
-    ].filter(Boolean);
+    locationDescription.textContent = [
+        city.country,
+        city.timezone,
+    ].filter(Boolean).join(" · ");
 
-    locationDetails.textContent = locationParts.join(" · ");
+    historyHeading.textContent =
+        `${city.name} air-quality trend`;
 
-    const primaryAqi =
-        airQuality.european_aqi ?? airQuality.us_aqi;
+    if (!latest) {
+        currentSection.classList.add("hidden");
+        historySection.classList.add("hidden");
+        emptyState.classList.remove("hidden");
 
-    const aqiType =
-        airQuality.european_aqi !== null
-        && airQuality.european_aqi !== undefined
-            ? "European AQI"
-            : "US AQI";
+        return;
+    }
 
-    const classification = classifyEuropeanAqi(
-        airQuality.european_aqi
+    emptyState.classList.add("hidden");
+    currentSection.classList.remove("hidden");
+    historySection.classList.remove("hidden");
+
+    lastUpdated.textContent = formatDateTime(
+        latest.observed_at
     );
 
-    aqiSummary.innerHTML = "";
-
-    const summaryLabel = document.createElement("span");
-    summaryLabel.className = "metric-label";
-    summaryLabel.textContent = aqiType;
-
-    const summaryValue = document.createElement("strong");
-    summaryValue.textContent = formatValue(primaryAqi);
-
-    const summaryDescription = document.createElement("div");
-    summaryDescription.className = "aqi-description";
-    summaryDescription.textContent =
-        `${classification} · Observed at `
-        + `${formatDateTime(airQuality.observed_at)}`;
-
-    aqiSummary.append(
-        summaryLabel,
-        summaryValue,
-        summaryDescription
+    primaryAqiValue.textContent = formatValue(
+        latest.european_aqi
     );
 
+    primaryAqiClassification.textContent =
+        classifyEuropeanAqi(latest.european_aqi);
+
+    renderLatestMetrics(latest);
+    renderChart(history, metricSelect.value);
+}
+
+
+function renderLatestMetrics(latest) {
     const metrics = [
-        {
-            label: "European AQI",
-            value: airQuality.european_aqi,
-            unit: "",
-        },
-        {
-            label: "US AQI",
-            value: airQuality.us_aqi,
-            unit: "",
-        },
-        {
-            label: "PM2.5",
-            value: airQuality.pm2_5,
-            unit: "μg/m³",
-        },
-        {
-            label: "PM10",
-            value: airQuality.pm10,
-            unit: "μg/m³",
-        },
-        {
-            label: "Nitrogen dioxide",
-            value: airQuality.nitrogen_dioxide,
-            unit: "μg/m³",
-        },
-        {
-            label: "Ozone",
-            value: airQuality.ozone,
-            unit: "μg/m³",
-        },
-        {
-            label: "Carbon monoxide",
-            value: airQuality.carbon_monoxide,
-            unit: "μg/m³",
-        },
-        {
-            label: "UV index",
-            value: airQuality.uv_index,
-            unit: "",
-        },
+        "us_aqi",
+        "pm2_5",
+        "pm10",
+        "nitrogen_dioxide",
+        "ozone",
+        "carbon_monoxide",
+        "uv_index",
     ];
 
-    metricsGrid.replaceChildren(
-        ...metrics.map(createMetricCard)
-    );
+    const cards = metrics.map((metricName) => {
+        const definition = metricDefinitions[metricName];
 
-    historySaveState.textContent = payload.history_saved
-        ? "Saved to history"
-        : "History not saved";
+        const card = document.createElement("article");
+        card.className = "metric-card";
 
-    historySaveState.className = payload.history_saved
-        ? "status-badge saved"
-        : "status-badge not-saved";
+        const label = document.createElement("div");
+        label.className = "metric-label";
+        label.textContent = definition.label;
 
-    currentSection.classList.remove("hidden");
-    refreshButton.disabled = false;
-}
+        const valueWrapper = document.createElement("div");
+        valueWrapper.className = "metric-card-value";
 
-
-function createMetricCard(metric) {
-    const card = document.createElement("article");
-    card.className = "metric-card";
-
-    const label = document.createElement("div");
-    label.className = "metric-label";
-    label.textContent = metric.label;
-
-    const valueWrapper = document.createElement("div");
-    valueWrapper.className = "metric-value";
-
-    const value = document.createElement("span");
-    value.textContent = formatValue(metric.value);
-
-    valueWrapper.appendChild(value);
-
-    if (metric.unit) {
-        const unit = document.createElement("span");
-        unit.className = "metric-unit";
-        unit.textContent = metric.unit;
-
-        valueWrapper.appendChild(unit);
-    }
-
-    card.append(label, valueWrapper);
-
-    return card;
-}
-
-
-async function loadHistory() {
-    showStatus(historyMessage, "Loading history...");
-
-    try {
-        const response = await fetch(
-            `/api/history?limit=${historyPageSize}`
-            + `&offset=${historyOffset}`
+        const value = document.createElement("span");
+        value.textContent = formatValue(
+            latest[metricName]
         );
 
-        const payload = await readJsonResponse(response);
+        valueWrapper.appendChild(value);
 
-        if (!response.ok) {
-            throw new Error(
-                extractErrorMessage(payload)
-            );
+        if (definition.unit) {
+            const unit = document.createElement("span");
+            unit.className = "metric-unit";
+            unit.textContent = definition.unit;
+
+            valueWrapper.appendChild(unit);
         }
 
-        historyTotal = payload.total;
-        renderHistoryRows(payload.items);
-        updatePagination();
+        card.append(label, valueWrapper);
 
-        if (payload.items.length === 0) {
-            showStatus(
-                historyMessage,
-                "No history records found."
-            );
-        } else {
-            showStatus(historyMessage, "");
-        }
-
-    } catch (error) {
-        historyTableBody.replaceChildren();
-
-        showStatus(
-            historyMessage,
-            error.message || "Could not load history.",
-            "error"
-        );
-    }
-}
-
-
-function renderHistoryRows(items) {
-    historyTableBody.replaceChildren(
-        ...items.map(createHistoryRow)
-    );
-}
-
-
-function createHistoryRow(record) {
-    const row = document.createElement("tr");
-
-    const requestedAtCell = document.createElement("td");
-    requestedAtCell.textContent =
-        formatDateTime(record.created_at);
-
-    const cityCell = document.createElement("td");
-    cityCell.textContent =
-        record.query_parameters?.city ?? "Unknown";
-
-    const sourceCell = document.createElement("td");
-    sourceCell.textContent = record.source;
-
-    const statusCell = document.createElement("td");
-    statusCell.textContent = record.source_status_code;
-
-    const detailsCell = document.createElement("td");
-    const detailsButton = document.createElement("button");
-
-    detailsButton.type = "button";
-    detailsButton.className = "table-action";
-    detailsButton.textContent = "View";
-
-    detailsButton.addEventListener("click", async () => {
-        await showHistoryRecord(record.id);
+        return card;
     });
 
-    detailsCell.appendChild(detailsButton);
-
-    row.append(
-        requestedAtCell,
-        cityCell,
-        sourceCell,
-        statusCell,
-        detailsCell
-    );
-
-    return row;
+    latestMetrics.replaceChildren(...cards);
 }
 
 
-async function showHistoryRecord(recordId) {
-    historyDialogContent.textContent = "Loading...";
-    historyDialog.showModal();
+function renderChart(history, metricName) {
+    clearSvg(historyChart);
 
-    try {
-        const response = await fetch(
-            `/api/history/${recordId}`
+    const definition = metricDefinitions[metricName];
+
+    const points = history
+        .filter((measurement) => {
+            return measurement[metricName] !== null
+                && measurement[metricName] !== undefined;
+        })
+        .map((measurement) => {
+            return {
+                time: new Date(measurement.observed_at),
+                value: Number(measurement[metricName]),
+            };
+        })
+        .filter((point) => {
+            return (
+                !Number.isNaN(point.time.getTime())
+                && Number.isFinite(point.value)
+            );
+        });
+
+    updateChartDescription(
+        definition,
+        points
+    );
+
+    if (points.length === 0) {
+        showMessage(
+            chartMessage,
+            `No ${definition.label} measurements are available `
+            + `for the selected period.`
         );
 
-        const payload = await readJsonResponse(response);
+        return;
+    }
 
-        if (!response.ok) {
-            throw new Error(
-                extractErrorMessage(payload)
-            );
-        }
+    showMessage(chartMessage, "");
 
-        renderHistoryDialog(payload);
+    const width = 1000;
+    const height = 420;
 
-    } catch (error) {
-        historyDialogContent.textContent =
-            error.message || "Could not load history record.";
+    const margin = {
+        top: 32,
+        right: 34,
+        bottom: 62,
+        left: 78,
+    };
+
+    const plotWidth =
+        width - margin.left - margin.right;
+
+    const plotHeight =
+        height - margin.top - margin.bottom;
+
+    const values = points.map((point) => point.value);
+
+    let minimumValue = Math.min(...values);
+    let maximumValue = Math.max(...values);
+
+    if (minimumValue === maximumValue) {
+        const padding = minimumValue === 0
+            ? 1
+            : Math.abs(minimumValue) * 0.1;
+
+        minimumValue -= padding;
+        maximumValue += padding;
+    } else {
+        const padding =
+            (maximumValue - minimumValue) * 0.12;
+
+        minimumValue = Math.max(
+            0,
+            minimumValue - padding
+        );
+
+        maximumValue += padding;
+    }
+
+    const minimumTime = points[0].time.getTime();
+    const maximumTime = points.at(-1).time.getTime();
+
+    const timeRange = Math.max(
+        maximumTime - minimumTime,
+        1
+    );
+
+    const valueRange = Math.max(
+        maximumValue - minimumValue,
+        1
+    );
+
+    const xScale = (time) => {
+        return margin.left
+            + (
+                (time.getTime() - minimumTime)
+                / timeRange
+            ) * plotWidth;
+    };
+
+    const yScale = (value) => {
+        return margin.top
+            + (
+                1
+                - (
+                    (value - minimumValue)
+                    / valueRange
+                )
+            ) * plotHeight;
+    };
+
+    drawGrid({
+        svg: historyChart,
+        width,
+        height,
+        margin,
+        plotWidth,
+        plotHeight,
+        minimumValue,
+        maximumValue,
+        minimumTime,
+        maximumTime,
+        definition,
+    });
+
+    const scaledPoints = points.map((point) => {
+        return {
+            ...point,
+            x: xScale(point.time),
+            y: yScale(point.value),
+        };
+    });
+
+    drawArea(
+        historyChart,
+        scaledPoints,
+        margin.top + plotHeight
+    );
+
+    drawLine(historyChart, scaledPoints);
+    drawPoints(historyChart, scaledPoints, definition);
+}
+
+
+function drawGrid({
+    svg,
+    margin,
+    plotWidth,
+    plotHeight,
+    minimumValue,
+    maximumValue,
+    minimumTime,
+    maximumTime,
+    definition,
+}) {
+    const horizontalLines = 5;
+    const verticalLines = 5;
+
+    for (
+        let index = 0;
+        index <= horizontalLines;
+        index += 1
+    ) {
+        const ratio = index / horizontalLines;
+        const y = margin.top + ratio * plotHeight;
+
+        const value =
+            maximumValue
+            - ratio * (maximumValue - minimumValue);
+
+        svg.appendChild(
+            createSvgElement("line", {
+                x1: margin.left,
+                y1: y,
+                x2: margin.left + plotWidth,
+                y2: y,
+                class: "chart-grid-line",
+            })
+        );
+
+        const label = createSvgElement("text", {
+            x: margin.left - 16,
+            y: y + 7,
+            "text-anchor": "end",
+            class: "chart-axis-label",
+        });
+
+        label.textContent = formatAxisValue(
+            value,
+            definition.unit
+        );
+
+        svg.appendChild(label);
+    }
+
+    for (
+        let index = 0;
+        index <= verticalLines;
+        index += 1
+    ) {
+        const ratio = index / verticalLines;
+        const x = margin.left + ratio * plotWidth;
+
+        const timestamp =
+            minimumTime
+            + ratio * (maximumTime - minimumTime);
+
+        svg.appendChild(
+            createSvgElement("line", {
+                x1: x,
+                y1: margin.top,
+                x2: x,
+                y2: margin.top + plotHeight,
+                class: "chart-grid-line",
+            })
+        );
+
+        const label = createSvgElement("text", {
+            x,
+            y: margin.top + plotHeight + 35,
+            "text-anchor": "middle",
+            class: "chart-axis-label",
+        });
+
+        label.textContent = formatChartTime(
+            new Date(timestamp)
+        );
+
+        svg.appendChild(label);
     }
 }
 
 
-function renderHistoryDialog(record) {
-    const summaryBlock = createDetailBlock(
-        "Summary",
-        {
-            id: record.id,
-            created_at: record.created_at,
-            request_type: record.request_type,
-            result_count: record.result_count,
-            source: record.source,
-            source_status_code: record.source_status_code,
-        }
-    );
+function drawLine(svg, points) {
+    const path = createSvgElement("path", {
+        d: createLinePath(points),
+        class: "chart-line",
+    });
 
-    const queryBlock = createDetailBlock(
-        "Query parameters",
-        record.query_parameters
-    );
-
-    const responseBlock = createDetailBlock(
-        "Saved response",
-        record.response_data
-    );
-
-    historyDialogContent.replaceChildren(
-        summaryBlock,
-        queryBlock,
-        responseBlock
-    );
+    svg.appendChild(path);
 }
 
 
-function createDetailBlock(title, data) {
-    const block = document.createElement("section");
-    block.className = "detail-block";
+function drawArea(svg, points, baselineY) {
+    if (points.length === 0) {
+        return;
+    }
 
-    const heading = document.createElement("h3");
-    heading.textContent = title;
+    const linePath = createLinePath(points);
 
-    const content = document.createElement("pre");
-    content.textContent = JSON.stringify(data, null, 2);
+    const firstPoint = points[0];
+    const lastPoint = points.at(-1);
 
-    block.append(heading, content);
+    const path = createSvgElement("path", {
+        d:
+            `${linePath} `
+            + `L ${lastPoint.x} ${baselineY} `
+            + `L ${firstPoint.x} ${baselineY} Z`,
+        class: "chart-area",
+    });
 
-    return block;
+    svg.appendChild(path);
 }
 
 
-function updatePagination() {
-    const currentPage =
-        Math.floor(historyOffset / historyPageSize) + 1;
+function drawPoints(svg, points, definition) {
+    points.forEach((point) => {
+        const circle = createSvgElement("circle", {
+            cx: point.x,
+            cy: point.y,
+            r: 6,
+            class: "chart-point",
+        });
 
-    const pageCount = Math.max(
-        1,
-        Math.ceil(historyTotal / historyPageSize)
-    );
+        const title = createSvgElement("title");
 
-    pageInformation.textContent =
-        `Page ${currentPage} of ${pageCount}`;
+        title.textContent =
+            `${formatDateTime(point.time)}: `
+            + `${formatValue(point.value)}`
+            + (
+                definition.unit
+                    ? ` ${definition.unit}`
+                    : ""
+            );
 
-    previousPageButton.disabled = historyOffset === 0;
-
-    nextPageButton.disabled =
-        historyOffset + historyPageSize >= historyTotal;
+        circle.appendChild(title);
+        svg.appendChild(circle);
+    });
 }
 
 
-function setSearchLoading(isLoading) {
-    searchButton.disabled = isLoading;
-    cityInput.disabled = isLoading;
+function createLinePath(points) {
+    return points
+        .map((point, index) => {
+            const command = index === 0 ? "M" : "L";
 
-    searchButton.textContent = isLoading
-        ? "Loading..."
-        : "Check air quality";
-
-    refreshButton.disabled =
-        isLoading || !lastSearchedCity;
+            return `${command} ${point.x} ${point.y}`;
+        })
+        .join(" ");
 }
 
 
-function showStatus(element, message, type = "") {
+function updateChartDescription(
+    definition,
+    points
+) {
+    const title = historyChart.querySelector("title");
+    const description = historyChart.querySelector("desc");
+
+    if (title) {
+        title.textContent =
+            `${definition.label} historical chart`;
+    }
+
+    if (description) {
+        description.textContent =
+            `${definition.label} values for the last `
+            + `${selectedHours} hours.`;
+    }
+
+    chartPointCount.textContent =
+        `${points.length} measurement`
+        + `${points.length === 1 ? "" : "s"}`;
+
+    if (points.length > 0) {
+        chartRangeDescription.textContent =
+            `${formatDateTime(points[0].time)} — `
+            + `${formatDateTime(points.at(-1).time)}`;
+    } else {
+        chartRangeDescription.textContent =
+            `Last ${selectedHours} hours`;
+    }
+}
+
+
+function hideDashboard() {
+    currentSection.classList.add("hidden");
+    historySection.classList.add("hidden");
+    emptyState.classList.add("hidden");
+}
+
+
+function setLoading(loading) {
+    isLoading = loading;
+
+    refreshButton.disabled = loading
+        || !selectedCityCode;
+
+    refreshButton.textContent = loading
+        ? "Reloading..."
+        : "Reload dashboard";
+
+    citySwitcher
+        .querySelectorAll("button")
+        .forEach((button) => {
+            button.disabled = loading;
+        });
+
+    periodButtons.forEach((button) => {
+        button.disabled = loading;
+    });
+
+    metricSelect.disabled = loading;
+}
+
+
+function showMessage(element, message, type = "") {
     element.textContent = message;
     element.className = "status-message";
 
@@ -495,67 +724,9 @@ function showStatus(element, message, type = "") {
 }
 
 
-function extractErrorMessage(payload) {
-    if (
-        payload
-        && typeof payload === "object"
-        && typeof payload.detail === "string"
-    ) {
-        return payload.detail;
-    }
-
-    return "The request failed.";
-}
-
-
-async function readJsonResponse(response) {
-    try {
-        return await response.json();
-    } catch {
-        return {};
-    }
-}
-
-
-function formatValue(value) {
-    if (value === null || value === undefined) {
-        return "N/A";
-    }
-
-    if (typeof value === "number") {
-        return Number.isInteger(value)
-            ? String(value)
-            : value.toFixed(1);
-    }
-
-    return String(value);
-}
-
-
-function formatDateTime(value) {
-    if (!value) {
-        return "Unknown";
-    }
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-
-    return new Intl.DateTimeFormat(
-        undefined,
-        {
-            dateStyle: "medium",
-            timeStyle: "short",
-        }
-    ).format(date);
-}
-
-
 function classifyEuropeanAqi(value) {
     if (value === null || value === undefined) {
-        return "No AQI classification available";
+        return "No classification available";
     }
 
     if (value <= 20) {
@@ -582,4 +753,116 @@ function classifyEuropeanAqi(value) {
 }
 
 
-loadHistory();
+function formatValue(value) {
+    if (value === null || value === undefined) {
+        return "N/A";
+    }
+
+    if (typeof value === "number") {
+        return Number.isInteger(value)
+            ? String(value)
+            : value.toFixed(1);
+    }
+
+    return String(value);
+}
+
+
+function formatAxisValue(value, unit) {
+    const formatted = Math.abs(value) >= 100
+        ? value.toFixed(0)
+        : value.toFixed(1);
+
+    return unit
+        ? `${formatted}`
+        : formatted;
+}
+
+
+function formatDateTime(value) {
+    if (!value) {
+        return "Unknown";
+    }
+
+    const date = value instanceof Date
+        ? value
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return new Intl.DateTimeFormat(
+        undefined,
+        {
+            dateStyle: "medium",
+            timeStyle: "short",
+        }
+    ).format(date);
+}
+
+
+function formatChartTime(date) {
+    return new Intl.DateTimeFormat(
+        undefined,
+        {
+            hour: "2-digit",
+            minute: "2-digit",
+        }
+    ).format(date);
+}
+
+
+function extractErrorMessage(payload) {
+    if (
+        payload
+        && typeof payload === "object"
+        && typeof payload.detail === "string"
+    ) {
+        return payload.detail;
+    }
+
+    return "The request failed.";
+}
+
+
+async function readJsonResponse(response) {
+    try {
+        return await response.json();
+    } catch {
+        return {};
+    }
+}
+
+
+function createSvgElement(tagName, attributes = {}) {
+    const element = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        tagName
+    );
+
+    Object.entries(attributes).forEach(([name, value]) => {
+        element.setAttribute(name, String(value));
+    });
+
+    return element;
+}
+
+
+function clearSvg(svg) {
+    const title = svg.querySelector("title");
+    const description = svg.querySelector("desc");
+
+    svg.replaceChildren();
+
+    if (title) {
+        svg.appendChild(title);
+    }
+
+    if (description) {
+        svg.appendChild(description);
+    }
+}
+
+
+initialize();

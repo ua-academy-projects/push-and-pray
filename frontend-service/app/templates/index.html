@@ -8,7 +8,12 @@
         content="width=device-width, initial-scale=1"
     >
 
-    <title>AirAware</title>
+    <meta
+        name="description"
+        content="Air quality dashboard for Ukrainian cities"
+    >
+
+    <title>AirAware Dashboard</title>
 
     <link
         rel="stylesheet"
@@ -18,53 +23,49 @@
 
 <body>
     <header class="site-header">
-        <div class="container">
-            <p class="eyebrow">Air quality monitoring</p>
-            <h1>AirAware</h1>
+        <div class="container header-content">
+            <div>
+                <p class="eyebrow">Air quality monitoring</p>
+                <h1>AirAware</h1>
 
-            <p class="subtitle">
-                Check current air-quality conditions and review
-                your previous requests.
-            </p>
+                <p class="subtitle">
+                    Current and historical air-quality information
+                    for selected Ukrainian cities.
+                </p>
+            </div>
         </div>
     </header>
 
     <main class="container main-content">
-        <section class="panel search-panel">
-            <h2>Search by city</h2>
+        <section class="panel city-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow dark-eyebrow">
+                        Location
+                    </p>
 
-            <form id="search-form" class="search-form">
-                <label for="city-input">City name</label>
-
-                <div class="search-controls">
-                    <input
-                        id="city-input"
-                        name="city"
-                        type="text"
-                        minlength="2"
-                        maxlength="100"
-                        placeholder="For example: Kyiv"
-                        autocomplete="off"
-                        required
-                    >
-
-                    <button id="search-button" type="submit">
-                        Check air quality
-                    </button>
-
-                    <button
-                        id="refresh-button"
-                        class="secondary-button"
-                        type="button"
-                        disabled
-                    >
-                        Refresh
-                    </button>
+                    <h2>Select a city</h2>
                 </div>
-            </form>
+
+                <button
+                    id="refresh-button"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Reload dashboard
+                </button>
+            </div>
 
             <div
-                id="status-message"
+                id="city-switcher"
+                class="city-switcher"
+                role="tablist"
+                aria-label="Available cities"
+            ></div>
+
+            <div
+                id="page-message"
                 class="status-message"
                 role="status"
                 aria-live="polite"
@@ -74,115 +75,183 @@
         <section
             id="current-section"
             class="panel hidden"
-            aria-labelledby="current-heading"
+            aria-labelledby="current-city-heading"
         >
-            <div class="section-header">
+            <div class="section-heading">
                 <div>
-                    <p class="eyebrow">Current conditions</p>
-                    <h2 id="current-heading">Air quality</h2>
+                    <p class="eyebrow dark-eyebrow">
+                        Latest measurement
+                    </p>
+
+                    <h2 id="current-city-heading">
+                        Current air quality
+                    </h2>
+
+                    <p id="location-description"></p>
                 </div>
 
-                <span
-                    id="history-save-state"
-                    class="status-badge"
-                ></span>
+                <div class="updated-information">
+                    <span>Last observation</span>
+
+                    <strong id="last-updated">
+                        Unknown
+                    </strong>
+                </div>
             </div>
 
-            <div id="location-details" class="location-details"></div>
+            <div class="summary-grid">
+                <article class="aqi-card">
+                    <span class="metric-label">
+                        European AQI
+                    </span>
 
-            <div id="aqi-summary" class="aqi-summary"></div>
+                    <strong id="primary-aqi-value">
+                        N/A
+                    </strong>
 
-            <div id="metrics-grid" class="metrics-grid"></div>
+                    <span
+                        id="primary-aqi-classification"
+                        class="aqi-classification"
+                    >
+                        No information
+                    </span>
+                </article>
 
-            <p class="source-note">
-                Source:
-                <a
-                    href="https://open-meteo.com/"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    Open-Meteo
-                </a>
-            </p>
+                <div
+                    id="latest-metrics"
+                    class="metrics-grid"
+                ></div>
+            </div>
         </section>
 
         <section
-            class="panel"
+            id="history-section"
+            class="panel hidden"
             aria-labelledby="history-heading"
         >
-            <div class="section-header">
+            <div class="section-heading chart-heading">
                 <div>
-                    <p class="eyebrow">Saved requests</p>
-                    <h2 id="history-heading">History</h2>
+                    <p class="eyebrow dark-eyebrow">
+                        Historical measurements
+                    </p>
+
+                    <h2 id="history-heading">
+                        Air-quality trend
+                    </h2>
                 </div>
 
-                <button
-                    id="reload-history-button"
-                    class="secondary-button"
-                    type="button"
-                >
-                    Reload history
-                </button>
+                <div class="chart-controls">
+                    <fieldset>
+                        <legend>Period</legend>
+
+                        <div class="control-group">
+                            <button
+                                class="period-button"
+                                data-hours="12"
+                                type="button"
+                            >
+                                12 hours
+                            </button>
+
+                            <button
+                                class="period-button active"
+                                data-hours="24"
+                                type="button"
+                            >
+                                24 hours
+                            </button>
+                        </div>
+                    </fieldset>
+
+                    <label class="metric-select-label">
+                        Metric
+
+                        <select id="metric-select">
+                            <option value="european_aqi">
+                                European AQI
+                            </option>
+
+                            <option value="us_aqi">
+                                US AQI
+                            </option>
+
+                            <option value="pm2_5">
+                                PM2.5
+                            </option>
+
+                            <option value="pm10">
+                                PM10
+                            </option>
+
+                            <option value="nitrogen_dioxide">
+                                Nitrogen dioxide
+                            </option>
+
+                            <option value="ozone">
+                                Ozone
+                            </option>
+
+                            <option value="carbon_monoxide">
+                                Carbon monoxide
+                            </option>
+
+                            <option value="uv_index">
+                                UV index
+                            </option>
+                        </select>
+                    </label>
+                </div>
             </div>
 
-            <div id="history-message" class="status-message"></div>
+            <div id="chart-message" class="status-message"></div>
 
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Requested at</th>
-                            <th>City</th>
-                            <th>Source</th>
-                            <th>Status</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
+            <div class="chart-wrapper">
+                <svg
+                    id="history-chart"
+                    viewBox="0 0 1000 420"
+                    role="img"
+                    aria-labelledby="chart-title chart-description"
+                    preserveAspectRatio="none"
+                >
+                    <title id="chart-title">
+                        Historical air-quality chart
+                    </title>
 
-                    <tbody id="history-table-body"></tbody>
-                </table>
+                    <desc id="chart-description">
+                        Historical air-quality measurements
+                    </desc>
+                </svg>
             </div>
 
-            <div class="pagination">
-                <button
-                    id="previous-page-button"
-                    class="secondary-button"
-                    type="button"
-                    disabled
-                >
-                    Previous
-                </button>
-
-                <span id="page-information">Page 1</span>
-
-                <button
-                    id="next-page-button"
-                    class="secondary-button"
-                    type="button"
-                    disabled
-                >
-                    Next
-                </button>
+            <div class="chart-footer">
+                <span id="chart-range-description"></span>
+                <span id="chart-point-count"></span>
             </div>
+        </section>
+
+        <section
+            id="empty-state"
+            class="panel empty-state hidden"
+        >
+            <h2>No measurements available</h2>
+
+            <p>
+                The API Fetcher has not stored any measurements for
+                this city yet. Run a fetch and reload the page.
+            </p>
         </section>
     </main>
 
-    <dialog id="history-dialog">
-        <div class="dialog-header">
-            <h2>History record</h2>
+    <footer>
+        <div class="container footer-content">
+            <span>AirAware</span>
 
-            <button
-                id="close-dialog-button"
-                class="icon-button"
-                type="button"
-                aria-label="Close"
-            >
-                ×
-            </button>
+            <span>
+                Data collected from Open-Meteo by the API Fetcher
+                Service.
+            </span>
         </div>
-
-        <div id="history-dialog-content"></div>
-    </dialog>
+    </footer>
 
     <script
         src="{{ url_for('static', filename='app.js') }}"

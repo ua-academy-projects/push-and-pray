@@ -7,11 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Frontend Service configuration."""
 
-    api_service_url: str
+    backend_service_url: str
 
     http_timeout_seconds: float = Field(
         default=10.0,
         gt=0,
+        le=120,
     )
 
     model_config = SettingsConfigDict(
@@ -23,6 +24,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return one cached settings object."""
-
     return Settings()

@@ -1,19 +1,22 @@
 from flask import Flask, jsonify, render_template, request
 
-from app.clients.api_service import (
-    ApiServiceClient,
-    ApiServiceError,
+from app.clients.backend import (
+    BackendClient,
+    BackendServiceError,
 )
 from app.config import get_settings
 
 
+ALLOWED_HISTORY_PERIODS = {12, 24}
+
+
 def create_app() -> Flask:
-    """Create and configure the Flask application."""
+    """Create and configure the Frontend Service."""
 
     app = Flask(__name__)
 
     settings = get_settings()
-    api_client = ApiServiceClient(settings)
+    backend_client = BackendClient(settings)
 
     @app.get("/")
     def index():
@@ -30,11 +33,11 @@ def create_app() -> Flask:
 
     @app.get("/health/ready")
     def readiness_check():
-        if not api_client.is_ready():
+        if not backend_client.is_ready():
             return (
                 jsonify(
                     {
-                        "detail": "API Service is unavailable",
+                        "detail": "Backend Service is unavailable",
                     }
                 ),
                 503,
@@ -44,76 +47,66 @@ def create_app() -> Flask:
             {
                 "service": "frontend-service",
                 "status": "ready",
-                "api_service": "connected",
+                "backend_service": "connected",
             }
         )
 
-    @app.get("/api/air-quality")
-    def air_quality_proxy():
-        city = request.args.get("city", "").strip()
+    @app.get("/api/cities")
+    def cities_proxy():
+        try:
+            payload = backend_client.list_cities()
+        except BackendServiceError as exc:
+            return (
+                jsonify({"detail": str(exc)}),
+                exc.status_code,
+            )
 
-        if len(city) < 2:
+        return jsonify(payload)
+
+    @app.get("/api/dashboard")
+    def dashboard_proxy():
+        city = request.args.get("city", "").strip().lower()
+
+        if not city:
             return (
                 jsonify(
                     {
-                        "detail": (
-                            "City must contain at least "
-                            "two non-space characters"
-                        )
+                        "detail": "The city parameter is required.",
+                    }
+                ),
+                422,
+            )
+
+        raw_hours = request.args.get("hours", "24")
+
+        try:
+            hours = int(raw_hours)
+        except ValueError:
+            return (
+                jsonify(
+                    {
+                        "detail": "Hours must be an integer.",
+                    }
+                ),
+                422,
+            )
+
+        if hours not in ALLOWED_HISTORY_PERIODS:
+            return (
+                jsonify(
+                    {
+                        "detail": "Hours must be either 12 or 24.",
                     }
                 ),
                 422,
             )
 
         try:
-            payload = api_client.get_air_quality(city)
-        except ApiServiceError as exc:
-            return (
-                jsonify({"detail": str(exc)}),
-                exc.status_code,
+            payload = backend_client.get_dashboard(
+                city=city,
+                hours=hours,
             )
-
-        return jsonify(payload)
-
-    @app.get("/api/history")
-    def history_proxy():
-        limit = _parse_integer_query_parameter(
-            "limit",
-            default=20,
-            minimum=1,
-            maximum=100,
-        )
-
-        if isinstance(limit, tuple):
-            return limit
-
-        offset = _parse_integer_query_parameter(
-            "offset",
-            default=0,
-            minimum=0,
-        )
-
-        if isinstance(offset, tuple):
-            return offset
-
-        try:
-            payload = api_client.list_history(
-                limit=limit,
-                offset=offset,
-            )
-        except ApiServiceError as exc:
-            return (
-                jsonify({"detail": str(exc)}),
-                exc.status_code,
-            )
-
-        return jsonify(payload)
-
-    @app.get("/api/history/<int:record_id>")
-    def history_record_proxy(record_id: int):
-        try:
-            payload = api_client.get_history_record(record_id)
-        except ApiServiceError as exc:
+        except BackendServiceError as exc:
             return (
                 jsonify({"detail": str(exc)}),
                 exc.status_code,
@@ -122,59 +115,6 @@ def create_app() -> Flask:
         return jsonify(payload)
 
     return app
-
-
-def _parse_integer_query_parameter(
-    name: str,
-    *,
-    default: int,
-    minimum: int,
-    maximum: int | None = None,
-):
-    raw_value = request.args.get(name)
-
-    if raw_value is None:
-        return default
-
-    try:
-        value = int(raw_value)
-    except ValueError:
-        return (
-            jsonify(
-                {
-                    "detail": f"{name} must be an integer",
-                }
-            ),
-            422,
-        )
-
-    if value < minimum:
-        return (
-            jsonify(
-                {
-                    "detail": (
-                        f"{name} must be greater than "
-                        f"or equal to {minimum}"
-                    )
-                }
-            ),
-            422,
-        )
-
-    if maximum is not None and value > maximum:
-        return (
-            jsonify(
-                {
-                    "detail": (
-                        f"{name} must be less than "
-                        f"or equal to {maximum}"
-                    )
-                }
-            ),
-            422,
-        )
-
-    return value
 
 
 app = create_app()
