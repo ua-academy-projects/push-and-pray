@@ -8,7 +8,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Погода в Надвірній</title>
+    <title>Погода — Надвірна</title>
 
     <link
         rel="stylesheet"
@@ -19,12 +19,39 @@
 <body>
     <main class="container">
         <header class="page-header">
-            <h1>Погода в Надвірній</h1>
+            <div>
+                <p class="eyebrow">
+                    Локальний моніторинг
+                </p>
+
+                <h1>Погода в Надвірній</h1>
+
+                <p class="page-description">
+                    Актуальні показники та історія
+                    спостережень
+                </p>
+            </div>
+
+            <div
+                class="refresh-status"
+                aria-label="Дані оновлюються щохвилини"
+            >
+                <span aria-hidden="true"></span>
+                Оновлення щохвилини
+            </div>
         </header>
 
-        <section class="card">
+        <section
+            class="card weather-card"
+            aria-labelledby="current-weather-title"
+        >
             <div class="section-header">
-                <h2>Останні дані</h2>
+                <div>
+                    <p class="section-kicker">Зараз</p>
+                    <h2 id="current-weather-title">
+                        Останні дані
+                    </h2>
+                </div>
             </div>
 
             <div
@@ -35,10 +62,19 @@
             </div>
         </section>
 
-        <section class="card">
+        <section
+            class="card chart-card"
+            aria-labelledby="chart-title"
+        >
             <div class="section-header">
                 <div>
-                    <h2>Графік температури</h2>
+                    <p class="section-kicker">
+                        Динаміка
+                    </p>
+
+                    <h2 id="chart-title">
+                        Графік температури
+                    </h2>
                 </div>
             </div>
 
@@ -64,9 +100,20 @@
             </div>
         </section>
 
-        <section class="card">
+        <section
+            class="card history-card"
+            aria-labelledby="history-title"
+        >
             <div class="section-header">
-                <h2>Історія вимірювань</h2>
+                <div>
+                    <p class="section-kicker">
+                        Архів
+                    </p>
+
+                    <h2 id="history-title">
+                        Історія вимірювань
+                    </h2>
+                </div>
 
                 <button
                     id="clear-history-button"

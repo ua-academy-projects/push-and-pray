@@ -145,31 +145,50 @@ function renderWeather(data) {
         "empty-state"
     );
 
+    const measurementTime =
+        data.requested_at ||
+        data.collected_at ||
+        current.time;
+
     weatherResult.innerHTML = `
-        <div class="weather-location">
-            ${valueOrDash(
-                location.name || "Надвірна"
-            )}
+        <div class="weather-summary">
+            <div>
+                <span class="weather-overline">
+                    Поточні умови
+                </span>
 
-            ${
-                location.country
-                    ? `, ${escapeHtml(
+                <div class="weather-location">
+                    ${valueOrDash(
+                        location.name || "Надвірна"
+                    )}
+
+                    ${
                         location.country
-                    )}`
-                    : ""
-            }
-        </div>
+                            ? `, ${escapeHtml(
+                                location.country
+                            )}`
+                            : ""
+                    }
+                </div>
 
-        <div class="temperature">
-            ${valueOrDash(
-                current.temperature_2m
-            )}
+                <p class="weather-updated">
+                    Дані за ${formatDate(
+                        measurementTime
+                    )}
+                </p>
+            </div>
 
-            <span>
+            <div class="temperature">
                 ${valueOrDash(
-                    units.temperature_2m
+                    current.temperature_2m
                 )}
-            </span>
+
+                <span>
+                    ${valueOrDash(
+                        units.temperature_2m
+                    )}
+                </span>
+            </div>
         </div>
 
         <div class="weather-details">
@@ -206,9 +225,7 @@ function renderWeather(data) {
 
                 <strong>
                     ${formatDate(
-                        data.requested_at ||
-                        data.collected_at ||
-                        current.time
+                        measurementTime
                     )}
                 </strong>
             </div>
@@ -288,73 +305,116 @@ function renderHistory(points) {
         "empty-state"
     );
 
-    historyResult.innerHTML = [...points]
+    const rows = [...points]
         .reverse()
         .map((point) => `
-            <article class="history-item">
-                <div class="history-header">
-                    <div>
-                        <h3>Надвірна</h3>
+            <div
+                class="history-row"
+                role="row"
+            >
+                <div
+                    class="history-cell history-time"
+                    role="cell"
+                >
+                    <strong>Надвірна</strong>
+                    <span>${formatDate(point.time)}</span>
+                </div>
 
-                        <p>
-                            ${formatDate(point.time)}
-                        </p>
-                    </div>
+                <div
+                    class="history-cell history-temperature"
+                    role="cell"
+                >
+                    <span class="history-mobile-label">
+                        Температура
+                    </span>
 
+                    <strong>
+                        ${valueOrDash(
+                            point.temperature
+                        )}
+
+                        ${valueOrDash(
+                            point.units.temperature_2m
+                        )}
+                    </strong>
+                </div>
+
+                <div
+                    class="history-cell history-humidity"
+                    role="cell"
+                >
+                    <span class="history-mobile-label">
+                        Вологість
+                    </span>
+
+                    <strong>
+                        ${valueOrDash(
+                            point.humidity
+                        )}
+
+                        ${valueOrDash(
+                            point.units
+                                .relative_humidity_2m
+                        )}
+                    </strong>
+                </div>
+
+                <div
+                    class="history-cell history-wind"
+                    role="cell"
+                >
+                    <span class="history-mobile-label">
+                        Вітер
+                    </span>
+
+                    <strong>
+                        ${valueOrDash(
+                            point.wind
+                        )}
+
+                        ${valueOrDash(
+                            point.units.wind_speed_10m
+                        )}
+                    </strong>
+                </div>
+
+                <div
+                    class="history-cell history-status"
+                    role="cell"
+                >
                     <span class="status">
                         Збережено
                     </span>
                 </div>
-
-                <div class="history-details">
-                    <div>
-                        <span>Температура</span>
-
-                        <strong>
-                            ${valueOrDash(
-                                point.temperature
-                            )}
-
-                            ${valueOrDash(
-                                point.units
-                                    .temperature_2m
-                            )}
-                        </strong>
-                    </div>
-
-                    <div>
-                        <span>Вологість</span>
-
-                        <strong>
-                            ${valueOrDash(
-                                point.humidity
-                            )}
-
-                            ${valueOrDash(
-                                point.units
-                                    .relative_humidity_2m
-                            )}
-                        </strong>
-                    </div>
-
-                    <div>
-                        <span>Вітер</span>
-
-                        <strong>
-                            ${valueOrDash(
-                                point.wind
-                            )}
-
-                            ${valueOrDash(
-                                point.units
-                                    .wind_speed_10m
-                            )}
-                        </strong>
-                    </div>
-                </div>
-            </article>
+            </div>
         `)
         .join("");
+
+    historyResult.innerHTML = `
+        <div
+            class="history-table"
+            role="table"
+            aria-label="Історія погодних вимірювань"
+        >
+            <div
+                class="history-table-header"
+                role="row"
+            >
+                <span role="columnheader">Місце і час</span>
+                <span role="columnheader">Температура</span>
+                <span role="columnheader">Вологість</span>
+                <span role="columnheader">Вітер</span>
+                <span role="columnheader">Статус</span>
+            </div>
+
+            <div
+                class="history-table-body"
+                role="rowgroup"
+            >
+                ${rows}
+            </div>
+        </div>
+    `;
 }
 
 
@@ -483,6 +543,70 @@ function renderChart(points) {
     );
 
     temperatureChart.appendChild(background);
+
+    const definitions = createSvgElement(
+        "defs"
+    );
+
+    const gradient = createSvgElement(
+        "linearGradient",
+        {
+            id: "temperature-area-gradient",
+            x1: "0",
+            y1: "0",
+            x2: "0",
+            y2: "1",
+        }
+    );
+
+    const gradientStart = createSvgElement(
+        "stop",
+        {
+            offset: "0%",
+            "stop-color": "#2c756d",
+            "stop-opacity": "0.2",
+        }
+    );
+
+    const gradientEnd = createSvgElement(
+        "stop",
+        {
+            offset: "100%",
+            "stop-color": "#2c756d",
+            "stop-opacity": "0.01",
+        }
+    );
+
+    gradient.appendChild(gradientStart);
+    gradient.appendChild(gradientEnd);
+    definitions.appendChild(gradient);
+    temperatureChart.appendChild(definitions);
+
+    const area = createSvgElement(
+        "polygon",
+        {
+            points: [
+                `${xPosition(points[0], 0)},${
+                    height - padding.bottom
+                }`,
+                ...points.map(
+                    (point, index) =>
+                        `${xPosition(point, index)},${
+                            yPosition(
+                                point.temperature
+                            )
+                        }`
+                ),
+                `${xPosition(
+                    points[points.length - 1],
+                    points.length - 1,
+                )},${height - padding.bottom}`,
+            ].join(" "),
+            class: "temperature-area",
+        }
+    );
+
+    temperatureChart.appendChild(area);
 
     const horizontalLines = 5;
 
