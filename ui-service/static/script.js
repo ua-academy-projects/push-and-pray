@@ -1,4 +1,5 @@
 const AUTO_REFRESH_INTERVAL_MS = 60_000;
+const WEATHER_TIME_ZONE = "Europe/Kyiv";
 
 const clearHistoryButton =
     document.getElementById(
@@ -64,25 +65,74 @@ function formatDate(value) {
         {
             dateStyle: "short",
             timeStyle: "short",
+            timeZone: WEATHER_TIME_ZONE,
         }
     );
 }
 
 
-function formatChartTime(value) {
+function formatChartTime(
+    value,
+    includeDate = false
+) {
     const date = new Date(value);
 
     if (Number.isNaN(date.getTime())) {
         return "";
     }
 
-    return date.toLocaleTimeString(
+    const parts = new Intl.DateTimeFormat(
         "uk-UA",
         {
+            timeZone: WEATHER_TIME_ZONE,
+            day: includeDate
+                ? "2-digit"
+                : undefined,
+            month: includeDate
+                ? "2-digit"
+                : undefined,
             hour: "2-digit",
             minute: "2-digit",
+            hourCycle: "h23",
         }
+    ).formatToParts(date);
+
+    const partValue = (type) =>
+        parts.find(
+            (part) => part.type === type
+        )?.value || "";
+
+    const time =
+        `${partValue("hour")}:` +
+        `${partValue("minute")}`;
+
+    if (!includeDate) {
+        return time;
+    }
+
+    return (
+        `${partValue("day")}.` +
+        `${partValue("month")} ${time}`
     );
+}
+
+
+function getChartDateKey(value) {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+
+    return new Intl.DateTimeFormat(
+        "en-CA",
+        {
+            timeZone: WEATHER_TIME_ZONE,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }
+    ).format(date);
 }
 
 
@@ -189,9 +239,14 @@ function getHistoryPoints(data) {
                 responseData.collected_at ||
                 current.time;
 
+            const timestamp = new Date(
+                time
+            ).getTime();
+
             if (
                 !Number.isFinite(temperature) ||
-                !time
+                !time ||
+                !Number.isFinite(timestamp)
             ) {
                 return null;
             }
@@ -200,6 +255,7 @@ function getHistoryPoints(data) {
                 id: item.id,
                 temperature,
                 time,
+                timestamp,
                 humidity:
                     current.relative_humidity_2m,
                 wind:
@@ -211,8 +267,7 @@ function getHistoryPoints(data) {
         .filter(Boolean)
         .sort(
             (first, second) =>
-                new Date(first.time) -
-                new Date(second.time)
+                first.timestamp - second.timestamp
         );
 }
 
@@ -355,6 +410,16 @@ function renderChart(points) {
         (point) => point.temperature
     );
 
+    const dateKeys = new Set(
+        points.map(
+            (point) =>
+                getChartDateKey(point.time)
+        )
+    );
+
+    const spansMultipleDays =
+        dateKeys.size > 1;
+
     let minimum = Math.min(...temperatures);
     let maximum = Math.max(...temperatures);
 
@@ -366,16 +431,33 @@ function renderChart(points) {
         maximum = Math.ceil(maximum + 1);
     }
 
-    const xPosition = (index) => {
+    const firstTimestamp =
+        points[0].timestamp;
+
+    const lastTimestamp =
+        points[points.length - 1].timestamp;
+
+    const timestampRange =
+        lastTimestamp - firstTimestamp;
+
+    const xPosition = (point, index) => {
         if (points.length === 1) {
             return padding.left +
                 chartWidth / 2;
         }
 
+        if (timestampRange === 0) {
+            return padding.left +
+                (
+                    index /
+                    (points.length - 1)
+                ) * chartWidth;
+        }
+
         return padding.left +
             (
-                index /
-                (points.length - 1)
+                (point.timestamp - firstTimestamp) /
+                timestampRange
             ) * chartWidth;
     };
 
@@ -450,16 +532,52 @@ function renderChart(points) {
         temperatureChart.appendChild(label);
     }
 
-    const labelIndexes = new Set([
-        0,
+    const renderedWidth =
+        chartContainer.clientWidth || width;
+
+    const minimumLabelSpacing =
+        spansMultipleDays ? 115 : 75;
+
+    const maximumLabelCount = Math.max(
+        2,
         Math.floor(
-            (points.length - 1) / 2
-        ),
-        points.length - 1,
-    ]);
+            renderedWidth /
+            minimumLabelSpacing
+        )
+    );
+
+    const labelCount = Math.min(
+        points.length,
+        maximumLabelCount,
+        7,
+    );
+
+    const labelIndexes = new Set();
+
+    if (labelCount === 1) {
+        labelIndexes.add(0);
+
+    } else {
+        for (
+            let index = 0;
+            index < labelCount;
+            index += 1
+        ) {
+            labelIndexes.add(
+                Math.round(
+                    index *
+                    (points.length - 1) /
+                    (labelCount - 1)
+                )
+            );
+        }
+    }
 
     labelIndexes.forEach((index) => {
-        const x = xPosition(index);
+        const x = xPosition(
+            points[index],
+            index,
+        );
 
         const line = createSvgElement(
             "line",
@@ -490,7 +608,8 @@ function renderChart(points) {
 
         label.textContent =
             formatChartTime(
-                points[index].time
+                points[index].time,
+                spansMultipleDays
             );
 
         temperatureChart.appendChild(line);
@@ -503,7 +622,7 @@ function renderChart(points) {
             points: points
                 .map(
                     (point, index) =>
-                        `${xPosition(index)},${
+                        `${xPosition(point, index)},${
                             yPosition(
                                 point.temperature
                             )
@@ -520,7 +639,7 @@ function renderChart(points) {
         const circle = createSvgElement(
             "circle",
             {
-                cx: xPosition(index),
+                cx: xPosition(point, index),
                 cy: yPosition(
                     point.temperature
                 ),
@@ -550,7 +669,8 @@ function renderChart(points) {
         }
     );
 
-    xTitle.textContent = "Час";
+    xTitle.textContent =
+        `Час (${WEATHER_TIME_ZONE})`;
 
     const yTitleX = 28;
 

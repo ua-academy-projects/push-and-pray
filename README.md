@@ -1,182 +1,179 @@
 # Weather App
 
-Weather App is a microservice-based application that automatically
-collects weather data for **Nadvirna**, stores it in PostgreSQL, and
-displays both the latest weather and a temperature history chart.
+Weather App автоматично збирає погоду для Надвірної, зберігає історію
+в PostgreSQL і показує останнє вимірювання та графік температури.
 
-## Features
+## Архітектура
 
--   Automatic weather collection every **30 minutes**
--   Fixed location: **Nadvirna, Ukraine**
--   Weather data from **Open-Meteo API**
--   History stored in **PostgreSQL**
--   Temperature history chart built from database records
--   Browser refreshes data every **60 seconds**
--   Opening or refreshing the page **does not call the external API**
--   Protection against duplicate measurements
--   One-click history cleanup with immediate collection of a new
-    measurement
-
-## Architecture
-
-``` text
-                 +----------------+
-                 |  Open-Meteo API|
-                 +--------+-------+
-                          ^
-                          |
-                  (every 30 minutes)
-                          |
-+---------+      +--------+--------+      +----------------+      +--------------+
-| Browser | ---> | Backend Service | ---> | History Service| ---> | PostgreSQL   |
-+---------+      +--------+--------+      +----------------+      +--------------+
-       ^                   |
-       |                   |
-       +--------- UI Service+
+```text
+Browser -> UI Service -> Backend Service -> Provider Service -> Open-Meteo
+                              |
+                              +-> PostgreSQL
 ```
 
-When the page is opened:
+- `ui-service` віддає сторінку й проксіює браузерні API-запити лише до
+  `backend-service`;
+- `backend-service` містить бізнес-логіку, планувальник, SQL і API для UI;
+- `provider-service` викликає та нормалізує відповідь Open-Meteo, але не
+  має доступу до бази даних;
+- PostgreSQL доступний лише для `backend-service`.
 
-``` text
-Browser
-   |
-   v
-UI Service
-   |
-   v
-Backend
-   |
-   v
-History Service
-   |
-   v
-PostgreSQL
-```
+Погода збирається кожні 30 хвилин. Оновлення сторінки раз на 60 секунд
+лише читає вже збережені дані та не викликає Open-Meteo.
 
-The frontend **never calls Open-Meteo directly**.
+## Структура
 
-## Project structure
-
-``` text
+```text
 weather-app/
-├── docker-compose.yml
-├── README.md
-├── ui-service/
 ├── backend-service/
-└── history-service/
+├── provider-service/
+├── providers/
+│   ├── common.sh
+│   ├── backend.sh
+│   ├── database.sh
+│   ├── provider.sh
+│   └── ui.sh
+├── ui-service/
+├── docker-compose.yml
+└── Vagrantfile
 ```
 
-## Requirements
+## Запуск через Docker Compose
 
--   Docker
--   Docker Compose
+Потрібні Docker і Docker Compose.
 
-``` bash
-docker --version
-docker compose version
-```
-
-## Run
-
-``` bash
+```bash
 docker compose up -d --build
-```
-
-Check services:
-
-``` bash
 docker compose ps
 ```
 
-Open:
+Відкрити на MacBook:
 
-``` text
-http://localhost:5000
+```text
+http://localhost:8080
 ```
 
-or (Ubuntu VM)
+Назовні публікується тільки UI на порту `8080`. Порти backend (`5001`),
+provider (`5002`) і PostgreSQL (`5432`) залишаються у внутрішній мережі
+Compose.
 
-``` bash
-hostname -I
+Перевірка UI та всього публічного ланцюжка:
+
+```bash
+curl -fsS http://localhost:8080/health
+curl -fsS http://localhost:8080/api/weather
+curl -fsS http://localhost:8080/api/history
 ```
 
-Example:
+Перевірка внутрішніх health endpoints:
 
-``` text
-http://192.168.69.141:5000
+```bash
+docker compose exec provider-service \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5002/health').read().decode())"
+
+docker compose exec backend-service \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5001/health').read().decode())"
 ```
 
-## Automatic weather collection
+Логи й зупинка:
 
-Configured in:
-
-``` text
-backend-service/app.py
-```
-
-``` python
-COLLECTION_INTERVAL_MINUTES = 30
-MINIMUM_INTERVAL_MINUTES = 25
-```
-
-## Automatic page refresh
-
-Configured in:
-
-``` text
-ui-service/static/script.js
-```
-
-``` javascript
-const AUTO_REFRESH_INTERVAL_MS = 60000;
-```
-
-This refresh only reads data from PostgreSQL.
-
-## Services
-
--   UI -- port 5000
--   Backend -- port 5001
--   History -- port 5002
--   PostgreSQL -- port 5432
-
-## Logs
-
-``` bash
+```bash
 docker compose logs -f
-docker compose logs -f backend
-```
-
-## Stop
-
-``` bash
+docker compose logs -f backend-service provider-service
 docker compose down
 ```
 
-Remove database too:
+Щоб разом із контейнерами видалити збережені дані:
 
-``` bash
+```bash
 docker compose down -v
 ```
 
-## Useful commands
+## Запуск через Vagrant і VMware Fusion
 
-``` bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f
-docker compose restart
-docker compose down
-docker compose down -v
+Потрібні Vagrant, VMware Fusion і Vagrant VMware Utility/provider.
+
+```bash
+vagrant validate
+vagrant up --provider=vmware_desktop
 ```
 
-## Note
+Повторне налаштування всіх машин:
 
-Automatic weather collection works only while the Docker containers are
-running.
+```bash
+vagrant provision
+```
 
-If the project runs inside VMware Fusion, the Mac, virtual machine and
-Docker containers must remain running.
+Vagrant створює чотири машини у приватній мережі:
 
-For 24/7 collection, deploy the project to a server such as AWS EC2,
-Azure VM, Google Compute Engine or another VPS.
+| Компонент | Приватна адреса | Порт |
+|---|---:|---:|
+| UI Service | `192.168.56.10` | `5000` |
+| Backend Service | `192.168.56.11` | `5001` |
+| Provider Service | `192.168.56.12` | `5002` |
+| PostgreSQL | `192.168.56.13` | `5432` |
+
+Тільки UI має forwarded port: гостьовий `5000` прив’язаний до
+`0.0.0.0:8080` на MacBook. Усі Python-сервіси всередині VM слухають
+`0.0.0.0`, але backend/provider не мають host forwarding.
+
+Перевірка сервісів у Vagrant:
+
+```bash
+vagrant ssh ui-service -c "curl -fsS http://127.0.0.1:5000/health"
+vagrant ssh backend-service -c "curl -fsS http://127.0.0.1:5001/health"
+vagrant ssh provider-service -c "curl -fsS http://127.0.0.1:5002/health"
+vagrant ssh database -c "sudo -u postgres pg_isready"
+```
+
+## Доступ із локальної мережі
+
+Дізнатися Wi-Fi IP-адресу MacBook:
+
+```bash
+ipconfig getifaddr en0
+```
+
+Якщо Wi-Fi використовує інший інтерфейс, знайти його можна так:
+
+```bash
+networksetup -listallhardwareports
+```
+
+На MacBook сайт доступний за обома адресами:
+
+```text
+http://localhost:8080
+http://<MACBOOK_LAN_IP>:8080
+```
+
+На телефоні, підключеному до тієї самої Wi-Fi мережі, відкрийте:
+
+```text
+http://192.168.x.x:8080
+```
+
+де `192.168.x.x` — результат `ipconfig getifaddr en0`. Якщо у macOS
+увімкнено блокування вхідних з'єднань, потрібно дозволити їх для VMware
+Fusion/Vagrant. Усередині Ubuntu provisioning автоматично додає порт UI
+до UFW, якщо firewall уже активний.
+
+## API
+
+Публічні маршрути UI:
+
+- `GET /health`;
+- `GET /api/weather`;
+- `GET /api/history`;
+- `DELETE /api/history`.
+
+Внутрішній Backend Service має ті самі `/api/*` маршрути. Внутрішній
+Provider Service надає `GET /health` і `GET /weather/current`; викликати
+його повинен лише backend.
+
+## Час на графіку
+
+Історія сортується за повним timestamp. Для одного дня вісь показує час,
+а для кількох днів — дату й час, наприклад `21.07 12:00`. Відображення
+явно використовує часовий пояс `Europe/Kyiv`, а кількість підписів
+адаптується до ширини графіка.

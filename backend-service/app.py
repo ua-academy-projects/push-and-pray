@@ -3,16 +3,19 @@ import os
 import threading
 from datetime import datetime, timedelta, timezone
 
+import psycopg
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 app = Flask(__name__)
 
-WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-HISTORY_URL = os.getenv(
-    "HISTORY_URL",
+PROVIDER_URL = os.getenv(
+    "PROVIDER_URL",
     "http://127.0.0.1:5002",
 ).rstrip("/")
 
@@ -24,12 +27,24 @@ CITY_NAME = "Надвірна"
 COUNTRY_NAME = "Україна"
 LATITUDE = 48.6348
 LONGITUDE = 24.5694
+WEATHER_TIMEZONE = "Europe/Kyiv"
 
 scheduler = BackgroundScheduler(
-    timezone="Europe/Kyiv"
+    timezone=WEATHER_TIMEZONE
 )
 
 collection_lock = threading.Lock()
+
+
+class ProviderServiceError(Exception):
+    def __init__(
+        self,
+        message,
+        status_code=502,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
 
 
 def is_debug_enabled():
@@ -64,27 +79,141 @@ def parse_datetime(value):
         )
 
     except (
+        AttributeError,
         TypeError,
         ValueError,
     ):
         return None
 
 
-def get_latest_history_item():
-    response = requests.get(
-        f"{HISTORY_URL}/history",
-        timeout=REQUEST_TIMEOUT,
+def get_connection():
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is not configured."
+        )
+
+    return psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row,
     )
 
-    response.raise_for_status()
 
-    history_data = response.json()
-    items = history_data.get("items", [])
+def create_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS weather_requests (
+                    id BIGSERIAL PRIMARY KEY,
+                    requested_at TIMESTAMPTZ
+                        NOT NULL DEFAULT NOW(),
+                    query TEXT NOT NULL,
+                    response_data JSONB NOT NULL,
+                    source TEXT,
+                    status TEXT NOT NULL
+                );
+                """
+            )
 
-    if not items:
+
+def serialize_history_item(item):
+    serialized_item = dict(item)
+    requested_at = serialized_item.get(
+        "requested_at"
+    )
+
+    if isinstance(requested_at, datetime):
+        serialized_item["requested_at"] = (
+            requested_at.isoformat()
+        )
+
+    return serialized_item
+
+
+def get_latest_history_item():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    requested_at,
+                    query,
+                    response_data,
+                    source,
+                    status
+                FROM weather_requests
+                ORDER BY requested_at DESC
+                LIMIT 1;
+                """
+            )
+
+            item = cursor.fetchone()
+
+    if item is None:
         return None
 
-    return items[0]
+    return serialize_history_item(item)
+
+
+def get_history_items():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    requested_at,
+                    query,
+                    response_data,
+                    source,
+                    status
+                FROM weather_requests
+                ORDER BY requested_at DESC
+                LIMIT 50;
+                """
+            )
+
+            items = cursor.fetchall()
+
+    return [
+        serialize_history_item(item)
+        for item in items
+    ]
+
+
+def insert_weather(connection, weather_data):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO weather_requests (
+                query,
+                response_data,
+                source,
+                status
+            )
+            VALUES (%s, %s, %s, %s)
+            RETURNING id, requested_at;
+            """,
+            (
+                CITY_NAME,
+                Jsonb(weather_data),
+                weather_data.get("source"),
+                "success",
+            ),
+        )
+
+        return cursor.fetchone()
+
+
+def save_weather(weather_data):
+    with get_connection() as connection:
+        saved_record = insert_weather(
+            connection,
+            weather_data,
+        )
+
+    return serialize_history_item(saved_record)
 
 
 def has_recent_measurement():
@@ -120,9 +249,110 @@ def has_recent_measurement():
     return latest_time >= minimum_allowed_time
 
 
-def collect_weather_without_lock(
-    force=False,
-):
+def fetch_weather_from_provider():
+    try:
+        response = requests.get(
+            f"{PROVIDER_URL}/weather/current",
+            params={
+                "latitude": LATITUDE,
+                "longitude": LONGITUDE,
+                "timezone": WEATHER_TIMEZONE,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+    except requests.Timeout as error:
+        raise ProviderServiceError(
+            "Provider Service не відповідає вчасно.",
+            status_code=503,
+        ) from error
+
+    except requests.RequestException as error:
+        raise ProviderServiceError(
+            "Provider Service недоступний.",
+            status_code=503,
+        ) from error
+
+    try:
+        provider_data = response.json()
+
+    except ValueError as error:
+        raise ProviderServiceError(
+            "Provider Service повернув некоректну відповідь."
+        ) from error
+
+    if not isinstance(provider_data, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув некоректну відповідь."
+        )
+
+    if not response.ok:
+        error_message = provider_data.get("error")
+
+        if not isinstance(error_message, str):
+            error_message = (
+                "Provider Service не зміг отримати погоду."
+            )
+
+        status_code = (
+            response.status_code
+            if response.status_code in {502, 504}
+            else 502
+        )
+
+        raise ProviderServiceError(
+            error_message,
+            status_code=status_code,
+        )
+
+    current = provider_data.get("current")
+
+    required_fields = {
+        "temperature_2m",
+        "relative_humidity_2m",
+        "wind_speed_10m",
+    }
+
+    if (
+        not isinstance(current, dict) or
+        not required_fields.issubset(current)
+    ):
+        raise ProviderServiceError(
+            "Provider Service повернув неповні погодні дані."
+        )
+
+    location = provider_data.get("location")
+
+    if not isinstance(location, dict):
+        location = {}
+
+    location.update({
+        "name": CITY_NAME,
+        "country": COUNTRY_NAME,
+        "latitude": LATITUDE,
+        "longitude": LONGITUDE,
+    })
+
+    return {
+        "query": CITY_NAME,
+        "location": location,
+        "current": current,
+        "current_units": provider_data.get(
+            "current_units",
+            {},
+        ),
+        "source": provider_data.get(
+            "source",
+            "open-meteo",
+        ),
+        "collected_at": provider_data.get(
+            "collected_at",
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    }
+
+
+def collect_weather_without_lock(force=False):
     if not force and has_recent_measurement():
         app.logger.info(
             "Weather collection skipped: "
@@ -135,75 +365,23 @@ def collect_weather_without_lock(
         }
 
     app.logger.info(
-        "Collecting weather for %s.",
-        CITY_NAME,
+        "Requesting current weather from Provider Service."
     )
 
-    weather_response = requests.get(
-        WEATHER_URL,
-        params={
-            "latitude": LATITUDE,
-            "longitude": LONGITUDE,
-            "current": (
-                "temperature_2m,"
-                "relative_humidity_2m,"
-                "wind_speed_10m"
-            ),
-            "timezone": "Europe/Kyiv",
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
-
-    weather_response.raise_for_status()
-
-    weather_data = weather_response.json()
-    current = weather_data.get("current")
-
-    if not isinstance(current, dict):
-        raise ValueError(
-            "Weather API returned no current weather."
-        )
-
-    result = {
-        "query": CITY_NAME,
-        "location": {
-            "name": CITY_NAME,
-            "country": COUNTRY_NAME,
-            "latitude": LATITUDE,
-            "longitude": LONGITUDE,
-        },
-        "current": current,
-        "current_units": weather_data.get(
-            "current_units",
-            {},
-        ),
-        "source": "open-meteo",
-        "collected_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
-    }
-
-    save_response = requests.post(
-        f"{HISTORY_URL}/history",
-        json={
-            "query": CITY_NAME,
-            "response_data": result,
-            "source": "open-meteo",
-            "status": "success",
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
-
-    save_response.raise_for_status()
+    weather_data = fetch_weather_from_provider()
+    saved_record = save_weather(weather_data)
 
     app.logger.info(
         "Weather saved: %s°C.",
-        current.get("temperature_2m"),
+        weather_data["current"].get(
+            "temperature_2m"
+        ),
     )
 
     return {
         "saved": True,
-        "weather": result,
+        "record": saved_record,
+        "weather": weather_data,
     }
 
 
@@ -218,13 +396,18 @@ def run_weather_collection():
     try:
         collect_weather(force=False)
 
-    except (
-        requests.RequestException,
-        ValueError,
-        KeyError,
-    ) as error:
+    except ProviderServiceError as error:
         app.logger.error(
             "Weather collection failed: %s",
+            error,
+        )
+
+    except (
+        psycopg.Error,
+        RuntimeError,
+    ) as error:
+        app.logger.error(
+            "Could not store weather: %s",
             error,
         )
 
@@ -257,15 +440,32 @@ def start_scheduler():
 
 @app.get("/health")
 def health():
-    return jsonify({
-        "service": "backend",
-        "status": "ok",
-        "city": CITY_NAME,
-        "collection_interval_minutes": (
-            COLLECTION_INTERVAL_MINUTES
-        ),
-        "scheduler_running": scheduler.running,
-    })
+    try:
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+
+        return jsonify({
+            "service": "backend-service",
+            "status": "ok",
+            "database": "ok",
+            "provider": "configured",
+            "city": CITY_NAME,
+            "collection_interval_minutes": (
+                COLLECTION_INTERVAL_MINUTES
+            ),
+            "scheduler_running": scheduler.running,
+        })
+
+    except (
+        psycopg.Error,
+        RuntimeError,
+    ):
+        return jsonify({
+            "service": "backend-service",
+            "status": "error",
+            "database": "unavailable",
+        }), 503
 
 
 @app.get("/api/weather")
@@ -280,9 +480,11 @@ def weather():
                 )
             }), 404
 
-        result = latest_item.get(
-            "response_data",
-            {},
+        result = dict(
+            latest_item.get(
+                "response_data",
+                {},
+            )
         )
 
         result["requested_at"] = (
@@ -292,32 +494,30 @@ def weather():
         return jsonify(result)
 
     except (
-        requests.RequestException,
-        ValueError,
+        psycopg.Error,
+        RuntimeError,
     ):
         return jsonify({
-            "error": "History Service недоступний."
+            "error": "База даних недоступна."
         }), 503
 
 
 @app.get("/api/history")
 def history():
     try:
-        response = requests.get(
-            f"{HISTORY_URL}/history",
-            timeout=REQUEST_TIMEOUT,
-        )
+        items = get_history_items()
 
-        response.raise_for_status()
-
-        return jsonify(response.json())
+        return jsonify({
+            "count": len(items),
+            "items": items,
+        })
 
     except (
-        requests.RequestException,
-        ValueError,
+        psycopg.Error,
+        RuntimeError,
     ):
         return jsonify({
-            "error": "History Service недоступний."
+            "error": "Не вдалося завантажити історію."
         }), 503
 
 
@@ -325,64 +525,57 @@ def history():
 def clear_history():
     try:
         with collection_lock:
-            delete_response = requests.delete(
-                f"{HISTORY_URL}/history",
-                timeout=REQUEST_TIMEOUT,
-            )
+            weather_data = fetch_weather_from_provider()
 
-            delete_response.raise_for_status()
+            with get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM weather_requests;"
+                    )
 
-            delete_data = delete_response.json()
+                    deleted_count = cursor.rowcount
 
-            collection_result = (
-                collect_weather_without_lock(
-                    force=True
+                insert_weather(
+                    connection,
+                    weather_data,
                 )
-            )
 
         return jsonify({
             "message": (
                 "Історію очищено. "
                 "Нові погодні дані збережено."
             ),
-            "deleted_count": delete_data.get(
-                "deleted_count",
-                0,
-            ),
-            "weather": collection_result.get(
-                "weather"
-            ),
+            "deleted_count": deleted_count,
+            "weather": weather_data,
         })
 
-    except requests.RequestException as error:
+    except ProviderServiceError as error:
         app.logger.error(
-            "Could not clear history or "
-            "collect weather: %s",
+            "Could not refresh weather while clearing "
+            "history: %s",
             error,
         )
 
         return jsonify({
             "error": (
-                "Не вдалося очистити історію "
-                "або отримати нову погоду."
+                f"Історію не змінено. {error.message}"
             )
-        }), 503
+        }), error.status_code
 
     except (
-        ValueError,
-        KeyError,
+        psycopg.Error,
+        RuntimeError,
     ) as error:
         app.logger.error(
-            "Invalid weather response: %s",
+            "Could not replace weather history: %s",
             error,
         )
 
         return jsonify({
             "error": (
-                "Погодний сервіс повернув "
-                "неправильні дані."
+                "Не вдалося оновити історію в базі даних."
             )
-        }), 502
+        }), 503
 
 
 atexit.register(
@@ -395,6 +588,7 @@ atexit.register(
 
 
 if __name__ == "__main__":
+    create_table()
     start_scheduler()
 
     app.run(
