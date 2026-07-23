@@ -56,17 +56,6 @@ class HourlyWeather(BaseModel):
     wind_direction: float
 
 
-class NormalizedWeather(BaseModel):
-    """Output of the normalization layer -- the only shape the rest of the app knows about.
-    Open-Meteo's field names never appear outside app/normalization/."""
-
-    location: Location
-    current: CurrentWeather
-    daily: list[DailyWeather]
-    hourly: list[HourlyWeather]
-    source: str = "Open-Meteo"
-
-
 class WeatherResponse(BaseModel):
     """GET /api/weather. `daily[0]` is today; the rest are the previous days, newest first."""
 
@@ -79,11 +68,6 @@ class WeatherResponse(BaseModel):
     synchronization_status: str | None = None
     is_stale: bool = True
     stale_reason: str | None = None
-
-
-class WeatherHistoryResponse(BaseModel):
-    location: Location | None = None
-    daily: list[DailyWeather] = []
 
 
 class WeatherHourlyResponse(BaseModel):

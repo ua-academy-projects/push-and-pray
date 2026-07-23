@@ -4,11 +4,13 @@ A small multi-service weather dashboard for **Ivano-Frankivsk, Ukraine**, built 
 
 Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no key/auth required).
 
+The project was originally built as three services (UI, Backend, History) and has since been refactored into four (UI, Backend, a Weather Fetcher, PostgreSQL); the History Service no longer exists. See [docs/prompts/refactor-0-discovery-and-plan.md](docs/prompts/refactor-0-discovery-and-plan.md) for the full staged plan.
+
 ## Screenshots
 
 <table>
 <tr>
-<td width="65%"><img src="docs/screenshots/dashboard-desktop.png" alt="SkyIvano dashboard on desktop: current weather hero card, metrics grid, hourly timeline, and 10-day history" width="100%"></td>
+<td width="65%"><img src="docs/screenshots/dashboard-desktop.png" alt="SkyIvano dashboard on desktop: current weather hero, status strip, Today, Forecast, and Averages sections with charts" width="100%"></td>
 <td width="35%"><img src="docs/screenshots/dashboard-mobile.png" alt="SkyIvano dashboard on a mobile viewport" width="100%"></td>
 </tr>
 </table>
@@ -16,32 +18,33 @@ Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no k
 ## Architecture at a glance
 
 ```
-Scheduled sync:  Backend Scheduler -> Backend Service -> Open-Meteo -> Backend Service -> History Service -> PostgreSQL
-User reads:      Browser -> UI Service -> Backend Service -> History Service -> PostgreSQL
+Scheduled sync:  Fetcher Scheduler -> Weather Fetcher Service -> Open-Meteo -> Weather Fetcher Service -> Backend Service -> PostgreSQL
+User reads:      Browser -> UI Service -> Backend Service -> PostgreSQL
+Manual refresh:  Browser -> UI Service -> Backend Service -> Weather Fetcher Service -> Open-Meteo -> Weather Fetcher Service -> Backend Service -> PostgreSQL
 ```
 
-Three independently runnable services, each with a single responsibility:
+Three independently runnable services, each with a single responsibility, plus PostgreSQL:
 
 | Service | Responsibility |
 |---|---|
 | **ui-service** | React/TypeScript dashboard. Talks only to the Backend's public API. |
-| **backend-service** | FastAPI orchestrator. Calls Open-Meteo, normalizes data, runs the sync scheduler, serves the public/internal API. Never touches PostgreSQL directly. |
-| **history-service** | FastAPI + SQLAlchemy + PostgreSQL. The only service that owns and accesses the database. |
+| **backend-service** | FastAPI. Owns PostgreSQL directly — persistence, upserts, sync-attempt bookkeeping, the public API. Never calls Open-Meteo; never calls the Fetcher except to proxy one manual-refresh action. |
+| **fetcher-service** | FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, pushes it to the Backend over HTTP. Never touches PostgreSQL. |
 
-The UI never calls Open-Meteo or the History Service, and never triggers a sync — it only ever reads data the Backend has already persisted. Full rules and diagrams: [docs/architecture.md](docs/architecture.md).
+The UI never calls Open-Meteo or the Fetcher directly, and never triggers a *scheduled* sync — it only ever reads data the Backend has already persisted, plus one explicit "Refresh now" action that still routes through the Backend. Full rules and diagrams: [docs/architecture.md](docs/architecture.md).
 
 ## Technology stack
 
-- **UI**: React, TypeScript, Vite, plain CSS, Vitest + React Testing Library
-- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, pytest
-- **History**: Python 3.12, FastAPI, Pydantic, SQLAlchemy 2, Alembic, PostgreSQL, pytest
-- **Database**: PostgreSQL (no SQLite anywhere — including tests)
+- **UI**: React, TypeScript, Vite, CSS Modules, Recharts, Vitest + React Testing Library
+- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, SQLAlchemy 2, Alembic, PostgreSQL, pytest
+- **Fetcher**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, pytest
+- **Database**: PostgreSQL (no SQLite anywhere — including tests), owned exclusively by the Backend
 
 ## Local setup overview
 
 Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), and a local PostgreSQL instance.
 
-PostgreSQL itself can be a native install or run in a plain Docker container purely as a local dev-database convenience — this does **not** make the project "use Docker": the three application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §13 for actual future containerization plans). The commands below use the container approach; swap in `createdb` if you have a native Postgres.
+PostgreSQL itself can be a native install or run in a plain Docker container purely as a local dev-database convenience — this does **not** make the project "use Docker": the three application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §14 for actual future containerization plans). The commands below use the container approach; swap in `createdb` if you have a native Postgres.
 
 ```bash
 docker run -d --name skyivano-postgres \
@@ -58,21 +61,23 @@ Detailed setup, migrations, and environment variables: [docs/architecture.md](do
 
 ## Running the services
 
-**History Service** (must be running first — Backend depends on it):
-```bash
-cd history-service
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8001
-```
+Order doesn't strictly matter — `backend-service` serves stored data even with the Fetcher stopped (stale but not broken), and `fetcher-service` records a failed sync locally if the Backend is unreachable rather than crashing. For a fresh database, start the Backend first so its migrations run before the Fetcher's first push arrives.
 
 **Backend Service**:
 ```bash
 cd backend-service
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
+```
+
+**Weather Fetcher Service**:
+```bash
+cd fetcher-service
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8002
 ```
 
 **UI Service**:
@@ -87,23 +92,24 @@ Then open the UI (default `http://localhost:5173`).
 ## Running tests
 
 ```bash
-cd history-service && pytest
-cd backend-service && pytest
+cd backend-service && DATABASE_URL=postgresql+psycopg://skyivano:skyivano@localhost:5432/skyivano_test pytest
+cd fetcher-service && pytest
 cd ui-service && npm test
 ```
 
-History Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them.
+Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them (the whole suite, not just persistence tests, refuses to run otherwise). Fetcher Service tests mock Open-Meteo and the Backend's HTTP client — no live network calls, no database.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md) — architecture, service boundaries, API contracts, database schema, sync/read flows, decisions (source of truth)
-- [docs/implementation-plan.md](docs/implementation-plan.md) — the 4 build stages
+- [docs/architecture.md](docs/architecture.md) — architecture, service boundaries, API contracts, database schema, sync/read/manual-refresh flows, decisions (source of truth)
+- [docs/implementation-plan.md](docs/implementation-plan.md) — the original 4 build stages (pre-refactor)
 - [docs/troubleshooting.md](docs/troubleshooting.md) — known issues and fixes
 - [docs/project-status.md](docs/project-status.md) — current progress checklist
-- [docs/prompts/](docs/prompts/) — self-contained AI-agent prompts, one per stage
+- [docs/prompts/](docs/prompts/) — self-contained AI-agent prompts, one per refactor stage
 
 ## Known limitations (v1)
 
 - Single hardcoded location (Ivano-Frankivsk) — no location picker.
 - Internal endpoints (`/internal/*`) have no authentication — see security notes in [docs/architecture.md](docs/architecture.md).
 - No containerization, orchestration, or CI/CD yet.
+- No system light/dark theme toggle — a deliberate choice, since the background already carries its own weather/day-night theming; see `docs/architecture.md` §15.

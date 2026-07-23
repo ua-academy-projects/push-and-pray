@@ -1,6 +1,6 @@
 # Backend Service
 
-Orchestration point of the system. Calls Open-Meteo, normalizes the response, runs the scheduled synchronization, and serves both the public API (used by the UI) and internal admin endpoints. Never accesses PostgreSQL directly — all persistence goes through the History Service over HTTP.
+Calls Open-Meteo, normalizes the response, runs the scheduled synchronization, persists directly to PostgreSQL, and serves both the public API (used by the UI) and internal admin endpoints. As of the refactor's Stage 1 (`../docs/prompts/refactor-1-backend-database.md`), this service owns PostgreSQL directly — the separate History Service is retired (`../docs/architecture.md` §2). The Open-Meteo/scheduler half of this service is planned to move out into a separate Fetcher Service in Stage 2.
 
 Full API contract, sync flow, and configuration reference: [../docs/architecture.md](../docs/architecture.md).
 
@@ -10,10 +10,11 @@ Full API contract, sync flow, and configuration reference: [../docs/architecture
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # adjust HISTORY_SERVICE_BASE_URL etc. if needed
+cp .env.example .env   # set DATABASE_URL for your local PostgreSQL instance
+alembic upgrade head
 ```
 
-Requires the History Service to be running (see [../history-service/README.md](../history-service/README.md)).
+Requires a running PostgreSQL instance — see the root [README.md](../README.md) for local setup. No other service needs to be running first.
 
 ## Run
 
@@ -24,10 +25,10 @@ uvicorn app.main:app --reload --port 8000
 ## Test
 
 ```bash
-pytest
+DATABASE_URL=postgresql+psycopg://skyivano:skyivano@localhost:5432/skyivano_test pytest
 ```
 
-Tests mock Open-Meteo and the History Service HTTP client — no live network calls or database required.
+Requires real PostgreSQL — every test in this suite is now gated by a test-database check (moved here from the old History Service), not just the persistence tests. No SQLite, no mocked database.
 
 ## Manual sync trigger (local/admin use only)
 

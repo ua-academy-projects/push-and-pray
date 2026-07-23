@@ -1,0 +1,62 @@
+.strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+}
+
+.card {
+  flex: none;
+  width: 116px;
+  text-align: center;
+  padding: 14px 10px;
+}
+
+.date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.icon {
+  font-size: 1.7rem;
+  margin-bottom: 6px;
+}
+
+.temps {
+  font-variant-numeric: tabular-nums;
+}
+
+.high {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.low {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: 3px;
+}
+
+.pop {
+  margin-top: 7px;
+  font-size: 0.68rem;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.tag {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 2px 7px;
+}

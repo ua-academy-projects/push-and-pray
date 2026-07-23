@@ -8,20 +8,19 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
-    open_meteo_base_url: str = "https://api.open-meteo.com/v1/forecast"
-    history_service_base_url: str = "http://localhost:8001"
+    # No default -- unlike the rest of this config, DB credentials should never silently
+    # fall back to a guessable local value (matches the History Service's original stance).
+    database_url: str
+    database_echo: bool = False
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+
+    # Used exclusively by POST /api/sync/trigger (app/clients/fetcher_client.py) -- the one
+    # deliberate exception to "Backend never calls Fetcher." Not used to poll or manage the
+    # Fetcher generally. See docs/architecture.md §4.
+    fetcher_service_base_url: str = "http://localhost:8002"
     http_timeout_seconds: float = 10.0
 
-    weather_location_name: str = "Ivano-Frankivsk"
-    weather_country: str = "Ukraine"
-    weather_latitude: float = 48.9226
-    weather_longitude: float = 24.7111
-    weather_timezone: str = "Europe/Kyiv"
-
-    weather_sync_enabled: bool = True
-    weather_sync_interval_minutes: int = 60
-    weather_sync_on_startup: bool = True
-    weather_sync_startup_freshness_minutes: int = 60
     weather_data_max_age_minutes: int = 90
 
     backend_port: int = 8000

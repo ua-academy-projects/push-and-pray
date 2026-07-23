@@ -1,19 +1,46 @@
+/*
+ * "Glass" design language, reviewed and approved via the Stage 4 design mockups (see
+ * docs/architecture.md "UI visual design" for the artifact links and reasoning): frosted,
+ * translucent cards floating on the existing weather-reactive gradient background
+ * (WeatherBackground.tsx, unchanged by this stage). Dark ink on light glass -- the inverse of
+ * the previous dark-glass-on-gradient look.
+ *
+ * Deliberately a single persistent theme, not a system-light/dark toggle: the background
+ * already carries 11 weather/day-night-driven gradient themes (see WeatherBackground.tsx) --
+ * layering a *second*, independent light/dark axis on top would fight that theming rather
+ * than complement it (what would "light mode" mean over a stormy night gradient?). This is a
+ * deliberate single-visual-world choice, not an omission.
+ */
 :root {
-  color-scheme: dark;
-  --text-primary: #f5f7fb;
-  --text-secondary: rgba(245, 247, 251, 0.72);
-  --text-muted: rgba(245, 247, 251, 0.52);
-  --glass-bg: rgba(255, 255, 255, 0.1);
-  --glass-border: rgba(255, 255, 255, 0.18);
-  --glass-shadow: rgba(8, 12, 30, 0.35);
-  --accent: #ffd166;
-  --warning-bg: rgba(255, 209, 102, 0.16);
-  --warning-border: rgba(255, 209, 102, 0.45);
-  --error-bg: rgba(255, 107, 107, 0.16);
-  --error-border: rgba(255, 107, 107, 0.5);
-  --radius-lg: 24px;
+  color-scheme: light;
+  --text-primary: #0d1420;
+  --text-secondary: #3b4a5c;
+  --text-muted: #5f7086;
+  --glass-bg: rgba(255, 255, 255, 0.5);
+  --glass-bg-chip: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-shadow: rgba(20, 40, 70, 0.16);
+  --accent: #2a78d6;
+  --accent-gradient: linear-gradient(135deg, #4facfe, #2a78d6);
+  --warning-bg: rgba(250, 178, 25, 0.18);
+  --warning-border: rgba(250, 178, 25, 0.5);
+  --error-bg: rgba(208, 59, 59, 0.14);
+  --error-border: rgba(208, 59, 59, 0.5);
+  --radius-lg: 22px;
   --radius-md: 16px;
   --radius-sm: 10px;
+
+  /* Chart data colors -- the validated categorical palette, unrelated to the glass chrome
+     above. Fixed slot order, never cycled/reassigned per chart. See docs/architecture.md. */
+  --series-1: #2a78d6;
+  --series-2: #008300;
+  --series-3: #eda100;
+  --series-4: #e34948;
+  --series-5: #4a3aa7;
+  --chart-surface: rgba(255, 255, 255, 0.72);
+  --chart-grid: rgba(20, 40, 70, 0.12);
+  --status-good: #0ca30c;
+  --status-critical: #d03b3b;
 
   /* Overwritten per-theme by WeatherBackground via inline custom properties on the root wrapper. */
   --bg-from: #1e3c72;
@@ -30,21 +57,23 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
+  /* Belt-and-suspenders: every horizontally-scrolling strip owns its own overflow-x, so the
+     page itself must never need to scroll sideways -- this is the hard backstop. */
+  overflow-x: hidden;
 }
 
 body {
-  font-family:
-    "Inter",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--text-primary);
-  background-color: #101a2e;
+  background-color: #eef1f4;
   -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.display-heading {
+  font-family: "Avenir Next", Avenir, "Century Gothic", Futura, sans-serif;
 }
 
 #root {
@@ -96,14 +125,21 @@ svg {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 20px 45px var(--glass-shadow);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 10px 34px var(--glass-shadow);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.glass-chip {
+  background: var(--glass-bg-chip);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
 }
 
 .app-shell {
   position: relative;
   min-height: 100vh;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -113,10 +149,18 @@ svg {
 
 .app-content {
   width: 100%;
-  max-width: 1100px;
+  min-width: 0;
+  max-width: 1180px;
   display: flex;
   flex-direction: column;
-  gap: clamp(20px, 3vw, 28px);
+  gap: clamp(18px, 2.5vw, 24px);
+}
+
+/* Flex items default to min-width: auto, so a horizontally-scrolling child (Today/Forecast's
+   card strips) would otherwise stretch its ancestor -- and the whole page -- wider than the
+   viewport instead of clipping via its own overflow-x. This keeps that scrolling contained. */
+.app-content > * {
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

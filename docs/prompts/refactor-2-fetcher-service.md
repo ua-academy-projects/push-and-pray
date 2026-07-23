@@ -33,18 +33,20 @@ Move (with `git mv`) from `backend-service` into `fetcher-service`:
 
 Rewrite/create in `fetcher-service`:
 
-- `app/config.py` — `OPEN_METEO_BASE_URL`, `BACKEND_INTERNAL_BASE_URL`, `WEATHER_LOCATION_NAME`, `WEATHER_COUNTRY`, `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `WEATHER_SYNC_ENABLED`, `WEATHER_SYNC_ON_STARTUP`, `WEATHER_SYNC_INTERVAL_MINUTES`, `HTTP_TIMEOUT_SECONDS`.
+- `app/config.py` — `OPEN_METEO_BASE_URL`, `BACKEND_INTERNAL_BASE_URL`, `WEATHER_LOCATION_NAME`, `WEATHER_COUNTRY`, `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `WEATHER_SYNC_ENABLED`, `WEATHER_SYNC_ON_STARTUP`, `WEATHER_SYNC_INTERVAL_MINUTES`, `WEATHER_PAST_DAYS` (default 10), `WEATHER_FORECAST_DAYS` (default 10), `HTTP_TIMEOUT_SECONDS`.
 - `app/clients/backend_client.py` — new httpx client calling `backend-service`'s internal endpoints (see below), replacing what `history_service_client.py` used to do for the sync-push half only (not the read half — the fetcher never reads weather data back).
-- `app/services/fetch_sync_service.py` (or similar name) — the single orchestration function (fetch → validate → normalize → POST to backend → record local success/failure) adapted from `backend-service`'s old `weather_sync_service.py`. Must remain callable identically from the scheduler and from `POST /internal/fetch`, with overlap prevention (one in-flight sync at a time).
+- `app/services/fetch_sync_service.py` (or similar name) — the single orchestration function (fetch → validate → normalize → POST to backend → record local success/failure) adapted from `backend-service`'s old `weather_sync_service.py`. Must remain callable identically from the scheduler, from `POST /internal/fetch`, and — indirectly — from the Backend's new `POST /api/sync/trigger` proxy, with overlap prevention (one in-flight sync at a time) covering all three trigger paths. The Open-Meteo request must use both `past_days=WEATHER_PAST_DAYS` and `forecast_days=WEATHER_FORECAST_DAYS` in the same call; the normalizer splits the returned daily array into "observed" (date ≤ today in `WEATHER_TIMEZONE`) and "forecast" (date > today) before sending to the Backend, so the Backend can route each half to the correct table (see `refactor-3-statistics-api.md`).
 - `app/api/internal_fetch.py` — `POST /internal/fetch` (manually runs the same sync function as the scheduler), `GET /internal/scheduler/status`.
 - `app/api/health.py` — `GET /health`.
 - `app/main.py` — wiring + scheduler startup (same `max_instances=1`, `coalesce=True`, `replace_existing=True` config the old scheduler used).
 
 ### `backend-service` changes
 
-- `app/api/internal_weather.py` → rename/restructure to expose `PUT /internal/weather/sync` (accepts the fetcher's normalized payload: current + daily + hourly in one request) and `POST /internal/weather/sync-failure`. Reuse the moved `persistence_service.upsert_weather()` / `record_sync_failure()` from Stage 1 — this is a routing change, not new persistence logic.
+- `app/api/internal_weather.py` → rename/restructure to expose `PUT /internal/weather/sync` (accepts the fetcher's normalized payload: current + observed daily + forecast daily + hourly in one request) and `POST /internal/weather/sync-failure`. Reuse the moved `persistence_service.upsert_weather()` / `record_sync_failure()` from Stage 1 — this is a routing change, not new persistence logic. `upsert_weather()` gains the observed-vs-forecast split described above: observed daily rows go to `daily_weather` (accumulate forever, per the existing rule), forecast daily rows go to the new `daily_forecast` table (Stage 3), fully replaced on each sync — no accumulation guarantee for forecast data, since a forecast is expected to be superseded.
 - Remove the old `POST /internal/weather/sync` (trigger-a-full-cycle) and `GET /internal/scheduler/status` handlers — that behavior now lives in `fetcher-service`.
-- `app/config.py` — remove `OPEN_METEO_BASE_URL` and all `WEATHER_SYNC_*` scheduler settings (backend no longer schedules anything). Keep `DATABASE_URL`, `WEATHER_DATA_MAX_AGE_MINUTES`, `CORS_ALLOWED_ORIGINS`. Do not add `FETCHER_SERVICE_BASE_URL` unless you have a concrete use for it (e.g. surfacing fetcher health in `/api/health`) — if you add it, document exactly what it's used for, since `backend-service` must never call `fetcher-service` to trigger a sync.
+- Add `app/api/sync_trigger.py` (or add to `public_weather.py`) — `POST /api/sync/trigger`: the **one deliberate exception** to "Backend never calls Fetcher." Called only by the UI's manual "Refresh now" button. Backend calls `fetcher-service`'s `POST /internal/fetch` synchronously via a new `app/clients/fetcher_client.py`, waits for the fetch→normalize→push cycle to complete (respecting `HTTP_TIMEOUT_SECONDS`), and returns a small result summary (success/failure, timestamp, records synced) — never Open-Meteo's raw response or a stack trace. If a sync is already in progress (scheduled or another manual trigger), return the in-progress status rather than queuing a second one. This endpoint requires `FETCHER_SERVICE_BASE_URL` in Backend's config — add it now, specifically for this one call, and document in `docs/architecture.md` that it exists solely for the manual-refresh path, not for Backend to poll or manage the Fetcher generally.
+- Add `GET /api/sync/history?limit=20` — returns recent `weather_syncs` rows (timestamp, trigger type `scheduled`/`manual`, status, duration, records counts, error message if failed) for the UI's sync-history popup. This is a thin read over the existing `weather_syncs` table/`list_syncs` query from Stage 1 — no new persistence logic, just a public route.
+- `app/config.py` — remove `OPEN_METEO_BASE_URL` and all `WEATHER_SYNC_*` scheduler settings (backend no longer schedules anything). Keep `DATABASE_URL`, `WEATHER_DATA_MAX_AGE_MINUTES`, `CORS_ALLOWED_ORIGINS`. Add `FETCHER_SERVICE_BASE_URL`, used exclusively by `POST /api/sync/trigger` as described above.
 - Remove `requirements.txt` entries only needed for Open-Meteo calls/scheduling (`apscheduler`, if nothing else in backend uses it).
 - Delete `backend-service/app/clients/open_meteo_client.py`, `app/normalization/`, `app/scheduler/` (now empty after the `git mv`).
 
@@ -61,10 +63,10 @@ Rewrite/create in `fetcher-service`:
 ## Architecture rules (must hold)
 
 - Only `fetcher-service` calls Open-Meteo.
-- `backend-service` never calls Open-Meteo, never calls `fetcher-service`.
+- `backend-service` never calls Open-Meteo. It calls `fetcher-service` in exactly one case — `POST /api/sync/trigger` forwarding to `POST /internal/fetch` — and nowhere else; no other Backend code path may call the Fetcher.
 - `fetcher-service` never touches PostgreSQL, never imports SQLAlchemy models.
 - `fetcher-service` sends data to `backend-service` only via the internal HTTP contract — no shared code/models between the two.
-- `ui-service` never calls `fetcher-service` (unchanged, verify it still holds).
+- `ui-service` never calls `fetcher-service` directly — a manual refresh always goes UI → Backend (`POST /api/sync/trigger`) → Fetcher, never UI → Fetcher.
 - Only one fetch/sync runs at a time in `fetcher-service` (overlap prevention), enforced the same way the old scheduler enforced it in `backend-service`.
 - A failed fetch/sync must never corrupt or delete previously persisted data — `backend-service`'s transaction guarantee from Stage 1 covers this on the receiving end; `fetcher-service`'s job is only to report the failure via `POST /internal/weather/sync-failure` and not retry destructively.
 
@@ -83,7 +85,7 @@ Rewrite/create in `fetcher-service`:
 
 **Fetcher tests** (pytest + pytest-asyncio, mock Open-Meteo and the backend client — no live network calls, no database): successful Open-Meteo request with correct query parameters, timeout, invalid/inconsistent response, normalization correctness, successful push to backend, backend unavailable, backend timeout, scheduler startup, scheduler disabled, overlapping-sync prevention, failure reporting to backend.
 
-**Backend tests** (real PostgreSQL, per this project's convention): `PUT /internal/weather/sync` upserts correctly and rejects invalid payloads, `POST /internal/weather/sync-failure` records failures without touching existing data, public `GET /api/*` endpoints still work and make zero outbound calls to Open-Meteo or the fetcher.
+**Backend tests** (real PostgreSQL, per this project's convention): `PUT /internal/weather/sync` upserts correctly and rejects invalid payloads, observed vs. forecast daily rows land in the correct table, `POST /internal/weather/sync-failure` records failures without touching existing data, public `GET /api/*` endpoints still work and make zero outbound calls to Open-Meteo, `POST /api/sync/trigger` calls the (mocked) Fetcher exactly once and returns a clean summary, a second concurrent call to `POST /api/sync/trigger` while one is in progress does not start a duplicate fetch, `GET /api/sync/history` returns recent syncs ordered newest-first including both `scheduled` and `manual` trigger types.
 
 ## Verification commands
 

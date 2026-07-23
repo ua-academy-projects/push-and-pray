@@ -1,23 +1,21 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { DailyHistory } from "../src/components/DailyHistory";
 import { Header } from "../src/components/Header";
 import { HourlyTimeline } from "../src/components/HourlyTimeline";
 import { buildWeatherResponse } from "./fixtures";
 
 describe("Header", () => {
   it("does not render a reload/sync button -- the UI must never trigger a synchronization", () => {
-    render(<Header lastSynchronizedAt={new Date().toISOString()} isStale={false} />);
+    render(<Header />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("shows fresh status distinctly from stale (not color-only -- text differs)", () => {
-    const { rerender } = render(<Header lastSynchronizedAt={new Date().toISOString()} isStale={false} />);
-    expect(screen.getByText("Live data")).toBeInTheDocument();
+  it("renders the brand", () => {
+    render(<Header />);
 
-    rerender(<Header lastSynchronizedAt={new Date().toISOString()} isStale={true} />);
-    expect(screen.getByText("Stale data")).toBeInTheDocument();
+    expect(screen.getByText("SkyIvano")).toBeInTheDocument();
+    expect(screen.getByText("Ivano-Frankivsk, Ukraine")).toBeInTheDocument();
   });
 });
 
@@ -45,17 +43,11 @@ describe("HourlyTimeline", () => {
 
     expect(screen.getByText("Now")).toBeInTheDocument();
   });
-});
 
-describe("DailyHistory", () => {
-  it("labels today distinctly from older days", () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-    const base = buildWeatherResponse().daily[0];
+  it("never renders a chart, just hours and temperatures (Today section requirement)", () => {
+    const hourly = buildWeatherResponse().hourly;
+    const { container } = render(<HourlyTimeline hourly={hourly} />);
 
-    render(<DailyHistory daily={[{ ...base, weather_date: today }, { ...base, weather_date: yesterday }]} />);
-
-    expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Yesterday")).toBeInTheDocument();
+    expect(container.querySelector("svg")).not.toBeInTheDocument();
   });
 });

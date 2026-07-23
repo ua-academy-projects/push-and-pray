@@ -24,6 +24,11 @@ Inspect `backend-service/app/models/daily_weather.py` and `hourly_weather.py` be
 
 New Alembic migration on `daily_weather` adding: `average_temperature`, `average_temperature_method` (enum/string: `"hourly"` or `"min_max_fallback"`), `average_apparent_temperature`, `average_humidity`, `average_wind_speed`, `average_cloud_cover`. Backfill existing rows using the fallback method (min+max)/2 where hourly data isn't available, hourly-derived average where it is.
 
+New table `daily_forecast` (same migration or a follow-up one — your call, document which), for the future-forecast data the Fetcher now sends alongside historical data (see `refactor-2-fetcher-service.md`):
+
+- `id`, `location_id` (FK), `weather_date`, `temperature_min`, `temperature_max`, `weather_code`, `precipitation_probability`, `apparent_temperature_min`, `apparent_temperature_max`, `synchronized_at`, `created_at`, `updated_at`.
+- Unique constraint on `location_id + weather_date`, upserted on every sync — **not** an accumulate-forever table like `daily_weather`. A forecast for 2026-08-01 made on 2026-07-24 is expected to be overwritten by a more accurate one made on 2026-07-30; only the latest prediction per date is kept. Once a forecast date's data arrives as observed data in `daily_weather` (i.e. the fetcher's `past_days` window now covers it), leave the old forecast row in place rather than deleting it — it becomes a harmless, mildly interesting "what we predicted vs. what happened" artifact, not something the app needs to actively reconcile. No accuracy-tracking logic is in scope here; don't build it unless asked.
+
 ### Persistence
 
 - `app/services/persistence_service.py` — when upserting a daily record, calculate `average_temperature` from that date's hourly rows if enough exist (define and document the threshold, e.g. "at least 1 hourly record for the date"), else fall back to `(temperature_min + temperature_max) / 2` and set `average_temperature_method` accordingly. Apply the same approach to `average_apparent_temperature`. Do not silently blend both methods for the same field.
@@ -47,13 +52,17 @@ Add to `app/api/public_weather.py` (or split into `app/api/statistics.py` / `app
 ```
 GET /api/weather/daily
 GET /api/weather/daily/{date}
+GET /api/weather/forecast?days={n}
 GET /api/weather/statistics/daily/{date}
 GET /api/weather/statistics?from={date}&to={date}
 GET /api/weather/statistics/all
 GET /api/weather/charts?from={date}&to={date}
+GET /api/sync/history?limit={n}
 ```
 
-Decide whether these replace or sit alongside the existing `GET /api/weather/history` and `GET /api/weather/hourly` from Stage 1 — if you consolidate/rename anything the UI currently depends on, list the exact before/after endpoint names in your report so Stage 4 can update the UI client accordingly.
+`GET /api/weather/forecast?days={n}` (default/max `n=10`, matching `WEATHER_FORECAST_DAYS`) reads from the new `daily_forecast` table — keep it a clearly separate endpoint from `/api/weather/daily`, since forecast rows carry a different reliability guarantee (see the `daily_forecast` note above) and the UI needs to visually distinguish "recorded" from "predicted." `GET /api/sync/history` was added in Stage 2's backend changes — implement it here alongside the rest of the stats/read layer if it wasn't already done.
+
+Decide whether the daily/statistics endpoints above replace or sit alongside the existing `GET /api/weather/history` and `GET /api/weather/hourly` from Stage 1 — if you consolidate/rename anything the UI currently depends on, list the exact before/after endpoint names in your report so Stage 4 can update the UI client accordingly.
 
 ## Out of scope
 
@@ -79,7 +88,7 @@ Decide whether these replace or sit alongside the existing `GET /api/weather/his
 
 ## Testing requirements
 
-pytest against real PostgreSQL. Cover: daily average calculation via hourly data, daily average fallback to min/max, one-day statistics, period statistics using all matching stored dates (not just the latest 10), all-time statistics, empty date range, invalid date range (`from > to`), chart data ordering, chart data spanning more than 10 days (seed 30+ days and confirm all are returned, not truncated).
+pytest against real PostgreSQL. Cover: daily average calculation via hourly data, daily average fallback to min/max, one-day statistics, period statistics using all matching stored dates (not just the latest 10), all-time statistics, empty date range, invalid date range (`from > to`), chart data ordering, chart data spanning more than 10 days (seed 30+ days and confirm all are returned, not truncated), `daily_forecast` upsert replaces (not accumulates) a prior forecast for the same date, `/api/weather/forecast` never reads from `daily_weather` and vice versa, `/api/sync/history` orders newest-first and includes both trigger types.
 
 ## Verification commands
 

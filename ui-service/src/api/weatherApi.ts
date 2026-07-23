@@ -1,8 +1,12 @@
+import type { ChartData } from "../types/chart";
+import type { ForecastResponse } from "../types/forecast";
+import type { DailyRecord, DailyRecordsResponse, DailyStatistics, PeriodStatistics } from "../types/statistics";
+import type { SyncLogEntry, SyncStatusResponse, SyncTriggerResult } from "../types/sync";
 import type { WeatherResponse } from "../types/weather";
 
-// The only backend URL the UI knows about -- no Open-Meteo URL, no History Service URL,
-// no database configuration, and no synchronization endpoint ever appear here or anywhere
-// else in this app. See docs/architecture.md §4.
+// The only backend URL the UI knows about -- no Open-Meteo URL, no Fetcher Service URL,
+// no database configuration, and no internal (/internal/*) endpoint ever appears here or
+// anywhere else in this app. See docs/architecture.md §4.
 const BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:8000";
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -13,9 +17,67 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** The only read the UI needs for the main dashboard -- current, today, hourly, history,
- * and freshness metadata all come back in one response. Never calls Open-Meteo, never
- * triggers a synchronization. */
+function toQuery(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+/** The main dashboard read -- current, today, hourly, and freshness metadata all come back in
+ * one response. Never calls Open-Meteo, never triggers a synchronization. */
 export function getWeather(): Promise<WeatherResponse> {
   return getJSON<WeatherResponse>("/api/weather");
+}
+
+/** Recorded daily rows, newest first. Omit both bounds for every stored date. */
+export function getDaily(from?: string, to?: string): Promise<DailyRecordsResponse> {
+  return getJSON<DailyRecordsResponse>(`/api/weather/daily${toQuery({ from, to })}`);
+}
+
+export function getDailyByDate(date: string): Promise<DailyRecord> {
+  return getJSON<DailyRecord>(`/api/weather/daily/${date}`);
+}
+
+/** Predicted days from daily_forecast -- never daily_weather. */
+export function getForecast(days = 10): Promise<ForecastResponse> {
+  return getJSON<ForecastResponse>(`/api/weather/forecast${toQuery({ days })}`);
+}
+
+export function getStatisticsDaily(date: string): Promise<DailyStatistics> {
+  return getJSON<DailyStatistics>(`/api/weather/statistics/daily/${date}`);
+}
+
+export function getStatisticsPeriod(from: string, to: string): Promise<PeriodStatistics> {
+  return getJSON<PeriodStatistics>(`/api/weather/statistics${toQuery({ from, to })}`);
+}
+
+export function getStatisticsAll(): Promise<PeriodStatistics> {
+  return getJSON<PeriodStatistics>("/api/weather/statistics/all");
+}
+
+/** Chart-ready time series, ordered ascending by date. Omit both bounds for every stored date. */
+export function getCharts(from?: string, to?: string): Promise<ChartData> {
+  return getJSON<ChartData>(`/api/weather/charts${toQuery({ from, to })}`);
+}
+
+export function getSyncStatus(): Promise<SyncStatusResponse> {
+  return getJSON<SyncStatusResponse>("/api/sync-status");
+}
+
+export function getSyncHistory(limit = 20): Promise<SyncLogEntry[]> {
+  return getJSON<SyncLogEntry[]>(`/api/sync/history${toQuery({ limit })}`);
+}
+
+/** The one path by which a user action can cause a synchronization -- proxied through the
+ * Backend to the Fetcher (see docs/architecture.md §7). Never calls the Fetcher or Open-Meteo
+ * directly. */
+export async function postSyncTrigger(): Promise<SyncTriggerResult> {
+  const response = await fetch(`${BASE_URL}/api/sync/trigger`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Request to /api/sync/trigger failed with status ${response.status}`);
+  }
+  return (await response.json()) as SyncTriggerResult;
 }

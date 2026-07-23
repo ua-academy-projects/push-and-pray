@@ -1,16 +1,21 @@
+import { useState } from "react";
 import styles from "./App.module.css";
+import { AveragesSection } from "./components/AveragesSection";
 import { CurrentWeatherCard } from "./components/CurrentWeatherCard";
-import { DailyHistory } from "./components/DailyHistory";
 import { DataStatus } from "./components/DataStatus";
+import { ForecastSection } from "./components/ForecastSection";
 import { Header } from "./components/Header";
+import { HistoryOverlay } from "./components/HistoryOverlay";
 import { HourlyTimeline } from "./components/HourlyTimeline";
+import { StatusStrip } from "./components/StatusStrip";
 import { WeatherBackground } from "./components/WeatherBackground";
 import { WeatherMetrics } from "./components/WeatherMetrics";
 import { useWeather } from "./hooks/useWeather";
 import { getWeatherInfo } from "./utils/weatherCode";
 
 export default function App() {
-  const { data, status } = useWeather();
+  const { data, status, reload } = useWeather();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Default background before any data has loaded, or while day/night is unknown.
   const theme = data?.current ? getWeatherInfo(data.current.weather_code, data.current.is_day).theme : "clear-night";
@@ -49,7 +54,7 @@ export default function App() {
     return (
       <div className="app-shell">
         <WeatherBackground theme={theme} isDay={isDay} />
-        <Header lastSynchronizedAt={null} isStale={true} />
+        <Header />
         <div className={`glass-card ${styles.stateCard}`} role="status">
           <span className={styles.stateIcon} aria-hidden="true">
             🌥️
@@ -71,11 +76,20 @@ export default function App() {
       <WeatherBackground theme={activeTheme} isDay={data.current.is_day} />
 
       <div className="app-content">
-        <Header lastSynchronizedAt={data.last_synchronized_at} isStale={data.is_stale} />
+        <Header />
         <CurrentWeatherCard current={data.current} today={today} />
         <WeatherMetrics current={data.current} />
+
+        <StatusStrip onSyncSuccess={reload} />
+
         <HourlyTimeline hourly={data.hourly} />
-        <DailyHistory daily={data.daily} />
+        <ForecastSection />
+        <AveragesSection />
+
+        <button type="button" className={styles.historyTrigger} onClick={() => setHistoryOpen(true)}>
+          Open history ↗
+        </button>
+
         <DataStatus
           dataSource={data.data_source}
           lastSynchronizedAt={data.last_synchronized_at}
@@ -83,6 +97,8 @@ export default function App() {
           staleReason={data.stale_reason}
         />
       </div>
+
+      <HistoryOverlay open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   );
 }

@@ -11,7 +11,7 @@ Two sections: generic issues that are reasonably likely to occur given this stac
 
 **Incorrect `DATABASE_URL`**
 - Cause: wrong driver prefix (must be `postgresql+psycopg://...` for this project — psycopg v3, not psycopg2), wrong credentials, or wrong database name.
-- Fix: compare against `history-service/.env.example`; ensure the target database exists (`createdb skyivano`).
+- Fix: compare against `backend-service/.env.example` (moved here from `history-service/.env.example` in Stage 1); ensure the target database exists (`createdb skyivano`).
 - Verify: `psql "$DATABASE_URL" -c '\dt'`
 
 **Alembic migration failure**
@@ -24,35 +24,43 @@ Two sections: generic issues that are reasonably likely to occur given this stac
 - Fix: `lsof -i :8000` (or the relevant port) to find the process, stop it, or run with a different `--port` and update the dependent service's env var.
 - Verify: the target port shows the new process after restart.
 
-**History Service unavailable (from the Backend's perspective)**
-- Cause: History Service isn't running, or `HISTORY_SERVICE_BASE_URL` is wrong.
-- Fix: confirm History Service is up (`curl localhost:8001/health`); check the Backend's `.env`.
-- Verify: `curl $HISTORY_SERVICE_BASE_URL/health` returns 200.
+**~~History Service unavailable (from the Backend's perspective)~~ — obsolete as of the Stage 1 refactor**
+- The History Service no longer exists as a running component (`docs/prompts/refactor-0-discovery-and-plan.md`); the Backend now accesses PostgreSQL directly and has nothing to reach over HTTP for persistence. If the Backend can't read/write weather data, that's a **database** connectivity problem now — see "PostgreSQL connection refused" above and check `GET /api/health`'s `database_connected` field.
 
-**Backend cannot reach Open-Meteo**
+**Backend test suite now requires a real test database for every test, not just DB-touching ones (Stage 1 change)**
+- Cause: `backend-service/tests/conftest.py` (moved from the History Service) has session-scoped `autouse` fixtures — `_require_test_database` and `_clean_tables` — that apply to the whole `backend-service/tests/` directory once merged in, not just the persistence tests. Previously, `backend-service`'s own tests ran with everything mocked and needed no database at all.
+- Symptom if missed: `pytest.exit("DATABASE_URL does not point at a database named like '*test*' ...")` before any test runs.
+- Fix: always export `DATABASE_URL` pointed at `skyivano_test` before running `pytest` in `backend-service/`, the same convention the History Service always used.
+- Verify: `DATABASE_URL=postgresql+psycopg://skyivano:skyivano@localhost:5432/skyivano_test pytest` in `backend-service/`.
+
+**Fetcher cannot reach Open-Meteo** *(moved here from the Backend in Stage 2 — only `fetcher-service` calls Open-Meteo now)*
 - Cause: no internet access, DNS failure, or Open-Meteo is down.
-- Fix: check general connectivity; this should surface as a *failed sync* with prior data still served, not a crash.
+- Fix: check general connectivity; this should surface as a *failed fetch* with prior data still served by the Backend, not a crash.
 - Verify: `curl "$OPEN_METEO_BASE_URL?latitude=48.9226&longitude=24.7111&current=temperature_2m"` returns JSON.
 
 **Open-Meteo request timeout**
-- Cause: slow network or an unrealistically low `HTTP_TIMEOUT_SECONDS`.
+- Cause: slow network or an unrealistically low `HTTP_TIMEOUT_SECONDS` on `fetcher-service`.
 - Fix: raise the timeout value; confirm it's actually being applied to the httpx client.
-- Verify: sync completes, or fails gracefully and is recorded as `failed`, within the configured timeout.
+- Verify: fetch completes, or fails gracefully and is recorded as `failed`, within the configured timeout.
 
 **Invalid/unexpected Open-Meteo response shape**
 - Cause: a field the normalizer expects is missing, or hourly/daily arrays have mismatched lengths.
-- Fix: the normalizer should reject and raise a typed error rather than silently producing partial/garbage data; the sync is then recorded as `failed` and prior data is preserved.
+- Fix: the normalizer (`fetcher-service/app/normalization/`) should reject and raise a typed error rather than silently producing partial/garbage data; the sync is then recorded as `failed` and prior data is preserved.
 - Verify: a normalization unit test with a deliberately malformed fixture raises the expected exception.
 
-**Scheduler not running**
-- Cause: `WEATHER_SYNC_ENABLED=false`, or the scheduler was never started in `main.py`'s startup hook.
-- Fix: check the flag; check `GET /internal/scheduler/status`.
-- Verify: `curl localhost:8000/internal/scheduler/status` shows `enabled: true` and a `next_run_time`.
+**Scheduler not running** *(moved to `fetcher-service` in Stage 2)*
+- Cause: `WEATHER_SYNC_ENABLED=false` on `fetcher-service`, or the scheduler was never started in its `main.py` startup hook.
+- Fix: check the flag; check `GET /internal/scheduler/status` on the **Fetcher** (port 8002, not the Backend).
+- Verify: `curl localhost:8002/internal/scheduler/status` shows `enabled: true` and a `next_run_time`.
 
 **Synchronization overlapping**
-- Cause: a long-running sync plus a new scheduled/manual trigger firing before it finishes.
-- Fix: the shared lock should reject/skip the second attempt; confirm `max_instances=1` is actually set on the APScheduler job.
-- Verify: firing `POST /internal/weather/sync` twice in quick succession only performs one Open-Meteo call.
+- Cause: a long-running fetch plus a new scheduled/manual trigger firing before it finishes.
+- Fix: the Fetcher's shared lock should reject/skip the second attempt; confirm `max_instances=1` is actually set on the APScheduler job. The Backend has a *separate* lock scoped only to `POST /api/sync/trigger` (Stage 2) — don't confuse the two when debugging.
+- Verify: firing `POST /internal/fetch` on the Fetcher (or `POST /api/sync/trigger` on the Backend) twice in quick succession only performs one Open-Meteo call.
+
+**`POST /internal/weather/sync` returns 404 (obsolete as of Stage 2)**
+- Cause: this endpoint existed on the Backend through Stage 1 (it triggered a full fetch+persist cycle). As of Stage 2, triggering a fetch is the Fetcher's job (`POST /internal/fetch`, port 8002) or the Backend's manual-refresh proxy (`POST /api/sync/trigger`, port 8000). The Backend's `PUT /internal/weather/sync` (note: `PUT`, not `POST`) is a *different* endpoint — the Fetcher pushing data, not a trigger.
+- Fix: use the right endpoint for the right service; see `docs/architecture.md` §8.
 
 **No persisted data available**
 - Cause: fresh database, first sync hasn't run or hasn't succeeded yet.
@@ -85,10 +93,18 @@ Two sections: generic issues that are reasonably likely to occur given this stac
 
 **Tests using the wrong database**
 - Cause: `DATABASE_URL` pointed at the dev database instead of a dedicated test database when running `pytest`.
-- Fix: always export `DATABASE_URL` for `skyivano_test` before running History Service tests; never let tests run against `skyivano`.
+- Fix: always export `DATABASE_URL` for `skyivano_test` before running Backend Service tests (this now includes the whole `backend-service/tests/` suite, not just persistence tests — see below); never let tests run against `skyivano`.
 - Verify: confirm the test run's `DATABASE_URL` env var before invoking pytest.
 
 ## Issues encountered during implementation
+
+**`GET /api/weather/hourly` failed with `ResponseValidationError` after adding the statistics endpoints (refactor Stage 3)**
+- Problem: the existing hourly test started failing with a `ResponseValidationError` listing "Field required: id, location_id, synchronized_at, created_at, updated_at" for every hourly row, even though nothing about the hourly logic itself had changed in this stage.
+- Cause: while adding several new imports to `app/api/public_weather.py` for the new statistics/chart/forecast schemas, `WeatherHourlyResponse` was accidentally imported from `app.schemas.persistence` (the DB-column-carrying shape, expects `HourlyWeatherOut` items) instead of `app.schemas.weather` (the flat public shape `weather_read_service.get_hourly()` actually constructs) — two unrelated classes happen to share the exact same name in different modules.
+- Diagnosed by: the pytest failure output listed the exact missing fields, which immediately pointed at a schema-shape mismatch rather than a logic bug; checking the import line confirmed which of the two same-named classes was wired in.
+- Fix: imported `WeatherHourlyResponse` from `app.schemas.weather` instead.
+- Verify: `pytest tests/test_api.py -k hourly` in `backend-service/`.
+- Avoid later: when two modules define a class with the same name for different purposes (here: a lean public-facing schema vs. a full DB-backed one), a stray import from the wrong module produces no error at import time and no error until FastAPI actually tries to validate a real response against it — worth a quick visual double-check of import lines whenever adding several schema imports to one file at once, since Python won't catch this class of mistake for you.
 
 **`psycopg2-binary` failed to install (Stage 1)**
 - Problem: `pip install -r requirements.txt` failed building `psycopg2-binary` with `Error: pg_config executable not found`.
@@ -143,6 +159,38 @@ Two sections: generic issues that are reasonably likely to occur given this stac
 - Fix: replaced `waitFor` with `await act(async () => { await vi.advanceTimersByTimeAsync(ms); })`, which both advances fake time and flushes the promises/microtasks that timer callback triggers -- then asserted directly with no polling wrapper needed.
 - Verify: `npm test -- tests/useWeather.test.ts`.
 - Avoid later: don't mix `waitFor` with fake timers; use `vi.advanceTimersByTimeAsync` (or switch to real timers for that specific test) instead.
+
+**`daily_forecast.precipitation_probability_max` was always `NULL` (refactor Stage 2)**
+- Problem: after a real end-to-end fetch against live Open-Meteo, every row in `daily_forecast` had `precipitation_probability_max = NULL`, even though Open-Meteo was confirmed (via a direct `curl`) to return real, non-null values for that field.
+- Cause: a silent field-name mismatch across the service boundary. The Fetcher's normalized schema and Open-Meteo's own field are both named `precipitation_probability_max`, but the Backend's `DailyForecastIn` Pydantic schema was initially named `precipitation_probability`. Since the field is `Optional`, no validation error occurred — the mismatched key was just never populated, defaulting silently to `None`. Every unit test on both sides used mocks that were internally consistent with their own (wrong, on the Backend's side) naming, so nothing caught it.
+- Diagnosed by: querying the real database rows directly after a live fetch and comparing against a direct `curl` to Open-Meteo confirming the source data was non-null.
+- Fix: renamed the field to `precipitation_probability_max` throughout the Backend (model, Pydantic schema, `persistence_service.py`, all tests) to match the Fetcher and Open-Meteo exactly. Since the migration adding `daily_forecast` had only just been applied locally and nothing else depended on the wrong name yet, downgraded one revision, fixed the model, and regenerated the migration rather than adding a follow-up rename migration.
+- Verify: `alembic upgrade head`; trigger a real fetch; `SELECT weather_date, precipitation_probability_max FROM daily_forecast` shows real percentages, not `NULL`.
+- Avoid later: when two services independently define "the same" field in their own schemas (by design — services don't share models), a mismatched name is a silent data-loss bug, not a crash, if the field is `Optional`. Cross-check field names against the actual wire payload (or write a same-shape assertion in one integration test) whenever a new field crosses a service boundary, not just at the unit level on each side.
+
+**`PersistenceError` propagated as a raw traceback instead of a clean 500 (refactor Stage 2)**
+- Problem: a test exercising `PUT /internal/weather/sync`'s rollback behavior (a deliberately malformed payload) failed with a raw `psycopg`/`sqlalchemy` traceback surfacing through `TestClient`, instead of the expected `response.status_code == 500`.
+- Cause: `persistence_service.upsert_weather()` catches the underlying DB exception, rolls back, and re-raises `PersistenceError` — but no FastAPI exception handler was registered for it. Starlette's `TestClient` (default `raise_server_exceptions=True`) re-raises any exception that isn't caught by a registered handler, rather than converting it to a generic 500, specifically so real bugs are loud during testing. In Stage 1 this exception was only ever raised from a background thread (`asyncio.to_thread`), never from an HTTP request handler directly, so this gap existed but was never exercised.
+- Diagnosed by: reading the pytest failure output, which showed the real `CardinalityViolation` traceback instead of a clean HTTP assertion failure.
+- Fix: added `@app.exception_handler(PersistenceError)` in `backend-service/app/main.py`, returning a `JSONResponse(status_code=500, content={"detail": "Failed to persist weather data"})` — no leaked internals, consistent with the project's existing "never leak raw exception details" convention.
+- Verify: `pytest tests/test_api.py -k rollback` in `backend-service/`.
+- Avoid later: any exception a service deliberately raises to signal "this request failed" needs a registered handler if it's ever reachable from an HTTP route — don't assume FastAPI's default unhandled-exception behavior is sufficient, especially since it behaves differently under `TestClient` than in production.
+
+**Recharts charts rendered as empty `<div>`s with no `<svg>` under Vitest/jsdom (refactor Stage 4)**
+- Problem: tests asserting a chart panel contains an `<svg>` failed — the DOM showed Recharts' wrapper `<div>` but no chart content at all, even with real, non-empty data passed in.
+- Cause: Recharts' `<ResponsiveContainer>` measures its wrapper element (via `ResizeObserver`, falling back to `getBoundingClientRect`/`offsetWidth`/`offsetHeight`) to decide what size to render at; jsdom implements none of these meaningfully (no `ResizeObserver` global at all, and `getBoundingClientRect` always returns all-zero dimensions), so the container computes a 0×0 target and renders nothing.
+- Diagnosed by: recognizing this as a known Recharts+jsdom interaction (documented by the library) rather than an app bug, once the component's real-browser screenshot (see the manual verification below) showed the same charts rendering correctly with real data.
+- Fix: in `ui-service/tests/setup.ts`, added a minimal `ResizeObserver` stub on `globalThis` and overrode `HTMLElement.prototype.offsetWidth`/`offsetHeight`/`getBoundingClientRect` to report a fixed, nonzero size (600×300) for every element in the test environment.
+- Verify: `npm test -- tests/AveragesSection.test.tsx` in `ui-service/` — the "all five chart panels, each backed by an `<svg>`" test passes.
+- Avoid later: any chart library built on `ResponsiveContainer`-style auto-sizing needs this same jsdom shim; it's a test-environment gap, not something to work around in application code.
+
+**An apparent mobile horizontal-overflow bug turned out to be a headless-Chrome CLI viewport limitation, not an app bug (refactor Stage 4)**
+- Symptom: a headless-Chrome screenshot requested at `--window-size=390,844` (or 320, or 420) showed content — the `StatusStrip`'s "Refresh now" button, `CurrentWeatherCard`'s detail column, `WeatherMetrics` labels — cut off at the right edge, as if the page were wider than the viewport and not properly wrapping/stacking, even though the relevant components already had `flex-wrap: wrap` and a `@media (max-width: 560px)` stacking rule.
+- Investigation: an isolated one-element test page confirmed the actual cause — at `--window-size=390,...`, `window.innerWidth` inside the loaded page reported `500`, not `390`; the CSS layout viewport did not match the requested window size at all below roughly 500px, though the *output PNG's pixel dimensions* still matched the request exactly (a crop of a wider layout, not a true render at the requested width). A `max-width: 560px` media query correctly evaluated as active against the real (500px) viewport in that same test, confirming the app's responsive CSS itself was working — the measurement tool was the thing lying about its own viewport size.
+- Confirmed not a real bug by: re-running the same screenshot at 500px, 800px, and wider — content flowed and stacked correctly with no overflow at every width the tool could actually render accurately.
+- Fix: none needed for the false-positive itself. Added `min-width: 0` on `.app-content`'s direct children (`global.css`) and an `overflow-x: hidden` backstop on `html`/`body` anyway, as standard defensive hardening against the general "a flex item's default content-based minimum width can stretch its ancestors past the viewport" class of bug — cheap insurance, not a fix for a confirmed defect.
+- Verify: `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --window-size=500,1400 --screenshot=out.png http://localhost:5173/` renders the full dashboard with no clipped controls.
+- Avoid later: when using a headless-Chrome CLI screenshot (rather than a real browser-automation library) to check a specific viewport width, verify the tool's actual effective viewport first (e.g. render a page that prints `window.innerWidth`) before trusting a narrow `--window-size` value — this Chrome version (150.x) silently floors it around 500px.
 
 **A full-page screenshot showed the background gradient cutting off partway down the page (Stage 4)**
 - Symptom, not a bug: a Playwright `fullPage: true` screenshot showed the page's flat dark navy `body` background below roughly one viewport height, instead of the themed gradient continuing.

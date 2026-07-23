@@ -1,0 +1,58 @@
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 110px 90px 1fr 90px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 18px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 0.78rem;
+}
+
+.time {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+.statusChip.ok {
+  color: var(--status-good);
+  background: rgba(12, 163, 12, 0.14);
+}
+
+.statusChip.failed {
+  color: var(--status-critical);
+  background: rgba(208, 59, 59, 0.14);
+}
+
+.note {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trigger {
+  text-align: right;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.empty {
+  padding: 16px 18px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}

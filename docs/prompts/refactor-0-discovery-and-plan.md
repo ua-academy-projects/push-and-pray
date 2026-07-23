@@ -54,6 +54,13 @@ This gives a cleaner separation ("who calls the external API" vs. "who owns the 
    - Stage 4: UI charts and final integration
 10. Identify risks: data loss during the model/migration move, breaking the running app mid-migration, env var renames breaking existing `.env` files, git history loss if files are recreated instead of `git mv`-ed, coordinating the internal contract change between backend and the not-yet-existing fetcher, `history-service` deletion timing (must not happen before Stage 2 is verified end-to-end).
 
+## Scope amendments (decided after this prompt was first written)
+
+Two things were added to the target design after the initial planning pass — fold them into the comparison/plan above rather than treating them as a later surprise:
+
+1. **Future forecast data.** Open-Meteo's forecast endpoint supports `forecast_days` up to 16, independent of `past_days`. The Fetcher will additionally request `forecast_days=10` alongside the existing `past_days=10`. Forecast values for a not-yet-arrived date are expected to change on every sync until that date arrives — this is *not* the same guarantee as `daily_weather` ("one authoritative row, preserved forever"), so forecast rows need their own storage, separate from the historical/observed table. See `refactor-3-statistics-api.md` for the proposed `daily_forecast` table.
+2. **UI-triggered manual refresh.** The UI gets a "Refresh now" button. This is a deliberate, scoped amendment to the "UI never triggers synchronization" rule: the UI still never calls the Fetcher or Open-Meteo directly — instead it calls a new `POST /api/sync/trigger` on the Backend, which is the *only* case where the Backend is allowed to call the Fetcher (its existing `POST /internal/fetch`), synchronously, and returns the result. Automatic scheduled synchronization is unaffected and remains fully independent of UI activity. See `refactor-2-fetcher-service.md` for the updated contract.
+
 ## Deliverable
 
-A written plan covering points 1–10 above, presented to the user for approval. **Do not modify any files in this prompt.** Stop and wait for confirmation before starting `refactor-1-backend-database.md`.
+A written plan covering points 1–10 above (plus the two amendments), presented to the user for approval. **Do not modify any files in this prompt.** Stop and wait for confirmation before starting `refactor-1-backend-database.md`.

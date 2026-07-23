@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from app.clients.history_service_client import HistoryServiceClient
-from app.config import get_settings
+from app.database.session import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -11,21 +12,19 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/api/health")
-async def health() -> dict:
-    """Service status + scheduler flag + optional History Service reachability.
-    Never calls Open-Meteo, never triggers a synchronization."""
-    settings = get_settings()
-
-    history_reachable: bool | None
+def health(response: Response, db: Session = Depends(get_db)) -> dict:
+    """Service status + direct database connectivity. The Backend has no scheduler of its own
+    as of Stage 2 (that moved to the Fetcher Service, which has its own /health) -- never calls
+    Open-Meteo, never triggers a synchronization."""
     try:
-        await HistoryServiceClient(settings).health()
-        history_reachable = True
+        db.execute(text("SELECT 1"))
+        database_connected = True
     except Exception:
-        logger.warning("health check: history service unreachable")
-        history_reachable = False
+        logger.exception("health check: database connectivity failed")
+        database_connected = False
 
+    response.status_code = 200 if database_connected else 503
     return {
-        "status": "ok",
-        "scheduler_enabled": settings.weather_sync_enabled,
-        "history_service_reachable": history_reachable,
+        "status": "ok" if database_connected else "degraded",
+        "database_connected": database_connected,
     }
