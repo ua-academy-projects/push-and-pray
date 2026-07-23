@@ -1,0 +1,109 @@
+# SkyIvano
+
+A small multi-service weather dashboard for **Ivano-Frankivsk, Ukraine**, built as a DevOps Academy assignment. It demonstrates clean service boundaries, scheduled background synchronization, and relational persistence — without Docker, Kubernetes, CI/CD, or cloud deployment (that's future work, see [docs/architecture.md](docs/architecture.md)).
+
+Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no key/auth required).
+
+## Screenshots
+
+<table>
+<tr>
+<td width="65%"><img src="docs/screenshots/dashboard-desktop.png" alt="SkyIvano dashboard on desktop: current weather hero card, metrics grid, hourly timeline, and 10-day history" width="100%"></td>
+<td width="35%"><img src="docs/screenshots/dashboard-mobile.png" alt="SkyIvano dashboard on a mobile viewport" width="100%"></td>
+</tr>
+</table>
+
+## Architecture at a glance
+
+```
+Scheduled sync:  Backend Scheduler -> Backend Service -> Open-Meteo -> Backend Service -> History Service -> PostgreSQL
+User reads:      Browser -> UI Service -> Backend Service -> History Service -> PostgreSQL
+```
+
+Three independently runnable services, each with a single responsibility:
+
+| Service | Responsibility |
+|---|---|
+| **ui-service** | React/TypeScript dashboard. Talks only to the Backend's public API. |
+| **backend-service** | FastAPI orchestrator. Calls Open-Meteo, normalizes data, runs the sync scheduler, serves the public/internal API. Never touches PostgreSQL directly. |
+| **history-service** | FastAPI + SQLAlchemy + PostgreSQL. The only service that owns and accesses the database. |
+
+The UI never calls Open-Meteo or the History Service, and never triggers a sync — it only ever reads data the Backend has already persisted. Full rules and diagrams: [docs/architecture.md](docs/architecture.md).
+
+## Technology stack
+
+- **UI**: React, TypeScript, Vite, plain CSS, Vitest + React Testing Library
+- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, pytest
+- **History**: Python 3.12, FastAPI, Pydantic, SQLAlchemy 2, Alembic, PostgreSQL, pytest
+- **Database**: PostgreSQL (no SQLite anywhere — including tests)
+
+## Local setup overview
+
+Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), and a local PostgreSQL instance.
+
+PostgreSQL itself can be a native install or run in a plain Docker container purely as a local dev-database convenience — this does **not** make the project "use Docker": the three application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §13 for actual future containerization plans). The commands below use the container approach; swap in `createdb` if you have a native Postgres.
+
+```bash
+docker run -d --name skyivano-postgres \
+  -e POSTGRES_USER=skyivano -e POSTGRES_PASSWORD=skyivano -e POSTGRES_DB=skyivano \
+  -p 5432:5432 -v skyivano-pgdata:/var/lib/postgresql/data postgres:16
+docker exec skyivano-postgres createdb -U skyivano skyivano_test
+```
+
+1. Databases created above (`skyivano` for dev, `skyivano_test` for tests).
+2. Copy each service's `.env.example` to `.env` and adjust if needed.
+3. Set up and run each service (see commands below).
+
+Detailed setup, migrations, and environment variables: [docs/architecture.md](docs/architecture.md) and each service's own README.
+
+## Running the services
+
+**History Service** (must be running first — Backend depends on it):
+```bash
+cd history-service
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload --port 8001
+```
+
+**Backend Service**:
+```bash
+cd backend-service
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+**UI Service**:
+```bash
+cd ui-service
+npm install
+npm run dev
+```
+
+Then open the UI (default `http://localhost:5173`).
+
+## Running tests
+
+```bash
+cd history-service && pytest
+cd backend-service && pytest
+cd ui-service && npm test
+```
+
+History Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them.
+
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — architecture, service boundaries, API contracts, database schema, sync/read flows, decisions (source of truth)
+- [docs/implementation-plan.md](docs/implementation-plan.md) — the 4 build stages
+- [docs/troubleshooting.md](docs/troubleshooting.md) — known issues and fixes
+- [docs/project-status.md](docs/project-status.md) — current progress checklist
+- [docs/prompts/](docs/prompts/) — self-contained AI-agent prompts, one per stage
+
+## Known limitations (v1)
+
+- Single hardcoded location (Ivano-Frankivsk) — no location picker.
+- Internal endpoints (`/internal/*`) have no authentication — see security notes in [docs/architecture.md](docs/architecture.md).
+- No containerization, orchestration, or CI/CD yet.

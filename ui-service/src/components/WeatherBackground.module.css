@@ -1,0 +1,259 @@
+.background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: linear-gradient(160deg, var(--bg-from) 0%, var(--bg-via) 55%, var(--bg-to) 100%);
+  transition: background 1.2s ease;
+}
+
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(10px);
+  opacity: 0.8;
+}
+
+.sunGlow {
+  composes: glow;
+  top: -8%;
+  right: 8%;
+  width: min(38vw, 420px);
+  height: min(38vw, 420px);
+  background: radial-gradient(circle, rgba(255, 214, 128, 0.9) 0%, rgba(255, 214, 128, 0) 70%);
+  animation: pulse 8s ease-in-out infinite;
+}
+
+.moonGlow {
+  composes: glow;
+  top: -4%;
+  right: 10%;
+  width: min(26vw, 280px);
+  height: min(26vw, 280px);
+  background: radial-gradient(circle, rgba(226, 232, 255, 0.55) 0%, rgba(226, 232, 255, 0) 70%);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.95;
+  }
+}
+
+.stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 20%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1.5px 1.5px at 65% 12%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 40% 32%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 85% 28%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 10% 55%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 92% 60%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 55% 70%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 30% 82%, rgba(255, 255, 255, 0.75), transparent);
+  background-repeat: no-repeat;
+  animation: twinkle 4.5s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.cloud {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 100px;
+  filter: blur(1px);
+}
+
+.cloud::before,
+.cloud::after {
+  content: "";
+  position: absolute;
+  background: inherit;
+  border-radius: 50%;
+}
+
+.cloudOne {
+  composes: cloud;
+  top: 14%;
+  left: -10%;
+  width: 220px;
+  height: 60px;
+  animation: drift 60s linear infinite;
+}
+.cloudOne::before {
+  width: 90px;
+  height: 90px;
+  top: -45px;
+  left: 30px;
+}
+.cloudOne::after {
+  width: 70px;
+  height: 70px;
+  top: -30px;
+  left: 120px;
+}
+
+.cloudTwo {
+  composes: cloud;
+  top: 32%;
+  left: -14%;
+  width: 160px;
+  height: 46px;
+  opacity: 0.7;
+  animation: drift 85s linear infinite;
+  animation-delay: -20s;
+}
+.cloudTwo::before {
+  width: 60px;
+  height: 60px;
+  top: -30px;
+  left: 20px;
+}
+.cloudTwo::after {
+  width: 50px;
+  height: 50px;
+  top: -20px;
+  left: 85px;
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(140vw);
+  }
+}
+
+.fogLayer {
+  position: absolute;
+  left: -10%;
+  width: 120%;
+  height: 140px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  filter: blur(6px);
+  animation: fogDrift 30s ease-in-out infinite;
+}
+.fogLayer:nth-child(1) {
+  top: 20%;
+}
+.fogLayer:nth-child(2) {
+  top: 45%;
+  animation-delay: -10s;
+}
+.fogLayer:nth-child(3) {
+  top: 70%;
+  animation-delay: -20s;
+}
+
+@keyframes fogDrift {
+  0%,
+  100% {
+    transform: translateX(-4%);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateX(4%);
+    opacity: 0.9;
+  }
+}
+
+.rain {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(210, 226, 255, 0.35) 0px,
+    rgba(210, 226, 255, 0.35) 1px,
+    transparent 1px,
+    transparent 14px
+  );
+  animation: rainFall 0.45s linear infinite;
+}
+
+.heavyRain {
+  composes: rain;
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(210, 226, 255, 0.5) 0px,
+    rgba(210, 226, 255, 0.5) 2px,
+    transparent 2px,
+    transparent 9px
+  );
+  animation-duration: 0.3s;
+}
+
+@keyframes rainFall {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -40px 90px;
+  }
+}
+
+.snow {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(2px 2px at 10% 0%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(2px 2px at 30% 0%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(2px 2px at 50% 0%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(2px 2px at 70% 0%, rgba(255, 255, 255, 0.75), transparent),
+    radial-gradient(2px 2px at 90% 0%, rgba(255, 255, 255, 0.85), transparent);
+  background-repeat: repeat;
+  background-size: 100% 100%;
+  animation: snowFall 6s linear infinite;
+}
+
+@keyframes snowFall {
+  from {
+    background-position:
+      0 -10%,
+      0 -10%,
+      0 -10%,
+      0 -10%,
+      0 -10%;
+  }
+  to {
+    background-position:
+      0 110%,
+      0 110%,
+      0 110%,
+      0 110%,
+      0 110%;
+  }
+}
+
+.stormFlash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.06);
+  animation: flash 9s ease-in-out infinite;
+}
+
+@keyframes flash {
+  0%,
+  92%,
+  100% {
+    opacity: 0;
+  }
+  93%,
+  95% {
+    opacity: 1;
+  }
+}

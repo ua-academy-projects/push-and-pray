@@ -1,0 +1,75 @@
+.section {
+  padding: 20px 0 20px 0;
+}
+
+.heading {
+  padding: 0 24px 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.scroller {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 24px 8px;
+  scroll-snap-type: x proximity;
+}
+
+.scroller:focus-visible {
+  outline-offset: 4px;
+}
+
+.hour {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  width: 92px;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.hourNow {
+  background: rgba(255, 209, 102, 0.18);
+  border-color: rgba(255, 209, 102, 0.55);
+}
+
+.time {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.hourNow .time {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.icon {
+  font-size: 1.6rem;
+}
+
+.temp {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.feelsLike {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.precip {
+  font-size: 0.75rem;
+  color: #7ec8ff;
+}
+
+.wind {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

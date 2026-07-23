@@ -1,0 +1,51 @@
+.stateCard {
+  width: 100%;
+  max-width: 560px;
+  margin: 10vh auto 0;
+  padding: 40px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.stateIcon {
+  font-size: 2.5rem;
+}
+
+.stateTitle {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.stateMessage {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.errorCard {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid var(--glass-border);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    border-top-color: var(--glass-border);
+  }
+}
