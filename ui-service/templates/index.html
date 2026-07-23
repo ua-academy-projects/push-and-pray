@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Weather App</title>
+<style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 22px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    input, button { font-size: 15px; padding: 8px 10px; border-radius: 6px; border: 1px solid #ccc; }
+    button { background: #2563eb; color: white; border: none; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 14px; }
+    #error { color: #b91c1c; margin-top: 8px; }
+    #current { margin-top: 10px; font-size: 15px; }
+
+    /* --- Графік температури з історії БД --- */
+    #chartStatus { color: #888; font-size: 14px; }
+    #temperatureChart { display: block; width: 100%; height: auto; margin-top: 12px; }
+    .chart-grid { stroke: #e5e7eb; stroke-width: 1; }
+    .chart-axis-label { fill: #6b7280; font-size: 11px; }
+    .chart-line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+    .chart-point { stroke: white; stroke-width: 1.5; }
+    #chartLegend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 13px; }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-color { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* --- Погодинний прогноз --- */
+    .city-row { margin-bottom: 18px; }
+    .city-row:last-child { margin-bottom: 0; }
+    .city-row h3 { margin: 0 0 8px; font-size: 16px; }
+    .hours-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+    .hour-cell {
+        flex: 0 0 auto; width: 64px; text-align: center;
+        border: 1px solid #eee; border-radius: 8px; padding: 8px 4px;
+        font-size: 12px; background: #fafafa;
+    }
+    .hour-cell .icon { font-size: 22px; }
+    .hour-cell .temp { font-weight: 600; margin-top: 2px; }
+    .hour-cell .prec { color: #2563eb; font-size: 11px; min-height: 14px; }
+    #hourlyContainer { color: #888; font-size: 14px; }
+
+    /* --- Згортний блок історії --- */
+    #historyDetails summary {
+        cursor: pointer;
+        font-size: 18px;
+        font-weight: 600;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    #historyDetails summary::-webkit-details-marker { display: none; }
+    #historyDetails summary::before { content: "▶"; font-size: 12px; transition: transform 0.15s; }
+    #historyDetails[open] summary::before { transform: rotate(90deg); }
+</style>
+</head>
+<body>
+    <h1>🌤 Weather App</h1>
+
+    <div class="card">
+        <p style="color: #555; font-size: 14px; margin: 0;">
+            Дані оновлюються автоматично фоновим сервісом (Poller) з певним
+            інтервалом. Тут можна лише переглянути вже накопичену історію.
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>Погодинний прогноз на сьогодні</h2>
+        <div id="hourlyContainer">Завантаження...</div>
+    </div>
+
+    <div class="card">
+        <h2>Температура з історії</h2>
+        <div id="chartStatus">Завантаження даних з бази...</div>
+        <svg id="temperatureChart" viewBox="0 0 600 270" role="img" aria-label="Графік температури з історії"></svg>
+        <div id="chartLegend"></div>
+    </div>
+
+    <div class="card">
+        <details id="historyDetails">
+            <summary>📜 Історія запитів</summary>
+            <div style="margin-top: 12px;">
+                <button onclick="loadHistory()">Оновити список</button>
+                <table id="historyTable">
+                    <thead>
+                        <tr><th>Час</th><th>Місто</th><th>Темп., °C</th><th>Вітер, км/год</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </details>
+    </div>
+
+<script>
+// Код погоди WMO (weathercode) -> [іконка, підпис]
+const WEATHER_ICONS = {
+    0: ["☀️", "Ясно"],
+    1: ["🌤️", "Малохмарно"],
+    2: ["⛅", "Хмарно"],
+    3: ["☁️", "Похмуро"],
+    45: ["🌫️", "Туман"], 48: ["🌫️", "Туман"],
+    51: ["🌦️", "Мряка"], 53: ["🌦️", "Мряка"], 55: ["🌦️", "Мряка"],
+    61: ["🌧️", "Дощ"], 63: ["🌧️", "Дощ"], 65: ["🌧️", "Сильний дощ"],
+    71: ["❄️", "Сніг"], 73: ["❄️", "Сніг"], 75: ["❄️", "Сильний сніг"],
+    80: ["🌧️", "Зливи"], 81: ["🌧️", "Зливи"], 82: ["🌧️", "Сильні зливи"],
+    95: ["⛈️", "Гроза"], 96: ["⛈️", "Гроза з градом"], 99: ["⛈️", "Гроза з градом"],
+};
+function getIcon(code) {
+    return WEATHER_ICONS[code] || ["❓", "Невідомо"];
+}
+
+async function loadHourly() {
+    const container = document.getElementById('hourlyContainer');
+    let data;
+    try {
+        const res = await fetch('/hourly');
+        data = await res.json();
+    } catch (e) {
+        container.textContent = 'Не вдалося звʼязатися з сервером';
+        return;
+    }
+
+    container.innerHTML = '';
+    if (!Array.isArray(data) || data.length === 0) {
+        container.textContent = 'Даних ще немає - зачекай на перший цикл Poller.';
+        return;
+    }
+
+    // Групуємо плаский список рядків у {місто: [години...]}
+    const byCity = {};
+    for (const row of data) {
+        if (!byCity[row.city]) byCity[row.city] = [];
+        byCity[row.city].push(row);
+    }
+
+    for (const city of Object.keys(byCity)) {
+        const cityDiv = document.createElement('div');
+        cityDiv.className = 'city-row';
+
+        const title = document.createElement('h3');
+        title.textContent = city;
+        cityDiv.appendChild(title);
+
+        const scroll = document.createElement('div');
+        scroll.className = 'hours-scroll';
+
+        for (const hour of byCity[city]) {
+            const [icon] = getIcon(hour.weathercode);
+            const time = new Date(hour.forecast_hour);
+            const hh = String(time.getHours()).padStart(2, '0');
+
+            const cell = document.createElement('div');
+            cell.className = 'hour-cell';
+            cell.innerHTML = `
+                <div>${hh}:00</div>
+                <div class="icon">${icon}</div>
+                <div class="temp">${Math.round(hour.temperature)}°</div>
+                <div class="prec">${hour.precipitation > 0 ? hour.precipitation + ' мм' : ''}</div>
+            `;
+            scroll.appendChild(cell);
+        }
+
+        cityDiv.appendChild(scroll);
+        container.appendChild(cityDiv);
+    }
+}
+
+async function loadHistory() {
+    let data;
+    try {
+        const res = await fetch('/history?limit=20');
+        data = await res.json();
+    } catch (e) {
+        return;
+    }
+    const tbody = document.querySelector('#historyTable tbody');
+    tbody.innerHTML = '';
+    if (!Array.isArray(data)) return;
+    for (const row of data) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${new Date(row.requested_at).toLocaleString()}</td>
+            <td>${row.city}</td>
+            <td>${row.temperature ?? '-'}</td>
+            <td>${row.windspeed ?? '-'}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+}
+
+const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c', '#0891b2'];
+
+function escapeXml(value) {
+    return String(value).replace(/[&<>'"]/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&apos;', '"': '&quot;'
+    }[char]));
+}
+
+function renderTemperatureChart(records) {
+    const svg = document.getElementById('temperatureChart');
+    const status = document.getElementById('chartStatus');
+    const legend = document.getElementById('chartLegend');
+    const points = records
+        .filter(row => Number.isFinite(Number(row.temperature)) && !Number.isNaN(Date.parse(row.requested_at)))
+        .map(row => ({ ...row, time: new Date(row.requested_at).getTime(), temperature: Number(row.temperature) }))
+        .sort((a, b) => a.time - b.time);
+
+    svg.innerHTML = '';
+    legend.innerHTML = '';
+    if (points.length === 0) {
+        status.textContent = 'У базі ще немає достатньо даних про температуру.';
+        return;
+    }
+
+    status.textContent = `Показано ${points.length} останніх вимірів із бази даних.`;
+    const width = 600, height = 270, padding = { top: 18, right: 18, bottom: 42, left: 45 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    const temperatures = points.map(point => point.temperature);
+    let minTemp = Math.floor(Math.min(...temperatures) - 1);
+    let maxTemp = Math.ceil(Math.max(...temperatures) + 1);
+    if (minTemp === maxTemp) { minTemp -= 1; maxTemp += 1; }
+    const minTime = points[0].time;
+    const maxTime = points[points.length - 1].time;
+    const x = time => padding.left + (maxTime === minTime ? plotWidth / 2 : (time - minTime) / (maxTime - minTime) * plotWidth);
+    const y = temp => padding.top + (maxTemp - temp) / (maxTemp - minTemp) * plotHeight;
+
+    let markup = '';
+    for (let step = 0; step <= 4; step++) {
+        const temp = minTemp + (maxTemp - minTemp) * step / 4;
+        const lineY = y(temp);
+        markup += `<line class="chart-grid" x1="${padding.left}" y1="${lineY}" x2="${width - padding.right}" y2="${lineY}"/>`;
+        markup += `<text class="chart-axis-label" x="${padding.left - 8}" y="${lineY + 4}" text-anchor="end">${temp.toFixed(1)}°</text>`;
+    }
+    for (let step = 0; step <= 3; step++) {
+        const time = minTime + (maxTime - minTime) * step / 3;
+        const label = new Date(time).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const lineX = x(time);
+        markup += `<text class="chart-axis-label" x="${lineX}" y="${height - 12}" text-anchor="middle">${label}</text>`;
+    }
+
+    const byCity = {};
+    for (const point of points) (byCity[point.city] ??= []).push(point);
+    Object.entries(byCity).forEach(([city, cityPoints], index) => {
+        const color = CHART_COLORS[index % CHART_COLORS.length];
+        const path = cityPoints.map((point, pointIndex) => `${pointIndex ? 'L' : 'M'} ${x(point.time).toFixed(1)} ${y(point.temperature).toFixed(1)}`).join(' ');
+        markup += `<path class="chart-line" stroke="${color}" d="${path}"/>`;
+        for (const point of cityPoints) {
+            const timestamp = new Date(point.time).toLocaleString('uk-UA');
+            markup += `<circle class="chart-point" fill="${color}" cx="${x(point.time).toFixed(1)}" cy="${y(point.temperature).toFixed(1)}" r="3"><title>${escapeXml(city)}: ${point.temperature}°C, ${escapeXml(timestamp)}</title></circle>`;
+        }
+        legend.innerHTML += `<span class="legend-item"><span class="legend-color" style="background:${color}"></span>${escapeXml(city)}</span>`;
+    });
+    svg.innerHTML = markup;
+}
+
+async function loadTemperatureChart() {
+    const status = document.getElementById('chartStatus');
+    try {
+        const res = await fetch('/history?limit=100');
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) throw new Error('Invalid history response');
+        renderTemperatureChart(data);
+    } catch (e) {
+        status.textContent = 'Не вдалося завантажити дані для графіка.';
+    }
+}
+
+// Прогноз завантажується одразу, а історія - лише при першому
+// розгортанні блоку (натисканні на "Історія запитів"), щоб не робити
+// зайвий запит до Backend/БД, поки людина його навіть не відкрила.
+loadHourly();
+loadTemperatureChart();
+
+let historyLoadedOnce = false;
+document.getElementById('historyDetails').addEventListener('toggle', (e) => {
+    if (e.target.open && !historyLoadedOnce) {
+        historyLoadedOnce = true;
+        loadHistory();
+    }
+});
+</script>
+</body>
+</html>
