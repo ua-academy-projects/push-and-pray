@@ -1,21 +1,6 @@
 const AUTO_REFRESH_INTERVAL_MS = 60_000;
 const WEATHER_TIME_ZONE = "Europe/Kyiv";
 
-const FORECAST_PERIODS = {
-    "24h": {
-        label: "24 години",
-        hours: 24,
-    },
-    "3d": {
-        label: "3 дні",
-        hours: 72,
-    },
-    "7d": {
-        label: "7 днів",
-        hours: 168,
-    },
-};
-
 const clearHistoryButton =
     document.getElementById(
         "clear-history-button"
@@ -48,14 +33,7 @@ const forecastStatus =
         "forecast-status"
     );
 
-const forecastPeriodButtons = Array.from(
-    document.querySelectorAll(
-        "[data-forecast-period]"
-    )
-);
-
 let isLoading = false;
-let activeForecastPeriod = "24h";
 let forecastAbortController = null;
 
 
@@ -1054,29 +1032,6 @@ async function loadWeather(
 }
 
 
-function setActiveForecastPeriod(period) {
-    activeForecastPeriod = period;
-
-    forecastPeriodButtons.forEach(
-        (button) => {
-            const isActive =
-                button.dataset.forecastPeriod ===
-                period;
-
-            button.classList.toggle(
-                "is-active",
-                isActive
-            );
-
-            button.setAttribute(
-                "aria-pressed",
-                String(isActive)
-            );
-        }
-    );
-}
-
-
 function showForecastMessage(
     message,
     isError = false,
@@ -1099,14 +1054,9 @@ function showForecastMessage(
 }
 
 
-async function loadForecast(period = "24h") {
-    const periodConfig =
-        FORECAST_PERIODS[period];
-
-    if (!periodConfig) {
-        return;
-    }
-
+async function loadForecast(
+    showLoading = false
+) {
     if (forecastAbortController) {
         forecastAbortController.abort();
     }
@@ -1114,26 +1064,23 @@ async function loadForecast(period = "24h") {
     const controller = new AbortController();
     forecastAbortController = controller;
 
-    setActiveForecastPeriod(period);
-
     forecastSection.setAttribute(
         "aria-busy",
         "true"
     );
 
-    showForecastMessage(
-        `Завантаження прогнозу на ` +
-        `${periodConfig.label}...`,
-        false,
-        `${periodConfig.label} · погодинно · ` +
-        WEATHER_TIME_ZONE
-    );
+    if (showLoading) {
+        showForecastMessage(
+            "Завантаження збереженого прогнозу...",
+            false,
+            "Наступні 24 години · " +
+            WEATHER_TIME_ZONE
+        );
+    }
 
     try {
         const response = await fetch(
-            `/api/forecast?period=${encodeURIComponent(
-                period
-            )}`,
+            "/api/forecast",
             {
                 cache: "no-store",
                 signal: controller.signal,
@@ -1143,11 +1090,19 @@ async function loadForecast(period = "24h") {
         const data = await response.json();
 
         if (!response.ok) {
+            const isWaiting =
+                response.status === 404;
+
             showForecastMessage(
                 data.error ||
                 "Не вдалося завантажити прогноз.",
-                true,
-                "Прогноз тимчасово недоступний"
+                !isWaiting,
+                isWaiting
+                    ? "Прогноз готується у фоні"
+                    : (
+                        "Прогноз тимчасово " +
+                        "недоступний"
+                    )
             );
 
             return;
@@ -1160,10 +1115,9 @@ async function loadForecast(period = "24h") {
 
         if (points.length === 0) {
             showForecastMessage(
-                "Для вибраного періоду немає " +
-                "даних прогнозу.",
+                "У базі ще немає даних прогнозу.",
                 false,
-                `${periodConfig.label} · немає даних`
+                "Прогноз готується у фоні"
             );
 
             return;
@@ -1182,15 +1136,29 @@ async function loadForecast(period = "24h") {
             temperatureUnit
         );
 
+        const updateLabel =
+            data.last_success_at
+                ? ` · оновлено ${
+                    formatDate(
+                        data.last_success_at
+                    )
+                }`
+                : "";
+
+        const freshnessLabel =
+            data.stale
+                ? "Попередній прогноз"
+                : "Наступні 24 години";
+
         forecastStatus.textContent =
-            `${periodConfig.label} · ` +
+            `${freshnessLabel} · ` +
             `${points.length} погодинних значень · ` +
-            `${temperatureUnit}`;
+            `${temperatureUnit}${updateLabel}`;
 
         temperatureChart.setAttribute(
             "aria-label",
             `Погодинний прогноз температури ` +
-            `у Надвірній на ${periodConfig.label}`
+            "у Надвірній на наступні 24 години"
         );
 
     } catch (error) {
@@ -1199,8 +1167,8 @@ async function loadForecast(period = "24h") {
         }
 
         showForecastMessage(
-            "Не вдалося зв’язатися із сервером " +
-            "прогнозу.",
+            "Не вдалося прочитати прогноз із " +
+            "сервера.",
             true,
             "Прогноз тимчасово недоступний"
         );
@@ -1287,6 +1255,7 @@ async function loadPageData(
         await Promise.all([
             loadWeather(showLoading),
             loadHistory(showLoading),
+            loadForecast(showLoading),
         ]);
 
     } finally {
@@ -1360,72 +1329,6 @@ function startAutomaticRefresh() {
 }
 
 
-function handleForecastPeriodKeydown(event) {
-    const currentIndex =
-        forecastPeriodButtons.indexOf(
-            event.currentTarget
-        );
-
-    let targetIndex = currentIndex;
-
-    if (
-        event.key === "ArrowRight" ||
-        event.key === "ArrowDown"
-    ) {
-        targetIndex =
-            (
-                currentIndex + 1
-            ) % forecastPeriodButtons.length;
-
-    } else if (
-        event.key === "ArrowLeft" ||
-        event.key === "ArrowUp"
-    ) {
-        targetIndex =
-            (
-                currentIndex -
-                1 +
-                forecastPeriodButtons.length
-            ) % forecastPeriodButtons.length;
-
-    } else if (event.key === "Home") {
-        targetIndex = 0;
-
-    } else if (event.key === "End") {
-        targetIndex =
-            forecastPeriodButtons.length - 1;
-
-    } else {
-        return;
-    }
-
-    event.preventDefault();
-
-    const targetButton =
-        forecastPeriodButtons[targetIndex];
-
-    targetButton.focus();
-    targetButton.click();
-}
-
-
-forecastPeriodButtons.forEach((button) => {
-    button.addEventListener(
-        "click",
-        () => {
-            loadForecast(
-                button.dataset.forecastPeriod
-            );
-        }
-    );
-
-    button.addEventListener(
-        "keydown",
-        handleForecastPeriodKeydown
-    );
-});
-
-
 clearHistoryButton.addEventListener(
     "click",
     clearHistory
@@ -1435,7 +1338,6 @@ document.addEventListener(
     "DOMContentLoaded",
     () => {
         loadPageData(true);
-        loadForecast(activeForecastPeriod);
         startAutomaticRefresh();
     }
 );

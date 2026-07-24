@@ -13,7 +13,7 @@ EXTERNAL_WEATHER_URL = os.getenv(
 
 REQUEST_TIMEOUT = 10
 DEFAULT_TIMEZONE = "Europe/Kyiv"
-MAX_FORECAST_HOURS = 16 * 24
+FORECAST_HOURS = 24
 
 
 def is_debug_enabled():
@@ -39,26 +39,6 @@ def get_coordinate(name, minimum, maximum):
         raise ValueError(
             f"{name} must be between "
             f"{minimum} and {maximum}."
-        )
-
-    return value
-
-
-def get_forecast_hours():
-    raw_value = request.args.get("hours", "24")
-
-    try:
-        value = int(raw_value)
-
-    except (TypeError, ValueError) as error:
-        raise ValueError(
-            "hours must be an integer."
-        ) from error
-
-    if not 1 <= value <= MAX_FORECAST_HOURS:
-        raise ValueError(
-            "hours must be between "
-            f"1 and {MAX_FORECAST_HOURS}."
         )
 
     return value
@@ -147,7 +127,6 @@ def normalize_forecast(
     latitude,
     longitude,
     weather_timezone,
-    forecast_hours,
 ):
     hourly = weather_data.get("hourly")
     hourly_units = weather_data.get(
@@ -224,7 +203,7 @@ def normalize_forecast(
                 "temperature_2m"
             ),
         },
-        "forecast_hours": forecast_hours,
+        "forecast_hours": FORECAST_HOURS,
         "source": "open-meteo",
         "generated_at": datetime.now(
             timezone.utc
@@ -372,8 +351,6 @@ def hourly_forecast():
                 "timezone cannot be empty."
             )
 
-        forecast_hours = get_forecast_hours()
-
     except ValueError as error:
         return jsonify({
             "error": str(error)
@@ -386,7 +363,7 @@ def hourly_forecast():
                 "latitude": latitude,
                 "longitude": longitude,
                 "hourly": "temperature_2m",
-                "forecast_hours": forecast_hours,
+                "forecast_hours": FORECAST_HOURS,
                 "timeformat": "unixtime",
                 "timezone": weather_timezone,
             },
@@ -408,11 +385,9 @@ def hourly_forecast():
             )
         }), 504
 
-    except requests.RequestException as error:
+    except requests.RequestException:
         app.logger.error(
-            "External weather forecast request "
-            "failed: %s",
-            error,
+            "External weather forecast request failed."
         )
 
         return jsonify({
@@ -436,7 +411,6 @@ def hourly_forecast():
             latitude,
             longitude,
             weather_timezone,
-            forecast_hours,
         )
 
     except (TypeError, ValueError) as error:

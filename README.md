@@ -21,8 +21,11 @@ Browser -> UI Service -> Backend Service -> Provider Service -> Open-Meteo
 
 Поточна погода збирається кожні 30 хвилин. Оновлення сторінки раз на
 60 секунд лише читає вже збережені дані та не викликає Open-Meteo.
-Погодинний прогноз завантажується окремо під час відкриття сторінки й
-після вибору періоду `24h`, `3d` або `7d`.
+Backend перевіряє необхідність оновлення прогнозу кожні 15 хвилин, але
+після успішного отримання не викликає Provider повторно протягом
+24 годин. Час останнього успішного оновлення та 24 погодинні точки
+зберігаються в PostgreSQL, тому цей інтервал переживає перезапуск
+застосунку.
 
 ## Структура
 
@@ -65,7 +68,7 @@ Compose.
 ```bash
 curl -fsS http://localhost:8080/health
 curl -fsS http://localhost:8080/api/weather
-curl -fsS "http://localhost:8080/api/forecast?period=3d"
+curl -fsS http://localhost:8080/api/forecast
 curl -fsS http://localhost:8080/api/history
 ```
 
@@ -168,7 +171,7 @@ Fusion/Vagrant. Усередині Ubuntu provisioning автоматично д
 
 - `GET /health`;
 - `GET /api/weather`;
-- `GET /api/forecast?period=24h|3d|7d`;
+- `GET /api/forecast`;
 - `GET /api/history`;
 - `DELETE /api/history`.
 
@@ -176,10 +179,16 @@ Fusion/Vagrant. Усередині Ubuntu provisioning автоматично д
 Provider Service надає `GET /health`, `GET /weather/current` і
 `GET /weather/forecast`; викликати його повинен лише backend.
 
+`GET /api/forecast` завжди читає дані з таблиць
+`weather_forecast_state` і `weather_forecast_points`. HTTP-запит до
+Provider виконує тільки фонове завдання Backend. Транзакційний advisory
+lock PostgreSQL не дозволяє кільком екземплярам Backend одночасно
+оновлювати прогноз.
+
 ## Час на графіку
 
-Графік дозволяє вибрати погодинний прогноз на 24 години, 3 або 7 днів.
-Точки сортуються за повним timestamp. Для одного дня вісь показує час,
-а для кількох днів — дату й час, наприклад `21.07 12:00`. Відображення
-явно використовує часовий пояс `Europe/Kyiv`, а кількість підписів
-адаптується до ширини графіка.
+Графік показує 24 послідовні погодинні точки останнього успішно
+збереженого прогнозу. Точки сортуються за повним timestamp. Якщо
+24-годинне вікно перетинає межу дня, вісь показує дату й час, наприклад
+`21.07 12:00`. Відображення явно використовує часовий пояс
+`Europe/Kyiv`, а кількість підписів адаптується до ширини графіка.

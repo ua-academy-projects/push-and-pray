@@ -1,12 +1,13 @@
 import atexit
 import os
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import psycopg
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -22,18 +23,17 @@ PROVIDER_URL = os.getenv(
 REQUEST_TIMEOUT = 10
 COLLECTION_INTERVAL_MINUTES = 30
 MINIMUM_INTERVAL_MINUTES = 25
+FORECAST_HOURS = 24
+FORECAST_REFRESH_INTERVAL_HOURS = 24
+FORECAST_RETRY_INTERVAL_MINUTES = 15
+FORECAST_ADVISORY_LOCK_ID = 726241118
 
 CITY_NAME = "Надвірна"
 COUNTRY_NAME = "Україна"
 LATITUDE = 48.6348
 LONGITUDE = 24.5694
 WEATHER_TIMEZONE = "Europe/Kyiv"
-
-FORECAST_PERIODS = {
-    "24h": 24,
-    "3d": 72,
-    "7d": 168,
-}
+FORECAST_LOCATION_KEY = "nadvirna"
 
 scheduler = BackgroundScheduler(
     timezone=WEATHER_TIMEZONE
@@ -104,7 +104,7 @@ def get_connection():
     )
 
 
-def create_table():
+def create_tables():
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -117,6 +117,42 @@ def create_table():
                     response_data JSONB NOT NULL,
                     source TEXT,
                     status TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS weather_forecast_state (
+                    location_key TEXT PRIMARY KEY,
+                    city TEXT NOT NULL,
+                    country TEXT NOT NULL,
+                    latitude DOUBLE PRECISION NOT NULL,
+                    longitude DOUBLE PRECISION NOT NULL,
+                    timezone TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    forecast_issued_at TIMESTAMPTZ NOT NULL,
+                    last_success_at TIMESTAMPTZ NOT NULL,
+                    batch_id UUID NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS weather_forecast_points (
+                    location_key TEXT NOT NULL,
+                    forecast_at TIMESTAMPTZ NOT NULL,
+                    temperature DOUBLE PRECISION NOT NULL,
+                    temperature_unit TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    forecast_issued_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL,
+                    batch_id UUID NOT NULL,
+                    PRIMARY KEY (
+                        location_key,
+                        forecast_at
+                    )
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                    weather_forecast_points_batch_idx
+                ON weather_forecast_points (
+                    location_key,
+                    batch_id,
+                    forecast_at
                 );
                 """
             )
@@ -358,10 +394,7 @@ def fetch_weather_from_provider():
     }
 
 
-def fetch_forecast_from_provider(
-    period,
-    forecast_hours,
-):
+def fetch_forecast_from_provider():
     try:
         response = requests.get(
             f"{PROVIDER_URL}/weather/forecast",
@@ -369,7 +402,6 @@ def fetch_forecast_from_provider(
                 "latitude": LATITUDE,
                 "longitude": LONGITUDE,
                 "timezone": WEATHER_TIMEZONE,
-                "hours": forecast_hours,
             },
             timeout=REQUEST_TIMEOUT,
         )
@@ -465,8 +497,7 @@ def fetch_forecast_from_provider(
 
     return {
         "query": CITY_NAME,
-        "period": period,
-        "forecast_hours": forecast_hours,
+        "forecast_hours": FORECAST_HOURS,
         "location": location,
         "hourly": {
             "time": times,
@@ -482,6 +513,469 @@ def fetch_forecast_from_provider(
             datetime.now(timezone.utc).isoformat(),
         ),
     }
+
+
+def normalize_forecast_points(forecast_data):
+    hourly = forecast_data.get("hourly")
+
+    if not isinstance(hourly, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув "
+            "неповні дані прогнозу."
+        )
+
+    times = hourly.get("time")
+    temperatures = hourly.get(
+        "temperature_2m"
+    )
+
+    if (
+        not isinstance(times, list) or
+        not isinstance(temperatures, list) or
+        len(times) != FORECAST_HOURS or
+        len(temperatures) != FORECAST_HOURS
+    ):
+        raise ProviderServiceError(
+            "Provider Service повинен повернути "
+            "24 погодинні точки прогнозу."
+        )
+
+    points_by_time = {}
+
+    for raw_time, raw_temperature in zip(
+        times,
+        temperatures,
+    ):
+        if (
+            not isinstance(raw_time, (int, float)) or
+            not isinstance(
+                raw_temperature,
+                (int, float),
+            )
+        ):
+            raise ProviderServiceError(
+                "Provider Service повернув "
+                "некоректні точки прогнозу."
+            )
+
+        try:
+            forecast_at = datetime.fromtimestamp(
+                raw_time,
+                tz=timezone.utc,
+            )
+
+        except (
+            OSError,
+            OverflowError,
+            ValueError,
+        ) as error:
+            raise ProviderServiceError(
+                "Provider Service повернув "
+                "некоректний час прогнозу."
+            ) from error
+
+        points_by_time[forecast_at] = float(
+            raw_temperature
+        )
+
+    if len(points_by_time) != FORECAST_HOURS:
+        raise ProviderServiceError(
+            "Provider Service повернув дублікати "
+            "часових точок прогнозу."
+        )
+
+    ordered_points = [
+        {
+            "forecast_at": forecast_at,
+            "temperature": temperature_value,
+        }
+        for forecast_at, temperature_value
+        in sorted(points_by_time.items())
+    ]
+
+    for previous, current in zip(
+        ordered_points,
+        ordered_points[1:],
+    ):
+        if (
+            current["forecast_at"] -
+            previous["forecast_at"]
+        ) != timedelta(hours=1):
+            raise ProviderServiceError(
+                "Provider Service повернув "
+                "непослідовні погодинні точки."
+            )
+
+    return ordered_points
+
+
+def acquire_forecast_refresh_lock(connection):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT pg_try_advisory_xact_lock(%s)
+                AS acquired;
+            """,
+            (FORECAST_ADVISORY_LOCK_ID,),
+        )
+
+        result = cursor.fetchone()
+
+    return bool(result and result["acquired"])
+
+
+def get_forecast_last_success_at(connection):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT last_success_at
+            FROM weather_forecast_state
+            WHERE location_key = %s;
+            """,
+            (FORECAST_LOCATION_KEY,),
+        )
+
+        state = cursor.fetchone()
+
+    if state is None:
+        return None
+
+    return state["last_success_at"].astimezone(
+        timezone.utc
+    )
+
+
+def save_forecast(
+    connection,
+    forecast_data,
+    points,
+    refreshed_at,
+):
+    provider = forecast_data.get(
+        "source",
+        "open-meteo",
+    )
+
+    forecast_issued_at = parse_datetime(
+        forecast_data.get("generated_at")
+    ) or refreshed_at
+
+    temperature_unit = (
+        forecast_data
+        .get("hourly_units", {})
+        .get("temperature_2m")
+        or "°C"
+    )
+
+    batch_id = uuid.uuid4()
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO weather_forecast_state (
+                location_key,
+                city,
+                country,
+                latitude,
+                longitude,
+                timezone,
+                provider,
+                forecast_issued_at,
+                last_success_at,
+                batch_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (location_key)
+            DO UPDATE SET
+                city = EXCLUDED.city,
+                country = EXCLUDED.country,
+                latitude = EXCLUDED.latitude,
+                longitude = EXCLUDED.longitude,
+                timezone = EXCLUDED.timezone,
+                provider = EXCLUDED.provider,
+                forecast_issued_at =
+                    EXCLUDED.forecast_issued_at,
+                last_success_at =
+                    EXCLUDED.last_success_at,
+                batch_id = EXCLUDED.batch_id;
+            """,
+            (
+                FORECAST_LOCATION_KEY,
+                CITY_NAME,
+                COUNTRY_NAME,
+                LATITUDE,
+                LONGITUDE,
+                WEATHER_TIMEZONE,
+                provider,
+                forecast_issued_at,
+                refreshed_at,
+                batch_id,
+            ),
+        )
+
+        cursor.executemany(
+            """
+            INSERT INTO weather_forecast_points (
+                location_key,
+                forecast_at,
+                temperature,
+                temperature_unit,
+                provider,
+                forecast_issued_at,
+                updated_at,
+                batch_id
+            )
+            VALUES (
+                %s, %s, %s, %s,
+                %s, %s, %s, %s
+            )
+            ON CONFLICT (
+                location_key,
+                forecast_at
+            )
+            DO UPDATE SET
+                temperature = EXCLUDED.temperature,
+                temperature_unit =
+                    EXCLUDED.temperature_unit,
+                provider = EXCLUDED.provider,
+                forecast_issued_at =
+                    EXCLUDED.forecast_issued_at,
+                updated_at = EXCLUDED.updated_at,
+                batch_id = EXCLUDED.batch_id;
+            """,
+            [
+                (
+                    FORECAST_LOCATION_KEY,
+                    point["forecast_at"],
+                    point["temperature"],
+                    temperature_unit,
+                    provider,
+                    forecast_issued_at,
+                    refreshed_at,
+                    batch_id,
+                )
+                for point in points
+            ],
+        )
+
+        cursor.execute(
+            """
+            DELETE FROM weather_forecast_points
+            WHERE location_key = %s
+              AND batch_id <> %s;
+            """,
+            (
+                FORECAST_LOCATION_KEY,
+                batch_id,
+            ),
+        )
+
+    return {
+        "batch_id": str(batch_id),
+        "last_success_at": (
+            refreshed_at.isoformat()
+        ),
+        "point_count": len(points),
+    }
+
+
+def get_forecast_from_database():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    location_key,
+                    city,
+                    country,
+                    latitude,
+                    longitude,
+                    timezone,
+                    provider,
+                    forecast_issued_at,
+                    last_success_at,
+                    batch_id
+                FROM weather_forecast_state
+                WHERE location_key = %s;
+                """,
+                (FORECAST_LOCATION_KEY,),
+            )
+
+            state = cursor.fetchone()
+
+            if state is None:
+                return None
+
+            cursor.execute(
+                """
+                SELECT
+                    forecast_at,
+                    temperature,
+                    temperature_unit
+                FROM weather_forecast_points
+                WHERE location_key = %s
+                  AND batch_id = %s
+                ORDER BY forecast_at ASC
+                LIMIT %s;
+                """,
+                (
+                    FORECAST_LOCATION_KEY,
+                    state["batch_id"],
+                    FORECAST_HOURS,
+                ),
+            )
+
+            points = cursor.fetchall()
+
+    if len(points) != FORECAST_HOURS:
+        return None
+
+    last_success_at = state[
+        "last_success_at"
+    ].astimezone(timezone.utc)
+
+    return {
+        "query": state["city"],
+        "forecast_hours": FORECAST_HOURS,
+        "location": {
+            "name": state["city"],
+            "country": state["country"],
+            "latitude": state["latitude"],
+            "longitude": state["longitude"],
+            "timezone": state["timezone"],
+        },
+        "hourly": {
+            "time": [
+                int(
+                    point["forecast_at"]
+                    .astimezone(timezone.utc)
+                    .timestamp()
+                )
+                for point in points
+            ],
+            "temperature_2m": [
+                point["temperature"]
+                for point in points
+            ],
+        },
+        "hourly_units": {
+            "time": "unixtime",
+            "temperature_2m": (
+                points[0]["temperature_unit"]
+            ),
+        },
+        "source": state["provider"],
+        "generated_at": (
+            state["forecast_issued_at"]
+            .astimezone(timezone.utc)
+            .isoformat()
+        ),
+        "last_success_at": (
+            last_success_at.isoformat()
+        ),
+        "stale": (
+            datetime.now(timezone.utc) -
+            last_success_at
+        ) >= timedelta(
+            hours=FORECAST_REFRESH_INTERVAL_HOURS
+        ),
+        "storage": "database",
+    }
+
+
+def refresh_forecast_if_due(now=None):
+    refreshed_at = (
+        now or datetime.now(timezone.utc)
+    ).astimezone(timezone.utc)
+
+    with get_connection() as connection:
+        if not acquire_forecast_refresh_lock(
+            connection
+        ):
+            return {
+                "updated": False,
+                "reason": "refresh_in_progress",
+            }
+
+        last_success_at = (
+            get_forecast_last_success_at(
+                connection
+            )
+        )
+
+        refresh_after = (
+            refreshed_at -
+            timedelta(
+                hours=(
+                    FORECAST_REFRESH_INTERVAL_HOURS
+                )
+            )
+        )
+
+        if (
+            last_success_at is not None and
+            last_success_at > refresh_after
+        ):
+            return {
+                "updated": False,
+                "reason": "forecast_is_fresh",
+                "last_success_at": (
+                    last_success_at.isoformat()
+                ),
+            }
+
+        app.logger.info(
+            "Requesting 24-hour forecast from "
+            "Provider Service."
+        )
+
+        forecast_data = (
+            fetch_forecast_from_provider()
+        )
+
+        points = normalize_forecast_points(
+            forecast_data
+        )
+
+        saved_forecast = save_forecast(
+            connection,
+            forecast_data,
+            points,
+            refreshed_at,
+        )
+
+    app.logger.info(
+        "24-hour forecast saved: %s points.",
+        saved_forecast["point_count"],
+    )
+
+    return {
+        "updated": True,
+        **saved_forecast,
+    }
+
+
+def run_forecast_refresh():
+    try:
+        refresh_forecast_if_due()
+
+    except ProviderServiceError as error:
+        app.logger.error(
+            "Forecast refresh failed: %s",
+            error,
+        )
+
+    except (
+        psycopg.Error,
+        RuntimeError,
+    ) as error:
+        app.logger.error(
+            "Could not refresh stored forecast: %s",
+            error,
+        )
 
 
 def collect_weather_without_lock(force=False):
@@ -561,12 +1055,27 @@ def start_scheduler():
         ),
     )
 
+    scheduler.add_job(
+        func=run_forecast_refresh,
+        trigger="interval",
+        minutes=FORECAST_RETRY_INTERVAL_MINUTES,
+        id="nadvirna-forecast-refresher",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(
+            timezone.utc
+        ),
+    )
+
     scheduler.start()
 
     app.logger.info(
         "Weather scheduler started. "
-        "Collection interval: %s minutes.",
+        "Current conditions interval: %s minutes; "
+        "forecast check interval: %s minutes.",
         COLLECTION_INTERVAL_MINUTES,
+        FORECAST_RETRY_INTERVAL_MINUTES,
     )
 
 
@@ -585,6 +1094,12 @@ def health():
             "city": CITY_NAME,
             "collection_interval_minutes": (
                 COLLECTION_INTERVAL_MINUTES
+            ),
+            "forecast_refresh_interval_hours": (
+                FORECAST_REFRESH_INTERVAL_HOURS
+            ),
+            "forecast_check_interval_minutes": (
+                FORECAST_RETRY_INTERVAL_MINUTES
             ),
             "scheduler_running": scheduler.running,
         })
@@ -636,44 +1151,34 @@ def weather():
 
 @app.get("/api/forecast")
 def forecast():
-    period = request.args.get(
-        "period",
-        "24h",
-    ).strip()
-
-    forecast_hours = FORECAST_PERIODS.get(
-        period
-    )
-
-    if forecast_hours is None:
-        return jsonify({
-            "error": (
-                "Непідтримуваний період прогнозу."
-            ),
-            "supported_periods": list(
-                FORECAST_PERIODS
-            ),
-        }), 400
-
     try:
-        forecast_data = (
-            fetch_forecast_from_provider(
-                period,
-                forecast_hours,
-            )
-        )
+        forecast_data = get_forecast_from_database()
+
+        if forecast_data is None:
+            return jsonify({
+                "error": (
+                    "Прогноз ще готується. "
+                    "Спробуйте трохи пізніше."
+                )
+            }), 404
 
         return jsonify(forecast_data)
 
-    except ProviderServiceError as error:
+    except (
+        psycopg.Error,
+        RuntimeError,
+    ) as error:
         app.logger.error(
-            "Could not load forecast: %s",
+            "Could not read stored forecast: %s",
             error,
         )
 
         return jsonify({
-            "error": error.message
-        }), error.status_code
+            "error": (
+                "Не вдалося прочитати прогноз "
+                "із бази даних."
+            )
+        }), 503
 
 
 @app.get("/api/history")
@@ -762,7 +1267,7 @@ atexit.register(
 
 
 if __name__ == "__main__":
-    create_table()
+    create_tables()
     start_scheduler()
 
     app.run(
