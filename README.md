@@ -6,14 +6,6 @@ Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no k
 
 The project was originally built as three services (UI, Backend, History) and has since been refactored into four (UI, Backend, a Weather Fetcher, PostgreSQL); the History Service no longer exists. See [docs/prompts/refactor-0-discovery-and-plan.md](docs/prompts/refactor-0-discovery-and-plan.md) for the full staged plan.
 
-## Screenshots
-
-<table>
-<tr>
-<td width="65%"><img src="docs/screenshots/dashboard-desktop.png" alt="SkyIvano dashboard on desktop: current weather hero, status strip, Today, Forecast, and Averages sections with charts" width="100%"></td>
-<td width="35%"><img src="docs/screenshots/dashboard-mobile.png" alt="SkyIvano dashboard on a mobile viewport" width="100%"></td>
-</tr>
-</table>
 
 ## Architecture at a glance
 
@@ -91,7 +83,7 @@ Then open the UI (default `http://localhost:5173`).
 
 ## Running with Vagrant
 
-An alternative to the native setup above: [`Vagrantfile`](Vagrantfile) brings up all four components (`postgres`, `backend`, `fetcher`, `ui`) as separate VMs under the QEMU provider (`vagrant-qemu` plugin — required on Apple Silicon, since VirtualBox's arm64 support isn't reliable). Every VM is bridged onto the same home-network LAN as the host Mac (and reachable from other devices on it, e.g. a phone), each with a fixed IP:
+An alternative to the native setup  above: [`Vagrantfile`](Vagrantfile) brings up all four components (`postgres`, `backend`, `fetcher`, `ui`) as separate VMs under the QEMU provider (`vagrant-qemu` plugin — required on Apple Silicon, since VirtualBox's arm64 support isn't reliable). Every VM is bridged onto the same home-network LAN as the host Mac (and reachable from other devices on it, e.g. a phone), each with a fixed IP:
 
 | VM | LAN IP | Port |
 |---|---|---|
