@@ -2,16 +2,17 @@
 # Provisions the ui-service VM: Node.js LTS, npm install, and a systemd unit
 # to run the Vite dev server.
 #
-# Networking note: VITE_BACKEND_BASE_URL is left at its .env.example default
-# (http://localhost:8000) unmodified - import.meta.env.VITE_* is read by
-# browser JS running on the host, so "localhost:8000" correctly resolves to
-# the backend-service VM's forwarded port. This guest itself only needs to
-# reach backend-service (via its own slirp gateway alias 10.0.2.2) for the
-# readiness check below, not for anything the running app does.
+# Networking note: VITE_BACKEND_BASE_URL is set to the backend-service VM's
+# bridged LAN IP, not localhost - import.meta.env.VITE_* is baked into
+# browser JS that can run on *any* device on the LAN (not just this host),
+# so "localhost:8000" would wrongly resolve to whichever device loaded the
+# page. The backend's real LAN IP works from the host and from every other
+# device alike. This guest itself also uses that same IP for the readiness
+# check below.
 set -euo pipefail
 
 APP_DIR="/app"
-GATEWAY="10.0.2.2"
+BACKEND_IP="192.168.0.221"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -23,9 +24,9 @@ if ! command -v node >/dev/null 2>&1; then
   apt-get install -y nodejs
 fi
 
-echo ">>> Waiting for backend-service (${GATEWAY}:8000) to respond"
+echo ">>> Waiting for backend-service (${BACKEND_IP}:8000) to respond"
 for i in $(seq 1 30); do
-  if curl -fsS -o /dev/null "http://${GATEWAY}:8000/docs"; then
+  if curl -fsS -o /dev/null "http://${BACKEND_IP}:8000/docs"; then
     echo "    backend-service is up"
     break
   fi
@@ -36,6 +37,7 @@ done
 echo ">>> Setting up ui-service"
 cd "${APP_DIR}"
 [ -f .env ] || cp .env.example .env
+sed -i "s#^VITE_BACKEND_BASE_URL=.*#VITE_BACKEND_BASE_URL=http://${BACKEND_IP}:8000#" .env
 npm install
 
 echo ">>> Installing systemd unit"
@@ -61,4 +63,4 @@ systemctl daemon-reload
 systemctl enable --now ui-service
 
 echo ">>> Provisioning complete"
-echo "    UI Service reachable at http://localhost:5173"
+echo "    UI Service reachable at http://192.168.0.223:5173 from this Mac or any other device on the LAN"

@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.clients.backend_client import BackendClient
@@ -18,6 +19,24 @@ JOB_ID = "weather_fetch"
 scheduler = AsyncIOScheduler()
 
 
+def _build_trigger(interval_minutes: int) -> CronTrigger | IntervalTrigger:
+    """Aligns runs to the clock (e.g. 18:00, 19:00) instead of drifting to whatever minute
+    the service happened to start on, which is what a plain IntervalTrigger does -- it
+    schedules its first run `interval_minutes` after add_job() is called, not at a fixed
+    clock time, so every process restart shifts all future runs to a new offset."""
+    if interval_minutes < 60 and 60 % interval_minutes == 0:
+        return CronTrigger(minute=f"*/{interval_minutes}")
+    if interval_minutes % 60 == 0:
+        hours = interval_minutes // 60
+        return CronTrigger(minute=0, hour="*" if hours == 1 else f"*/{hours}")
+    logger.warning(
+        "weather_sync_interval_minutes=%d doesn't evenly divide or multiply an hour; "
+        "falling back to a rolling interval that won't align to the clock",
+        interval_minutes,
+    )
+    return IntervalTrigger(minutes=interval_minutes)
+
+
 def configure_scheduler(settings: Settings) -> None:
     if not settings.weather_sync_enabled:
         logger.info("scheduler disabled: WEATHER_SYNC_ENABLED=false")
@@ -25,7 +44,7 @@ def configure_scheduler(settings: Settings) -> None:
 
     scheduler.add_job(
         run_fetch_sync,
-        trigger=IntervalTrigger(minutes=settings.weather_sync_interval_minutes),
+        trigger=_build_trigger(settings.weather_sync_interval_minutes),
         args=["scheduler"],
         id=JOB_ID,
         max_instances=1,
@@ -34,7 +53,7 @@ def configure_scheduler(settings: Settings) -> None:
         misfire_grace_time=60,
     )
     scheduler.start()
-    logger.info("scheduler started: interval=%d minutes", settings.weather_sync_interval_minutes)
+    logger.info("scheduler started: interval=%d minutes, aligned to the clock", settings.weather_sync_interval_minutes)
 
 
 def shutdown_scheduler() -> None:

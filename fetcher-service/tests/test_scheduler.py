@@ -33,6 +33,16 @@ async def test_configure_scheduler_starts_and_schedules_job_when_enabled():
     assert job.next_run_time is not None
 
 
+async def test_configure_scheduler_aligns_hourly_runs_to_the_top_of_the_hour():
+    settings = make_settings(weather_sync_enabled=True, weather_sync_interval_minutes=60)
+
+    weather_scheduler.configure_scheduler(settings)
+
+    job = weather_scheduler.scheduler.get_job(weather_scheduler.JOB_ID)
+    assert job.next_run_time.minute == 0
+    assert job.next_run_time.second == 0
+
+
 async def test_configure_scheduler_does_nothing_when_disabled():
     settings = make_settings(weather_sync_enabled=False)
 

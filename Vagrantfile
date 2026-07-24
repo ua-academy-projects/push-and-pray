@@ -2,23 +2,47 @@
 # vi: set ft=ruby :
 #
 # Four-VM dev environment for SkyIvano: one VM per component (postgres,
-# history-service, backend-service, ui-service), run under the QEMU provider
+# backend-service, fetcher-service, ui-service), run under the QEMU provider
 # (vagrant-qemu plugin) since this host is Apple Silicon and VirtualBox's
 # arm64 support is not reliable enough to import boxes on it.
 #
-# Networking: each VM only gets QEMU's default usermode ("slirp") NIC - no
-# private_network/vmnet is configured, since that needs either sudo (vmnet)
-# or an extra background daemon (socket_vmnet) on macOS. Instead, cross-VM
-# calls go: guest -> its own slirp gateway alias 10.0.2.2 -> the real host ->
-# the target VM's forwarded port. This needs no extra setup at all:
+# Networking: every VM is bridged onto the same physical LAN as the host
+# Mac and every other device on that network (QEMU's native vmnet-bridged
+# backend, over en0), each with a fixed IP, and that bridged IP is the
+# *only* way in - there is no NAT/forwarded-port fallback to localhost:
 #
-#   postgres  forwards 5432  (history connects to 10.0.2.2:5432)
-#   history   forwards 8001  (backend connects to 10.0.2.2:8001)
-#   backend   forwards 8000  (browser on the host uses http://localhost:8000)
-#   ui        forwards 5173  (browser on the host uses http://localhost:5173)
+#   postgres  192.168.0.220  (port 5432)
+#   backend   192.168.0.221  (port 8000)
+#   fetcher   192.168.0.222  (port 8002)
+#   ui        192.168.0.223  (port 5173)
 #
-# `vagrant up` brings machines up in the order defined below, matching this
-# dependency chain (postgres -> history -> backend -> ui).
+# Cross-VM calls use these fixed LAN IPs directly - no slirp/NAT gateway
+# trick needed. Because they're real LAN addresses, any other device on
+# the same home network (phone, another laptop, ...) can reach them too,
+# e.g. http://192.168.0.223:5173 for the UI - and so can this Mac, at the
+# same address (not localhost:5173).
+#
+# Each VM still gets a second, user-mode NIC purely because the vagrant-qemu
+# plugin requires one for its own SSH/provisioning control channel
+# (`qe.ssh_port` below) - that NIC has no forwarded_port entries for any
+# application port, so it exposes nothing but SSH.
+#
+# vmnet-bridged requires root: run `sudo vagrant up` (and `sudo vagrant
+# reload` / `halt` / `destroy`) - the plugin warns if you don't, and a
+# later unprivileged command can fail with EACCES on root-owned files (see
+# the plugin's README "Known issue" section if that happens).
+#
+# The static IPs below sit at the high end of a typical home /24, above
+# most routers' default DHCP pools, to avoid colliding with real devices -
+# double check against your own router's DHCP range/reservations before
+# relying on this. Adjust NETWORK_IPS/VMNET_INTERFACE if your LAN isn't
+# 192.168.0.0/24 over en0.
+#
+# `vagrant up` brings machines up in the order defined below, matching
+# this dependency chain (postgres -> backend -> fetcher -> ui): backend
+# needs postgres to exist, fetcher's startup freshness check and every
+# sync push need backend reachable, and ui's readiness check waits on
+# backend.
 #
 # Synced folders use rsync (one-directional, host -> guest) rather than SMB:
 # SMB synced folders need a manual "File Sharing" toggle in macOS System
@@ -27,6 +51,14 @@
 # while editing, run `vagrant rsync-auto` in another terminal.
 
 BOX = "perk/ubuntu-2204-arm64"
+VMNET_INTERFACE = "en0"
+
+NETWORK_IPS = {
+  postgres: "192.168.0.220",
+  backend:  "192.168.0.221",
+  fetcher:  "192.168.0.222",
+  ui:       "192.168.0.223",
+}
 
 # node_modules/.venv are guest-built (Linux/arm64) - never rsync them from
 # the host (macOS/arm64 has OS-specific native bindings that won't run in
@@ -37,56 +69,68 @@ Vagrant.configure("2") do |config|
   config.vm.define "postgres" do |node|
     node.vm.box = BOX
     node.vm.hostname = "skyivano-postgres"
-    node.vm.network "forwarded_port", guest: 5432, host: 5432, auto_correct: true
+    node.vm.network "private_network", ip: NETWORK_IPS[:postgres]
 
     node.vm.provider "qemu" do |qe|
       qe.ssh_port = 50110
       qe.memory = "512M"
       qe.smp = "1"
+      qe.advanced_network = true
+      qe.net_mode = :vmnet_bridged
+      qe.vmnet_interface = VMNET_INTERFACE
     end
 
     node.vm.provision "shell", path: "vagrant/postgres/provision.sh"
   end
 
-  config.vm.define "history" do |node|
+  config.vm.define "backend" do |node|
     node.vm.box = BOX
-    node.vm.hostname = "skyivano-history"
-    node.vm.network "forwarded_port", guest: 8001, host: 8001
+    node.vm.hostname = "skyivano-backend"
+    node.vm.network "private_network", ip: NETWORK_IPS[:backend]
 
     node.vm.provider "qemu" do |qe|
       qe.ssh_port = 50111
       qe.memory = "768M"
       qe.smp = "1"
-    end
-
-    node.vm.synced_folder "history-service", "/app", type: "rsync", rsync__exclude: RSYNC_EXCLUDES
-    node.vm.provision "shell", path: "vagrant/history/provision.sh"
-  end
-
-  config.vm.define "backend" do |node|
-    node.vm.box = BOX
-    node.vm.hostname = "skyivano-backend"
-    node.vm.network "forwarded_port", guest: 8000, host: 8000
-
-    node.vm.provider "qemu" do |qe|
-      qe.ssh_port = 50112
-      qe.memory = "768M"
-      qe.smp = "1"
+      qe.advanced_network = true
+      qe.net_mode = :vmnet_bridged
+      qe.vmnet_interface = VMNET_INTERFACE
     end
 
     node.vm.synced_folder "backend-service", "/app", type: "rsync", rsync__exclude: RSYNC_EXCLUDES
     node.vm.provision "shell", path: "vagrant/backend/provision.sh"
   end
 
+  config.vm.define "fetcher" do |node|
+    node.vm.box = BOX
+    node.vm.hostname = "skyivano-fetcher"
+    node.vm.network "private_network", ip: NETWORK_IPS[:fetcher]
+
+    node.vm.provider "qemu" do |qe|
+      qe.ssh_port = 50112
+      qe.memory = "768M"
+      qe.smp = "1"
+      qe.advanced_network = true
+      qe.net_mode = :vmnet_bridged
+      qe.vmnet_interface = VMNET_INTERFACE
+    end
+
+    node.vm.synced_folder "fetcher-service", "/app", type: "rsync", rsync__exclude: RSYNC_EXCLUDES
+    node.vm.provision "shell", path: "vagrant/fetcher/provision.sh"
+  end
+
   config.vm.define "ui" do |node|
     node.vm.box = BOX
     node.vm.hostname = "skyivano-ui"
-    node.vm.network "forwarded_port", guest: 5173, host: 5173
+    node.vm.network "private_network", ip: NETWORK_IPS[:ui]
 
     node.vm.provider "qemu" do |qe|
       qe.ssh_port = 50113
       qe.memory = "1G"
       qe.smp = "2"
+      qe.advanced_network = true
+      qe.net_mode = :vmnet_bridged
+      qe.vmnet_interface = VMNET_INTERFACE
     end
 
     node.vm.synced_folder "ui-service", "/app", type: "rsync", rsync__exclude: RSYNC_EXCLUDES

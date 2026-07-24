@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 # Provisions the postgres VM: installs PostgreSQL, creates the skyivano and
-# skyivano_test databases, and opens it up so the history-service VM can
+# skyivano_test databases, and opens it up so the backend-service VM can
 # reach it. Safe to re-run.
 #
-# Networking note: there is no private LAN between the VMs (see Vagrantfile).
-# The history-service VM reaches this one via its own QEMU slirp gateway
-# alias (10.0.2.2) -> the real host -> this VM's forwarded port 5432. Once
-# that connection lands inside this guest, its source address is the slirp
-# gateway itself (10.0.2.2) - that's what pg_hba.conf must allow, not a LAN
-# subnet or 127.0.0.1.
+# Networking note: all VMs are bridged onto the host's LAN (see
+# Vagrantfile), each with its own fixed IP - no NAT/slirp gateway trick
+# needed. Only the backend-service VM talks to Postgres directly, so
+# pg_hba.conf is opened to that VM's specific bridged IP, not the whole
+# LAN.
 set -euo pipefail
 
 DB_USER="skyivano"
 DB_PASS="skyivano"
 DB_NAME="skyivano"
 DB_TEST_NAME="skyivano_test"
-GATEWAY="10.0.2.2"
+BACKEND_IP="192.168.0.221"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -36,17 +35,17 @@ sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'"
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_TEST_NAME}'" | grep -q 1 \
   || sudo -u postgres createdb -O "${DB_USER}" "${DB_TEST_NAME}"
 
-echo ">>> Opening PostgreSQL to the history-service VM (via ${GATEWAY})"
+echo ">>> Opening PostgreSQL to the backend-service VM (${BACKEND_IP})"
 PG_CONF="$(sudo -u postgres psql -tAc 'SHOW config_file')"
 PG_HBA="$(sudo -u postgres psql -tAc 'SHOW hba_file')"
 
 sed -i "s/^#\?listen_addresses.*/listen_addresses = '*'/" "$PG_CONF"
 
-if ! grep -q "${GATEWAY}/32" "$PG_HBA"; then
-  echo "host    all             all             ${GATEWAY}/32            md5" >> "$PG_HBA"
+if ! grep -q "${BACKEND_IP}/32" "$PG_HBA"; then
+  echo "host    all             all             ${BACKEND_IP}/32            md5" >> "$PG_HBA"
 fi
 
 systemctl restart postgresql
 
 echo ">>> Provisioning complete"
-echo "    Postgres reachable at localhost:5432 on the host, or ${GATEWAY}:5432 from other VMs (user=${DB_USER} db=${DB_NAME}/${DB_TEST_NAME})"
+echo "    Postgres reachable at 192.168.0.220:5432 on the LAN (user=${DB_USER} db=${DB_NAME}/${DB_TEST_NAME})"

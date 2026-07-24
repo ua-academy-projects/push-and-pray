@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # Provisions the backend-service VM: Python 3.12, the service's venv, a .env
-# pointed at the history-service VM, and a systemd unit to run it.
+# pointed at the postgres VM, migrations, and a systemd unit to run it.
 #
-# Networking note: there is no private LAN between the VMs (see Vagrantfile).
-# This guest reaches history-service via its own slirp gateway alias
-# (10.0.2.2), which the real host then routes to history-service's forwarded
-# port 8001. BACKEND_CORS_ORIGINS is left at its .env.example default
-# (http://localhost:5173) - the browser making the request runs on the host,
-# so its Origin header is localhost:5173 regardless of how the guests talk
-# to each other.
+# Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile),
+# each with its own fixed IP - this guest reaches postgres directly at its
+# bridged IP, no NAT/slirp gateway needed. There is no forwarded-port
+# fallback to localhost for any service, so BACKEND_CORS_ORIGINS is set to
+# the ui-service VM's own LAN IP - every browser that loads the UI, on this
+# Mac or any other device, does so from that address, and that's what its
+# Origin header will carry.
 set -euo pipefail
 
 APP_DIR="/app"
-GATEWAY="10.0.2.2"
+POSTGRES_IP="192.168.0.220"
+FETCHER_IP="192.168.0.222"
+UI_IP="192.168.0.223"
+DB_USER="skyivano"
+DB_PASS="skyivano"
+DB_NAME="skyivano"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -23,10 +28,11 @@ add-apt-repository -y ppa:deadsnakes/ppa
 apt-get update -y
 apt-get install -y python3.12 python3.12-venv python3.12-dev
 
-echo ">>> Waiting for history-service (${GATEWAY}:8001) to respond"
+echo ">>> Waiting for postgres (${POSTGRES_IP}:5432) to accept connections"
+apt-get install -y postgresql-client
 for i in $(seq 1 30); do
-  if curl -fsS -o /dev/null "http://${GATEWAY}:8001/docs"; then
-    echo "    history-service is up"
+  if PGPASSWORD="${DB_PASS}" psql -h "${POSTGRES_IP}" -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1" >/dev/null 2>&1; then
+    echo "    postgres is up"
     break
   fi
   echo "    attempt ${i}/30: not ready yet, retrying in 2s"
@@ -39,7 +45,10 @@ python3.12 -m venv .venv
 ./.venv/bin/pip install --upgrade pip
 ./.venv/bin/pip install -r requirements.txt
 [ -f .env ] || cp .env.example .env
-sed -i "s#^HISTORY_SERVICE_BASE_URL=.*#HISTORY_SERVICE_BASE_URL=http://${GATEWAY}:8001#" .env
+sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+psycopg://${DB_USER}:${DB_PASS}@${POSTGRES_IP}:5432/${DB_NAME}#" .env
+sed -i "s#^FETCHER_SERVICE_BASE_URL=.*#FETCHER_SERVICE_BASE_URL=http://${FETCHER_IP}:8002#" .env
+sed -i "s#^BACKEND_CORS_ORIGINS=.*#BACKEND_CORS_ORIGINS=http://${UI_IP}:5173#" .env
+./.venv/bin/alembic upgrade head
 
 echo ">>> Installing systemd unit"
 cat > /etc/systemd/system/backend-service.service <<'EOF'
@@ -65,4 +74,4 @@ systemctl daemon-reload
 systemctl enable --now backend-service
 
 echo ">>> Provisioning complete"
-echo "    Backend Service reachable at localhost:8000 on the host, or ${GATEWAY}:8000 from other VMs"
+echo "    Backend Service reachable at 192.168.0.221:8000 on the LAN"

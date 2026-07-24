@@ -89,6 +89,27 @@ npm run dev
 
 Then open the UI (default `http://localhost:5173`).
 
+## Running with Vagrant
+
+An alternative to the native setup above: [`Vagrantfile`](Vagrantfile) brings up all four components (`postgres`, `backend`, `fetcher`, `ui`) as separate VMs under the QEMU provider (`vagrant-qemu` plugin — required on Apple Silicon, since VirtualBox's arm64 support isn't reliable). Every VM is bridged onto the same home-network LAN as the host Mac (and reachable from other devices on it, e.g. a phone), each with a fixed IP:
+
+| VM | LAN IP | Port |
+|---|---|---|
+| postgres | 192.168.0.220 | 5432 |
+| backend | 192.168.0.221 | 8000 |
+| fetcher | 192.168.0.222 | 8002 |
+| ui | 192.168.0.223 | 5173 |
+
+Bridged networking (`vmnet_bridged`) needs root, and a separate macOS Objective-C runtime quirk (`+[NSNumber initialize] ... fork()`) crashes QEMU on some machines unless one extra environment variable is set. Always bring the environment up with:
+
+```bash
+sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant up
+```
+
+Use that same `sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` prefix for every other lifecycle command too (`reload`, `halt`, `destroy`, `status`, `ssh <name>`) — mixing sudo and non-sudo runs leaves root-owned files behind that break the non-sudo commands.
+
+Once up, open `http://192.168.0.223:5173` from this Mac or any other device on the LAN — there's no `localhost` fallback, since the VMs have no forwarded ports, only the bridged LAN addresses above.
+
 ## Running tests
 
 ```bash
