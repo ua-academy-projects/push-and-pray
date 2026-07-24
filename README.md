@@ -1,7 +1,8 @@
 # Weather App
 
 Weather App автоматично збирає погоду для Надвірної, зберігає історію
-в PostgreSQL і показує останнє вимірювання та графік температури.
+в PostgreSQL і показує останнє вимірювання та погодинний прогноз
+температури.
 
 ## Архітектура
 
@@ -18,8 +19,10 @@ Browser -> UI Service -> Backend Service -> Provider Service -> Open-Meteo
   має доступу до бази даних;
 - PostgreSQL доступний лише для `backend-service`.
 
-Погода збирається кожні 30 хвилин. Оновлення сторінки раз на 60 секунд
-лише читає вже збережені дані та не викликає Open-Meteo.
+Поточна погода збирається кожні 30 хвилин. Оновлення сторінки раз на
+60 секунд лише читає вже збережені дані та не викликає Open-Meteo.
+Погодинний прогноз завантажується окремо під час відкриття сторінки й
+після вибору періоду `24h`, `3d` або `7d`.
 
 ## Структура
 
@@ -62,6 +65,7 @@ Compose.
 ```bash
 curl -fsS http://localhost:8080/health
 curl -fsS http://localhost:8080/api/weather
+curl -fsS "http://localhost:8080/api/forecast?period=3d"
 curl -fsS http://localhost:8080/api/history
 ```
 
@@ -164,16 +168,18 @@ Fusion/Vagrant. Усередині Ubuntu provisioning автоматично д
 
 - `GET /health`;
 - `GET /api/weather`;
+- `GET /api/forecast?period=24h|3d|7d`;
 - `GET /api/history`;
 - `DELETE /api/history`.
 
 Внутрішній Backend Service має ті самі `/api/*` маршрути. Внутрішній
-Provider Service надає `GET /health` і `GET /weather/current`; викликати
-його повинен лише backend.
+Provider Service надає `GET /health`, `GET /weather/current` і
+`GET /weather/forecast`; викликати його повинен лише backend.
 
 ## Час на графіку
 
-Історія сортується за повним timestamp. Для одного дня вісь показує час,
+Графік дозволяє вибрати погодинний прогноз на 24 години, 3 або 7 днів.
+Точки сортуються за повним timestamp. Для одного дня вісь показує час,
 а для кількох днів — дату й час, наприклад `21.07 12:00`. Відображення
 явно використовує часовий пояс `Europe/Kyiv`, а кількість підписів
 адаптується до ширини графіка.

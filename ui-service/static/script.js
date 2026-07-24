@@ -1,6 +1,21 @@
 const AUTO_REFRESH_INTERVAL_MS = 60_000;
 const WEATHER_TIME_ZONE = "Europe/Kyiv";
 
+const FORECAST_PERIODS = {
+    "24h": {
+        label: "24 години",
+        hours: 24,
+    },
+    "3d": {
+        label: "3 дні",
+        hours: 72,
+    },
+    "7d": {
+        label: "7 днів",
+        hours: 168,
+    },
+};
+
 const clearHistoryButton =
     document.getElementById(
         "clear-history-button"
@@ -23,7 +38,25 @@ const temperatureChart =
         "temperature-chart"
     );
 
+const forecastSection =
+    document.getElementById(
+        "forecast-section"
+    );
+
+const forecastStatus =
+    document.getElementById(
+        "forecast-status"
+    );
+
+const forecastPeriodButtons = Array.from(
+    document.querySelectorAll(
+        "[data-forecast-period]"
+    )
+);
+
 let isLoading = false;
+let activeForecastPeriod = "24h";
+let forecastAbortController = null;
 
 
 function escapeHtml(value) {
@@ -289,6 +322,73 @@ function getHistoryPoints(data) {
 }
 
 
+function getForecastPoints(data) {
+    const hourly = data.hourly || {};
+    const hourlyUnits =
+        data.hourly_units || {};
+
+    const times = Array.isArray(hourly.time)
+        ? hourly.time
+        : [];
+
+    const temperatures = Array.isArray(
+        hourly.temperature_2m
+    )
+        ? hourly.temperature_2m
+        : [];
+
+    const points = times
+        .map((rawTime, index) => {
+            const timestampSeconds = Number(
+                rawTime
+            );
+
+            const rawTemperature =
+                temperatures[index];
+
+            if (
+                rawTemperature === null ||
+                rawTemperature === undefined
+            ) {
+                return null;
+            }
+
+            const temperature = Number(
+                rawTemperature
+            );
+
+            const timestamp =
+                timestampSeconds * 1000;
+
+            if (
+                !Number.isFinite(timestamp) ||
+                !Number.isFinite(temperature)
+            ) {
+                return null;
+            }
+
+            return {
+                temperature,
+                timestamp,
+                time: new Date(
+                    timestamp
+                ).toISOString(),
+            };
+        })
+        .filter(Boolean)
+        .sort(
+            (first, second) =>
+                first.timestamp - second.timestamp
+        );
+
+    return {
+        points,
+        temperatureUnit:
+            hourlyUnits.temperature_2m || "°C",
+    };
+}
+
+
 function renderHistory(points) {
     if (points.length === 0) {
         historyResult.classList.add(
@@ -501,7 +601,10 @@ function selectChartLabelIndexes(
 }
 
 
-function renderChart(points) {
+function renderChart(
+    points,
+    temperatureUnit = "°C"
+) {
     temperatureChart.replaceChildren();
 
     if (points.length === 0) {
@@ -717,7 +820,8 @@ function renderChart(points) {
         );
 
         label.textContent =
-            `${temperature.toFixed(1)}°C`;
+            `${temperature.toFixed(1)}` +
+            temperatureUnit;
 
         temperatureChart.appendChild(line);
         temperatureChart.appendChild(label);
@@ -836,7 +940,15 @@ function renderChart(points) {
 
     temperatureChart.appendChild(polyline);
 
+    const markerIndexes = new Set(
+        labelIndexes
+    );
+
     points.forEach((point, index) => {
+        if (!markerIndexes.has(index)) {
+            return;
+        }
+
         const circle = createSvgElement(
             "circle",
             {
@@ -855,7 +967,8 @@ function renderChart(points) {
 
         title.textContent =
             `${formatDate(point.time)}: ` +
-            `${point.temperature}°C`;
+            `${point.temperature}` +
+            temperatureUnit;
 
         circle.appendChild(title);
         temperatureChart.appendChild(circle);
@@ -886,7 +999,8 @@ function renderChart(points) {
     }
 );
 
-    yTitle.textContent = "Температура";
+    yTitle.textContent =
+        `Температура (${temperatureUnit})`;
 
     temperatureChart.appendChild(xTitle);
     temperatureChart.appendChild(yTitle);
@@ -940,6 +1054,173 @@ async function loadWeather(
 }
 
 
+function setActiveForecastPeriod(period) {
+    activeForecastPeriod = period;
+
+    forecastPeriodButtons.forEach(
+        (button) => {
+            const isActive =
+                button.dataset.forecastPeriod ===
+                period;
+
+            button.classList.toggle(
+                "is-active",
+                isActive
+            );
+
+            button.setAttribute(
+                "aria-pressed",
+                String(isActive)
+            );
+        }
+    );
+}
+
+
+function showForecastMessage(
+    message,
+    isError = false,
+    statusMessage = message
+) {
+    chartContainer.hidden = true;
+    chartEmpty.hidden = false;
+    chartEmpty.textContent = message;
+    chartEmpty.classList.toggle(
+        "is-error",
+        isError
+    );
+
+    forecastStatus.textContent =
+        statusMessage;
+    forecastStatus.classList.toggle(
+        "is-error",
+        isError
+    );
+}
+
+
+async function loadForecast(period = "24h") {
+    const periodConfig =
+        FORECAST_PERIODS[period];
+
+    if (!periodConfig) {
+        return;
+    }
+
+    if (forecastAbortController) {
+        forecastAbortController.abort();
+    }
+
+    const controller = new AbortController();
+    forecastAbortController = controller;
+
+    setActiveForecastPeriod(period);
+
+    forecastSection.setAttribute(
+        "aria-busy",
+        "true"
+    );
+
+    showForecastMessage(
+        `Завантаження прогнозу на ` +
+        `${periodConfig.label}...`,
+        false,
+        `${periodConfig.label} · погодинно · ` +
+        WEATHER_TIME_ZONE
+    );
+
+    try {
+        const response = await fetch(
+            `/api/forecast?period=${encodeURIComponent(
+                period
+            )}`,
+            {
+                cache: "no-store",
+                signal: controller.signal,
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            showForecastMessage(
+                data.error ||
+                "Не вдалося завантажити прогноз.",
+                true,
+                "Прогноз тимчасово недоступний"
+            );
+
+            return;
+        }
+
+        const {
+            points,
+            temperatureUnit,
+        } = getForecastPoints(data);
+
+        if (points.length === 0) {
+            showForecastMessage(
+                "Для вибраного періоду немає " +
+                "даних прогнозу.",
+                false,
+                `${periodConfig.label} · немає даних`
+            );
+
+            return;
+        }
+
+        chartEmpty.classList.remove(
+            "is-error"
+        );
+
+        forecastStatus.classList.remove(
+            "is-error"
+        );
+
+        renderChart(
+            points,
+            temperatureUnit
+        );
+
+        forecastStatus.textContent =
+            `${periodConfig.label} · ` +
+            `${points.length} погодинних значень · ` +
+            `${temperatureUnit}`;
+
+        temperatureChart.setAttribute(
+            "aria-label",
+            `Погодинний прогноз температури ` +
+            `у Надвірній на ${periodConfig.label}`
+        );
+
+    } catch (error) {
+        if (error.name === "AbortError") {
+            return;
+        }
+
+        showForecastMessage(
+            "Не вдалося зв’язатися із сервером " +
+            "прогнозу.",
+            true,
+            "Прогноз тимчасово недоступний"
+        );
+
+    } finally {
+        if (
+            forecastAbortController ===
+            controller
+        ) {
+            forecastAbortController = null;
+
+            forecastSection.setAttribute(
+                "aria-busy",
+                "false"
+            );
+        }
+    }
+}
+
+
 async function loadHistory(
     showLoading = false
 ) {
@@ -950,12 +1231,6 @@ async function loadHistory(
 
         historyResult.textContent =
             "Завантаження історії...";
-
-        chartContainer.hidden = true;
-        chartEmpty.hidden = false;
-
-        chartEmpty.textContent =
-            "Завантаження графіка...";
     }
 
     try {
@@ -980,11 +1255,6 @@ async function loadHistory(
             historyResult.textContent =
                 errorMessage;
 
-            chartContainer.hidden = true;
-            chartEmpty.hidden = false;
-            chartEmpty.textContent =
-                errorMessage;
-
             return;
         }
 
@@ -992,7 +1262,6 @@ async function loadHistory(
             getHistoryPoints(data);
 
         renderHistory(points);
-        renderChart(points);
 
     } catch (error) {
         historyResult.classList.add(
@@ -1001,12 +1270,6 @@ async function loadHistory(
 
         historyResult.textContent =
             "Не вдалося зв’язатися із сервером.";
-
-        chartContainer.hidden = true;
-        chartEmpty.hidden = false;
-
-        chartEmpty.textContent =
-            "Не вдалося завантажити графік.";
     }
 }
 
@@ -1097,6 +1360,72 @@ function startAutomaticRefresh() {
 }
 
 
+function handleForecastPeriodKeydown(event) {
+    const currentIndex =
+        forecastPeriodButtons.indexOf(
+            event.currentTarget
+        );
+
+    let targetIndex = currentIndex;
+
+    if (
+        event.key === "ArrowRight" ||
+        event.key === "ArrowDown"
+    ) {
+        targetIndex =
+            (
+                currentIndex + 1
+            ) % forecastPeriodButtons.length;
+
+    } else if (
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowUp"
+    ) {
+        targetIndex =
+            (
+                currentIndex -
+                1 +
+                forecastPeriodButtons.length
+            ) % forecastPeriodButtons.length;
+
+    } else if (event.key === "Home") {
+        targetIndex = 0;
+
+    } else if (event.key === "End") {
+        targetIndex =
+            forecastPeriodButtons.length - 1;
+
+    } else {
+        return;
+    }
+
+    event.preventDefault();
+
+    const targetButton =
+        forecastPeriodButtons[targetIndex];
+
+    targetButton.focus();
+    targetButton.click();
+}
+
+
+forecastPeriodButtons.forEach((button) => {
+    button.addEventListener(
+        "click",
+        () => {
+            loadForecast(
+                button.dataset.forecastPeriod
+            );
+        }
+    );
+
+    button.addEventListener(
+        "keydown",
+        handleForecastPeriodKeydown
+    );
+});
+
+
 clearHistoryButton.addEventListener(
     "click",
     clearHistory
@@ -1106,6 +1435,7 @@ document.addEventListener(
     "DOMContentLoaded",
     () => {
         loadPageData(true);
+        loadForecast(activeForecastPeriod);
         startAutomaticRefresh();
     }
 );

@@ -63,26 +63,73 @@
         </section>
 
         <section
+            id="forecast-section"
             class="card chart-card"
             aria-labelledby="chart-title"
+            aria-busy="true"
         >
-            <div class="section-header">
+            <div class="section-header forecast-header">
                 <div>
                     <p class="section-kicker">
-                        Динаміка
+                        Прогноз
                     </p>
 
                     <h2 id="chart-title">
-                        Графік температури
+                        Прогноз температури
                     </h2>
                 </div>
+
+                <div
+                    class="forecast-period-selector"
+                    role="group"
+                    aria-label="Період прогнозу"
+                >
+                    <button
+                        type="button"
+                        class="period-button is-active"
+                        data-forecast-period="24h"
+                        aria-label="Прогноз на 24 години"
+                        aria-pressed="true"
+                    >
+                        24 год
+                    </button>
+
+                    <button
+                        type="button"
+                        class="period-button"
+                        data-forecast-period="3d"
+                        aria-label="Прогноз на 3 дні"
+                        aria-pressed="false"
+                    >
+                        3 дні
+                    </button>
+
+                    <button
+                        type="button"
+                        class="period-button"
+                        data-forecast-period="7d"
+                        aria-label="Прогноз на 7 днів"
+                        aria-pressed="false"
+                    >
+                        7 днів
+                    </button>
+                </div>
             </div>
+
+            <p
+                id="forecast-status"
+                class="chart-status"
+                role="status"
+                aria-live="polite"
+            >
+                Погодинний прогноз · Europe/Kyiv
+            </p>
 
             <div
                 id="chart-empty"
                 class="empty-state"
             >
-                Завантаження історії...
+                Завантаження прогнозу...
             </div>
 
             <div

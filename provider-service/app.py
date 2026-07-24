@@ -13,6 +13,7 @@ EXTERNAL_WEATHER_URL = os.getenv(
 
 REQUEST_TIMEOUT = 10
 DEFAULT_TIMEZONE = "Europe/Kyiv"
+MAX_FORECAST_HOURS = 16 * 24
 
 
 def is_debug_enabled():
@@ -38,6 +39,26 @@ def get_coordinate(name, minimum, maximum):
         raise ValueError(
             f"{name} must be between "
             f"{minimum} and {maximum}."
+        )
+
+    return value
+
+
+def get_forecast_hours():
+    raw_value = request.args.get("hours", "24")
+
+    try:
+        value = int(raw_value)
+
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "hours must be an integer."
+        ) from error
+
+    if not 1 <= value <= MAX_FORECAST_HOURS:
+        raise ValueError(
+            "hours must be between "
+            f"1 and {MAX_FORECAST_HOURS}."
         )
 
     return value
@@ -116,6 +137,96 @@ def normalize_weather(
         },
         "source": "open-meteo",
         "collected_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
+    }
+
+
+def normalize_forecast(
+    weather_data,
+    latitude,
+    longitude,
+    weather_timezone,
+    forecast_hours,
+):
+    hourly = weather_data.get("hourly")
+    hourly_units = weather_data.get(
+        "hourly_units"
+    )
+
+    if not isinstance(hourly, dict):
+        raise ValueError(
+            "External API returned no hourly forecast."
+        )
+
+    times = hourly.get("time")
+    temperatures = hourly.get(
+        "temperature_2m"
+    )
+
+    if (
+        not isinstance(times, list) or
+        not isinstance(temperatures, list) or
+        len(times) != len(temperatures)
+    ):
+        raise ValueError(
+            "External API returned incomplete "
+            "hourly forecast data."
+        )
+
+    if not all(
+        isinstance(value, (int, float))
+        for value in times
+    ):
+        raise ValueError(
+            "External API returned invalid "
+            "forecast timestamps."
+        )
+
+    if not all(
+        value is None or
+        isinstance(value, (int, float))
+        for value in temperatures
+    ):
+        raise ValueError(
+            "External API returned invalid "
+            "forecast temperatures."
+        )
+
+    if not isinstance(hourly_units, dict):
+        hourly_units = {}
+
+    return {
+        "location": {
+            "latitude": weather_data.get(
+                "latitude",
+                latitude,
+            ),
+            "longitude": weather_data.get(
+                "longitude",
+                longitude,
+            ),
+            "timezone": weather_data.get(
+                "timezone",
+                weather_timezone,
+            ),
+            "utc_offset_seconds": weather_data.get(
+                "utc_offset_seconds",
+            ),
+        },
+        "hourly": {
+            "time": times,
+            "temperature_2m": temperatures,
+        },
+        "hourly_units": {
+            "time": hourly_units.get("time"),
+            "temperature_2m": hourly_units.get(
+                "temperature_2m"
+            ),
+        },
+        "forecast_hours": forecast_hours,
+        "source": "open-meteo",
+        "generated_at": datetime.now(
             timezone.utc
         ).isoformat(),
     }
@@ -234,6 +345,114 @@ def current_weather():
         }), 502
 
     return jsonify(normalized_weather)
+
+
+@app.get("/weather/forecast")
+def hourly_forecast():
+    try:
+        latitude = get_coordinate(
+            "latitude",
+            -90,
+            90,
+        )
+
+        longitude = get_coordinate(
+            "longitude",
+            -180,
+            180,
+        )
+
+        weather_timezone = request.args.get(
+            "timezone",
+            DEFAULT_TIMEZONE,
+        ).strip()
+
+        if not weather_timezone:
+            raise ValueError(
+                "timezone cannot be empty."
+            )
+
+        forecast_hours = get_forecast_hours()
+
+    except ValueError as error:
+        return jsonify({
+            "error": str(error)
+        }), 400
+
+    try:
+        response = requests.get(
+            EXTERNAL_WEATHER_URL,
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "hourly": "temperature_2m",
+                "forecast_hours": forecast_hours,
+                "timeformat": "unixtime",
+                "timezone": weather_timezone,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+        response.raise_for_status()
+        weather_data = response.json()
+
+    except requests.Timeout:
+        app.logger.error(
+            "External weather forecast API timed out."
+        )
+
+        return jsonify({
+            "error": (
+                "Зовнішній погодний API "
+                "не відповідає вчасно."
+            )
+        }), 504
+
+    except requests.RequestException as error:
+        app.logger.error(
+            "External weather forecast request "
+            "failed: %s",
+            error,
+        )
+
+        return jsonify({
+            "error": (
+                "Не вдалося отримати прогноз із "
+                "зовнішнього погодного API."
+            )
+        }), 502
+
+    except ValueError:
+        return jsonify({
+            "error": (
+                "Зовнішній погодний API повернув "
+                "некоректну JSON-відповідь."
+            )
+        }), 502
+
+    try:
+        normalized_forecast = normalize_forecast(
+            weather_data,
+            latitude,
+            longitude,
+            weather_timezone,
+            forecast_hours,
+        )
+
+    except (TypeError, ValueError) as error:
+        app.logger.error(
+            "Invalid external forecast response: %s",
+            error,
+        )
+
+        return jsonify({
+            "error": (
+                "Зовнішній погодний API повернув "
+                "неповні дані прогнозу."
+            )
+        }), 502
+
+    return jsonify(normalized_forecast)
 
 
 if __name__ == "__main__":

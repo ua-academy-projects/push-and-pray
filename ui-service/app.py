@@ -1,7 +1,12 @@
 import os
 
 import requests
-from flask import Flask, jsonify, render_template
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+)
 
 app = Flask(__name__)
 
@@ -54,6 +59,28 @@ def weather():
     try:
         response = requests.get(
             f"{BACKEND_URL}/api/weather",
+            timeout=REQUEST_TIMEOUT,
+        )
+
+        return proxy_json_response(response)
+
+    except requests.RequestException:
+        return jsonify({
+            "error": "Backend Service is unavailable."
+        }), 503
+
+
+@app.get("/api/forecast")
+def forecast():
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/api/forecast",
+            params={
+                "period": request.args.get(
+                    "period",
+                    "24h",
+                )
+            },
             timeout=REQUEST_TIMEOUT,
         )
 

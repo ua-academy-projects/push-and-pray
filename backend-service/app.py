@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -28,6 +28,12 @@ COUNTRY_NAME = "Україна"
 LATITUDE = 48.6348
 LONGITUDE = 24.5694
 WEATHER_TIMEZONE = "Europe/Kyiv"
+
+FORECAST_PERIODS = {
+    "24h": 24,
+    "3d": 72,
+    "7d": 168,
+}
 
 scheduler = BackgroundScheduler(
     timezone=WEATHER_TIMEZONE
@@ -352,6 +358,132 @@ def fetch_weather_from_provider():
     }
 
 
+def fetch_forecast_from_provider(
+    period,
+    forecast_hours,
+):
+    try:
+        response = requests.get(
+            f"{PROVIDER_URL}/weather/forecast",
+            params={
+                "latitude": LATITUDE,
+                "longitude": LONGITUDE,
+                "timezone": WEATHER_TIMEZONE,
+                "hours": forecast_hours,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+    except requests.Timeout as error:
+        raise ProviderServiceError(
+            "Provider Service не відповідає вчасно.",
+            status_code=503,
+        ) from error
+
+    except requests.RequestException as error:
+        raise ProviderServiceError(
+            "Provider Service недоступний.",
+            status_code=503,
+        ) from error
+
+    try:
+        provider_data = response.json()
+
+    except ValueError as error:
+        raise ProviderServiceError(
+            "Provider Service повернув "
+            "некоректну відповідь."
+        ) from error
+
+    if not isinstance(provider_data, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув "
+            "некоректну відповідь."
+        )
+
+    if not response.ok:
+        error_message = provider_data.get("error")
+
+        if not isinstance(error_message, str):
+            error_message = (
+                "Provider Service не зміг "
+                "отримати прогноз."
+            )
+
+        status_code = (
+            response.status_code
+            if response.status_code in {502, 504}
+            else 502
+        )
+
+        raise ProviderServiceError(
+            error_message,
+            status_code=status_code,
+        )
+
+    hourly = provider_data.get("hourly")
+    hourly_units = provider_data.get(
+        "hourly_units"
+    )
+
+    if not isinstance(hourly, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув "
+            "неповні дані прогнозу."
+        )
+
+    times = hourly.get("time")
+    temperatures = hourly.get(
+        "temperature_2m"
+    )
+
+    if (
+        not isinstance(times, list) or
+        not isinstance(temperatures, list) or
+        len(times) != len(temperatures)
+    ):
+        raise ProviderServiceError(
+            "Provider Service повернув "
+            "неповні дані прогнозу."
+        )
+
+    if not isinstance(hourly_units, dict):
+        hourly_units = {}
+
+    location = provider_data.get("location")
+
+    if not isinstance(location, dict):
+        location = {}
+
+    location.update({
+        "name": CITY_NAME,
+        "country": COUNTRY_NAME,
+        "latitude": LATITUDE,
+        "longitude": LONGITUDE,
+        "timezone": WEATHER_TIMEZONE,
+    })
+
+    return {
+        "query": CITY_NAME,
+        "period": period,
+        "forecast_hours": forecast_hours,
+        "location": location,
+        "hourly": {
+            "time": times,
+            "temperature_2m": temperatures,
+        },
+        "hourly_units": hourly_units,
+        "source": provider_data.get(
+            "source",
+            "open-meteo",
+        ),
+        "generated_at": provider_data.get(
+            "generated_at",
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    }
+
+
 def collect_weather_without_lock(force=False):
     if not force and has_recent_measurement():
         app.logger.info(
@@ -500,6 +632,48 @@ def weather():
         return jsonify({
             "error": "База даних недоступна."
         }), 503
+
+
+@app.get("/api/forecast")
+def forecast():
+    period = request.args.get(
+        "period",
+        "24h",
+    ).strip()
+
+    forecast_hours = FORECAST_PERIODS.get(
+        period
+    )
+
+    if forecast_hours is None:
+        return jsonify({
+            "error": (
+                "Непідтримуваний період прогнозу."
+            ),
+            "supported_periods": list(
+                FORECAST_PERIODS
+            ),
+        }), 400
+
+    try:
+        forecast_data = (
+            fetch_forecast_from_provider(
+                period,
+                forecast_hours,
+            )
+        )
+
+        return jsonify(forecast_data)
+
+    except ProviderServiceError as error:
+        app.logger.error(
+            "Could not load forecast: %s",
+            error,
+        )
+
+        return jsonify({
+            "error": error.message
+        }), error.status_code
 
 
 @app.get("/api/history")
