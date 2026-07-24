@@ -14,12 +14,12 @@ type Config struct {
 }
 
 func Load() Config {
-	host := getenv("HISTORY_HOST", "127.0.0.1")
-	port := getenv("HISTORY_PORT", "8081")
+	host := getenv("API_FETCHER_HOST", "127.0.0.1")
+	port := getenv("API_FETCHER_PORT", "8081")
 	return Config{
 		Address:            host + ":" + port,
 		DatabaseURL:        getenv("DATABASE_URL", "postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable"),
-		Token:              getenv("HISTORY_SERVICE_TOKEN", "change-me"),
+		Token:              getenv("API_FETCHER_TOKEN", "change-me"),
 		RabbitMQEnabled:    getenv("RABBITMQ_ENABLED", "false") == "true",
 		RabbitMQURL:        getenv("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"),
 		RabbitMQExchange:   getenv("RABBITMQ_EXCHANGE", "rates.events"),

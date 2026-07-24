@@ -10,14 +10,14 @@ Browser
        └─ HTTP :8000 → Python Backend / Proxy
             ├─ HTTPS → CoinGecko
             ├─ HTTPS → Frankfurter
-            ├─ AMQP :5672 → RabbitMQ → Go History consumer
-            └─ HTTP :8081 + bearer token → Go History service (reads/write fallback)
+            ├─ AMQP :5672 → RabbitMQ → Go API Fetcher consumer
+            └─ HTTP :8081 + bearer token → Go API Fetcher (reads/write fallback)
                  └─ PostgreSQL protocol :5432 → PostgreSQL 16
 ```
 
 - **UI** renders overview cards and dynamic Chart.js charts. It has no provider/database credentials and calls only Backend. Chart.js 4.4.7 and chartjs-plugin-zoom 2.2.0 are pinned CDN dependencies.
 - **Backend** validates instrument IDs, calls both providers, normalizes decimals/timestamps, serves UI APIs, runs manual backfill orchestration, and owns the periodic collector.
-- **History** validates normalized observations and exclusively owns PostgreSQL queries. Internal endpoints require `Authorization: Bearer <HISTORY_SERVICE_TOKEN>`.
+- **API Fetcher** validates normalized observations and exclusively owns PostgreSQL queries. Internal endpoints require `Authorization: Bearer <API_FETCHER_TOKEN>`.
 - **RabbitMQ** durably buffers explicit refresh, collector, and backfill observations. The main queue is `rates.observations`; repeatedly failed messages are dead-lettered to `rates.observations.dlq`.
 - **PostgreSQL** stores observations in `NUMERIC`/`TIMESTAMPTZ` columns. `(source, instrument_id, source_timestamp, requested_at)` makes a sampled point idempotent while allowing a new observation every five minutes.
 
@@ -27,7 +27,7 @@ Browser
 
 1. The scheduled collector or explicit provider-refresh endpoint calls CoinGecko and/or Frankfurter.
 2. Backend normalizes the response and publishes a persistent observation event to RabbitMQ.
-3. History consumes the event, inserts the sample, and sends `ACK` only after PostgreSQL accepts it. Exact duplicates are harmless because the database uses `ON CONFLICT DO NOTHING`.
+3. API Fetcher consumes the event, inserts the sample, and sends `ACK` only after PostgreSQL accepts it. Exact duplicates are harmless because the database uses `ON CONFLICT DO NOTHING`.
 4. If RabbitMQ publishing fails, Backend falls back to the authenticated synchronous History HTTP endpoint.
 4. The UI Overview refresh button follows a separate read-only path through `stored-current` and never calls a provider.
 
@@ -35,13 +35,13 @@ The top-10 overview request asks CoinGecko `/coins/markets` for `sparkline=true`
 
 Normal cached current reads are not persisted. UI displays values with two decimals, while JSON and PostgreSQL retain full precision.
 
-The Overview `Оновити` button calls `GET /api/v1/rates/stored-current`. Backend requests the newest persisted row per instrument from History, so this user action never calls a public provider. Provider polling is isolated in the scheduled collector.
+The Overview `Оновити` button calls `GET /api/v1/rates/stored-current`. Backend requests the newest persisted row per instrument from API Fetcher, so this user action never calls a public provider. Provider polling is isolated in the scheduled collector.
 
 ### PostgreSQL history charts
 
 1. UI creates an independent graph configuration (up to five series).
 2. UI sends an exact RFC3339 time window and an independent bucket step (`5m`, `30m`, `1h`, `4h`, or `1d`) to Backend.
-3. Backend proxies the request to History; History uses PostgreSQL `date_bin` and takes the latest stored value in each bucket.
+3. Backend proxies the request to API Fetcher; API Fetcher uses PostgreSQL `date_bin` and takes the latest stored value in each bucket.
 4. UI optionally normalizes each returned series to percentage change and renders a separate Chart.js instance. Refresh-all and automatic five-minute refresh preserve every chart card.
 
 PDF export builds a dedicated print-only report rather than printing the live layout. It snapshots every active chart to PNG, includes every remaining overview card, records generation date/time to the second, and adds the Rateboard copyright/service footer. If a section has no data, the report explicitly says that information is unavailable.
@@ -50,7 +50,7 @@ The graph step is aggregation, not the requested time range. For example, period
 
 ### Five-minute collector
 
-The collector is an `asyncio` background task inside Backend. It aligns each cycle to an absolute wall-clock interval boundary; with the default 300-second interval it starts at `:00`, `:05`, `:10`, `:15`, and so on, independent of Backend startup time or the duration of the previous cycle. It then sequentially requests all 20 catalog instruments with cache bypassed. Each successful result is sent to History with a cycle correlation ID. Per-instrument failures are logged and do not stop later instruments. The task is cancelled during Backend shutdown.
+The collector is an `asyncio` background task inside Backend. It aligns each cycle to an absolute wall-clock interval boundary; with the default 300-second interval it starts at `:00`, `:05`, `:10`, `:15`, and so on, independent of Backend startup time or the duration of the previous cycle. It then sequentially requests all 20 catalog instruments with cache bypassed. Each successful result is sent to API Fetcher with a cycle correlation ID. Per-instrument failures are logged and do not stop later instruments. The task is cancelled during Backend shutdown.
 
 This produces five-minute sampled observations going forward. Fiat values may remain unchanged all day because Frankfurter publishes daily reference rates, but each collector run has its own aligned `requested_at`. It cannot reconstruct missing historical five-minute samples while the application was stopped.
 
@@ -60,7 +60,7 @@ The capitalization tab calls `GET /api/v1/market-map` for a selected period. Bac
 
 ### Annual backfill
 
-`scripts/backfill-year.sh` calls `POST /api/v1/rates/backfill`. Backend processes instruments sequentially, retrieves provider series, converts every point to an observation, and sends batches of at most 100 to History. Each batch is an independent request; the current History batch handler inserts its items one by one and is not an all-or-nothing database transaction.
+`scripts/backfill-year.sh` calls `POST /api/v1/rates/backfill`. Backend processes instruments sequentially, retrieves provider series, converts every point to an observation, and sends batches of at most 100 to API Fetcher. Each batch is an independent request; the current API Fetcher batch handler inserts its items one by one and is not an all-or-nothing database transaction.
 
 ## Time, precision, and failure behavior
 

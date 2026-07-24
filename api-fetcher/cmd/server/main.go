@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"rateboard/history-service/internal/api"
-	"rateboard/history-service/internal/config"
-	queue "rateboard/history-service/internal/messaging"
-	"rateboard/history-service/internal/repository"
+	"rateboard/api-fetcher/internal/api"
+	"rateboard/api-fetcher/internal/config"
+	queue "rateboard/api-fetcher/internal/messaging"
+	"rateboard/api-fetcher/internal/repository"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 	}
 	server := &http.Server{Addr: cfg.Address, Handler: (&api.Server{Store: store, Token: cfg.Token}).Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		log.Printf("history service listening on %s", cfg.Address)
+		log.Printf("api-fetcher listening on %s", cfg.Address)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal(err)
 		}

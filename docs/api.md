@@ -12,7 +12,7 @@ Returns `200` when the Backend process is alive. It does not check dependencies.
 
 ### `GET /health/ready`
 
-Checks History readiness. Returns `200` with `status: ready` or `503` with `status: degraded`. Provider availability does not affect readiness.
+Checks API Fetcher readiness. Returns `200` with `status: ready` or `503` with `status: degraded`. Provider availability does not affect readiness.
 
 ## Catalog and current rates
 
@@ -53,7 +53,7 @@ Bypasses current cache, persists successful observations, and returns `items` wi
 
 ### `GET /api/v1/rates/stored-current?instruments=...`
 
-Returns the latest PostgreSQL observation for each of 1–10 instruments through the History service. This endpoint never calls CoinGecko or Frankfurter and is used by the UI `Оновити` button.
+Returns the latest PostgreSQL observation for each of 1–10 instruments through the API Fetcher. This endpoint never calls CoinGecko or Frankfurter and is used by the UI `Оновити` button.
 
 ## Provider history and backfill
 
@@ -72,7 +72,7 @@ Query parameters:
 - `mode`: `price` or `percent`, default `price`;
 - maximum date span: 366 days.
 
-The response contains series read from PostgreSQL through History. Each point is the latest stored observation in its `step` bucket. Empty buckets are omitted; percentage normalization is performed by UI.
+The response contains series read from PostgreSQL through API Fetcher. Each point is the latest stored observation in its `step` bucket. Empty buckets are omitted; percentage normalization is performed by UI.
 
 ### `POST /api/v1/rates/backfill`
 
@@ -90,7 +90,7 @@ With RabbitMQ enabled, returns per-instrument `fetched`, `queued`, and `persiste
 
 ### `GET /api/v1/requests/history`
 
-Proxies stored PostgreSQL observations through History. The current UI does not display this endpoint.
+Proxies stored PostgreSQL observations through API Fetcher. The current UI does not display this endpoint.
 
 Query parameters:
 
@@ -128,7 +128,7 @@ Fiat change/market/rank values are normally `null`. `change_1h_percent` is retur
 
 ## RabbitMQ observation events
 
-Backend publishes persistent JSON messages to the durable direct exchange `rates.events` with routing key `observation.persist`. History consumes `rates.observations`, acknowledges only after the PostgreSQL insert, and dead-letters a repeatedly failed delivery to `rates.observations.dlq`. Queue names and the broker URL are configurable through `RABBITMQ_*` variables.
+Backend publishes persistent JSON messages to the durable direct exchange `rates.events` with routing key `observation.persist`. API Fetcher consumes `rates.observations`, acknowledges only after the PostgreSQL insert, and dead-letters a repeatedly failed delivery to `rates.observations.dlq`. Queue names and the broker URL are configurable through `RABBITMQ_*` variables.
 
 ## Provider error shape
 
@@ -161,4 +161,4 @@ Body: `{ "items": [...] }`, with 1–100 observations. Returns created/total cou
 
 Supports `instrument_id`, `limit` (maximum 100), and RFC3339 `cursor`. Returns descending request time and `next_cursor` when another page may exist. It does not currently implement `from`/`to` filtering.
 
-History health endpoints are `GET /health/live` and `GET /health/ready`; readiness includes a PostgreSQL ping.
+API Fetcher health endpoints are `GET /health/live` and `GET /health/ready`; readiness includes a PostgreSQL ping.

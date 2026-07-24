@@ -8,7 +8,7 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"rateboard/history-service/internal/repository"
+	"rateboard/api-fetcher/internal/repository"
 )
 
 type Consumer struct {
@@ -29,7 +29,7 @@ type event struct {
 func (c *Consumer) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		if err := c.consume(ctx); err != nil && ctx.Err() == nil {
-			log.Printf(`{"service":"history","event":"rabbitmq_consumer_error","error":%q}`, err.Error())
+			log.Printf(`{"service":"api-fetcher","event":"rabbitmq_consumer_error","error":%q}`, err.Error())
 			select {
 			case <-ctx.Done():
 				return
@@ -75,11 +75,11 @@ func (c *Consumer) consume(ctx context.Context) error {
 	if err = channel.Qos(10, 0, false); err != nil {
 		return err
 	}
-	deliveries, err := channel.ConsumeWithContext(ctx, c.Queue, "history-service", false, false, false, false, nil)
+	deliveries, err := channel.ConsumeWithContext(ctx, c.Queue, "api-fetcher", false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
-	log.Printf(`{"service":"history","event":"rabbitmq_consumer_ready","queue":%q}`, c.Queue)
+	log.Printf(`{"service":"api-fetcher","event":"rabbitmq_consumer_ready","queue":%q}`, c.Queue)
 	for delivery := range deliveries {
 		c.handle(ctx, delivery)
 	}

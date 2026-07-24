@@ -4,7 +4,7 @@
 
 | Вимога | Статус | Поточна реалізація |
 | --- | --- | --- |
-| Три взаємодіючі сервіси | Реалізовано | Static UI, Python Backend/Proxy, Go History service |
+| Три взаємодіючі сервіси | Реалізовано | Static UI, Python Backend/Proxy, Go API Fetcher |
 | Реляційна база даних | Реалізовано | PostgreSQL 16, міграціями володіє History |
 | UI звертається тільки до Backend | Реалізовано | UI не викликає провайдерів, History або PostgreSQL напряму |
 | Backend викликає публічний API | Реалізовано | CoinGecko та Frankfurter |

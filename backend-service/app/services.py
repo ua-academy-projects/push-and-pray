@@ -3,7 +3,7 @@ import time
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from .clients import CoinGeckoClient, FrankfurterClient, HistoryClient
+from .clients import ApiFetcherClient, CoinGeckoClient, FrankfurterClient
 from .models import HistorySeries, MarketTile, Rate
 
 FIAT_BASES = ("USD", "EUR", "GBP", "PLN", "CHF", "CAD", "AUD", "JPY", "CNY", "CZK")
@@ -32,10 +32,10 @@ class TTLCache:
 
 
 class RateService:
-    def __init__(self, crypto: CoinGeckoClient, fiat: FrankfurterClient, history: HistoryClient):
+    def __init__(self, crypto: CoinGeckoClient, fiat: FrankfurterClient, api_fetcher: ApiFetcherClient):
         self.crypto = crypto
         self.fiat = fiat
-        self.history_client = history
+        self.api_fetcher = api_fetcher
         self.cache = TTLCache()
 
     @staticmethod
@@ -90,7 +90,7 @@ class RateService:
             price=point.value, source=series.source, source_timestamp=point.timestamp,
             requested_at=point.timestamp,
         ) for point in series.points]
-        saved = await self.history_client.save_batch(rates, request_id) if rates else 0
+        saved = await self.api_fetcher.save_batch(rates, request_id) if rates else 0
         return len(rates), saved
 
     async def market_map(self, period: str) -> list[MarketTile]:

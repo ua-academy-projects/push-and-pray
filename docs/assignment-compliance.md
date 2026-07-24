@@ -6,11 +6,11 @@ This matrix compares the supplied `DevOps_Academy_Assignment_1.pdf` with the cur
 
 | Assignment requirement | Status | Current implementation |
 | --- | --- | --- |
-| Three cooperating services | Implemented | Static UI, Python Backend/Proxy, Go History service |
+| Three cooperating services | Implemented | Static UI, Python Backend/Proxy, Go API Fetcher |
 | Relational database | Implemented | PostgreSQL 16 with a History-owned migration |
 | UI communicates only with Backend | Implemented | Application data is requested from `http://127.0.0.1:8000/api/v1`; UI never calls providers, History, or PostgreSQL |
 | Backend calls a public API | Implemented | CoinGecko for crypto and Frankfurter for fiat reference rates |
-| Backend coordinates persistence | Implemented with scoped behavior | Explicit refreshes, collector cycles, and backfill are forwarded to History; normal Overview/cached reads are not persisted |
+| Backend coordinates persistence | Implemented with scoped behavior | Explicit refreshes, collector cycles, and backfill are forwarded to API Fetcher; normal Overview/cached reads are not persisted |
 | History owns persistence | Implemented | Only the Go service imports `pgx` and accesses `DATABASE_URL` at runtime |
 | Store request timestamp | Implemented | `requested_at TIMESTAMPTZ` |
 | Store requested entity/query | Implemented | Normalized `instrument_id`, base and quote codes |

@@ -11,7 +11,7 @@ Rateboard — трисервісний застосунок для перегл�
                                   └→ History HTTP (читання та fallback запису)
 ```
 
-Браузер отримує прикладні дані тільки від Backend. Backend відповідає за інтеграцію із зовнішніми API, нормалізацію та координацію. History service — єдиний компонент, який напряму працює з PostgreSQL.
+Браузер отримує прикладні дані тільки від Backend. Backend відповідає за інтеграцію із зовнішніми API, нормалізацію та координацію. API Fetcher — єдиний компонент, який напряму працює з PostgreSQL.
 
 ## Можливості
 
@@ -41,7 +41,7 @@ Rateboard — трисервісний застосунок для перегл�
 cp .env.example .env
 ```
 
-У `.env` встановіть унікальний `HISTORY_SERVICE_TOKEN`. `COINGECKO_API_KEY` рекомендований для вищих лімітів. Файл `.env` та файли API-ключів не можна комітити.
+У `.env` встановіть унікальний `API_FETCHER_TOKEN`. `COINGECKO_API_KEY` рекомендований для вищих лімітів. Файл `.env` та файли API-ключів не можна комітити.
 
 Типова адреса БД:
 
@@ -60,7 +60,7 @@ postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable
 1. завантажує `.env` і перевіряє залежності;
 2. перевіряє PostgreSQL і RabbitMQ та за можливості запускає Homebrew-сервіси;
 3. застосовує міграції `001_init.sql`, `002_sampling.sql` і `003_backfill_timestamps.sql`;
-4. запускає History service;
+4. запускає API Fetcher;
 5. створює Python virtualenv за потреби та запускає Backend;
 6. запускає статичний UI;
 7. записує логи в `.run/` і коректно завершує сервіси після `Ctrl+C`.
@@ -70,7 +70,7 @@ postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable
 - UI: `http://127.0.0.1:3000`
 - Backend Swagger: `http://127.0.0.1:8000/docs`
 - Backend health: `http://127.0.0.1:8000/health/live`
-- History readiness: `http://127.0.0.1:8081/health/ready`
+- API Fetcher readiness: `http://127.0.0.1:8081/health/ready`
 
 Щоб зупинити сервіси Rateboard і звільнити порти `3000`, `8000`, `8081`:
 
@@ -84,17 +84,17 @@ PostgreSQL і RabbitMQ при цьому продовжують працюват
 
 Порядок: PostgreSQL → RabbitMQ → History → Backend → UI.
 
-RabbitMQ доставляє нормалізовані спостереження від Backend до History через durable exchange `rates.events` і чергу `rates.observations`. History підтверджує повідомлення лише після запису в PostgreSQL; повторно невдале повідомлення переходить у `rates.observations.dlq`. Якщо публікація недоступна, Backend використовує захищений HTTP endpoint History як fallback.
+RabbitMQ доставляє нормалізовані спостереження від Backend до API Fetcher через durable exchange `rates.events` і чергу `rates.observations`. API Fetcher підтверджує повідомлення лише після запису в PostgreSQL; повторно невдале повідомлення переходить у `rates.observations.dlq`. Якщо публікація недоступна, Backend використовує захищений HTTP endpoint API Fetcher як fallback.
 
 ```bash
 set -a; source .env; set +a
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f history-service/migrations/001_init.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f history-service/migrations/002_sampling.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f history-service/migrations/003_backfill_timestamps.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/001_init.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/002_sampling.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/003_backfill_timestamps.sql
 ```
 
 ```bash
-cd history-service
+cd api-fetcher
 go mod download
 go run ./cmd/server
 ```
@@ -121,7 +121,7 @@ COLLECTOR_ENABLED=true
 COLLECTOR_INTERVAL_SECONDS=300
 ```
 
-Кожен цикл запитує 20 налаштованих інструментів і передає успішні результати до History. Для кожного циклу використовується вирівняний `requested_at`. Frankfurter може повертати однакове денне значення, але PostgreSQL усе одно зберігає окремий п’ятихвилинний знімок.
+Кожен цикл запитує 20 налаштованих інструментів і передає успішні результати до API Fetcher. Для кожного циклу використовується вирівняний `requested_at`. Frankfurter може повертати однакове денне значення, але PostgreSQL усе одно зберігає окремий п’ятихвилинний знімок.
 
 Кнопки «Оновити» в огляді та історії читають дані з PostgreSQL. Вони не викликають CoinGecko або Frankfurter.
 
@@ -137,7 +137,7 @@ Backfill використовує рідну деталізацію провай
 
 ```bash
 cd backend-service && .venv/bin/pytest -q
-cd history-service && go test ./...
+cd api-fetcher && go test ./...
 node --test ui-service/tests/*.test.js
 bash -n scripts/start-all.sh scripts/backfill-year.sh
 ```

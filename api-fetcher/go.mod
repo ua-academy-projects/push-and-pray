@@ -1,4 +1,4 @@
-module rateboard/history-service
+module rateboard/api-fetcher
 
 go 1.23.0
 

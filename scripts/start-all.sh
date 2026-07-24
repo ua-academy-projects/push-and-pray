@@ -17,8 +17,8 @@ set +a
 
 : "${BACKEND_HOST:?BACKEND_HOST must be set in .env}"
 : "${BACKEND_PORT:?BACKEND_PORT must be set in .env}"
-: "${HISTORY_HOST:?HISTORY_HOST must be set in .env}"
-: "${HISTORY_PORT:?HISTORY_PORT must be set in .env}"
+: "${API_FETCHER_HOST:?API_FETCHER_HOST must be set in .env}"
+: "${API_FETCHER_PORT:?API_FETCHER_PORT must be set in .env}"
 : "${UI_HOST:?UI_HOST must be set in .env}"
 : "${UI_PORT:?UI_PORT must be set in .env}"
 : "${DATABASE_URL:?DATABASE_URL must be set in .env}"
@@ -65,12 +65,12 @@ mkdir -p "${RUN_DIR}"
 
 ui_running=0
 backend_running=0
-history_running=0
+api_fetcher_running=0
 curl --silent --fail --max-time "${SERVICE_CHECK_TIMEOUT_SECONDS}" "http://${UI_HOST}:${UI_PORT}/" >/dev/null 2>&1 && ui_running=1
 curl --silent --fail --max-time "${SERVICE_CHECK_TIMEOUT_SECONDS}" "http://${BACKEND_HOST}:${BACKEND_PORT}/health/live" >/dev/null 2>&1 && backend_running=1
-curl --silent --fail --max-time "${SERVICE_CHECK_TIMEOUT_SECONDS}" "http://${HISTORY_HOST}:${HISTORY_PORT}/health/ready" >/dev/null 2>&1 && history_running=1
+curl --silent --fail --max-time "${SERVICE_CHECK_TIMEOUT_SECONDS}" "http://${API_FETCHER_HOST}:${API_FETCHER_PORT}/health/ready" >/dev/null 2>&1 && api_fetcher_running=1
 
-if (( ui_running && backend_running && history_running )); then
+if (( ui_running && backend_running && api_fetcher_running )); then
   echo "Rateboard is already running:"
   echo "  UI:      http://${UI_HOST}:${UI_PORT}"
   echo "  Backend: http://${BACKEND_HOST}:${BACKEND_PORT}/docs"
@@ -78,11 +78,11 @@ if (( ui_running && backend_running && history_running )); then
   exit 0
 fi
 
-if (( ui_running || backend_running || history_running )); then
+if (( ui_running || backend_running || api_fetcher_running )); then
   echo "Cannot start a second Rateboard copy because some ports are already in use:" >&2
   (( ui_running )) && echo "  UI is already responding on ${UI_HOST}:${UI_PORT}" >&2
   (( backend_running )) && echo "  Backend is already responding on ${BACKEND_HOST}:${BACKEND_PORT}" >&2
-  (( history_running )) && echo "  History is already responding on ${HISTORY_HOST}:${HISTORY_PORT}" >&2
+  (( api_fetcher_running )) && echo "  API Fetcher is already responding on ${API_FETCHER_HOST}:${API_FETCHER_PORT}" >&2
   echo "Stop the existing processes or keep using the running application." >&2
   exit 1
 fi
@@ -125,7 +125,7 @@ cleanup() {
   local pids=()
   [[ -n "${UI_PID:-}" ]] && pids+=("${UI_PID}")
   [[ -n "${BACKEND_PID:-}" ]] && pids+=("${BACKEND_PID}")
-  [[ -n "${HISTORY_PID:-}" ]] && pids+=("${HISTORY_PID}")
+  [[ -n "${API_FETCHER_PID:-}" ]] && pids+=("${API_FETCHER_PID}")
 
   local pid
   for pid in "${pids[@]}"; do
@@ -173,16 +173,16 @@ wait_for_url() {
 }
 
 echo "Applying PostgreSQL migration..."
-psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/history-service/migrations/001_init.sql"
-psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/history-service/migrations/002_sampling.sql"
-psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/history-service/migrations/003_backfill_timestamps.sql"
+psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/api-fetcher/migrations/001_init.sql"
+psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/api-fetcher/migrations/002_sampling.sql"
+psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${ROOT_DIR}/api-fetcher/migrations/003_backfill_timestamps.sql"
 
-echo "Preparing History service..."
-(cd "${ROOT_DIR}/history-service" && go mod download)
-(cd "${ROOT_DIR}/history-service" && go build -o "${RUN_DIR}/history-service" ./cmd/server)
-(cd "${ROOT_DIR}/history-service" && exec "${RUN_DIR}/history-service") >"${RUN_DIR}/history.log" 2>&1 &
-HISTORY_PID=$!
-wait_for_url "http://${HISTORY_HOST}:${HISTORY_PORT}/health/ready" history
+echo "Preparing API Fetcher..."
+(cd "${ROOT_DIR}/api-fetcher" && go mod download)
+(cd "${ROOT_DIR}/api-fetcher" && go build -o "${RUN_DIR}/api-fetcher" ./cmd/server)
+(cd "${ROOT_DIR}/api-fetcher" && exec "${RUN_DIR}/api-fetcher") >"${RUN_DIR}/api-fetcher.log" 2>&1 &
+API_FETCHER_PID=$!
+wait_for_url "http://${API_FETCHER_HOST}:${API_FETCHER_PORT}/health/ready" api-fetcher
 
 if [[ ! -x "${ROOT_DIR}/backend-service/.venv/bin/uvicorn" ]]; then
   echo "Preparing Backend virtual environment..."

@@ -12,9 +12,9 @@ if [[ -f "${ENV_FILE}" ]]; then
 fi
 
 BACKEND_PORT="${BACKEND_PORT:-8000}"
-HISTORY_PORT="${HISTORY_PORT:-8081}"
+API_FETCHER_PORT="${API_FETCHER_PORT:-8081}"
 UI_PORT="${UI_PORT:-3000}"
-PORTS=("${UI_PORT}" "${BACKEND_PORT}" "${HISTORY_PORT}")
+PORTS=("${UI_PORT}" "${BACKEND_PORT}" "${API_FETCHER_PORT}")
 
 if ! command -v lsof >/dev/null 2>&1; then
   echo "Required command is not installed: lsof" >&2
@@ -37,7 +37,7 @@ for port in "${PORTS[@]}"; do
 done
 
 if (( ${#pids[@]} == 0 )); then
-  echo "Rateboard is already stopped; ports ${UI_PORT}, ${BACKEND_PORT}, and ${HISTORY_PORT} are free."
+  echo "Rateboard is already stopped; ports ${UI_PORT}, ${BACKEND_PORT}, and ${API_FETCHER_PORT} are free."
   exit 0
 fi
 

@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .clients import CoinGeckoClient, FrankfurterClient, HistoryClient, ObservationPublisher, ProviderError
+from .clients import ApiFetcherClient, CoinGeckoClient, FrankfurterClient, ObservationPublisher, ProviderError
 from .config import get_settings
 from .models import BackfillRequest, RefreshRequest
 from .services import FIAT_BASES, RateService
@@ -42,7 +42,7 @@ async def collector_loop(app: FastAPI):
             try:
                 rate = await app.state.rates.current(item["instrument_id"], refresh=True)
                 rate = rate.model_copy(update={"requested_at": cycle_timestamp})
-                if await app.state.history.save(rate, request_id) in ("queued", "saved"):
+                if await app.state.api_fetcher.save(rate, request_id) in ("queued", "saved"):
                     saved += 1
                 else:
                     failed += 1
@@ -64,9 +64,9 @@ async def lifespan(app: FastAPI):
     publisher = ObservationPublisher(settings) if settings.rabbitmq_enabled else None
     if publisher:
         await publisher.connect()
-    history = HistoryClient(http, settings, publisher)
-    app.state.history = history
-    app.state.rates = RateService(CoinGeckoClient(http, settings), FrankfurterClient(http, settings), history)
+    api_fetcher = ApiFetcherClient(http, settings, publisher)
+    app.state.api_fetcher = api_fetcher
+    app.state.rates = RateService(CoinGeckoClient(http, settings), FrankfurterClient(http, settings), api_fetcher)
     collector_task = asyncio.create_task(collector_loop(app)) if settings.collector_enabled else None
     yield
     if collector_task:
@@ -109,8 +109,8 @@ async def live():
 
 @app.get("/health/ready")
 async def ready(request: Request):
-    history_ready = await request.app.state.history.ready()
-    return JSONResponse(status_code=200 if history_ready else 503, content={"status": "ready" if history_ready else "degraded", "history": history_ready})
+    api_fetcher_ready = await request.app.state.api_fetcher.ready()
+    return JSONResponse(status_code=200 if api_fetcher_ready else 503, content={"status": "ready" if api_fetcher_ready else "degraded", "api_fetcher": api_fetcher_ready})
 
 
 @app.get("/api/v1/instruments")
@@ -127,7 +127,7 @@ async def market_map(request: Request, period: str = "1d"):
 
 
 async def persist(rates, request: Request):
-    results = await asyncio.gather(*(request.app.state.history.save(rate, request.state.request_id) for rate in rates))
+    results = await asyncio.gather(*(request.app.state.api_fetcher.save(rate, request.state.request_id) for rate in rates))
     return [rate.model_copy(update={"persistence_status": status}) for rate, status in zip(rates, results)]
 
 
@@ -187,7 +187,7 @@ async def backfill(payload: BackfillRequest, request: Request):
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except httpx.HTTPError as exc:
-            raise HTTPException(503, f"History service failed while saving {instrument_id}") from exc
+            raise HTTPException(503, f"API Fetcher failed while saving {instrument_id}") from exc
     return {"from": start, "to": end, "results": results}
 
 
@@ -201,9 +201,9 @@ async def rate_history(request: Request, instruments: str, from_: datetime = Que
     if step not in ("5m", "30m", "1h", "4h", "1d"):
         raise HTTPException(400, "Unsupported history step")
     try:
-        series = await request.app.state.history.series(ids, from_, to, step)
+        series = await request.app.state.api_fetcher.series(ids, from_, to, step)
     except httpx.HTTPError as exc:
-        raise HTTPException(503, "History service unavailable") from exc
+        raise HTTPException(503, "API Fetcher unavailable") from exc
     return {"mode": mode, "series": series}
 
 
@@ -215,9 +215,9 @@ async def request_history(request: Request, instrument_id: str | None = None, li
     if cursor:
         params["cursor"] = cursor
     try:
-        return await request.app.state.history.list(params)
+        return await request.app.state.api_fetcher.list(params)
     except httpx.HTTPError as exc:
-        raise HTTPException(503, "History service unavailable") from exc
+        raise HTTPException(503, "API Fetcher unavailable") from exc
 
 
 @app.get("/api/v1/rates/stored-current")
@@ -226,10 +226,10 @@ async def stored_current(request: Request, instruments: str):
     ids = split_ids(instruments, 10)
     try:
         responses = await asyncio.gather(*(
-            request.app.state.history.list({"instrument_id": instrument_id, "limit": 1})
+            request.app.state.api_fetcher.list({"instrument_id": instrument_id, "limit": 1})
             for instrument_id in ids
         ))
     except httpx.HTTPError as exc:
-        raise HTTPException(503, "History service unavailable") from exc
+        raise HTTPException(503, "API Fetcher unavailable") from exc
     items = [response["items"][0] for response in responses if response.get("items")]
     return {"items": items, "source": "postgresql"}

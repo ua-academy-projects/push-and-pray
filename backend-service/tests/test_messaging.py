@@ -4,7 +4,7 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from app.clients import HistoryClient
+from app.clients import ApiFetcherClient
 from app.config import Settings
 from app.models import Rate
 
@@ -40,7 +40,7 @@ def rate() -> Rate:
 async def test_history_save_publishes_without_sparkline():
     publisher = Publisher()
     async with httpx.AsyncClient() as http:
-        client = HistoryClient(http, Settings(), publisher)
+        client = ApiFetcherClient(http, Settings(), publisher)
         status = await client.save(rate(), "request-id")
 
     assert status == "queued"
@@ -59,7 +59,7 @@ async def test_history_save_falls_back_to_http_when_publish_fails():
         return httpx.Response(201, json={"created": True})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        client = HistoryClient(http, Settings(history_service_url="http://history"), publisher)
+        client = ApiFetcherClient(http, Settings(api_fetcher_url="http://api-fetcher"), publisher)
         status = await client.save(rate(), "request-id")
 
     assert status == "saved"

@@ -152,11 +152,11 @@ class FrankfurterClient:
         return HistorySeries(instrument_id=f"fiat:{base}:{quote}", source="frankfurter", points=points)
 
 
-class HistoryClient:
+class ApiFetcherClient:
     def __init__(self, http: httpx.AsyncClient, settings: Settings, publisher: "ObservationPublisher | None" = None):
         self.http = http
-        self.base_url = settings.history_service_url.rstrip("/")
-        self.headers = {"Authorization": f"Bearer {settings.history_service_token}"}
+        self.base_url = settings.api_fetcher_url.rstrip("/")
+        self.headers = {"Authorization": f"Bearer {settings.api_fetcher_token}"}
         self.publisher = publisher
 
     async def ready(self) -> bool:

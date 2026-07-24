@@ -49,7 +49,7 @@ Create local configuration. `.env` is excluded by both Git and Codex ignore rule
 cp .env.example .env
 ```
 
-Set a unique `HISTORY_SERVICE_TOKEN`. `COINGECKO_API_KEY` is optional for keyless access but recommended for rate limits. Never commit `.env` or API-key files.
+Set a unique `API_FETCHER_TOKEN`. `COINGECKO_API_KEY` is optional for keyless access but recommended for rate limits. Never commit `.env` or API-key files.
 
 Create the database and role if they do not already exist. The exact administrative command depends on your PostgreSQL installation; the default application URL expects database/user/password `rates`:
 
@@ -100,10 +100,10 @@ Apply the migration and start History:
 set -a
 source .env
 set +a
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f history-service/migrations/001_init.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f history-service/migrations/002_sampling.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f history-service/migrations/003_backfill_timestamps.sql
-cd history-service
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/001_init.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/002_sampling.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/003_backfill_timestamps.sql
+cd api-fetcher
 go mod download
 go run ./cmd/server
 ```
@@ -130,7 +130,7 @@ python3 -m http.server 3000 --bind 127.0.0.1
 
 Start order: PostgreSQL → RabbitMQ → History → Backend → UI.
 
-RabbitMQ carries durable observation writes from Backend to History. The durable direct exchange is `rates.events`, the main queue is `rates.observations`, and failed redeliveries go to `rates.observations.dlq`. History acknowledges a message only after PostgreSQL accepts the insert. If publishing fails, Backend falls back to the authenticated History HTTP write endpoint.
+RabbitMQ carries durable observation writes from Backend to API Fetcher. The durable direct exchange is `rates.events`, the main queue is `rates.observations`, and failed redeliveries go to `rates.observations.dlq`. API Fetcher acknowledges a message only after PostgreSQL accepts the insert. If publishing fails, Backend falls back to the authenticated API Fetcher HTTP write endpoint.
 
 ## Automatic collection
 
@@ -141,7 +141,7 @@ COLLECTOR_ENABLED=true
 COLLECTOR_INTERVAL_SECONDS=300
 ```
 
-Each cycle fetches all 20 configured instruments with fresh provider requests and sends successful observations to History. Failures are isolated per instrument and logged without stopping the cycle. Values below 60 seconds are clamped to 60.
+Each cycle fetches all 20 configured instruments with fresh provider requests and sends successful observations to API Fetcher. Failures are isolated per instrument and logged without stopping the cycle. Values below 60 seconds are clamped to 60.
 
 Every cycle is stored with its aligned `requested_at` sample time. Frankfurter can keep the same daily `source_timestamp` and value, but PostgreSQL still records each five-minute observation; this represents when Rateboard sampled the source, not a fabricated provider update.
 
@@ -173,7 +173,7 @@ Backfill retains the providers' native historical granularity; only new collecto
 
 ```sh
 cd backend-service && .venv/bin/pytest -q
-cd history-service && go test ./...
+cd api-fetcher && go test ./...
 node --test ui-service/tests/*.test.js
 bash -n scripts/start-all.sh scripts/backfill-year.sh
 ```

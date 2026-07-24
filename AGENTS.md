@@ -11,16 +11,16 @@ The first version must satisfy the Assignment 1 architecture:
 ```text
 Browser -> UI service -> Python Backend/Proxy -> CoinGecko / Frankfurter
                           |
-                          +-> Go History service -> PostgreSQL
+                          +-> Go API Fetcher -> PostgreSQL
 ```
 
 Hard boundaries:
 
 - The browser/UI obtains all application data only from the Python Backend. It also loads pinned Chart.js assets from jsDelivr.
-- The UI never calls CoinGecko, Frankfurter, PostgreSQL, or the History service directly.
+- The UI never calls CoinGecko, Frankfurter, PostgreSQL, or the API Fetcher directly.
 - The Backend is the orchestration point for external data.
-- Only the Go History service owns and accesses PostgreSQL.
-- Explicit provider-refresh requests, scheduled collector results, and backfill points are forwarded by Backend to History. Normal overview/cached reads are not persisted; charts read already stored PostgreSQL observations.
+- Only the Go API Fetcher owns and accesses PostgreSQL.
+- Explicit provider-refresh requests, scheduled collector results, and backfill points are forwarded by Backend to API Fetcher. Normal overview/cached reads are not persisted; charts read already stored PostgreSQL observations.
 - Do not add direct database access to the Backend or UI.
 
 ## 2. Technology choices
@@ -41,7 +41,7 @@ Hard boundaries:
 - Responsibilities: validate UI input, call public APIs, normalize heterogeneous responses, call History, and return one stable internal JSON contract.
 - Generate OpenAPI automatically through FastAPI.
 
-### History service (the Go API service)
+### API Fetcher (the Go API service)
 
 - Go 1.23+ using `net/http` or a small router such as Chi.
 - `pgx/v5` for PostgreSQL access.
@@ -51,7 +51,7 @@ Hard boundaries:
 ### Database
 
 - PostgreSQL 16+.
-- Schema migrations are owned by `history-service`.
+- Schema migrations are owned by `api-fetcher`.
 - Store normalized numeric values in `NUMERIC`, not floating-point database columns.
 - Store timestamps as `TIMESTAMPTZ` in UTC.
 
@@ -242,7 +242,7 @@ All endpoints are prefixed with `/api/v1`.
 ### Historical data
 
 - `GET /api/v1/rates/history?instruments=...&from=...&to=...&step=5m&mode=price` - stored PostgreSQL series, maximum five instruments and maximum one year for version 1.
-- `GET /api/v1/requests/history?instrument_id=...&limit=50&cursor=...` - Backend proxies the History service response; do not let UI call Go directly.
+- `GET /api/v1/requests/history?instrument_id=...&limit=50&cursor=...` - Backend proxies the API Fetcher response; do not let UI call Go directly.
 
 Provider-client failures return this structured error envelope:
 
@@ -270,9 +270,9 @@ The Go service is internal and exposes:
 - `GET /internal/v1/observations?instrument_id=...&limit=...&cursor=...`
 - `GET /internal/v1/series?instruments=...&from=...&to=...&step=...` - bucket stored observations for charts
 
-Backend sends `Idempotency-Key`, derived from `source + instrument_id + source_timestamp + requested_at`, so retries of the same sample do not create duplicates. Use a short internal shared token (`HISTORY_SERVICE_TOKEN`) for basic service-to-service authorization even in local development; never log it.
+Backend sends `Idempotency-Key`, derived from `source + instrument_id + source_timestamp + requested_at`, so retries of the same sample do not create duplicates. Use a short internal shared token (`API_FETCHER_TOKEN`) for basic service-to-service authorization even in local development; never log it.
 
-If provider retrieval succeeds but History saving fails, return current data with `persistence_status: "failed"` and log the failure. Do not pretend persistence succeeded. A later version may add a durable queue, but that is outside Assignment 1.
+If provider retrieval succeeds but API Fetcher saving fails, return current data with `persistence_status: "failed"` and log the failure. Do not pretend persistence succeeded. A later version may add a durable queue, but that is outside Assignment 1.
 
 ## 8. PostgreSQL schema
 
@@ -315,7 +315,7 @@ Do not store API keys, authorization headers, or entire upstream responses in `r
 - Do not retry validation errors or most 4xx responses.
 - Limit query counts and date spans before calling providers.
 - Current implementation does not serve expired stale cache entries after upstream failure.
-- Add a request/correlation ID at the Backend boundary and forward it to History.
+- Add a request/correlation ID at the Backend boundary and forward it to API Fetcher.
 - Structured JSON logs must include service, level, request_id, route, status, latency_ms, and upstream name where relevant. Never log secrets.
 
 Backend also owns a background collector. It aligns runs to absolute `COLLECTOR_INTERVAL_SECONDS` wall-clock boundaries, fetches all 20 configured instruments with cache bypassed, and persists successful results. With the default 300 seconds it starts at `:00`, `:05`, `:10`, `:15`, and so on. Values below 60 are clamped. This accumulates five-minute samples going forward. Frankfurter values may remain unchanged during a day, and unavailable historical five-minute points must never be fabricated.
@@ -342,7 +342,7 @@ project-root/
       main.py
     tests/
     pyproject.toml
-  history-service/
+  api-fetcher/
     cmd/server/
     internal/
       api/
@@ -368,16 +368,16 @@ Document these variables in `.env.example` without real values:
 BACKEND_HOST=127.0.0.1
 BACKEND_PORT=8000
 UI_ORIGIN=http://127.0.0.1:3000
-HISTORY_SERVICE_URL=http://127.0.0.1:8081
-HISTORY_SERVICE_TOKEN=change-me
+API_FETCHER_URL=http://127.0.0.1:8081
+API_FETCHER_TOKEN=change-me
 COINGECKO_BASE_URL=https://api.coingecko.com/api/v3
 COINGECKO_API_KEY=
 FRANKFURTER_BASE_URL=https://api.frankfurter.dev/v2
 COLLECTOR_ENABLED=true
 COLLECTOR_INTERVAL_SECONDS=300
 DATABASE_URL=postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable
-HISTORY_HOST=127.0.0.1
-HISTORY_PORT=8081
+API_FETCHER_HOST=127.0.0.1
+API_FETCHER_PORT=8081
 UI_HOST=127.0.0.1
 UI_PORT=3000
 BACKFILL_YEAR_ON_START=0
@@ -399,7 +399,7 @@ Bind to localhost by default. CORS should allow only the configured UI origin in
 - All three services start independently using README commands.
 - UI communicates only with Backend.
 - Backend fetches and normalizes CoinGecko and Frankfurter data.
-- Every successful explicit fetch is sent to History and persisted once.
+- Every successful explicit fetch is sent to API Fetcher and persisted once.
 - The History tab visualizes stored PostgreSQL observations through Backend and History; a separate paginated request-row view remains optional follow-up work.
 - Overview provides Bitcoin, crypto top 10, fiat pairs, multi-card comparison, one-hour/day statistics, and refresh without losing cards.
 - History UI supports up to five series per dynamic chart, price/% modes, short/year ranges, refresh-all, zoom, clear-all, and print-to-PDF export.
@@ -411,9 +411,9 @@ Bind to localhost by default. CORS should allow only the configured UI origin in
 ## 13. Recommended implementation order
 
 1. Scaffold the three services and health endpoints.
-2. Add PostgreSQL migration and Go History create/list endpoints.
+2. Add PostgreSQL migration and Go API Fetcher create/list endpoints.
 3. Add Python provider clients and normalization tests.
-4. Connect Backend to History with idempotency and failure reporting.
+4. Connect Backend to API Fetcher with idempotency and failure reporting.
 5. Implement Overview API and basic UI.
 6. Add PostgreSQL history aggregation and the multi-series chart.
 7. Add stronger resilience, accessibility audits, and end-to-end tests.

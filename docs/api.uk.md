@@ -2,7 +2,7 @@
 
 [English version](api.md)
 
-Публічний Backend: `http://127.0.0.1:8000`. Внутрішній History service: `http://127.0.0.1:8081`.
+Публічний Backend: `http://127.0.0.1:8000`. Внутрішній API Fetcher: `http://127.0.0.1:8081`.
 
 ## Стан Backend
 
@@ -12,7 +12,7 @@
 
 ### `GET /health/ready`
 
-Перевіряє доступність History service. Повертає `503`, якщо History/PostgreSQL недоступні.
+Перевіряє доступність API Fetcher. Повертає `503`, якщо API Fetcher або PostgreSQL недоступні.
 
 ## Каталог і поточні курси
 
@@ -47,7 +47,7 @@
 
 ### `GET /api/v1/rates/stored-current?instruments=...`
 
-Повертає останнє PostgreSQL-спостереження для 1–10 інструментів через History service. CoinGecko і Frankfurter не викликаються. Саме цей endpoint використовує кнопка «Оновити» в огляді.
+Повертає останнє PostgreSQL-спостереження для 1–10 інструментів через API Fetcher. CoinGecko і Frankfurter не викликаються. Саме цей endpoint використовує кнопка «Оновити» в огляді.
 
 ## Капіталізація, історія та backfill
 
@@ -66,7 +66,7 @@
 - `mode`: `price` або `percent`;
 - максимальний проміжок: 366 днів.
 
-Backend не викликає провайдерів. Він отримує series від History, який читає PostgreSQL, групує `date_bin` і повертає останнє спостереження кожного бакета. Порожні бакети пропускаються. Відсоткова нормалізація виконується UI.
+Backend не викликає провайдерів. Він отримує series від API Fetcher, який читає PostgreSQL, групує `date_bin` і повертає останнє спостереження кожного бакета. Порожні бакети пропускаються. Відсоткова нормалізація виконується UI.
 
 ### `POST /api/v1/rates/backfill`
 
@@ -130,11 +130,11 @@ Decimal-поля передаються рядками для уникнення
 
 ## RabbitMQ
 
-Backend публікує persistent JSON-повідомлення в durable direct exchange `rates.events` з routing key `observation.persist`. History читає чергу `rates.observations`, надсилає ACK після запису в PostgreSQL, а повторно невдале повідомлення переходить у `rates.observations.dlq`.
+Backend публікує persistent JSON-повідомлення в durable direct exchange `rates.events` з routing key `observation.persist`. API Fetcher читає чергу `rates.observations`, надсилає ACK після запису в PostgreSQL, а повторно невдале повідомлення переходить у `rates.observations.dlq`.
 
 ## Внутрішній History API
 
-Усі `/internal/v1/*` endpoint потребують `Authorization: Bearer <HISTORY_SERVICE_TOKEN>`.
+Усі `/internal/v1/*` endpoint потребують `Authorization: Bearer <API_FETCHER_TOKEN>`.
 
 - `POST /internal/v1/observations` — ідемпотентно зберігає одне спостереження.
 - `POST /internal/v1/observations/batch` — послідовно зберігає 1–100 спостережень.

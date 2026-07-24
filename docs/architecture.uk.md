@@ -10,14 +10,14 @@
        └─ HTTP :8000 → Python Backend / Proxy
             ├─ HTTPS → CoinGecko
             ├─ HTTPS → Frankfurter
-            ├─ AMQP :5672 → RabbitMQ → Go History consumer
-            └─ HTTP :8081 + bearer token → Go History service (читання/fallback)
+            ├─ AMQP :5672 → RabbitMQ → Go API Fetcher consumer
+            └─ HTTP :8081 + bearer token → Go API Fetcher (читання/fallback)
                  └─ PostgreSQL :5432 → PostgreSQL 16
 ```
 
 - **UI** відображає картки, карти капіталізації та Chart.js-графіки. Він не має ключів провайдерів або доступу до БД і викликає тільки Backend.
 - **Backend** перевіряє instrument ID, нормалізує відповіді, обслуговує публічне API, запускає backfill і п’ятихвилинний колектор.
-- **History** перевіряє нормалізовані спостереження та одноосібно володіє PostgreSQL-запитами. Внутрішні endpoint захищені bearer token.
+- **API Fetcher** перевіряє нормалізовані спостереження та одноосібно володіє PostgreSQL-запитами. Внутрішні endpoint захищені bearer token.
 - **RabbitMQ** надійно буферизує записи explicit refresh, collector і backfill. Основна черга — `rates.observations`, DLQ — `rates.observations.dlq`.
 - **PostgreSQL** зберігає точні `NUMERIC` і `TIMESTAMPTZ`. Унікальність `(source, instrument_id, source_timestamp, requested_at)` робить повтор одного знімка ідемпотентним і дозволяє наступний п’ятихвилинний знімок.
 
@@ -29,7 +29,7 @@
 2. Backend обходить кеш і запитує CoinGecko та Frankfurter.
 3. Різні формати перетворюються на єдину модель `Rate`.
 4. Backend публікує persistent-повідомлення в RabbitMQ.
-5. History споживає повідомлення, зберігає його в PostgreSQL із вирівняним `requested_at` і лише тоді надсилає ACK. Якщо publish не працює, Backend використовує HTTP fallback.
+5. API Fetcher споживає повідомлення, зберігає його в PostgreSQL із вирівняним `requested_at` і лише тоді надсилає ACK. Якщо publish не працює, Backend використовує HTTP fallback.
 
 Помилка одного інструмента журналюється, але не зупиняє весь цикл. Frankfurter може зберігати однакове значення протягом дня; це не заважає фіксувати час кожного локального знімка.
 
@@ -37,7 +37,7 @@
 
 1. UI викликає `GET /api/v1/rates/stored-current`.
 2. Backend запитує останнє спостереження кожного інструмента в History.
-3. History читає PostgreSQL.
+3. API Fetcher читає PostgreSQL.
 4. UI оновлює картки, не звертаючись до зовнішніх API.
 
 Окремий `POST /api/v1/rates/refresh` залишається адміністративним/програмним endpoint для примусового запиту провайдера та збереження результату, але UI-кнопка його не використовує.
@@ -46,8 +46,8 @@
 
 1. Користувач обирає до п’яти інструментів, період і крок.
 2. UI передає точні RFC3339 `from`/`to` та крок `5m`, `30m`, `1h`, `4h` або `1d`.
-3. Backend проксіює запит до History.
-4. History використовує PostgreSQL `date_bin` і бере останнє значення кожного бакета.
+3. Backend проксіює запит до API Fetcher.
+4. API Fetcher використовує PostgreSQL `date_bin` і бере останнє значення кожного бакета.
 5. UI будує абсолютний або відсотковий графік.
 
 Період і крок незалежні: один день із кроком 30 хвилин дає до 48 точок. Порожні бакети не інтерполюються. Кнопка та автоматичне оновлення графіків повторно читають PostgreSQL.

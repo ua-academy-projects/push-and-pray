@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
     ui_origin: str = "http://127.0.0.1:3000"
-    history_service_url: str = "http://127.0.0.1:8081"
-    history_service_token: str = "change-me"
+    api_fetcher_url: str = "http://127.0.0.1:8081"
+    api_fetcher_token: str = "change-me"
     rabbitmq_enabled: bool = False
     rabbitmq_url: str = "amqp://guest:guest@127.0.0.1:5672/"
     rabbitmq_exchange: str = "rates.events"

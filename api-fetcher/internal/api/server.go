@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"rateboard/history-service/internal/repository"
+	"rateboard/api-fetcher/internal/repository"
 )
 
 type Server struct {
@@ -53,7 +53,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) live(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, 200, map[string]any{"status": "ok", "service": "history"})
+	writeJSON(w, 200, map[string]any{"status": "ok", "service": "api-fetcher"})
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +144,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf(`{"service":"history","route":%q,"latency_ms":%d}`, r.URL.Path, time.Since(started).Milliseconds())
+		log.Printf(`{"service":"api-fetcher","route":%q,"latency_ms":%d}`, r.URL.Path, time.Since(started).Milliseconds())
 	})
 }
 
