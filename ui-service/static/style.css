@@ -318,6 +318,14 @@ button:disabled {
     text-anchor: middle;
 }
 
+.chart-label-x-start {
+    text-anchor: start;
+}
+
+.chart-label-x-end {
+    text-anchor: end;
+}
+
 .chart-axis-title {
     fill: var(--ink);
     font-size: 13px;

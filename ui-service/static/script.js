@@ -434,6 +434,73 @@ function createSvgElement(name, attributes = {}) {
 }
 
 
+function selectChartLabelIndexes(
+    points,
+    xPosition,
+    minimumSpacing
+) {
+    if (points.length === 0) {
+        return [];
+    }
+
+    const lastIndex = points.length - 1;
+
+    if (lastIndex === 0) {
+        return [0];
+    }
+
+    const positionForIndex = (index) =>
+        xPosition(points[index], index);
+
+    const firstX = positionForIndex(0);
+    const lastX = positionForIndex(lastIndex);
+
+    if (lastX - firstX < minimumSpacing) {
+        return [lastIndex];
+    }
+
+    const selectedIndexes = [0];
+
+    for (
+        let index = 1;
+        index < lastIndex;
+        index += 1
+    ) {
+        const previousIndex =
+            selectedIndexes[
+                selectedIndexes.length - 1
+            ];
+
+        if (
+            positionForIndex(index) -
+            positionForIndex(previousIndex) >=
+            minimumSpacing
+        ) {
+            selectedIndexes.push(index);
+        }
+    }
+
+    const previousIndex =
+        selectedIndexes[
+            selectedIndexes.length - 1
+        ];
+
+    if (
+        lastX - positionForIndex(previousIndex) >=
+        minimumSpacing
+    ) {
+        selectedIndexes.push(lastIndex);
+
+    } else if (previousIndex !== 0) {
+        selectedIndexes[
+            selectedIndexes.length - 1
+        ] = lastIndex;
+    }
+
+    return selectedIndexes;
+}
+
+
 function renderChart(points) {
     temperatureChart.replaceChildren();
 
@@ -455,7 +522,7 @@ function renderChart(points) {
 
     const padding = {
         top: 30,
-        right: 30,
+        right: 45,
         bottom: 65,
         left: 115,
     };
@@ -660,42 +727,40 @@ function renderChart(points) {
         chartContainer.clientWidth || width;
 
     const minimumLabelSpacing =
-        spansMultipleDays ? 115 : 75;
+        spansMultipleDays ? 150 : 75;
+
+    const renderedChartWidth =
+        chartWidth * renderedWidth / width;
 
     const maximumLabelCount = Math.max(
         2,
         Math.floor(
-            renderedWidth /
+            renderedChartWidth /
             minimumLabelSpacing
-        )
+        ) + 1
     );
 
-    const labelCount = Math.min(
+    const labelCountLimit = Math.min(
         points.length,
         maximumLabelCount,
         7,
     );
 
-    const labelIndexes = new Set();
+    const minimumChartSpacing = Math.max(
+        minimumLabelSpacing *
+            width / renderedWidth,
+        labelCountLimit > 1
+            ? chartWidth /
+                (labelCountLimit - 1)
+            : chartWidth + 1,
+    );
 
-    if (labelCount === 1) {
-        labelIndexes.add(0);
-
-    } else {
-        for (
-            let index = 0;
-            index < labelCount;
-            index += 1
-        ) {
-            labelIndexes.add(
-                Math.round(
-                    index *
-                    (points.length - 1) /
-                    (labelCount - 1)
-                )
-            );
-        }
-    }
+    const labelIndexes =
+        selectChartLabelIndexes(
+            points,
+            xPosition,
+            minimumChartSpacing,
+        );
 
     labelIndexes.forEach((index) => {
         const x = xPosition(
@@ -714,6 +779,21 @@ function renderChart(points) {
             }
         );
 
+        let labelClass =
+            "chart-label chart-label-x";
+
+        if (points.length > 1 && index === 0) {
+            labelClass +=
+                " chart-label-x-start";
+
+        } else if (
+            points.length > 1 &&
+            index === points.length - 1
+        ) {
+            labelClass +=
+                " chart-label-x-end";
+        }
+
         const label = createSvgElement(
             "text",
             {
@@ -723,10 +803,7 @@ function renderChart(points) {
                     padding.bottom +
                     30
                 ),
-                class: (
-                    "chart-label " +
-                    "chart-label-x"
-                ),
+                class: labelClass,
             }
         );
 
