@@ -1,7 +1,8 @@
-
 import os
+import json
 import logging
 
+import pika
 import requests
 from flask import Flask, request, jsonify
 
@@ -14,6 +15,34 @@ BACKEND_SERVICE_URL = os.getenv("BACKEND_SERVICE_URL", "http://localhost:5002")
 
 GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
+
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+QUEUE_NAME = "weather_events"
+
+
+def publish_event(event_type: str, payload: dict):
+    """
+    Публікує повідомлення в RabbitMQ замість прямого HTTP POST у Backend Service.
+    Якщо Backend Service тимчасово недоступний - повідомлення все одно
+    залишиться в черзі (durable=True + delivery_mode=2) і буде оброблене,
+    щойно consumer знову підключиться.
+    """
+    connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+    try:
+        channel = connection.channel()
+        channel.queue_declare(queue=QUEUE_NAME, durable=True)
+        channel.confirm_delivery()
+        channel.basic_publish(
+            exchange="",
+            routing_key=QUEUE_NAME,
+            body=json.dumps({"type": event_type, "payload": payload}),
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # persistent - зберігається на диск
+                content_type="application/json",
+            ),
+        )
+    finally:
+        connection.close()
 
 
 @app.route("/health", methods=["GET"])
@@ -77,13 +106,13 @@ def get_current_weather():
             "raw_response": weather_data,
         }
 
+        # БУЛО: requests.post(f"{BACKEND_SERVICE_URL}/history", json=record, timeout=10)
+        # СТАЛО: асинхронна публікація в чергу замість прямого HTTP-виклику
         try:
-            save_resp = requests.post(
-                f"{BACKEND_SERVICE_URL}/history", json=record, timeout=10
-            )
-            save_resp.raise_for_status()
-        except requests.RequestException:
-            logger.exception("Не вдалося зберегти запис у Backend Service")
+            publish_event("weather_current", record)
+        except Exception as exc:  # the data must not be reported as saved when it was not queued
+            logger.exception("Не вдалося опублікувати подію 'weather_current' в RabbitMQ")
+            return jsonify({"error": f"Черга RabbitMQ недоступна: {exc}"}), 503
 
         # Погодинний прогноз - окремий запис у окрему таблицю
         hourly = weather_data.get("hourly", {})
@@ -97,21 +126,19 @@ def get_current_weather():
             for t, temp, prec, code in zip(times, temps, precs, codes)
         ]
 
+        # БУЛО: requests.post(f"{BACKEND_SERVICE_URL}/history/hourly", json={...}, timeout=15)
+        # СТАЛО: асинхронна публікація в ту саму чергу з іншим типом події
         if hours:
             try:
-                hourly_resp = requests.post(
-                    f"{BACKEND_SERVICE_URL}/history/hourly",
-                    json={
-                        "city": location["resolved_name"],
-                        "latitude": location["latitude"],
-                        "longitude": location["longitude"],
-                        "hours": hours,
-                    },
-                    timeout=15,
-                )
-                hourly_resp.raise_for_status()
-            except requests.RequestException:
-                logger.exception("Не вдалося зберегти погодинний прогноз у Backend Service")
+                publish_event("weather_hourly", {
+                    "city": location["resolved_name"],
+                    "latitude": location["latitude"],
+                    "longitude": location["longitude"],
+                    "hours": hours,
+                })
+            except Exception as exc:
+                logger.exception("Не вдалося опублікувати подію 'weather_hourly' в RabbitMQ")
+                return jsonify({"error": f"Черга RabbitMQ недоступна: {exc}"}), 503
 
         return jsonify(record)
     except requests.RequestException as exc:
@@ -132,6 +159,7 @@ def get_history():
         logger.exception("Помилка звернення до Backend Service")
         return jsonify({"error": f"Backend Service недоступний: {exc}"}), 502
 
+
 @app.route("/api/hourly", methods=["GET"])
 def get_hourly():
     try:
@@ -141,6 +169,7 @@ def get_hourly():
     except requests.RequestException as exc:
         logger.exception("Помилка звернення до Backend Service (hourly)")
         return jsonify({"error": f"Backend Service недоступний: {exc}"}), 502
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))

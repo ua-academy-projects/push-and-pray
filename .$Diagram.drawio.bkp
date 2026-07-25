@@ -1,0 +1,31 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="weather-architecture" name="Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1000">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="network" value="Application network (Docker Compose / Vagrant)" style="swimlane;html=1;startSize=30;rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1" vertex="1" parent="1"><mxGeometry x="170" y="80" width="1220" height="670" as="geometry"/></mxCell>
+        <mxCell id="browser" value="Browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="1"><mxGeometry x="20" y="350" width="110" height="60" as="geometry"/></mxCell>
+        <mxCell id="ui" value="UI Service&#xa;:5000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="network"><mxGeometry x="50" y="240" width="140" height="70" as="geometry"/></mxCell>
+        <mxCell id="redis" value="Redis&#xa;session:&lt;UUID&gt;" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="network"><mxGeometry x="50" y="470" width="140" height="80" as="geometry"/></mxCell>
+        <mxCell id="poller" value="Poller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656" vertex="1" parent="network"><mxGeometry x="300" y="60" width="130" height="60" as="geometry"/></mxCell>
+        <mxCell id="proxy" value="Proxy Service&#xa;:5001" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="network"><mxGeometry x="300" y="270" width="140" height="70" as="geometry"/></mxCell>
+        <mxCell id="openmeteo" value="Open-Meteo API" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450" vertex="1" parent="network"><mxGeometry x="550" y="60" width="150" height="70" as="geometry"/></mxCell>
+        <mxCell id="backend" value="Backend Service&#xa;read API :5002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf" vertex="1" parent="network"><mxGeometry x="550" y="270" width="155" height="70" as="geometry"/></mxCell>
+        <mxCell id="rabbit" value="RabbitMQ&#xa;queue: weather_events" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fce4d6;strokeColor=#d79b00" vertex="1" parent="network"><mxGeometry x="550" y="470" width="170" height="85" as="geometry"/></mxCell>
+        <mxCell id="consumer" value="History Consumer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656" vertex="1" parent="network"><mxGeometry x="810" y="480" width="155" height="65" as="geometry"/></mxCell>
+        <mxCell id="postgres" value="PostgreSQL&#xa;weather history" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#d5e8d4;strokeColor=#82b366" vertex="1" parent="network"><mxGeometry x="1040" y="340" width="150" height="90" as="geometry"/></mxCell>
+        <mxCell id="e1" value="HTTP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="browser" target="ui"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" value="HTTP: UI state/history" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="ui" target="proxy"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" value="Redis protocol&#xa;session state + TTL" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=both" edge="1" parent="1" source="ui" target="redis"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" value="HTTP GET /api/current" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="poller" target="proxy"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" value="HTTPS: geocoding + weather" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="proxy" target="openmeteo"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" value="AMQP publish&#xa;weather_current / weather_hourly" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="proxy" target="rabbit"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="AMQP consume + ack" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="rabbit" target="consumer"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" value="HTTP GET /history, /history/hourly" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="proxy" target="backend"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e9" value="SQL read" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="backend" target="postgres"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e10" value="SQL write" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block" edge="1" parent="1" source="consumer" target="postgres"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

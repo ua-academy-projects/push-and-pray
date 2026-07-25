@@ -15,7 +15,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/vagrant/app
-Environment=PROXY_SERVICE_URL=http://${PROXY_IP}:5001
+Environment=PROXY_SERVICE_URL=${PROXY_SERVICE_URL}
 Environment=WATCHED_CITIES=Kyiv,Warsaw,Berlin
 Environment=POLL_INTERVAL_SECONDS=900
 ExecStart=/opt/venv/bin/python /vagrant/app/poller.py

@@ -15,6 +15,15 @@
     #error { color: #b91c1c; margin-top: 8px; }
     #current { margin-top: 10px; font-size: 15px; }
 
+    /* --- Контроли (нове) --- */
+    .control-group { margin-bottom: 16px; }
+    .control-group:last-child { margin-bottom: 0; }
+    .control-label { display: block; font-size: 14px; margin-bottom: 6px; color: #444; }
+    #periodSlider { width: 100%; }
+    .city-filters { display: flex; flex-wrap: wrap; gap: 14px; }
+    .city-filters label { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+    .city-filters input { width: auto; padding: 0; }
+
     /* --- Графік температури з історії БД --- */
     #chartStatus { color: #888; font-size: 14px; }
     #temperatureChart { display: block; width: 100%; height: auto; margin-top: 12px; }
@@ -62,8 +71,27 @@
     <div class="card">
         <p style="color: #555; font-size: 14px; margin: 0;">
             Дані оновлюються автоматично фоновим сервісом (Poller) з певним
-            інтервалом. Тут можна лише переглянути вже накопичену історію.
+            інтервалом. Твої налаштування нижче зберігаються в Redis і
+            відновлюються після оновлення сторінки.
         </p>
+    </div>
+
+    <div class="card">
+        <h2>Налаштування</h2>
+        <div class="control-group">
+            <label class="control-label" for="periodSlider">
+                Період графіка: <span id="periodValue">100</span> останніх записів
+            </label>
+            <input type="range" id="periodSlider" min="10" max="200" step="10" value="100">
+        </div>
+        <div class="control-group">
+            <span class="control-label">Міста для показу:</span>
+            <div class="city-filters">
+                <label><input type="checkbox" class="cityFilter" value="Kyiv" checked> Kyiv</label>
+                <label><input type="checkbox" class="cityFilter" value="Warsaw" checked> Warsaw</label>
+                <label><input type="checkbox" class="cityFilter" value="Berlin" checked> Berlin</label>
+            </div>
+        </div>
     </div>
 
     <div class="card">
@@ -94,7 +122,6 @@
     </div>
 
 <script>
-// Код погоди WMO (weathercode) -> [іконка, підпис]
 const WEATHER_ICONS = {
     0: ["☀️", "Ясно"],
     1: ["🌤️", "Малохмарно"],
@@ -109,6 +136,48 @@ const WEATHER_ICONS = {
 };
 function getIcon(code) {
     return WEATHER_ICONS[code] || ["❓", "Невідомо"];
+}
+
+// --- Стан сесії (Redis) ---
+let uiState = {
+    graph_period: 100,
+    filters: { cities: ["Kyiv", "Warsaw", "Berlin"] },
+    history_expanded: false,
+};
+
+async function loadUiState() {
+    try {
+        const res = await fetch('/session/state');
+        const data = await res.json();
+        uiState = { ...uiState, ...data };
+    } catch (e) {
+        // Redis/UI-сервіс тимчасово недоступний - лишаємось на дефолтах
+    }
+
+    document.getElementById('periodSlider').value = uiState.graph_period;
+    document.getElementById('periodValue').textContent = uiState.graph_period;
+    document.querySelectorAll('.cityFilter').forEach(cb => {
+        cb.checked = uiState.filters.cities.includes(cb.value);
+    });
+    document.getElementById('historyDetails').open = !!uiState.history_expanded;
+}
+
+async function saveUiState() {
+    try {
+        await fetch('/session/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(uiState),
+        });
+    } catch (e) {
+        // Збереження стану не критичне для роботи UI - просто ігноруємо
+    }
+}
+
+function getSelectedCities() {
+    return Array.from(document.querySelectorAll('.cityFilter'))
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
 }
 
 async function loadHourly() {
@@ -128,7 +197,12 @@ async function loadHourly() {
         return;
     }
 
-    // Групуємо плаский список рядків у {місто: [години...]}
+    data = data.filter(row => uiState.filters.cities.includes(row.city));
+    if (data.length === 0) {
+        container.textContent = 'Усі міста приховані фільтром вище.';
+        return;
+    }
+
     const byCity = {};
     for (const row of data) {
         if (!byCity[row.city]) byCity[row.city] = [];
@@ -210,11 +284,11 @@ function renderTemperatureChart(records) {
     svg.innerHTML = '';
     legend.innerHTML = '';
     if (points.length === 0) {
-        status.textContent = 'У базі ще немає достатньо даних про температуру.';
+        status.textContent = 'Немає даних для обраного періоду/фільтрів.';
         return;
     }
 
-    status.textContent = `Показано ${points.length} останніх вимірів із бази даних.`;
+    status.textContent = `Показано ${points.length} вимірів (фільтр: ${uiState.filters.cities.join(', ')}).`;
     const width = 600, height = 270, padding = { top: 18, right: 18, bottom: 42, left: 45 };
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
@@ -259,28 +333,51 @@ function renderTemperatureChart(records) {
 async function loadTemperatureChart() {
     const status = document.getElementById('chartStatus');
     try {
-        const res = await fetch('/history?limit=100');
+        const res = await fetch(`/history?limit=${uiState.graph_period}`);
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) throw new Error('Invalid history response');
-        renderTemperatureChart(data);
+        const filtered = data.filter(row => uiState.filters.cities.includes(row.city));
+        renderTemperatureChart(filtered);
     } catch (e) {
         status.textContent = 'Не вдалося завантажити дані для графіка.';
     }
 }
 
-// Прогноз завантажується одразу, а історія - лише при першому
-// розгортанні блоку (натисканні на "Історія запитів"), щоб не робити
-// зайвий запит до Backend/БД, поки людина його навіть не відкрила.
-loadHourly();
-loadTemperatureChart();
+// --- Обробники контролів (нове) ---
+document.getElementById('periodSlider').addEventListener('input', (e) => {
+    document.getElementById('periodValue').textContent = e.target.value;
+});
+document.getElementById('periodSlider').addEventListener('change', (e) => {
+    uiState.graph_period = Number(e.target.value);
+    saveUiState();
+    loadTemperatureChart();
+});
+
+document.querySelectorAll('.cityFilter').forEach(cb => {
+    cb.addEventListener('change', () => {
+        uiState.filters.cities = getSelectedCities();
+        saveUiState();
+        loadTemperatureChart();
+        loadHourly();
+    });
+});
 
 let historyLoadedOnce = false;
 document.getElementById('historyDetails').addEventListener('toggle', (e) => {
+    uiState.history_expanded = e.target.open;
+    saveUiState();
     if (e.target.open && !historyLoadedOnce) {
         historyLoadedOnce = true;
         loadHistory();
     }
 });
+
+// --- Ініціалізація: спочатку відновлюємо стан з Redis, потім вантажимо дані ---
+(async function init() {
+    await loadUiState();
+    loadHourly();
+    loadTemperatureChart();
+})();
 </script>
 </body>
 </html>

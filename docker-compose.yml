@@ -1,4 +1,27 @@
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    ports:
+      - "15672:15672"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   postgres-db:
     image: postgres:15-alpine
     container_name: postgres-db
@@ -47,9 +70,13 @@ services:
     container_name: proxy-service
     environment:
       - BACKEND_SERVICE_URL=http://backend-service:5002
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
       - PORT=5001
     depends_on:
-      - backend-service
+      backend-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
@@ -69,16 +96,36 @@ services:
          proxy-service:
             condition: service_healthy
 
+  backend-consumer:
+    build: ./backend-consumer
+    environment:
+      - DB_HOST=postgres-db
+      - DB_PORT=5432
+      - DB_NAME=taska-db
+      - DB_USER=admin
+      - DB_PASSWORD=admin
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
   ui-service:
     build: ./ui-service
     container_name: ui-service
     environment:
       - PROXY_SERVICE_URL=http://proxy-service:5001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - PORT=5000
     ports:
       - "5000:5000"
     depends_on:
        proxy-service:
+            condition: service_healthy
+       redis:
             condition: service_healthy
     restart: unless-stopped
 
