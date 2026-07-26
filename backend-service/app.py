@@ -1,15 +1,13 @@
 import atexit
 import os
 import threading
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import psycopg
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb
 
 app = Flask(__name__)
 
@@ -21,26 +19,36 @@ PROVIDER_URL = os.getenv(
 ).rstrip("/")
 
 REQUEST_TIMEOUT = 10
-COLLECTION_INTERVAL_MINUTES = 30
-MINIMUM_INTERVAL_MINUTES = 25
+
+# Scheduler: run once per hour
+SYNC_INTERVAL_MINUTES = 60
+
 FORECAST_HOURS = 24
-FORECAST_REFRESH_INTERVAL_HOURS = 24
-FORECAST_RETRY_INTERVAL_MINUTES = 15
-FORECAST_ADVISORY_LOCK_ID = 726241118
+HISTORY_HOURS = 168
+
+ALLOWED_HISTORY_HOURS = {24, 168}
 
 CITY_NAME = "Надвірна"
 COUNTRY_NAME = "Україна"
 LATITUDE = 48.6348
 LONGITUDE = 24.5694
 WEATHER_TIMEZONE = "Europe/Kyiv"
-FORECAST_LOCATION_KEY = "nadvirna"
+LOCATION_KEY = "nadvirna"
+
+TEMPERATURE_UNIT = "°C"
+HUMIDITY_UNIT = "%"
+WIND_SPEED_UNIT = "km/h"
 
 scheduler = BackgroundScheduler(
     timezone=WEATHER_TIMEZONE
 )
 
-collection_lock = threading.Lock()
+sync_lock = threading.Lock()
 
+
+# ---------------------------------------------------------------------------
+# Custom exceptions
+# ---------------------------------------------------------------------------
 
 class ProviderServiceError(Exception):
     def __init__(
@@ -53,12 +61,22 @@ class ProviderServiceError(Exception):
         self.status_code = status_code
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def is_debug_enabled():
     return os.getenv("FLASK_DEBUG", "false").lower() in {
         "1",
         "true",
         "yes",
     }
+
+
+def floor_to_hour(dt: datetime) -> datetime:
+    """Truncate a datetime to the start of its hour (UTC)."""
+    utc = dt.astimezone(timezone.utc)
+    return utc.replace(minute=0, second=0, microsecond=0)
 
 
 def parse_datetime(value):
@@ -92,6 +110,10 @@ def parse_datetime(value):
         return None
 
 
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+
 def get_connection():
     if not DATABASE_URL:
         raise RuntimeError(
@@ -105,193 +127,88 @@ def get_connection():
 
 
 def create_tables():
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS weather_requests (
-                    id BIGSERIAL PRIMARY KEY,
-                    requested_at TIMESTAMPTZ
-                        NOT NULL DEFAULT NOW(),
-                    query TEXT NOT NULL,
-                    response_data JSONB NOT NULL,
-                    source TEXT,
-                    status TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS weather_forecast_state (
-                    location_key TEXT PRIMARY KEY,
-                    city TEXT NOT NULL,
-                    country TEXT NOT NULL,
-                    latitude DOUBLE PRECISION NOT NULL,
-                    longitude DOUBLE PRECISION NOT NULL,
-                    timezone TEXT NOT NULL,
-                    provider TEXT NOT NULL,
-                    forecast_issued_at TIMESTAMPTZ NOT NULL,
-                    last_success_at TIMESTAMPTZ NOT NULL,
-                    batch_id UUID NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS weather_forecast_points (
-                    location_key TEXT NOT NULL,
-                    forecast_at TIMESTAMPTZ NOT NULL,
-                    temperature DOUBLE PRECISION NOT NULL,
-                    temperature_unit TEXT NOT NULL,
-                    provider TEXT NOT NULL,
-                    forecast_issued_at TIMESTAMPTZ NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL,
-                    batch_id UUID NOT NULL,
-                    PRIMARY KEY (
-                        location_key,
-                        forecast_at
-                    )
-                );
-
-                CREATE INDEX IF NOT EXISTS
-                    weather_forecast_points_batch_idx
-                ON weather_forecast_points (
-                    location_key,
-                    batch_id,
-                    forecast_at
-                );
-                """
-            )
-
-
-def serialize_history_item(item):
-    serialized_item = dict(item)
-    requested_at = serialized_item.get(
-        "requested_at"
+    """Apply migration SQL to ensure the schema exists."""
+    migrations_dir = os.path.join(
+        os.path.dirname(__file__),
+        "migrations",
     )
 
-    if isinstance(requested_at, datetime):
-        serialized_item["requested_at"] = (
-            requested_at.isoformat()
-        )
-
-    return serialized_item
-
-
-def get_latest_history_item():
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    id,
-                    requested_at,
-                    query,
-                    response_data,
-                    source,
-                    status
-                FROM weather_requests
-                ORDER BY requested_at DESC
-                LIMIT 1;
-                """
-            )
-
-            item = cursor.fetchone()
-
-    if item is None:
-        return None
-
-    return serialize_history_item(item)
-
-
-def get_history_items():
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    id,
-                    requested_at,
-                    query,
-                    response_data,
-                    source,
-                    status
-                FROM weather_requests
-                ORDER BY requested_at DESC
-                LIMIT 50;
-                """
-            )
-
-            items = cursor.fetchall()
-
-    return [
-        serialize_history_item(item)
-        for item in items
-    ]
-
-
-def insert_weather(connection, weather_data):
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO weather_requests (
-                query,
-                response_data,
-                source,
-                status
-            )
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, requested_at;
-            """,
-            (
-                CITY_NAME,
-                Jsonb(weather_data),
-                weather_data.get("source"),
-                "success",
-            ),
-        )
-
-        return cursor.fetchone()
-
-
-def save_weather(weather_data):
-    with get_connection() as connection:
-        saved_record = insert_weather(
-            connection,
-            weather_data,
-        )
-
-    return serialize_history_item(saved_record)
-
-
-def has_recent_measurement():
-    latest_item = get_latest_history_item()
-
-    if latest_item is None:
-        return False
-
-    latest_time = parse_datetime(
-        latest_item.get("requested_at")
+    migration_file = os.path.join(
+        migrations_dir,
+        "001_unified_hourly_weather.sql",
     )
 
-    if latest_time is None:
-        response_data = latest_item.get(
-            "response_data",
-            {},
+    if not os.path.isfile(migration_file):
+        app.logger.warning(
+            "Migration file not found: %s",
+            migration_file,
         )
+        return
 
-        latest_time = parse_datetime(
-            response_data.get("collected_at")
-        )
+    with open(migration_file, encoding="utf-8") as fh:
+        migration_sql = fh.read()
 
-    if latest_time is None:
-        return False
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(migration_sql)
+            # Fix any corrupt historical rows that are in the future
+            cursor.execute(
+                """
+                UPDATE weather_hourly_points
+                SET data_kind = 'forecast'
+                WHERE data_kind = 'historical'
+                  AND weather_at > NOW();
+                """
+            )
 
-    minimum_allowed_time = (
-        datetime.now(timezone.utc)
-        - timedelta(
-            minutes=MINIMUM_INTERVAL_MINUTES
-        )
+    app.logger.info(
+        "Schema migration applied: %s",
+        migration_file,
     )
 
-    return latest_time >= minimum_allowed_time
+
+# ---------------------------------------------------------------------------
+# Provider helpers
+# ---------------------------------------------------------------------------
+
+def _raise_for_provider_response(response):
+    """Parse provider JSON and raise ProviderServiceError on failure."""
+    try:
+        data = response.json()
+    except ValueError as error:
+        raise ProviderServiceError(
+            "Provider Service повернув некоректну відповідь."
+        ) from error
+
+    if not isinstance(data, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув некоректну відповідь."
+        )
+
+    if not response.ok:
+        error_message = data.get("error")
+
+        if not isinstance(error_message, str):
+            error_message = (
+                "Provider Service не зміг отримати дані."
+            )
+
+        status_code = (
+            response.status_code
+            if response.status_code in {502, 504}
+            else 502
+        )
+
+        raise ProviderServiceError(
+            error_message,
+            status_code=status_code,
+        )
+
+    return data
 
 
 def fetch_weather_from_provider():
+    """Fetch current conditions from provider-service."""
     try:
         response = requests.get(
             f"{PROVIDER_URL}/weather/current",
@@ -315,37 +232,7 @@ def fetch_weather_from_provider():
             status_code=503,
         ) from error
 
-    try:
-        provider_data = response.json()
-
-    except ValueError as error:
-        raise ProviderServiceError(
-            "Provider Service повернув некоректну відповідь."
-        ) from error
-
-    if not isinstance(provider_data, dict):
-        raise ProviderServiceError(
-            "Provider Service повернув некоректну відповідь."
-        )
-
-    if not response.ok:
-        error_message = provider_data.get("error")
-
-        if not isinstance(error_message, str):
-            error_message = (
-                "Provider Service не зміг отримати погоду."
-            )
-
-        status_code = (
-            response.status_code
-            if response.status_code in {502, 504}
-            else 502
-        )
-
-        raise ProviderServiceError(
-            error_message,
-            status_code=status_code,
-        )
+    provider_data = _raise_for_provider_response(response)
 
     current = provider_data.get("current")
 
@@ -395,6 +282,7 @@ def fetch_weather_from_provider():
 
 
 def fetch_forecast_from_provider():
+    """Fetch 24-hour forecast from provider-service."""
     try:
         response = requests.get(
             f"{PROVIDER_URL}/weather/forecast",
@@ -418,56 +306,17 @@ def fetch_forecast_from_provider():
             status_code=503,
         ) from error
 
-    try:
-        provider_data = response.json()
-
-    except ValueError as error:
-        raise ProviderServiceError(
-            "Provider Service повернув "
-            "некоректну відповідь."
-        ) from error
-
-    if not isinstance(provider_data, dict):
-        raise ProviderServiceError(
-            "Provider Service повернув "
-            "некоректну відповідь."
-        )
-
-    if not response.ok:
-        error_message = provider_data.get("error")
-
-        if not isinstance(error_message, str):
-            error_message = (
-                "Provider Service не зміг "
-                "отримати прогноз."
-            )
-
-        status_code = (
-            response.status_code
-            if response.status_code in {502, 504}
-            else 502
-        )
-
-        raise ProviderServiceError(
-            error_message,
-            status_code=status_code,
-        )
+    provider_data = _raise_for_provider_response(response)
 
     hourly = provider_data.get("hourly")
-    hourly_units = provider_data.get(
-        "hourly_units"
-    )
 
     if not isinstance(hourly, dict):
         raise ProviderServiceError(
-            "Provider Service повернув "
-            "неповні дані прогнозу."
+            "Provider Service повернув неповні дані прогнозу."
         )
 
     times = hourly.get("time")
-    temperatures = hourly.get(
-        "temperature_2m"
-    )
+    temperatures = hourly.get("temperature_2m")
 
     if (
         not isinstance(times, list) or
@@ -475,12 +324,8 @@ def fetch_forecast_from_provider():
         len(times) != len(temperatures)
     ):
         raise ProviderServiceError(
-            "Provider Service повернув "
-            "неповні дані прогнозу."
+            "Provider Service повернув неповні дані прогнозу."
         )
-
-    if not isinstance(hourly_units, dict):
-        hourly_units = {}
 
     location = provider_data.get("location")
 
@@ -503,7 +348,10 @@ def fetch_forecast_from_provider():
             "time": times,
             "temperature_2m": temperatures,
         },
-        "hourly_units": hourly_units,
+        "hourly_units": provider_data.get(
+            "hourly_units",
+            {},
+        ),
         "source": provider_data.get(
             "source",
             "open-meteo",
@@ -515,19 +363,74 @@ def fetch_forecast_from_provider():
     }
 
 
+def fetch_history_from_provider(past_hours: int):
+    """Fetch historical hourly data from provider-service."""
+    try:
+        response = requests.get(
+            f"{PROVIDER_URL}/weather/history",
+            params={
+                "latitude": LATITUDE,
+                "longitude": LONGITUDE,
+                "timezone": WEATHER_TIMEZONE,
+                "past_hours": past_hours,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+    except requests.Timeout as error:
+        raise ProviderServiceError(
+            "Provider Service не відповідає вчасно.",
+            status_code=503,
+        ) from error
+
+    except requests.RequestException as error:
+        raise ProviderServiceError(
+            "Provider Service недоступний.",
+            status_code=503,
+        ) from error
+
+    provider_data = _raise_for_provider_response(response)
+
+    hourly = provider_data.get("hourly")
+
+    if not isinstance(hourly, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув неповні історичні дані."
+        )
+
+    times = hourly.get("time")
+    temperatures = hourly.get("temperature_2m")
+
+    if (
+        not isinstance(times, list) or
+        not isinstance(temperatures, list) or
+        len(times) != len(temperatures)
+    ):
+        raise ProviderServiceError(
+            "Provider Service повернув неповні історичні дані."
+        )
+
+    return provider_data
+
+
+# ---------------------------------------------------------------------------
+# Forecast — normalize & save
+# ---------------------------------------------------------------------------
+
 def normalize_forecast_points(forecast_data):
+    """Parse 24 forecast hourly points from provider data.
+
+    Returns a list of dicts: {forecast_at: datetime (UTC), temperature: float}.
+    """
     hourly = forecast_data.get("hourly")
 
     if not isinstance(hourly, dict):
         raise ProviderServiceError(
-            "Provider Service повернув "
-            "неповні дані прогнозу."
+            "Provider Service повернув неповні дані прогнозу."
         )
 
     times = hourly.get("time")
-    temperatures = hourly.get(
-        "temperature_2m"
-    )
+    temperatures = hourly.get("temperature_2m")
 
     if (
         not isinstance(times, list) or
@@ -574,9 +477,9 @@ def normalize_forecast_points(forecast_data):
                 "некоректний час прогнозу."
             ) from error
 
-        points_by_time[forecast_at] = float(
-            raw_temperature
-        )
+        # Truncate to hour boundary to avoid sub-hour duplicates
+        forecast_at = floor_to_hour(forecast_at)
+        points_by_time[forecast_at] = float(raw_temperature)
 
     if len(points_by_time) != FORECAST_HOURS:
         raise ProviderServiceError(
@@ -609,248 +512,164 @@ def normalize_forecast_points(forecast_data):
     return ordered_points
 
 
-def acquire_forecast_refresh_lock(connection):
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT pg_try_advisory_xact_lock(%s)
-                AS acquired;
-            """,
-            (FORECAST_ADVISORY_LOCK_ID,),
-        )
-
-        result = cursor.fetchone()
-
-    return bool(result and result["acquired"])
-
-
-def get_forecast_last_success_at(connection):
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT last_success_at
-            FROM weather_forecast_state
-            WHERE location_key = %s;
-            """,
-            (FORECAST_LOCATION_KEY,),
-        )
-
-        state = cursor.fetchone()
-
-    if state is None:
-        return None
-
-    return state["last_success_at"].astimezone(
-        timezone.utc
-    )
-
-
-def save_forecast(
+def save_forecast_points(
     connection,
-    forecast_data,
     points,
-    refreshed_at,
+    provider,
+    fetched_at,
 ):
-    provider = forecast_data.get(
-        "source",
-        "open-meteo",
-    )
-
-    forecast_issued_at = parse_datetime(
-        forecast_data.get("generated_at")
-    ) or refreshed_at
-
-    temperature_unit = (
-        forecast_data
-        .get("hourly_units", {})
-        .get("temperature_2m")
-        or "°C"
-    )
-
-    batch_id = uuid.uuid4()
-
+    """UPSERT 24 forecast points into weather_hourly_points."""
     with connection.cursor() as cursor:
-        cursor.execute(
+        cursor.executemany(
             """
-            INSERT INTO weather_forecast_state (
+            INSERT INTO weather_hourly_points (
                 location_key,
-                city,
-                country,
-                latitude,
-                longitude,
-                timezone,
+                weather_at,
+                temperature,
+                relative_humidity,
+                wind_speed,
+                temperature_unit,
+                humidity_unit,
+                wind_speed_unit,
                 provider,
-                forecast_issued_at,
-                last_success_at,
-                batch_id
+                data_kind,
+                source_generated_at,
+                fetched_at
             )
             VALUES (
                 %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s,
+                %s, %s
             )
-            ON CONFLICT (location_key)
-            DO UPDATE SET
-                city = EXCLUDED.city,
-                country = EXCLUDED.country,
-                latitude = EXCLUDED.latitude,
-                longitude = EXCLUDED.longitude,
-                timezone = EXCLUDED.timezone,
-                provider = EXCLUDED.provider,
-                forecast_issued_at =
-                    EXCLUDED.forecast_issued_at,
-                last_success_at =
-                    EXCLUDED.last_success_at,
-                batch_id = EXCLUDED.batch_id;
-            """,
-            (
-                FORECAST_LOCATION_KEY,
-                CITY_NAME,
-                COUNTRY_NAME,
-                LATITUDE,
-                LONGITUDE,
-                WEATHER_TIMEZONE,
-                provider,
-                forecast_issued_at,
-                refreshed_at,
-                batch_id,
-            ),
-        )
-
-        cursor.executemany(
-            """
-            INSERT INTO weather_forecast_points (
-                location_key,
-                forecast_at,
-                temperature,
-                temperature_unit,
-                provider,
-                forecast_issued_at,
-                updated_at,
-                batch_id
-            )
-            VALUES (
-                %s, %s, %s, %s,
-                %s, %s, %s, %s
-            )
-            ON CONFLICT (
-                location_key,
-                forecast_at
-            )
+            ON CONFLICT (location_key, weather_at)
             DO UPDATE SET
                 temperature = EXCLUDED.temperature,
-                temperature_unit =
-                    EXCLUDED.temperature_unit,
+                temperature_unit = EXCLUDED.temperature_unit,
                 provider = EXCLUDED.provider,
-                forecast_issued_at =
-                    EXCLUDED.forecast_issued_at,
-                updated_at = EXCLUDED.updated_at,
-                batch_id = EXCLUDED.batch_id;
+                data_kind = EXCLUDED.data_kind,
+                source_generated_at =
+                    EXCLUDED.source_generated_at,
+                fetched_at = EXCLUDED.fetched_at
+            WHERE weather_hourly_points.data_kind
+                  = 'forecast';
             """,
             [
                 (
-                    FORECAST_LOCATION_KEY,
+                    LOCATION_KEY,
                     point["forecast_at"],
                     point["temperature"],
-                    temperature_unit,
+                    None,   # humidity not in forecast
+                    None,   # wind_speed not in forecast
+                    TEMPERATURE_UNIT,
+                    HUMIDITY_UNIT,
+                    WIND_SPEED_UNIT,
                     provider,
-                    forecast_issued_at,
-                    refreshed_at,
-                    batch_id,
+                    "forecast",
+                    fetched_at,
+                    fetched_at,
                 )
                 for point in points
             ],
         )
 
+    return len(points)
+
+
+def update_forecast_sync_state(connection, fetched_at):
+    """Record the time of the last successful forecast refresh."""
+    with connection.cursor() as cursor:
         cursor.execute(
             """
-            DELETE FROM weather_forecast_points
-            WHERE location_key = %s
-              AND batch_id <> %s;
+            INSERT INTO weather_sync_state (
+                location_key,
+                forecast_last_success_at,
+                updated_at
+            )
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (location_key)
+            DO UPDATE SET
+                forecast_last_success_at =
+                    EXCLUDED.forecast_last_success_at,
+                updated_at = NOW();
             """,
-            (
-                FORECAST_LOCATION_KEY,
-                batch_id,
-            ),
+            (LOCATION_KEY, fetched_at),
         )
-
-    return {
-        "batch_id": str(batch_id),
-        "last_success_at": (
-            refreshed_at.isoformat()
-        ),
-        "point_count": len(points),
-    }
 
 
 def get_forecast_from_database():
+    """Return up to 24 forecast points from DB, ordered ASC by time."""
+    now_utc = datetime.now(timezone.utc)
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
+            # Grab the sync state so we can report staleness
             cursor.execute(
                 """
                 SELECT
-                    location_key,
-                    city,
-                    country,
-                    latitude,
-                    longitude,
-                    timezone,
-                    provider,
-                    forecast_issued_at,
-                    last_success_at,
-                    batch_id
-                FROM weather_forecast_state
+                    forecast_last_success_at
+                FROM weather_sync_state
                 WHERE location_key = %s;
                 """,
-                (FORECAST_LOCATION_KEY,),
+                (LOCATION_KEY,),
             )
 
             state = cursor.fetchone()
 
-            if state is None:
-                return None
+            # Fetch forecast points that are >= current hour
+            current_hour = floor_to_hour(now_utc)
 
             cursor.execute(
                 """
                 SELECT
-                    forecast_at,
+                    weather_at,
                     temperature,
                     temperature_unit
-                FROM weather_forecast_points
+                FROM weather_hourly_points
                 WHERE location_key = %s
-                  AND batch_id = %s
-                ORDER BY forecast_at ASC
+                  AND data_kind = 'forecast'
+                  AND weather_at >= %s
+                ORDER BY weather_at ASC
                 LIMIT %s;
                 """,
                 (
-                    FORECAST_LOCATION_KEY,
-                    state["batch_id"],
+                    LOCATION_KEY,
+                    current_hour,
                     FORECAST_HOURS,
                 ),
             )
 
             points = cursor.fetchall()
 
-    if len(points) != FORECAST_HOURS:
+    if not points:
         return None
 
-    last_success_at = state[
-        "last_success_at"
-    ].astimezone(timezone.utc)
+    last_success_at = None
+
+    if state and state.get("forecast_last_success_at"):
+        last_success_at = (
+            state["forecast_last_success_at"]
+            .astimezone(timezone.utc)
+        )
+
+    stale = (
+        last_success_at is None or
+        (now_utc - last_success_at) >= timedelta(hours=2)
+    )
 
     return {
-        "query": state["city"],
-        "forecast_hours": FORECAST_HOURS,
+        "query": CITY_NAME,
+        "forecast_hours": len(points),
         "location": {
-            "name": state["city"],
-            "country": state["country"],
-            "latitude": state["latitude"],
-            "longitude": state["longitude"],
-            "timezone": state["timezone"],
+            "name": CITY_NAME,
+            "country": COUNTRY_NAME,
+            "latitude": LATITUDE,
+            "longitude": LONGITUDE,
+            "timezone": WEATHER_TIMEZONE,
         },
         "hourly": {
             "time": [
                 int(
-                    point["forecast_at"]
+                    point["weather_at"]
                     .astimezone(timezone.utc)
                     .timestamp()
                 )
@@ -865,219 +684,485 @@ def get_forecast_from_database():
             "time": "unixtime",
             "temperature_2m": (
                 points[0]["temperature_unit"]
+                if points
+                else TEMPERATURE_UNIT
             ),
         },
-        "source": state["provider"],
+        "source": "open-meteo",
         "generated_at": (
-            state["forecast_issued_at"]
-            .astimezone(timezone.utc)
-            .isoformat()
+            last_success_at.isoformat()
+            if last_success_at
+            else now_utc.isoformat()
         ),
         "last_success_at": (
             last_success_at.isoformat()
+            if last_success_at
+            else None
         ),
-        "stale": (
-            datetime.now(timezone.utc) -
-            last_success_at
-        ) >= timedelta(
-            hours=FORECAST_REFRESH_INTERVAL_HOURS
-        ),
+        "stale": stale,
         "storage": "database",
     }
 
 
-def refresh_forecast_if_due(now=None):
-    refreshed_at = (
-        now or datetime.now(timezone.utc)
-    ).astimezone(timezone.utc)
+# ---------------------------------------------------------------------------
+# History — normalize & save
+# ---------------------------------------------------------------------------
+
+def normalize_history_points(provider_data):
+    """Parse hourly historical points from provider data.
+
+    Returns list of dicts with keys:
+      weather_at, temperature, humidity, wind_speed
+    """
+    hourly = provider_data.get("hourly")
+
+    if not isinstance(hourly, dict):
+        raise ProviderServiceError(
+            "Provider Service повернув неповні історичні дані."
+        )
+
+    times = hourly.get("time", [])
+    temperatures = hourly.get("temperature_2m", [])
+    humidities = hourly.get("relative_humidity_2m", [])
+    wind_speeds = hourly.get("wind_speed_10m", [])
+
+    points = []
+
+    for idx, raw_time in enumerate(times):
+        if not isinstance(raw_time, (int, float)):
+            continue
+
+        try:
+            weather_at = datetime.fromtimestamp(
+                raw_time,
+                tz=timezone.utc,
+            )
+        except (OSError, OverflowError, ValueError):
+            continue
+
+        weather_at = floor_to_hour(weather_at)
+        now_utc = floor_to_hour(datetime.now(timezone.utc))
+
+        # Ignore any points that are in the future — they are not historical
+        if weather_at > now_utc:
+            continue
+
+        raw_temp = (
+            temperatures[idx]
+            if idx < len(temperatures)
+            else None
+        )
+
+        temperature = (
+            float(raw_temp)
+            if isinstance(raw_temp, (int, float))
+            else None
+        )
+
+        if temperature is None:
+            # Skip points with no temperature reading
+            continue
+
+        raw_hum = (
+            humidities[idx]
+            if idx < len(humidities)
+            else None
+        )
+
+        humidity = (
+            float(raw_hum)
+            if isinstance(raw_hum, (int, float))
+            else None
+        )
+
+        raw_wind = (
+            wind_speeds[idx]
+            if idx < len(wind_speeds)
+            else None
+        )
+
+        wind_speed = (
+            float(raw_wind)
+            if isinstance(raw_wind, (int, float))
+            else None
+        )
+
+        points.append({
+            "weather_at": weather_at,
+            "temperature": temperature,
+            "humidity": humidity,
+            "wind_speed": wind_speed,
+        })
+
+    return points
+
+
+def save_history_points(connection, points, provider, fetched_at):
+    """UPSERT historical points into weather_hourly_points.
+
+    Skips points that already exist in the DB (no overwrite of history).
+    """
+    if not points:
+        return 0
+
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO weather_hourly_points (
+                location_key,
+                weather_at,
+                temperature,
+                relative_humidity,
+                wind_speed,
+                temperature_unit,
+                humidity_unit,
+                wind_speed_unit,
+                provider,
+                data_kind,
+                source_generated_at,
+                fetched_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s
+            )
+            ON CONFLICT (location_key, weather_at)
+            DO UPDATE SET
+                temperature = EXCLUDED.temperature,
+                relative_humidity =
+                    COALESCE(
+                        EXCLUDED.relative_humidity,
+                        weather_hourly_points.relative_humidity
+                    ),
+                wind_speed = COALESCE(
+                    EXCLUDED.wind_speed,
+                    weather_hourly_points.wind_speed
+                ),
+                provider = EXCLUDED.provider,
+                data_kind = EXCLUDED.data_kind,
+                fetched_at = EXCLUDED.fetched_at;
+            """,
+            [
+                (
+                    LOCATION_KEY,
+                    point["weather_at"],
+                    point["temperature"],
+                    point.get("humidity"),
+                    point.get("wind_speed"),
+                    TEMPERATURE_UNIT,
+                    HUMIDITY_UNIT,
+                    WIND_SPEED_UNIT,
+                    provider,
+                    "historical",
+                    fetched_at,
+                    fetched_at,
+                )
+                for point in points
+            ],
+        )
+
+    return len(points)
+
+
+def update_history_sync_state(connection, fetched_at):
+    """Record the time of the last successful history fetch."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO weather_sync_state (
+                location_key,
+                history_last_success_at,
+                updated_at
+            )
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (location_key)
+            DO UPDATE SET
+                history_last_success_at =
+                    EXCLUDED.history_last_success_at,
+                updated_at = NOW();
+            """,
+            (LOCATION_KEY, fetched_at),
+        )
+
+
+def get_last_historical_hour(connection):
+    """Return the most recent weather_at for historical data, or None."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT MAX(weather_at) AS last_at
+            FROM weather_hourly_points
+            WHERE location_key = %s
+              AND data_kind = 'historical'
+              AND weather_at <= NOW();
+            """,
+            (LOCATION_KEY,),
+        )
+
+        row = cursor.fetchone()
+
+    if row and row.get("last_at"):
+        return row["last_at"].astimezone(timezone.utc)
+
+    return None
+
+
+def get_history_from_database(hours: int):
+    """Return up to `hours` hourly historical points from DB, oldest first."""
+    now_utc = floor_to_hour(datetime.now(timezone.utc))
+    since = now_utc - timedelta(hours=hours)
 
     with get_connection() as connection:
-        if not acquire_forecast_refresh_lock(
-            connection
-        ):
-            return {
-                "updated": False,
-                "reason": "refresh_in_progress",
-            }
-
-        last_success_at = (
-            get_forecast_last_success_at(
-                connection
-            )
-        )
-
-        refresh_after = (
-            refreshed_at -
-            timedelta(
-                hours=(
-                    FORECAST_REFRESH_INTERVAL_HOURS
-                )
-            )
-        )
-
-        if (
-            last_success_at is not None and
-            last_success_at > refresh_after
-        ):
-            return {
-                "updated": False,
-                "reason": "forecast_is_fresh",
-                "last_success_at": (
-                    last_success_at.isoformat()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    weather_at,
+                    temperature,
+                    relative_humidity,
+                    wind_speed,
+                    temperature_unit,
+                    humidity_unit,
+                    wind_speed_unit
+                FROM weather_hourly_points
+                WHERE location_key = %s
+                  AND data_kind IN ('historical', 'current')
+                  AND weather_at >= %s
+                  AND weather_at <= %s
+                ORDER BY weather_at ASC
+                LIMIT %s;
+                """,
+                (
+                    LOCATION_KEY,
+                    since,
+                    now_utc,
+                    hours + 1,
                 ),
-            }
+            )
 
-        app.logger.info(
-            "Requesting 24-hour forecast from "
-            "Provider Service."
-        )
+            points = cursor.fetchall()
 
-        forecast_data = (
-            fetch_forecast_from_provider()
-        )
-
-        points = normalize_forecast_points(
-            forecast_data
-        )
-
-        saved_forecast = save_forecast(
-            connection,
-            forecast_data,
-            points,
-            refreshed_at,
-        )
-
-    app.logger.info(
-        "24-hour forecast saved: %s points.",
-        saved_forecast["point_count"],
-    )
-
-    return {
-        "updated": True,
-        **saved_forecast,
-    }
-
-
-def run_forecast_refresh():
-    try:
-        refresh_forecast_if_due()
-
-    except ProviderServiceError as error:
-        app.logger.error(
-            "Forecast refresh failed: %s",
-            error,
-        )
-
-    except (
-        psycopg.Error,
-        RuntimeError,
-    ) as error:
-        app.logger.error(
-            "Could not refresh stored forecast: %s",
-            error,
-        )
-
-
-def collect_weather_without_lock(force=False):
-    if not force and has_recent_measurement():
-        app.logger.info(
-            "Weather collection skipped: "
-            "a recent measurement already exists."
-        )
-
-        return {
-            "saved": False,
-            "reason": "recent_measurement_exists",
+    return [
+        {
+            "time": int(
+                point["weather_at"]
+                .astimezone(timezone.utc)
+                .timestamp()
+            ),
+            "temperature": point["temperature"],
+            "humidity": point.get("relative_humidity"),
+            "wind_speed": point.get("wind_speed"),
+            "temperature_unit": point.get(
+                "temperature_unit",
+                TEMPERATURE_UNIT,
+            ),
+            "humidity_unit": point.get(
+                "humidity_unit",
+                HUMIDITY_UNIT,
+            ),
+            "wind_speed_unit": point.get(
+                "wind_speed_unit",
+                WIND_SPEED_UNIT,
+            ),
         }
+        for point in points
+    ]
 
-    app.logger.info(
-        "Requesting current weather from Provider Service."
+
+# ---------------------------------------------------------------------------
+# Backfill — detect and fill missing historical hours
+# ---------------------------------------------------------------------------
+
+def backfill_missing_hours():
+    """Fill any gap in historical data since the last recorded hour."""
+    now_utc = floor_to_hour(datetime.now(timezone.utc))
+
+    with get_connection() as connection:
+        last_at = get_last_historical_hour(connection)
+
+    if last_at is None:
+        # No data at all — fetch full HISTORY_HOURS window
+        app.logger.info(
+            "No historical data found. "
+            "Fetching %d hours from provider.",
+            HISTORY_HOURS,
+        )
+        _do_history_fetch(HISTORY_HOURS)
+        return
+
+    last_hour = floor_to_hour(last_at)
+
+    # How many hours are missing (not counting the last stored hour itself)
+    missing_count = int(
+        (now_utc - last_hour).total_seconds() / 3600
     )
 
-    weather_data = fetch_weather_from_provider()
-    saved_record = save_weather(weather_data)
+    if missing_count <= 0:
+        app.logger.info(
+            "Historical data is up-to-date "
+            "(last: %s).",
+            last_hour.isoformat(),
+        )
+        return
+
+    # Limit to what the API supports
+    hours_to_fetch = min(missing_count, HISTORY_HOURS)
 
     app.logger.info(
-        "Weather saved: %s°C.",
-        weather_data["current"].get(
-            "temperature_2m"
-        ),
+        "Backfilling %d missing historical hours "
+        "(last recorded: %s).",
+        missing_count,
+        last_hour.isoformat(),
     )
 
-    return {
-        "saved": True,
-        "record": saved_record,
-        "weather": weather_data,
-    }
+    _do_history_fetch(hours_to_fetch)
 
 
-def collect_weather(force=False):
-    with collection_lock:
-        return collect_weather_without_lock(
-            force=force
+def _do_history_fetch(past_hours: int):
+    """Fetch `past_hours` from provider and UPSERT into DB."""
+    fetched_at = datetime.now(timezone.utc)
+
+    provider_data = fetch_history_from_provider(past_hours)
+
+    points = normalize_history_points(provider_data)
+
+    provider = provider_data.get("source", "open-meteo")
+
+    with get_connection() as connection:
+        saved = save_history_points(
+            connection,
+            points,
+            provider,
+            fetched_at,
         )
 
+        update_history_sync_state(connection, fetched_at)
 
-def run_weather_collection():
+    app.logger.info(
+        "Historical data saved: %d points "
+        "(requested past_hours=%d).",
+        saved,
+        past_hours,
+    )
+
+    return saved
+
+
+# ---------------------------------------------------------------------------
+# Forecast refresh
+# ---------------------------------------------------------------------------
+
+def refresh_forecast():
+    """Fetch fresh 24-hour forecast and UPSERT into DB."""
+    fetched_at = datetime.now(timezone.utc)
+
+    app.logger.info(
+        "Requesting 24-hour forecast from Provider Service."
+    )
+
+    forecast_data = fetch_forecast_from_provider()
+    points = normalize_forecast_points(forecast_data)
+    provider = forecast_data.get("source", "open-meteo")
+
+    with get_connection() as connection:
+        saved = save_forecast_points(
+            connection,
+            points,
+            provider,
+            fetched_at,
+        )
+
+        update_forecast_sync_state(connection, fetched_at)
+
+    app.logger.info(
+        "Forecast saved: %d points.",
+        saved,
+    )
+
+    return saved
+
+
+# ---------------------------------------------------------------------------
+# Hourly sync job (forecast + history backfill)
+# ---------------------------------------------------------------------------
+
+def run_hourly_sync():
+    """Single scheduler job: refresh forecast + backfill history."""
+    if not sync_lock.acquire(blocking=False):
+        app.logger.warning(
+            "Hourly sync already in progress — skipping."
+        )
+        return
+
     try:
-        collect_weather(force=False)
+        # 1. Forecast
+        try:
+            refresh_forecast()
 
-    except ProviderServiceError as error:
-        app.logger.error(
-            "Weather collection failed: %s",
-            error,
-        )
+        except ProviderServiceError as error:
+            app.logger.error(
+                "Forecast refresh failed: %s",
+                error,
+            )
 
-    except (
-        psycopg.Error,
-        RuntimeError,
-    ) as error:
-        app.logger.error(
-            "Could not store weather: %s",
-            error,
-        )
+        except (psycopg.Error, RuntimeError) as error:
+            app.logger.error(
+                "Could not save forecast to database: %s",
+                error,
+            )
 
+        # 2. Historical backfill
+        try:
+            backfill_missing_hours()
+
+        except ProviderServiceError as error:
+            app.logger.error(
+                "History backfill failed: %s",
+                error,
+            )
+
+        except (psycopg.Error, RuntimeError) as error:
+            app.logger.error(
+                "Could not save history to database: %s",
+                error,
+            )
+
+    finally:
+        sync_lock.release()
+
+
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
 
 def start_scheduler():
     if scheduler.running:
         return
 
     scheduler.add_job(
-        func=run_weather_collection,
+        func=run_hourly_sync,
         trigger="interval",
-        minutes=COLLECTION_INTERVAL_MINUTES,
-        id="nadvirna-weather-collector",
+        minutes=SYNC_INTERVAL_MINUTES,
+        id="nadvirna-hourly-sync",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
-        next_run_time=datetime.now(
-            timezone.utc
-        ),
-    )
-
-    scheduler.add_job(
-        func=run_forecast_refresh,
-        trigger="interval",
-        minutes=FORECAST_RETRY_INTERVAL_MINUTES,
-        id="nadvirna-forecast-refresher",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        next_run_time=datetime.now(
-            timezone.utc
-        ),
+        next_run_time=datetime.now(timezone.utc),
     )
 
     scheduler.start()
 
     app.logger.info(
         "Weather scheduler started. "
-        "Current conditions interval: %s minutes; "
-        "forecast check interval: %s minutes.",
-        COLLECTION_INTERVAL_MINUTES,
-        FORECAST_RETRY_INTERVAL_MINUTES,
+        "Sync interval: %d minutes.",
+        SYNC_INTERVAL_MINUTES,
     )
 
+
+# ---------------------------------------------------------------------------
+# Flask routes
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 def health():
@@ -1092,15 +1177,7 @@ def health():
             "database": "ok",
             "provider": "configured",
             "city": CITY_NAME,
-            "collection_interval_minutes": (
-                COLLECTION_INTERVAL_MINUTES
-            ),
-            "forecast_refresh_interval_hours": (
-                FORECAST_REFRESH_INTERVAL_HOURS
-            ),
-            "forecast_check_interval_minutes": (
-                FORECAST_RETRY_INTERVAL_MINUTES
-            ),
+            "sync_interval_minutes": SYNC_INTERVAL_MINUTES,
             "scheduler_running": scheduler.running,
         })
 
@@ -1117,28 +1194,163 @@ def health():
 
 @app.get("/api/weather")
 def weather():
+    """Return the latest current-conditions snapshot."""
+    # 1. Try to fetch live current weather from provider-service
     try:
-        latest_item = get_latest_history_item()
+        current_data = fetch_weather_from_provider()
 
-        if latest_item is None:
-            return jsonify({
-                "error": (
-                    "Дані про погоду ще не зібрані."
+        # Extract values
+        current = current_data.get("current", {})
+        current_units = current_data.get("current_units", {})
+        raw_time = current.get("time")
+
+        if raw_time:
+            current_time = parse_datetime(raw_time)
+            if current_time:
+                fetched_at = datetime.now(timezone.utc)
+                weather_hour = floor_to_hour(current_time)
+
+                # Persist live current snapshot to DB so we have historical context
+                try:
+                    with get_connection() as connection:
+                        with connection.cursor() as cursor:
+                            cursor.execute(
+                                """
+                                INSERT INTO weather_hourly_points (
+                                    location_key,
+                                    weather_at,
+                                    temperature,
+                                    relative_humidity,
+                                    wind_speed,
+                                    temperature_unit,
+                                    humidity_unit,
+                                    wind_speed_unit,
+                                    provider,
+                                    data_kind,
+                                    source_generated_at,
+                                    fetched_at
+                                )
+                                VALUES (
+                                    %s, %s, %s, %s, %s,
+                                    %s, %s, %s, %s, %s,
+                                    %s, %s
+                                )
+                                ON CONFLICT (location_key, weather_at)
+                                DO UPDATE SET
+                                    temperature = EXCLUDED.temperature,
+                                    relative_humidity = COALESCE(
+                                        EXCLUDED.relative_humidity,
+                                        weather_hourly_points.relative_humidity
+                                    ),
+                                    wind_speed = COALESCE(
+                                        EXCLUDED.wind_speed,
+                                        weather_hourly_points.wind_speed
+                                    ),
+                                    data_kind = EXCLUDED.data_kind,
+                                    fetched_at = EXCLUDED.fetched_at;
+                                """,
+                                (
+                                    LOCATION_KEY,
+                                    weather_hour,
+                                    current.get("temperature_2m"),
+                                    current.get("relative_humidity_2m"),
+                                    current.get("wind_speed_10m"),
+                                    current_units.get("temperature_2m", TEMPERATURE_UNIT),
+                                    current_units.get("relative_humidity_2m", HUMIDITY_UNIT),
+                                    current_units.get("wind_speed_10m", WIND_SPEED_UNIT),
+                                    current_data.get("source", "open-meteo"),
+                                    "current",
+                                    fetched_at,
+                                    fetched_at,
+                                ),
+                            )
+                except Exception as db_err:
+                    app.logger.warning("Could not persist live weather to DB: %s", db_err)
+
+        return jsonify(current_data)
+
+    except ProviderServiceError as error:
+        app.logger.warning("Provider unavailable for live weather, falling back to DB: %s", error)
+
+    # 2. Fallback to database for a row that HAS humidity and wind speed
+    try:
+        now_utc = datetime.now(timezone.utc)
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        weather_at,
+                        temperature,
+                        relative_humidity,
+                        wind_speed,
+                        temperature_unit,
+                        humidity_unit,
+                        wind_speed_unit,
+                        fetched_at
+                    FROM weather_hourly_points
+                    WHERE location_key = %s
+                      AND relative_humidity IS NOT NULL
+                      AND wind_speed IS NOT NULL
+                      AND weather_at <= %s
+                    ORDER BY weather_at DESC
+                    LIMIT 1;
+                    """,
+                    (LOCATION_KEY, now_utc),
                 )
+
+                row = cursor.fetchone()
+
+        if row is None:
+            return jsonify({
+                "error": "Дані про погоду ще не зібрані."
             }), 404
 
-        result = dict(
-            latest_item.get(
-                "response_data",
-                {},
-            )
+        weather_at = (
+            row["weather_at"]
+            .astimezone(timezone.utc)
+            .isoformat()
         )
 
-        result["requested_at"] = (
-            latest_item.get("requested_at")
+        fetched_at = (
+            row["fetched_at"]
+            .astimezone(timezone.utc)
+            .isoformat()
         )
 
-        return jsonify(result)
+        return jsonify({
+            "location": {
+                "name": CITY_NAME,
+                "country": COUNTRY_NAME,
+                "latitude": LATITUDE,
+                "longitude": LONGITUDE,
+            },
+            "current": {
+                "time": weather_at,
+                "temperature_2m": row["temperature"],
+                "relative_humidity_2m": row.get(
+                    "relative_humidity"
+                ),
+                "wind_speed_10m": row.get("wind_speed"),
+            },
+            "current_units": {
+                "temperature_2m": row.get(
+                    "temperature_unit",
+                    TEMPERATURE_UNIT,
+                ),
+                "relative_humidity_2m": row.get(
+                    "humidity_unit",
+                    HUMIDITY_UNIT,
+                ),
+                "wind_speed_10m": row.get(
+                    "wind_speed_unit",
+                    WIND_SPEED_UNIT,
+                ),
+            },
+            "source": "open-meteo",
+            "collected_at": weather_at,
+            "requested_at": fetched_at,
+        })
 
     except (
         psycopg.Error,
@@ -1151,6 +1363,7 @@ def weather():
 
 @app.get("/api/forecast")
 def forecast():
+    """Return 24 hourly forecast points (current hour + next 23)."""
     try:
         forecast_data = get_forecast_from_database()
 
@@ -1183,79 +1396,79 @@ def forecast():
 
 @app.get("/api/history")
 def history():
+    """Return hourly historical weather data.
+
+    Query param:
+        hours — 24 or 168 (default 24)
+    """
+    raw_hours = request.args.get("hours", "24")
+
     try:
-        items = get_history_items()
-
-        return jsonify({
-            "count": len(items),
-            "items": items,
-        })
-
-    except (
-        psycopg.Error,
-        RuntimeError,
-    ):
-        return jsonify({
-            "error": "Не вдалося завантажити історію."
-        }), 503
-
-
-@app.delete("/api/history")
-def clear_history():
-    try:
-        with collection_lock:
-            weather_data = fetch_weather_from_provider()
-
-            with get_connection() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "DELETE FROM weather_requests;"
-                    )
-
-                    deleted_count = cursor.rowcount
-
-                insert_weather(
-                    connection,
-                    weather_data,
-                )
-
-        return jsonify({
-            "message": (
-                "Історію очищено. "
-                "Нові погодні дані збережено."
-            ),
-            "deleted_count": deleted_count,
-            "weather": weather_data,
-        })
-
-    except ProviderServiceError as error:
-        app.logger.error(
-            "Could not refresh weather while clearing "
-            "history: %s",
-            error,
-        )
-
+        hours = int(raw_hours)
+    except (TypeError, ValueError):
         return jsonify({
             "error": (
-                f"Історію не змінено. {error.message}"
+                "Параметр hours повинен бути цілим числом."
             )
-        }), error.status_code
+        }), 400
+
+    if hours not in ALLOWED_HISTORY_HOURS:
+        return jsonify({
+            "error": (
+                "Параметр hours повинен бути 24 або 168."
+            )
+        }), 400
+
+    try:
+        points = get_history_from_database(hours)
+        print(points)
+        return jsonify({
+            "hours": hours,
+            "count": len(points),
+            "location": {
+                "name": CITY_NAME,
+                "country": COUNTRY_NAME,
+                "latitude": LATITUDE,
+                "longitude": LONGITUDE,
+                "timezone": WEATHER_TIMEZONE,
+            },
+            "hourly": {
+                "time": [p["time"] for p in points],
+                "temperature_2m": [
+                    p["temperature"] for p in points
+                ],
+                "relative_humidity_2m": [
+                    p.get("humidity") for p in points
+                ],
+                "wind_speed_10m": [
+                    p.get("wind_speed") for p in points
+                ],
+            },
+            "hourly_units": {
+                "time": "unixtime",
+                "temperature_2m": TEMPERATURE_UNIT,
+                "relative_humidity_2m": HUMIDITY_UNIT,
+                "wind_speed_10m": WIND_SPEED_UNIT,
+            },
+        })
 
     except (
         psycopg.Error,
         RuntimeError,
     ) as error:
         app.logger.error(
-            "Could not replace weather history: %s",
+            "Could not load history: %s",
             error,
         )
 
         return jsonify({
-            "error": (
-                "Не вдалося оновити історію в базі даних."
-            )
+            "error": "Не вдалося завантажити історію."
         }), 503
 
+
+# ---------------------------------------------------------------------------
+# Startup / shutdown
+# ---------------------------------------------------------------------------
 
 atexit.register(
     lambda: (

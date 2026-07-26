@@ -5,3 +5,7 @@ __pycache__/
 .env
 .DS_Store
 .vagrant
+
+# Ignore test directories
+tests/
+**/tests/

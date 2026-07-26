@@ -5,6 +5,7 @@ from flask import (
     Flask,
     jsonify,
     render_template,
+    request,
 )
 
 app = Flask(__name__)
@@ -87,25 +88,13 @@ def forecast():
 
 @app.get("/api/history")
 def history():
+    # Forward the ?hours query param to backend unchanged
+    hours = request.args.get("hours", "24")
+
     try:
         response = requests.get(
             f"{BACKEND_URL}/api/history",
-            timeout=REQUEST_TIMEOUT,
-        )
-
-        return proxy_json_response(response)
-
-    except requests.RequestException:
-        return jsonify({
-            "error": "Backend Service is unavailable."
-        }), 503
-
-
-@app.delete("/api/history")
-def clear_history():
-    try:
-        response = requests.delete(
-            f"{BACKEND_URL}/api/history",
+            params={"hours": hours},
             timeout=REQUEST_TIMEOUT,
         )
 

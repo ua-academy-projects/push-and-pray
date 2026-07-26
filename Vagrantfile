@@ -67,6 +67,7 @@ Vagrant.configure("2") do |config|
         vmware.vmx["numvcpus"] = "1"
         vmware.vmx["ethernet0.pcislotnumber"] = "160"
         vmware.vmx["ethernet1.pcislotnumber"] = "224"
+        vmware.vmx["ethernet2.pcislotnumber"] = "256"
       end
 
       vm.vm.provision "common",

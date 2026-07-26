@@ -1,194 +1,181 @@
-# Weather App
+# Weather App — Моніторинг погоди у Надвірній
 
-Weather App автоматично збирає погоду для Надвірної, зберігає історію
-в PostgreSQL і показує останнє вимірювання та погодинний прогноз
-температури.
+Веб-застосунок для автоматичного збору, збереження та відображення погодних даних (поточний стан, 24-годинний прогноз та історія за 24 години / 7 днів) для міста **Надвірна**.
 
-## Архітектура
+---
+
+## 🏛 Архітектура
 
 ```text
-Browser -> UI Service -> Backend Service -> Provider Service -> Open-Meteo
+Browser -> UI Service -> Backend Service -> Provider Service -> Open-Meteo API
                               |
-                              +-> PostgreSQL
+                              +-> PostgreSQL (weather_history)
 ```
 
-- `ui-service` віддає сторінку й проксіює браузерні API-запити лише до
-  `backend-service`;
-- `backend-service` містить бізнес-логіку, планувальник, SQL і API для UI;
-- `provider-service` викликає та нормалізує відповідь Open-Meteo, але не
-  має доступу до бази даних;
-- PostgreSQL доступний лише для `backend-service`.
+- **`ui-service`** (порт `5000` внутрішній, `8080` зовнішній):
+  - Віддає HTML/CSS/JS інтерфейс.
+  - Проксіює всі запити `/api/*` виключно до `backend-service`.
 
-Поточна погода збирається кожні 30 хвилин. Оновлення сторінки раз на
-60 секунд лише читає вже збережені дані та не викликає Open-Meteo.
-Backend перевіряє необхідність оновлення прогнозу кожні 15 хвилин, але
-після успішного отримання не викликає Provider повторно протягом
-24 годин. Час останнього успішного оновлення та 24 погодинні точки
-зберігаються в PostgreSQL, тому цей інтервал переживає перезапуск
-застосунку.
+- **`backend-service`** (порт `5001`):
+  - Володіє всією бізнес-логікою та доступом до БД PostgreSQL.
+  - Автоматичний щогодинний планувальник (APScheduler): кожні 60 хвилин запускає едину синхронізацію:
+    1. Оновлює 24-годинний прогноз.
+    2. Автоматично виявляє та заповнює пропущені години історії (Backfill) після відключень/downtime.
+  - Надає API: `/api/weather`, `/api/forecast`, `/api/history?hours=24|168`.
 
-## Структура
+- **`provider-service`** (порт `5002`):
+  - Спілкується виключно з `backend-service` та зовнішнім Open-Meteo API.
+  - Не має доступу до бази даних і не запускає власні таймери.
+  - Маршрути: `/weather/current`, `/weather/forecast`, `/weather/history`.
+
+- **`PostgreSQL`** (порт `5432`):
+  - Зберігає всі погодинні точки в єдиній таблиці `weather_hourly_points` із унікальним первинним ключем `(location_key, weather_at)`.
+
+---
+
+## 📁 Структура проєкту
 
 ```text
 weather-app/
-├── backend-service/
-├── provider-service/
-├── providers/
+├── backend-service/          # Flask backend, DB міграції, планувальник
+│   ├── app.py
+│   └── migrations/
+│       └── 001_unified_hourly_weather.sql
+├── provider-service/         # Flask провайдер для Open-Meteo API
+│   └── app.py
+├── ui-service/               # Flask UI, шаблони, графіки SVG, стилі
+│   ├── app.py
+│   ├── static/
+│   │   ├── script.js
+│   │   └── style.css
+│   └── templates/
+│       └── index.html
+├── providers/                # Скрипти провіжнінгу для Vagrant
 │   ├── common.sh
-│   ├── backend.sh
 │   ├── database.sh
+│   ├── backend.sh
 │   ├── provider.sh
 │   └── ui.sh
-├── ui-service/
 ├── docker-compose.yml
-└── Vagrantfile
+├── Vagrantfile
+├── .gitignore
+└── README.md
 ```
 
-## Запуск через Docker Compose
+---
 
-Потрібні Docker і Docker Compose.
+## 🚀 Запуск проєкту
+
+### Варіант 1: Docker Compose
+
+**Вимоги:** Docker та Docker Compose.
 
 ```bash
+# Запустити всі сервіси у фоновому режимі з перебудовою
 docker compose up -d --build
+
+# Перевірити статус контейнерів
 docker compose ps
-```
 
-Відкрити на MacBook:
-
-```text
-http://localhost:8080
-```
-
-Назовні публікується тільки UI на порту `8080`. Порти backend (`5001`),
-provider (`5002`) і PostgreSQL (`5432`) залишаються у внутрішній мережі
-Compose.
-
-Перевірка UI та всього публічного ланцюжка:
-
-```bash
-curl -fsS http://localhost:8080/health
-curl -fsS http://localhost:8080/api/weather
-curl -fsS http://localhost:8080/api/forecast
-curl -fsS http://localhost:8080/api/history
-```
-
-Перевірка внутрішніх health endpoints:
-
-```bash
-docker compose exec provider-service \
-  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5002/health').read().decode())"
-
-docker compose exec backend-service \
-  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5001/health').read().decode())"
-```
-
-Логи й зупинка:
-
-```bash
+# Переглянути логи
 docker compose logs -f
-docker compose logs -f backend-service provider-service
+```
+
+**Доступ у браузері:**
+[http://localhost:8080](http://localhost:8080)
+
+**Зупинка:**
+```bash
 docker compose down
 ```
 
-Щоб разом із контейнерами видалити збережені дані:
+---
+
+### Варіант 2: Vagrant (VMware Desktop)
+
+**Вимоги:** Vagrant, VMware Desktop/Fusion та Vagrant VMware Utility.
 
 ```bash
-docker compose down -v
-```
+# Запустити всі 4 віртуальні машини
+vagrant up
 
-## Запуск через Vagrant і VMware Fusion
+# Перевірити статус ВМ
+vagrant status
 
-Потрібні Vagrant, VMware Fusion і Vagrant VMware Utility/provider.
-
-```bash
-vagrant validate
-vagrant up --provider=vmware_desktop
-```
-
-Повторне налаштування всіх машин:
-
-```bash
+# Якщо вносились зміни до коду, оновити сервіси на ВМ:
 vagrant provision
 ```
 
-Vagrant створює чотири машини у приватній мережі:
+Vagrant створює 4 віртуальні машини:
+| ВМ | IP | Опис |
+|---|---:|---|
+| `ui-service` | `192.168.56.10` | Веб-інтерфейс (порт `5000` прокинуто на хост `:8080`) |
+| `backend-service` | `192.168.56.11` | Backend API та планувальник (порт `5001`) |
+| `provider-service` | `192.168.56.12` | Інтеграція з Open-Meteo (порт `5002`) |
+| `database` | `192.168.56.13` | PostgreSQL 16 (порт `5432`) |
 
-| Компонент | Приватна адреса | Порт |
-|---|---:|---:|
-| UI Service | `192.168.56.10` | `5000` |
-| Backend Service | `192.168.56.11` | `5001` |
-| Provider Service | `192.168.56.12` | `5002` |
-| PostgreSQL | `192.168.56.13` | `5432` |
+**Доступ у браузері:**
+[http://localhost:8080](http://localhost:8080)
 
-Тільки UI має forwarded port: гостьовий `5000` прив’язаний до
-`0.0.0.0:8080` на MacBook. Усі Python-сервіси всередині VM слухають
-`0.0.0.0`, але backend/provider не мають host forwarding.
+---
 
-Перевірка сервісів у Vagrant:
+## 🔗 API Endpoints
+
+### UI Service (Публічний API)
+
+- `GET /health` — Перевірка стану UI.
+- `GET /api/weather` — Поточна погода (температура, вологість, швидкість вітру).
+- `GET /api/forecast` — 24-годинний прогноз температури.
+- `GET /api/history?hours=24|168` — Історія вимірювань (за 24 години або 7 днів).
+
+### Backend Service (Внутрішній API)
+
+- `GET /health` — Перевірка стану backend та з'єднання з БД.
+- `GET /api/weather` — Жива поточна погода з fallback до БД.
+- `GET /api/forecast` — 24 точки прогнозу з БД (починаючи з поточної години).
+- `GET /api/history?hours=24|168` — Погодинна історія з БД.
+
+### Provider Service (Внутрішній API)
+
+- `GET /health` — Перевірка стану провайдера.
+- `GET /weather/current` — Поточний стан з Open-Meteo.
+- `GET /weather/forecast` — Прогноз на 24 години з Open-Meteo.
+- `GET /weather/history?past_hours=N` — Історія за останні `N` годин з Open-Meteo.
+
+---
+
+## 🗄 База даних (PostgreSQL)
+
+Схема створена в міграції `001_unified_hourly_weather.sql`:
+
+- **`weather_hourly_points`**:
+  - `location_key` (`TEXT`) — ключ локації (`nadvirna`).
+  - `weather_at` (`TIMESTAMPTZ`) — година вимірювання/прогнозу.
+  - `temperature` (`DOUBLE PRECISION`) — температура (°C).
+  - `relative_humidity` (`DOUBLE PRECISION`) — відносна вологість (%).
+  - `wind_speed` (`DOUBLE PRECISION`) — швидкість вітру (km/h).
+  - `data_kind` (`TEXT`) — тип даних: `'current'`, `'forecast'`, або `'historical'`.
+  - `PRIMARY KEY (location_key, weather_at)` — запобігає появі дублікатів.
+
+- **`weather_sync_state`**:
+  - Зберігає метки часу останньої успішної синхронізації прогнозу та історії.
+
+### Підключення до БД локально (через Vagrant)
 
 ```bash
-vagrant ssh ui-service -c "curl -fsS http://127.0.0.1:5000/health"
-vagrant ssh backend-service -c "curl -fsS http://127.0.0.1:5001/health"
-vagrant ssh provider-service -c "curl -fsS http://127.0.0.1:5002/health"
-vagrant ssh database -c "sudo -u postgres pg_isready"
+# Пряме підключення з хоста
+psql -h 192.168.56.13 -U weather_user -d weather_history
+# Пароль: weather_password
+
+# Або через SSH у ВМ database
+vagrant ssh database -c "psql -U weather_user -d weather_history"
 ```
 
-## Доступ із локальної мережі
+---
 
-Дізнатися Wi-Fi IP-адресу MacBook:
+## 📊 Інтерфейс користувача
 
-```bash
-ipconfig getifaddr en0
-```
-
-Якщо Wi-Fi використовує інший інтерфейс, знайти його можна так:
-
-```bash
-networksetup -listallhardwareports
-```
-
-На MacBook сайт доступний за обома адресами:
-
-```text
-http://localhost:8080
-http://<MACBOOK_LAN_IP>:8080
-```
-
-На телефоні, підключеному до тієї самої Wi-Fi мережі, відкрийте:
-
-```text
-http://192.168.x.x:8080
-```
-
-де `192.168.x.x` — результат `ipconfig getifaddr en0`. Якщо у macOS
-увімкнено блокування вхідних з'єднань, потрібно дозволити їх для VMware
-Fusion/Vagrant. Усередині Ubuntu provisioning автоматично додає порт UI
-до UFW, якщо firewall уже активний.
-
-## API
-
-Публічні маршрути UI:
-
-- `GET /health`;
-- `GET /api/weather`;
-- `GET /api/forecast`;
-- `GET /api/history`;
-- `DELETE /api/history`.
-
-Внутрішній Backend Service має ті самі `/api/*` маршрути. Внутрішній
-Provider Service надає `GET /health`, `GET /weather/current` і
-`GET /weather/forecast`; викликати його повинен лише backend.
-
-`GET /api/forecast` завжди читає дані з таблиць
-`weather_forecast_state` і `weather_forecast_points`. HTTP-запит до
-Provider виконує тільки фонове завдання Backend. Транзакційний advisory
-lock PostgreSQL не дозволяє кільком екземплярам Backend одночасно
-оновлювати прогноз.
-
-## Час на графіку
-
-Графік показує 24 послідовні погодинні точки останнього успішно
-збереженого прогнозу. Точки сортуються за повним timestamp. Якщо
-24-годинне вікно перетинає межу дня, вісь показує дату й час, наприклад
-`21.07 12:00`. Відображення явно використовує часовий пояс
-`Europe/Kyiv`, а кількість підписів адаптується до ширини графіка.
+1. **Картка поточного стану:** Показує локацію (Надвірна), поточну температуру, вологість, швидкість вітру та час вимірювання.
+2. **Графік прогнозу:** Інтерактивний SVG-графік температури на наступні 24 години.
+3. **Графік історії:** Інтерактивний SVG-графік із перемикачем діапазону **«24 години» / «7 днів»**.
+4. **Таблиця вимірювань:** Погодинний архів за останні 24 години з детальною інформацією.

@@ -60,24 +60,27 @@ postgres_version="$(
 postgresql_conf="/etc/postgresql/${postgres_version}/main/postgresql.conf"
 pg_hba_conf="/etc/postgresql/${postgres_version}/main/pg_hba.conf"
 
-log "Restricting PostgreSQL to the backend private address"
+log "Configuring PostgreSQL to accept connections from the private network"
 
+# Listen on localhost and the VM's private IP
 sed -i -E \
     "s/^[#[:space:]]*listen_addresses[[:space:]]*=.*/listen_addresses = 'localhost,${DATABASE_IP}'/" \
     "${postgresql_conf}"
 
+# Remove any stale rules for this subnet before re-adding
 sed -i \
     '\|host weather_history weather_user 192.168.56.0/24 scram-sha-256|d' \
     "${pg_hba_conf}"
 
-backend_rule="host ${DATABASE_NAME} ${DATABASE_USER} ${BACKEND_IP}/32 scram-sha-256"
+# Allow the entire private subnet (backend VM + host machine)
+private_rule="host ${DATABASE_NAME} ${DATABASE_USER} 192.168.56.0/24 scram-sha-256"
 
 if ! grep -Fqx \
-    "${backend_rule}" \
+    "${private_rule}" \
     "${pg_hba_conf}"; then
 
     printf '%s\n' \
-        "${backend_rule}" \
+        "${private_rule}" \
         >> "${pg_hba_conf}"
 fi
 

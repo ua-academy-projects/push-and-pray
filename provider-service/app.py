@@ -14,6 +14,7 @@ EXTERNAL_WEATHER_URL = os.getenv(
 REQUEST_TIMEOUT = 10
 DEFAULT_TIMEZONE = "Europe/Kyiv"
 FORECAST_HOURS = 24
+MAX_HISTORY_HOURS = 168
 
 
 def is_debug_enabled():
@@ -204,6 +205,102 @@ def normalize_forecast(
             ),
         },
         "forecast_hours": FORECAST_HOURS,
+        "source": "open-meteo",
+        "generated_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
+    }
+
+
+def normalize_history(
+    weather_data,
+    latitude,
+    longitude,
+    weather_timezone,
+    past_hours,
+):
+    hourly = weather_data.get("hourly")
+    hourly_units = weather_data.get(
+        "hourly_units"
+    )
+
+    if not isinstance(hourly, dict):
+        raise ValueError(
+            "External API returned no hourly history."
+        )
+
+    times = hourly.get("time")
+    temperatures = hourly.get("temperature_2m")
+    humidities = hourly.get("relative_humidity_2m")
+    wind_speeds = hourly.get("wind_speed_10m")
+
+    if (
+        not isinstance(times, list) or
+        not isinstance(temperatures, list) or
+        len(times) != len(temperatures)
+    ):
+        raise ValueError(
+            "External API returned incomplete "
+            "hourly history data."
+        )
+
+    if not all(
+        isinstance(value, (int, float))
+        for value in times
+    ):
+        raise ValueError(
+            "External API returned invalid "
+            "history timestamps."
+        )
+
+    if not isinstance(hourly_units, dict):
+        hourly_units = {}
+
+    return {
+        "location": {
+            "latitude": weather_data.get(
+                "latitude",
+                latitude,
+            ),
+            "longitude": weather_data.get(
+                "longitude",
+                longitude,
+            ),
+            "timezone": weather_data.get(
+                "timezone",
+                weather_timezone,
+            ),
+            "utc_offset_seconds": weather_data.get(
+                "utc_offset_seconds",
+            ),
+        },
+        "hourly": {
+            "time": times,
+            "temperature_2m": temperatures,
+            "relative_humidity_2m": (
+                humidities
+                if isinstance(humidities, list)
+                else [None] * len(times)
+            ),
+            "wind_speed_10m": (
+                wind_speeds
+                if isinstance(wind_speeds, list)
+                else [None] * len(times)
+            ),
+        },
+        "hourly_units": {
+            "time": hourly_units.get("time"),
+            "temperature_2m": hourly_units.get(
+                "temperature_2m"
+            ),
+            "relative_humidity_2m": hourly_units.get(
+                "relative_humidity_2m"
+            ),
+            "wind_speed_10m": hourly_units.get(
+                "wind_speed_10m"
+            ),
+        },
+        "past_hours": past_hours,
         "source": "open-meteo",
         "generated_at": datetime.now(
             timezone.utc
@@ -427,6 +524,135 @@ def hourly_forecast():
         }), 502
 
     return jsonify(normalized_forecast)
+
+
+@app.get("/weather/history")
+def hourly_history():
+    """Return past_hours of hourly historical weather data."""
+    try:
+        latitude = get_coordinate(
+            "latitude",
+            -90,
+            90,
+        )
+
+        longitude = get_coordinate(
+            "longitude",
+            -180,
+            180,
+        )
+
+        weather_timezone = request.args.get(
+            "timezone",
+            DEFAULT_TIMEZONE,
+        ).strip()
+
+        if not weather_timezone:
+            raise ValueError(
+                "timezone cannot be empty."
+            )
+
+        raw_past_hours = request.args.get(
+            "past_hours",
+            str(MAX_HISTORY_HOURS),
+        )
+
+        try:
+            past_hours = int(raw_past_hours)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "past_hours must be an integer."
+            ) from error
+
+        if not 1 <= past_hours <= MAX_HISTORY_HOURS:
+            raise ValueError(
+                f"past_hours must be between 1 "
+                f"and {MAX_HISTORY_HOURS}."
+            )
+
+    except ValueError as error:
+        return jsonify({
+            "error": str(error)
+        }), 400
+
+    try:
+        response = requests.get(
+            EXTERNAL_WEATHER_URL,
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "hourly": (
+                    "temperature_2m,"
+                    "relative_humidity_2m,"
+                    "wind_speed_10m"
+                ),
+                "past_hours": past_hours,
+                "forecast_days": 0,
+                "timeformat": "unixtime",
+                "timezone": weather_timezone,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+        response.raise_for_status()
+        weather_data = response.json()
+
+    except requests.Timeout:
+        app.logger.error(
+            "External history API timed out."
+        )
+
+        return jsonify({
+            "error": (
+                "Зовнішній погодний API "
+                "не відповідає вчасно."
+            )
+        }), 504
+
+    except requests.RequestException as error:
+        app.logger.error(
+            "External history request failed: %s",
+            error,
+        )
+
+        return jsonify({
+            "error": (
+                "Не вдалося отримати історію із "
+                "зовнішнього погодного API."
+            )
+        }), 502
+
+    except ValueError:
+        return jsonify({
+            "error": (
+                "Зовнішній погодний API повернув "
+                "некоректну JSON-відповідь."
+            )
+        }), 502
+
+    try:
+        normalized_history = normalize_history(
+            weather_data,
+            latitude,
+            longitude,
+            weather_timezone,
+            past_hours,
+        )
+
+    except (TypeError, ValueError) as error:
+        app.logger.error(
+            "Invalid external history response: %s",
+            error,
+        )
+
+        return jsonify({
+            "error": (
+                "Зовнішній погодний API повернув "
+                "неповні історичні дані."
+            )
+        }), 502
+
+    return jsonify(normalized_history)
 
 
 if __name__ == "__main__":

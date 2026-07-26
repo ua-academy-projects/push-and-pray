@@ -345,6 +345,57 @@ button:disabled {
     text-anchor: middle;
 }
 
+/* ── History range toggle ─────────────────────────────────── */
+
+.toggle-group {
+    display: inline-flex;
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    gap: 0;
+}
+
+.toggle-btn {
+    min-height: 38px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background-color 140ms ease,
+        color 140ms ease;
+}
+
+.toggle-btn:first-child {
+    border-right: 1px solid var(--border);
+}
+
+.toggle-btn:hover:not(.toggle-btn-active) {
+    background: var(--surface-soft);
+    color: var(--accent-dark);
+}
+
+.toggle-btn-active {
+    background: var(--accent);
+    color: #fff;
+}
+
+.toggle-btn-active:hover {
+    background: var(--accent-dark);
+}
+
+.toggle-btn:focus-visible {
+    outline: 3px solid rgba(44, 117, 109, 0.22);
+    outline-offset: -2px;
+}
+
+/* ── Measurements history table ───────────────────────────── */
+
 .history-card {
     padding-bottom: 12px;
 }
@@ -486,6 +537,15 @@ button:disabled {
         grid-column: 1 / -1;
     }
 
+    .toggle-group {
+        width: 100%;
+    }
+
+    .toggle-btn {
+        flex: 1;
+        text-align: center;
+    }
+
     .history-card {
         padding-bottom: 23px;
     }
@@ -526,27 +586,16 @@ button:disabled {
         text-align: left;
     }
 
-    .history-time {
-        grid-area: time;
-    }
-
-    .history-temperature {
-        grid-area: temperature;
-    }
-
-    .history-humidity {
-        grid-area: humidity;
-    }
+    .history-time { grid-area: time; }
+    .history-temperature { grid-area: temperature; }
+    .history-humidity { grid-area: humidity; }
+    .history-wind { grid-area: wind; }
 
     .history-status {
         display: flex;
         grid-area: status;
         align-items: flex-start;
         justify-content: flex-end;
-    }
-
-    .history-wind {
-        grid-area: wind;
     }
 
     .history-mobile-label {
@@ -560,6 +609,7 @@ button:disabled {
     .history-row strong {
         font-size: 13px;
     }
+
 }
 
 @media (max-width: 520px) {
@@ -619,7 +669,4 @@ button:disabled {
         font-size: 12px;
     }
 
-    .history-row {
-        column-gap: 10px;
-    }
 }

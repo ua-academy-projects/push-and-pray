@@ -34,10 +34,10 @@
 
             <div
                 class="refresh-status"
-                aria-label="Дані оновлюються щохвилини"
+                aria-label="Дані оновлюються щогодини"
             >
                 <span aria-hidden="true"></span>
-                Оновлення щохвилини
+                Оновлення щогодини
             </div>
         </header>
 
@@ -62,10 +62,11 @@
             </div>
         </section>
 
+        <!-- Forecast chart -->
         <section
             id="forecast-section"
             class="card chart-card"
-            aria-labelledby="chart-title"
+            aria-labelledby="forecast-chart-title"
             aria-busy="true"
         >
             <div class="section-header">
@@ -74,7 +75,7 @@
                         Прогноз
                     </p>
 
-                    <h2 id="chart-title">
+                    <h2 id="forecast-chart-title">
                         Прогноз температури
                     </h2>
                 </div>
@@ -90,30 +91,107 @@
             </p>
 
             <div
-                id="chart-empty"
+                id="forecast-chart-empty"
                 class="empty-state"
             >
                 Завантаження прогнозу...
             </div>
 
             <div
-                id="chart-container"
+                id="forecast-chart-container"
                 class="chart-container"
                 hidden
             >
                 <svg
-                    id="temperature-chart"
+                    id="forecast-temperature-chart"
                     class="temperature-chart"
                     viewBox="0 0 800 360"
                     role="img"
-                    aria-label="Графік температури у Надвірній"
+                    aria-label="Графік прогнозу температури у Надвірній"
                 ></svg>
             </div>
         </section>
 
+        <!-- History chart -->
+        <section
+            id="history-section"
+            class="card chart-card"
+            aria-labelledby="history-chart-title"
+            aria-busy="true"
+        >
+            <div class="section-header">
+                <div>
+                    <p class="section-kicker">
+                        Історія
+                    </p>
+
+                    <h2 id="history-chart-title">
+                        Температура за минулий час
+                    </h2>
+                </div>
+
+                <div
+                    class="toggle-group"
+                    role="group"
+                    aria-label="Діапазон історії"
+                >
+                    <button
+                        id="history-toggle-24"
+                        type="button"
+                        class="toggle-btn toggle-btn-active"
+                        aria-pressed="true"
+                        data-hours="24"
+                    >
+                        24 години
+                    </button>
+
+                    <button
+                        id="history-toggle-168"
+                        type="button"
+                        class="toggle-btn"
+                        aria-pressed="false"
+                        data-hours="168"
+                    >
+                        7 днів
+                    </button>
+                </div>
+            </div>
+
+            <p
+                id="history-status"
+                class="chart-status"
+                role="status"
+                aria-live="polite"
+            >
+                Останні 24 години · Europe/Kyiv
+            </p>
+
+            <div
+                id="history-chart-empty"
+                class="empty-state"
+            >
+                Завантаження історії...
+            </div>
+
+            <div
+                id="history-chart-container"
+                class="chart-container"
+                hidden
+            >
+                <svg
+                    id="history-temperature-chart"
+                    class="temperature-chart"
+                    viewBox="0 0 800 360"
+                    role="img"
+                    aria-label="Графік історії температури у Надвірній"
+                ></svg>
+            </div>
+        </section>
+
+        <!-- Measurements table -->
         <section
             class="card history-card"
-            aria-labelledby="history-title"
+            aria-labelledby="measurements-title"
         >
             <div class="section-header">
                 <div>
@@ -121,18 +199,10 @@
                         Архів
                     </p>
 
-                    <h2 id="history-title">
+                    <h2 id="measurements-title">
                         Історія вимірювань
                     </h2>
                 </div>
-
-                <button
-                    id="clear-history-button"
-                    type="button"
-                    class="secondary-button"
-                >
-                    Очистити історію
-                </button>
             </div>
 
             <div
