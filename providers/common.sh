@@ -105,6 +105,17 @@ enable_and_restart_service() {
 }
 
 
+configure_firewall() {
+    if command -v ufw >/dev/null 2>&1 \
+        && ufw status | grep -q "Status: active"; then
+
+        log "Configuring firewall for ICMP and private network access"
+        ufw allow proto icmp || true
+        ufw allow from 192.168.56.0/24 || true
+    fi
+}
+
+
 configure_common_system() {
     log "Updating package metadata"
     apt-get update
@@ -115,6 +126,7 @@ configure_common_system() {
         curl
 
     install -d "${APP_ROOT}"
+    configure_firewall
 }
 
 

@@ -39,6 +39,13 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+if command -v ufw >/dev/null 2>&1 \
+    && ufw status | grep -q "Status: active"; then
+
+    log "Allowing the Backend port through the Ubuntu firewall"
+    ufw allow 5001/tcp
+fi
+
 enable_and_restart_service "${SYSTEMD_SERVICE}"
 
 log "Backend Service provisioning completed"

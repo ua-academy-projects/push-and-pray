@@ -32,12 +32,25 @@ Vagrant.configure("2") do |config|
     }
   ]
 
+  bridge_interface = ENV["VAGRANT_BRIDGE_INTERFACE"]
+  if (bridge_interface.nil? || bridge_interface.empty?) && File.exist?(".env")
+    File.readlines(".env").each do |line|
+      if line =~ /^\s*VAGRANT_BRIDGE_INTERFACE\s*=\s*(.+)$/
+        bridge_interface = $1.strip.gsub(/\A['"]|['"]\z/, '')
+      end
+    end
+  end
+  bridge_interface = "en0" if bridge_interface.nil? || bridge_interface.empty?
+
   machines.each do |machine|
     config.vm.define machine[:name] do |vm|
       vm.vm.hostname = machine[:name]
 
       vm.vm.network "private_network",
         ip: machine[:ip]
+
+      vm.vm.network "public_network",
+        bridge: bridge_interface
 
       if machine[:name] == "ui-service"
         vm.vm.network "forwarded_port",

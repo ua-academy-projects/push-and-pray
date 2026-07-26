@@ -43,6 +43,13 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+if command -v ufw >/dev/null 2>&1 \
+    && ufw status | grep -q "Status: active"; then
+
+    log "Allowing the Provider port through the Ubuntu firewall"
+    ufw allow 5002/tcp
+fi
+
 enable_and_restart_service "${SYSTEMD_SERVICE}"
 
 log "Provider Service provisioning completed"
