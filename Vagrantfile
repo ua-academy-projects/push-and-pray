@@ -8,12 +8,6 @@ PROVIDER_SECRET_FILE = File.expand_path(
 DATABASE_SECRET_FILE = File.expand_path(
   ENV.fetch("AEGIS_DATABASE_SECRET_FILE", "~/.config/aegis/mariadb-password"),
 )
-INGESTION_SECRET_FILE = File.expand_path(
-  ENV.fetch(
-    "AEGIS_INGESTION_SECRET_FILE",
-    "~/.config/aegis/provider-history-ingestion-token",
-  ),
-)
 
 VMS = {
   "db-vm" => {
@@ -82,9 +76,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         machine.vm.provision "file",
           source: PROVIDER_SECRET_FILE,
           destination: "/tmp/aegis-provider-api-key"
-        machine.vm.provision "file",
-          source: INGESTION_SECRET_FILE,
-          destination: "/tmp/aegis-provider-history-token"
         machine.vm.provision "shell", path: "provision/provider-vm.sh"
       end
 
@@ -92,9 +83,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         machine.vm.provision "file",
           source: DATABASE_SECRET_FILE,
           destination: "/tmp/aegis-mariadb-password"
-        machine.vm.provision "file",
-          source: INGESTION_SECRET_FILE,
-          destination: "/tmp/aegis-provider-history-token"
         machine.vm.provision "shell", path: "provision/history-vm.sh"
       end
 

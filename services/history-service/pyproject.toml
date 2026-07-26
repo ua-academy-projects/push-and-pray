@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Application backend and persistence API for Aegis"
 requires-python = ">=3.14"
 dependencies = [
+  "aio-pika",
   "alembic",
   "fastapi",
   "httpx",
@@ -16,6 +17,9 @@ dependencies = [
   "sqlalchemy>=2.0",
   "uvicorn[standard]",
 ]
+
+[project.scripts]
+aegis-history-blacklist-consumer = "history_service.blacklist_consumer:main"
 
 [project.optional-dependencies]
 dev = [

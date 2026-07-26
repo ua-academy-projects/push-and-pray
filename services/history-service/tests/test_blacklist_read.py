@@ -35,6 +35,7 @@ def snapshot(*, snapshot_id: int = 42, age_hours: int = 1) -> BlacklistSnapshot:
         provider="AbuseIPDB",
         provider_generated_at=generated.replace(tzinfo=None),
         fetched_at=(generated + timedelta(seconds=2)).replace(tzinfo=None),
+        received_at=(generated + timedelta(seconds=3)).replace(tzinfo=None),
         confidence_minimum=90,
         requested_limit=1000,
         returned_count=2,
@@ -113,6 +114,27 @@ def test_status_states(
         assert result.last_error is not None
         assert result.last_error.code == "UPSTREAM_TIMEOUT"
         assert "database details" not in result.last_error.message
+
+
+@pytest.mark.parametrize("legacy_status", ["running", "failed"])
+def test_new_rabbitmq_snapshot_supersedes_legacy_sync_status(
+    legacy_status: str,
+) -> None:
+    repository = Mock()
+    latest = snapshot(age_hours=0)
+    latest.received_at = (NOW + timedelta(minutes=1)).replace(tzinfo=None)
+    legacy = sync_run(legacy_status, error_code="UPSTREAM_TIMEOUT")
+    repository.get_latest_snapshot.return_value = latest
+    repository.get_latest_sync_run.return_value = legacy
+    repository.get_latest_successful_sync_run.return_value = sync_run("succeeded")
+    service = BlacklistReadService(repository, clock=lambda: NOW)
+
+    result = service.status(Mock())
+
+    assert result.state == "ready"
+    assert result.sync_in_progress is False
+    assert result.last_error is None
+    assert result.last_success_at == latest.fetched_at.replace(tzinfo=UTC)
 
 
 def test_latest_snapshot_filters_paginates_and_uses_constant_query_count() -> None:

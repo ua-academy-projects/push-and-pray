@@ -242,6 +242,32 @@ class ProviderBlacklistResponse(BaseModel):
         return self
 
 
+class BlacklistSnapshotMessage(BaseModel):
+    """Versioned complete-snapshot message consumed from RabbitMQ."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    message_type: Literal["blacklist.snapshot.complete"]
+    delivery_id: UUID
+    correlation_id: UUID
+    producer: Literal["aegis-provider-service"]
+    provider: Literal["AbuseIPDB"]
+    created_at: datetime
+    snapshot: ProviderBlacklistResponse
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return normalize_utc(value)
+
+    @model_validator(mode="after")
+    def validate_provider_matches_snapshot(self) -> Self:
+        if self.provider != self.snapshot.provider:
+            raise ValueError("Message provider does not match snapshot provider.")
+        return self
+
+
 class BlacklistSnapshotDelivery(BaseModel):
     """Authenticated Provider delivery of one normalized snapshot."""
 
@@ -249,22 +275,6 @@ class BlacklistSnapshotDelivery(BaseModel):
 
     delivery_id: UUID
     snapshot: ProviderBlacklistResponse
-
-
-class BlacklistSnapshotDeliveryResponse(BaseModel):
-    """Stable receipt returned for a new or repeated delivery."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    delivery_id: UUID
-    snapshot_id: int
-    status: Literal["accepted", "duplicate"]
-    received_at: datetime
-
-    @field_validator("received_at")
-    @classmethod
-    def validate_received_at(cls, value: datetime) -> datetime:
-        return normalize_utc(value)
 
 
 class CheckCreate(ProviderReputationResponse):

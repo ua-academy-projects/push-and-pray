@@ -205,7 +205,7 @@ class BlacklistProviderResult(BaseModel):
 
 
 class InternalBlacklistResponse(BlacklistProviderResult):
-    """Complete normalized blacklist snapshot returned to History."""
+    """Complete normalized blacklist snapshot."""
 
     provider: Literal["AbuseIPDB"]
     fetched_at: datetime
@@ -219,31 +219,41 @@ class InternalBlacklistResponse(BlacklistProviderResult):
         return validated
 
 
+class BlacklistSnapshotMessage(BaseModel):
+    """Versioned complete-snapshot message published to RabbitMQ."""
+
+    model_config = ConfigDict(extra="forbid", revalidate_instances="always")
+
+    schema_version: Literal[1]
+    message_type: Literal["blacklist.snapshot.complete"]
+    delivery_id: UUID
+    correlation_id: UUID
+    producer: Literal["aegis-provider-service"]
+    provider: Literal["AbuseIPDB"]
+    created_at: datetime
+    snapshot: InternalBlacklistResponse
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        validated = require_aware(value)
+        assert validated is not None
+        return validated
+
+    @model_validator(mode="after")
+    def validate_provider_matches_snapshot(self) -> Self:
+        if self.provider != self.snapshot.provider:
+            raise ValueError("Message provider does not match snapshot provider.")
+        return self
+
+
 class BlacklistSnapshotDelivery(BaseModel):
-    """Normalized snapshot delivered durably to History."""
+    """Legacy outbox envelope retained for safe row up-conversion."""
 
     model_config = ConfigDict(extra="forbid")
 
     delivery_id: UUID
     snapshot: InternalBlacklistResponse
-
-
-class BlacklistSnapshotDeliveryReceipt(BaseModel):
-    """Validated acknowledgement returned by History."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    delivery_id: UUID
-    snapshot_id: StrictInt = Field(gt=0)
-    status: Literal["accepted", "duplicate"]
-    received_at: datetime
-
-    @field_validator("received_at")
-    @classmethod
-    def validate_received_at(cls, value: datetime) -> datetime:
-        validated = require_aware(value)
-        assert validated is not None
-        return validated
 
 
 class RetryMetadata(BaseModel):

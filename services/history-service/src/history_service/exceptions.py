@@ -49,3 +49,14 @@ class ProviderServiceInvalidResponseError(ApplicationError):
             code=code,
             message="The reputation service returned an invalid response.",
         )
+
+
+class BlacklistSnapshotConflictError(ApplicationError):
+    """A provider generation was reused with a different delivery identity."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="BLACKLIST_SNAPSHOT_CONFLICT",
+            message="The blacklist snapshot conflicts with an existing delivery.",
+        )

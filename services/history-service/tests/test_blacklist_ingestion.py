@@ -6,10 +6,11 @@ from unittest.mock import Mock
 import pytest
 from history_service.blacklist_ingestion import BlacklistIngestionService
 from history_service.blacklist_repository import BlacklistRepository
+from history_service.exceptions import BlacklistSnapshotConflictError
 from history_service.models import BlacklistSnapshot
 from history_service.schemas import BlacklistSnapshotDelivery
 from history_service.service import HistoryUnavailableError
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 DELIVERY_ID = "662ecba0-8918-433d-bc75-b14de17851f1"
@@ -30,13 +31,16 @@ def item(address: str, score: int = 100) -> dict[str, Any]:
 
 def delivery(
     items: list[dict[str, Any]] | None = None,
+    *,
+    delivery_id: str = DELIVERY_ID,
+    generated_at: datetime = GENERATED_AT,
 ) -> BlacklistSnapshotDelivery:
     return BlacklistSnapshotDelivery.model_validate(
         {
-            "delivery_id": DELIVERY_ID,
+            "delivery_id": delivery_id,
             "snapshot": {
                 "provider": "AbuseIPDB",
-                "generated_at": GENERATED_AT.isoformat(),
+                "generated_at": generated_at.isoformat(),
                 "fetched_at": FETCHED_AT.isoformat(),
                 "request": {"confidence_minimum": 90, "limit": 1000},
                 "rate_limit": {"limit": 5, "remaining": 4},
@@ -50,6 +54,7 @@ def test_valid_ingestion_commits_snapshot_and_entries_transactionally() -> None:
     session = Mock(spec=Session)
     repository = Mock(spec=BlacklistRepository)
     repository.get_by_delivery_id.return_value = None
+    repository.get_by_provider_generation.return_value = None
     repository.get_previous_snapshot_ip_addresses.return_value = None
     service = BlacklistIngestionService(
         repository=repository, clock=lambda: RECEIVED_AT
@@ -99,10 +104,130 @@ def test_duplicate_delivery_returns_existing_snapshot_without_writes() -> None:
     session.commit.assert_not_called()
 
 
+def test_same_delivery_id_with_different_content_is_first_commit_wins() -> None:
+    session = Mock(spec=Session)
+    repository = Mock(spec=BlacklistRepository)
+    existing = BlacklistSnapshot(
+        snapshot_id=41,
+        delivery_id=DELIVERY_ID,
+        provider="AbuseIPDB",
+        provider_generated_at=GENERATED_AT.replace(tzinfo=None),
+        fetched_at=FETCHED_AT.replace(tzinfo=None),
+        received_at=RECEIVED_AT.replace(tzinfo=None),
+        confidence_minimum=90,
+        requested_limit=1000,
+        returned_count=1,
+    )
+    repository.get_by_delivery_id.return_value = existing
+    repository._as_aware_utc.return_value = RECEIVED_AT
+    service = BlacklistIngestionService(repository=repository)
+
+    result = service.ingest(session, delivery([item("1.1.1.1", 90)]))
+
+    assert result.created is False
+    assert result.snapshot is existing
+    repository.get_by_provider_generation.assert_not_called()
+    repository.add_snapshot.assert_not_called()
+
+
+def test_concurrent_same_delivery_race_rolls_back_then_reloads_duplicate() -> None:
+    session = Mock(spec=Session)
+    repository = Mock(spec=BlacklistRepository)
+    existing = BlacklistSnapshot(
+        snapshot_id=41,
+        delivery_id=DELIVERY_ID,
+        provider="AbuseIPDB",
+        provider_generated_at=GENERATED_AT.replace(tzinfo=None),
+        fetched_at=FETCHED_AT.replace(tzinfo=None),
+        received_at=RECEIVED_AT.replace(tzinfo=None),
+        confidence_minimum=90,
+        requested_limit=1000,
+        returned_count=1,
+    )
+    lookup_count = 0
+
+    def get_by_delivery_id(_: Session, __: str) -> BlacklistSnapshot | None:
+        nonlocal lookup_count
+        lookup_count += 1
+        if lookup_count == 1:
+            return None
+        session.rollback.assert_called_once_with()
+        return existing
+
+    repository.get_by_delivery_id.side_effect = get_by_delivery_id
+    repository.get_by_provider_generation.return_value = None
+    repository.get_previous_snapshot_ip_addresses.return_value = None
+    repository.add_snapshot.side_effect = IntegrityError(
+        "INSERT", {}, RuntimeError("duplicate delivery")
+    )
+    repository._as_aware_utc.return_value = RECEIVED_AT
+    service = BlacklistIngestionService(
+        repository=repository, clock=lambda: RECEIVED_AT
+    )
+
+    result = service.ingest(session, delivery())
+    session.execute("SELECT 1")
+
+    assert result.created is False
+    assert result.snapshot is existing
+    assert lookup_count == 2
+    session.execute.assert_called_once_with("SELECT 1")
+    session.commit.assert_not_called()
+
+
+def test_unrelated_integrity_failure_is_not_converted_to_duplicate() -> None:
+    session = Mock(spec=Session)
+    repository = Mock(spec=BlacklistRepository)
+    repository.get_by_delivery_id.side_effect = [None, None]
+    repository.get_by_provider_generation.side_effect = [None, None]
+    repository.get_previous_snapshot_ip_addresses.return_value = None
+    repository.add_snapshot.side_effect = IntegrityError(
+        "INSERT", {}, RuntimeError("unrelated constraint")
+    )
+    service = BlacklistIngestionService(
+        repository=repository, clock=lambda: RECEIVED_AT
+    )
+
+    with pytest.raises(HistoryUnavailableError):
+        service.ingest(session, delivery())
+
+    session.rollback.assert_called_once_with()
+    session.commit.assert_not_called()
+
+
+def test_different_delivery_id_for_same_provider_generation_is_conflict() -> None:
+    session = Mock(spec=Session)
+    repository = Mock(spec=BlacklistRepository)
+    existing = BlacklistSnapshot(
+        snapshot_id=41,
+        delivery_id=DELIVERY_ID,
+        provider="AbuseIPDB",
+        provider_generated_at=GENERATED_AT.replace(tzinfo=None),
+        fetched_at=FETCHED_AT.replace(tzinfo=None),
+        confidence_minimum=90,
+        requested_limit=1000,
+        returned_count=1,
+    )
+    repository.get_by_delivery_id.return_value = None
+    repository.get_by_provider_generation.return_value = existing
+    service = BlacklistIngestionService(repository=repository)
+
+    with pytest.raises(BlacklistSnapshotConflictError):
+        service.ingest(
+            session,
+            delivery(delivery_id="37938c12-df44-4f64-8aa5-7febc89df546"),
+        )
+
+    repository.add_snapshot.assert_not_called()
+    session.commit.assert_not_called()
+    session.rollback.assert_not_called()
+
+
 def test_database_failure_rolls_back_whole_delivery() -> None:
     session = Mock(spec=Session)
     repository = Mock(spec=BlacklistRepository)
     repository.get_by_delivery_id.return_value = None
+    repository.get_by_provider_generation.return_value = None
     repository.get_previous_snapshot_ip_addresses.return_value = None
     repository.add_snapshot.side_effect = OperationalError(
         "INSERT", {}, RuntimeError("database unavailable")
@@ -154,6 +279,7 @@ def test_change_metrics_compare_unique_ip_sets(
     session = Mock(spec=Session)
     repository = Mock(spec=BlacklistRepository)
     repository.get_by_delivery_id.return_value = None
+    repository.get_by_provider_generation.return_value = None
     repository.get_previous_snapshot_ip_addresses.return_value = previous
     service = BlacklistIngestionService(
         repository=repository, clock=lambda: RECEIVED_AT
@@ -171,6 +297,7 @@ def test_duplicate_payload_ips_are_deduplicated_before_metrics_and_storage() -> 
     session = Mock(spec=Session)
     repository = Mock(spec=BlacklistRepository)
     repository.get_by_delivery_id.return_value = None
+    repository.get_by_provider_generation.return_value = None
     repository.get_previous_snapshot_ip_addresses.return_value = {"1.1.1.1"}
     service = BlacklistIngestionService(
         repository=repository, clock=lambda: RECEIVED_AT
@@ -208,6 +335,7 @@ def test_turnover_percentage_rounds_half_up_to_two_decimal_places() -> None:
     session = Mock(spec=Session)
     repository = Mock(spec=BlacklistRepository)
     repository.get_by_delivery_id.return_value = None
+    repository.get_by_provider_generation.return_value = None
     repository.get_previous_snapshot_ip_addresses.return_value = set(current[:-1])
     service = BlacklistIngestionService(
         repository=repository, clock=lambda: RECEIVED_AT

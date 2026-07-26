@@ -1,8 +1,11 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from history_service.blacklist_ingestion import BlacklistIngestionService
 from history_service.blacklist_read import BlacklistReadService
 from history_service.blacklist_repository import BlacklistRepository
 from history_service.blacklist_sync import MariaDBBlacklistSyncLock
@@ -15,6 +18,7 @@ from history_service.models import (
 from history_service.schemas import (
     ApplicationCheckRequest,
     BlacklistEntryQuery,
+    BlacklistSnapshotDelivery,
     CheckCreate,
     HistoryListQuery,
     ProviderReputationRequest,
@@ -28,6 +32,91 @@ from sqlalchemy.orm import Session
 from .conftest import check_payload
 
 pytestmark = pytest.mark.mariadb
+
+
+def test_concurrent_blacklist_delivery_is_idempotent_against_mariadb() -> None:
+    if os.getenv("RUN_MARIADB_TESTS") != "1":
+        pytest.skip("Set RUN_MARIADB_TESTS=1 for MariaDB integration tests.")
+
+    required = {
+        name: os.getenv(name)
+        for name in (
+            "TEST_MARIADB_DATABASE",
+            "TEST_MARIADB_USER",
+            "TEST_MARIADB_PASSWORD",
+        )
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        pytest.fail(f"Missing MariaDB test settings: {', '.join(missing)}")
+
+    url = URL.create(
+        "mariadb+pymysql",
+        username=required["TEST_MARIADB_USER"],
+        password=required["TEST_MARIADB_PASSWORD"],
+        host=os.getenv("TEST_MARIADB_HOST", "127.0.0.1"),
+        port=int(os.getenv("TEST_MARIADB_PORT", "3306")),
+        database=required["TEST_MARIADB_DATABASE"],
+        query={"charset": "utf8mb4"},
+    )
+    engine = create_engine(url, pool_pre_ping=True)
+    delivery_id = uuid4()
+    generated_at = datetime.now(UTC)
+    delivery = BlacklistSnapshotDelivery.model_validate(
+        {
+            "delivery_id": str(delivery_id),
+            "snapshot": {
+                "provider": "AbuseIPDB",
+                "generated_at": generated_at.isoformat(),
+                "fetched_at": generated_at.isoformat(),
+                "request": {"confidence_minimum": 90, "limit": 1000},
+                "rate_limit": {},
+                "items": [],
+            },
+        }
+    )
+    barrier = Barrier(2)
+
+    class RacingRepository(BlacklistRepository):
+        def get_by_provider_generation(
+            self,
+            session: Session,
+            *,
+            provider: str,
+            provider_generated_at: datetime,
+        ) -> BlacklistSnapshot | None:
+            existing = super().get_by_provider_generation(
+                session,
+                provider=provider,
+                provider_generated_at=provider_generated_at,
+            )
+            if existing is None:
+                barrier.wait(timeout=10)
+            return existing
+
+    def ingest_once() -> tuple[bool, int]:
+        with Session(engine, expire_on_commit=False) as session:
+            result = BlacklistIngestionService(repository=RacingRepository()).ingest(
+                session, delivery
+            )
+            session.execute(BlacklistSnapshot.__table__.select().limit(1))
+            return result.created, result.snapshot.snapshot_id
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: ingest_once(), range(2)))
+
+        assert sorted(created for created, _ in results) == [False, True]
+        assert len({snapshot_id for _, snapshot_id in results}) == 1
+    finally:
+        with Session(engine) as cleanup_session:
+            cleanup_session.execute(
+                delete(BlacklistSnapshot).where(
+                    BlacklistSnapshot.delivery_id == str(delivery_id)
+                )
+            )
+            cleanup_session.commit()
+        engine.dispose()
 
 
 def test_create_idempotency_listing_and_filtering_against_mariadb() -> None:

@@ -60,6 +60,11 @@ class BlacklistReadService:
             snapshot = self.repository.get_latest_snapshot(session)
             latest_run = self.repository.get_latest_sync_run(session)
             successful_run = self.repository.get_latest_successful_sync_run(session)
+            if snapshot is not None:
+                if self._run_predates_snapshot(latest_run, snapshot):
+                    latest_run = None
+                if self._run_predates_snapshot(successful_run, snapshot):
+                    successful_run = None
             return self._status_response(snapshot, latest_run, successful_run)
         except SQLAlchemyError as error:
             raise HistoryUnavailableError from error
@@ -400,6 +405,17 @@ class BlacklistReadService:
 
     def _now(self) -> datetime:
         return self._utc(self.clock())
+
+    def _run_predates_snapshot(
+        self,
+        run: BlacklistSyncRun | None,
+        snapshot: BlacklistSnapshot,
+    ) -> bool:
+        """Ignore legacy pull-sync state superseded by RabbitMQ ingestion."""
+        if run is None or snapshot.received_at is None:
+            return False
+        run_activity = run.finished_at or run.started_at
+        return self._utc(run_activity) < self._utc(snapshot.received_at)
 
     @staticmethod
     def _utc(value: datetime) -> datetime:

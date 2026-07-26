@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Internal AbuseIPDB proxy for Aegis"
 requires-python = ">=3.14"
 dependencies = [
+  "aio-pika",
   "fastapi",
   "httpx",
   "pydantic-settings",

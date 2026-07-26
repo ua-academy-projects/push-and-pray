@@ -36,6 +36,7 @@ def create_abuseipdb_http_client(settings: Settings) -> httpx.AsyncClient:
             pool=settings.abuseipdb_pool_timeout_seconds,
         ),
         follow_redirects=False,
+        # transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0"),
     )
 
 

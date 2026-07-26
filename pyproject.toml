@@ -12,6 +12,7 @@ pythonpath = [
 ]
 markers = [
   "mariadb: tests that require a dedicated migrated MariaDB database",
+  "rabbitmq: tests that require a dedicated RabbitMQ broker",
 ]
 
 [tool.ruff]

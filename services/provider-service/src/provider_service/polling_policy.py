@@ -18,12 +18,12 @@ class PollingPolicy:
         self,
         *,
         interval_seconds: int,
-        delivery_initial_seconds: int,
-        delivery_maximum_seconds: int,
+        publish_initial_seconds: int,
+        publish_maximum_seconds: int,
     ) -> None:
         self.interval_seconds = interval_seconds
-        self.delivery_initial_seconds = delivery_initial_seconds
-        self.delivery_maximum_seconds = delivery_maximum_seconds
+        self.publish_initial_seconds = publish_initial_seconds
+        self.publish_maximum_seconds = publish_maximum_seconds
 
     def after_success(
         self,
@@ -58,11 +58,11 @@ class PollingPolicy:
         index = min(max(attempt, 1), len(self.temporary_delays)) - 1
         return current + timedelta(seconds=self.temporary_delays[index])
 
-    def after_delivery_failure(self, now: datetime, *, attempt: int) -> datetime:
+    def after_publish_failure(self, now: datetime, *, attempt: int) -> datetime:
         current = aware_utc(now)
         exponent = min(max(attempt, 1) - 1, 30)
         delay = min(
-            self.delivery_initial_seconds * (2**exponent),
-            self.delivery_maximum_seconds,
+            self.publish_initial_seconds * (2**exponent),
+            self.publish_maximum_seconds,
         )
         return current + timedelta(seconds=delay)

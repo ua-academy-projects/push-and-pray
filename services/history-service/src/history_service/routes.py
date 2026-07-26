@@ -2,27 +2,21 @@
 
 import logging
 from collections.abc import Awaitable, Callable
-from hmac import compare_digest
 from time import monotonic
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from history_service.blacklist_ingestion import (
-    BlacklistIngestionService,
-    get_blacklist_ingestion_service,
-)
 from history_service.blacklist_read import (
     BlacklistReadService,
     get_blacklist_read_service,
 )
-from history_service.config import Settings, get_settings
 from history_service.database import get_session
 from history_service.exceptions import ApplicationError
 from history_service.provider_client import ProviderClient, get_provider_client
@@ -33,8 +27,6 @@ from history_service.schemas import (
     BlacklistEntryPageQuery,
     BlacklistEntryQuery,
     BlacklistPage,
-    BlacklistSnapshotDelivery,
-    BlacklistSnapshotDeliveryResponse,
     BlacklistSnapshotList,
     BlacklistSnapshotListQuery,
     BlacklistStatusResponse,
@@ -79,29 +71,6 @@ def error_response(
         )
     )
     return JSONResponse(status_code=status_code, content=body.model_dump())
-
-
-def require_provider_ingestion_auth(
-    settings: Annotated[Settings, Depends(get_settings)],
-    authorization: Annotated[str | None, Header()] = None,
-) -> None:
-    """Authenticate Provider snapshot deliveries without logging credentials."""
-    configured = settings.provider_ingestion_token
-    expected = (
-        f"Bearer {configured.get_secret_value()}" if configured is not None else None
-    )
-    if expected is None:
-        raise ApplicationError(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="PROVIDER_INGESTION_UNAVAILABLE",
-            message="Provider snapshot ingestion is not configured.",
-        )
-    if authorization is None or not compare_digest(authorization, expected):
-        raise ApplicationError(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            code="INVALID_PROVIDER_CREDENTIALS",
-            message="Provider authentication failed.",
-        )
 
 
 async def request_id_middleware(
@@ -168,38 +137,6 @@ def readiness(
             content={"status": "not ready"},
         )
     return {"status": "ready"}
-
-
-@router.post(
-    "/internal/v1/blacklist/snapshots",
-    response_model=BlacklistSnapshotDeliveryResponse,
-    status_code=status.HTTP_201_CREATED,
-    responses={
-        401: {"model": ErrorResponse},
-        422: {"model": ErrorResponse},
-        503: {"model": ErrorResponse},
-    },
-    dependencies=[Depends(require_provider_ingestion_auth)],
-    tags=["internal"],
-)
-def ingest_blacklist_snapshot(
-    payload: BlacklistSnapshotDelivery,
-    response: Response,
-    session: Annotated[Session, Depends(get_session)],
-    service: Annotated[
-        BlacklistIngestionService, Depends(get_blacklist_ingestion_service)
-    ],
-) -> BlacklistSnapshotDeliveryResponse:
-    """Persist one normalized Provider snapshot transactionally."""
-    result = service.ingest(session, payload)
-    if not result.created:
-        response.status_code = status.HTTP_200_OK
-    return BlacklistSnapshotDeliveryResponse(
-        delivery_id=payload.delivery_id,
-        snapshot_id=result.snapshot.snapshot_id,
-        status="accepted" if result.created else "duplicate",
-        received_at=result.received_at,
-    )
 
 
 @router.post(

@@ -6,8 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from provider_service.schemas import (
     BlacklistSnapshotDelivery,
+    BlacklistSnapshotMessage,
     InternalBlacklistResponse,
 )
 
@@ -23,14 +26,14 @@ def _parse_time(value: str) -> datetime:
 
 
 @dataclass(frozen=True)
-class PendingDelivery:
-    delivery: BlacklistSnapshotDelivery
+class PendingMessage:
+    message: BlacklistSnapshotMessage
     attempts: int
     next_attempt_at: datetime
 
 
 class BlacklistOutbox:
-    """Persist fetched snapshots before any History delivery attempt."""
+    """Persist complete messages before any RabbitMQ publish attempt."""
 
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +77,16 @@ class BlacklistOutbox:
         snapshot: InternalBlacklistResponse,
         now: datetime,
     ) -> None:
-        delivery = BlacklistSnapshotDelivery(delivery_id=delivery_id, snapshot=snapshot)
+        message = BlacklistSnapshotMessage(
+            schema_version=1,
+            message_type="blacklist.snapshot.complete",
+            delivery_id=delivery_id,
+            correlation_id=delivery_id,
+            producer="aegis-provider-service",
+            provider=snapshot.provider,
+            created_at=now,
+            snapshot=snapshot,
+        )
         snapshot_key = f"{snapshot.provider}:{_serialize_time(snapshot.generated_at)}"
         timestamp = _serialize_time(now)
         with self.connection:
@@ -98,16 +110,16 @@ class BlacklistOutbox:
                 (
                     str(delivery_id),
                     snapshot_key,
-                    delivery.model_dump_json(),
+                    message.model_dump_json(),
                     timestamp,
                     timestamp,
                 ),
             )
 
-    def next_pending(self, now: datetime) -> PendingDelivery | None:
+    def next_pending(self, now: datetime) -> PendingMessage | None:
         row = self.connection.execute(
             """
-            SELECT payload_json, attempts, next_attempt_at
+            SELECT delivery_id, payload_json, created_at, attempts, next_attempt_at
             FROM blacklist_outbox
             WHERE delivered_at IS NULL AND next_attempt_at <= ?
             ORDER BY next_attempt_at, created_at, delivery_id
@@ -117,13 +129,15 @@ class BlacklistOutbox:
         ).fetchone()
         if row is None:
             return None
-        return PendingDelivery(
-            delivery=BlacklistSnapshotDelivery.model_validate_json(row["payload_json"]),
+        message = self._load_message(row)
+        return PendingMessage(
+            message=message,
             attempts=int(row["attempts"]),
             next_attempt_at=_parse_time(row["next_attempt_at"]),
         )
 
-    def mark_delivered(self, delivery_id: UUID, *, delivered_at: datetime) -> None:
+    def mark_published(self, delivery_id: UUID, *, published_at: datetime) -> None:
+        """Compact an outbox row only after publisher confirmation."""
         with self.connection:
             row = self.connection.execute(
                 """
@@ -143,13 +157,44 @@ class BlacklistOutbox:
                 (
                     row["snapshot_key"],
                     str(delivery_id),
-                    _serialize_time(delivered_at),
+                    _serialize_time(published_at),
                 ),
             )
             self.connection.execute(
                 "DELETE FROM blacklist_outbox WHERE delivery_id = ?",
                 (str(delivery_id),),
             )
+
+    def _load_message(self, row: sqlite3.Row) -> BlacklistSnapshotMessage:
+        payload_json = str(row["payload_json"])
+        try:
+            return BlacklistSnapshotMessage.model_validate_json(payload_json)
+        except ValidationError:
+            legacy = BlacklistSnapshotDelivery.model_validate_json(payload_json)
+            if str(legacy.delivery_id) != str(row["delivery_id"]):
+                raise ValueError(
+                    "Legacy outbox delivery ID does not match its row."
+                ) from None
+            message = BlacklistSnapshotMessage(
+                schema_version=1,
+                message_type="blacklist.snapshot.complete",
+                delivery_id=legacy.delivery_id,
+                correlation_id=legacy.delivery_id,
+                producer="aegis-provider-service",
+                provider=legacy.snapshot.provider,
+                created_at=_parse_time(str(row["created_at"])),
+                snapshot=legacy.snapshot,
+            )
+            with self.connection:
+                self.connection.execute(
+                    """
+                    UPDATE blacklist_outbox
+                    SET payload_json = ?
+                    WHERE delivery_id = ?
+                    """,
+                    (message.model_dump_json(), str(legacy.delivery_id)),
+                )
+            return message
 
     def reschedule(
         self, delivery_id: UUID, *, attempts: int, next_attempt_at: datetime
