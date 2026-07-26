@@ -1,11 +1,11 @@
-import atexit
+import json
 import os
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
+import pika
 import psycopg
-import requests
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request
 from psycopg.rows import dict_row
 
@@ -13,15 +13,13 @@ app = Flask(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-PROVIDER_URL = os.getenv(
-    "PROVIDER_URL",
-    "http://127.0.0.1:5002",
-).rstrip("/")
+RABBITMQ_URL = os.getenv(
+    "RABBITMQ_URL",
+    "amqp://weather_user:weather_password@127.0.0.1:5672/",
+)
 
+QUEUE_NAME = "weather_data_queue"
 REQUEST_TIMEOUT = 10
-
-# Scheduler: run once per hour
-SYNC_INTERVAL_MINUTES = 60
 
 FORECAST_HOURS = 24
 HISTORY_HOURS = 168
@@ -38,12 +36,6 @@ LOCATION_KEY = "nadvirna"
 TEMPERATURE_UNIT = "°C"
 HUMIDITY_UNIT = "%"
 WIND_SPEED_UNIT = "km/h"
-
-scheduler = BackgroundScheduler(
-    timezone=WEATHER_TIMEZONE
-)
-
-sync_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -166,251 +158,6 @@ def create_tables():
         migration_file,
     )
 
-
-# ---------------------------------------------------------------------------
-# Provider helpers
-# ---------------------------------------------------------------------------
-
-def _raise_for_provider_response(response):
-    """Parse provider JSON and raise ProviderServiceError on failure."""
-    try:
-        data = response.json()
-    except ValueError as error:
-        raise ProviderServiceError(
-            "Provider Service повернув некоректну відповідь."
-        ) from error
-
-    if not isinstance(data, dict):
-        raise ProviderServiceError(
-            "Provider Service повернув некоректну відповідь."
-        )
-
-    if not response.ok:
-        error_message = data.get("error")
-
-        if not isinstance(error_message, str):
-            error_message = (
-                "Provider Service не зміг отримати дані."
-            )
-
-        status_code = (
-            response.status_code
-            if response.status_code in {502, 504}
-            else 502
-        )
-
-        raise ProviderServiceError(
-            error_message,
-            status_code=status_code,
-        )
-
-    return data
-
-
-def fetch_weather_from_provider():
-    """Fetch current conditions from provider-service."""
-    try:
-        response = requests.get(
-            f"{PROVIDER_URL}/weather/current",
-            params={
-                "latitude": LATITUDE,
-                "longitude": LONGITUDE,
-                "timezone": WEATHER_TIMEZONE,
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
-
-    except requests.Timeout as error:
-        raise ProviderServiceError(
-            "Provider Service не відповідає вчасно.",
-            status_code=503,
-        ) from error
-
-    except requests.RequestException as error:
-        raise ProviderServiceError(
-            "Provider Service недоступний.",
-            status_code=503,
-        ) from error
-
-    provider_data = _raise_for_provider_response(response)
-
-    current = provider_data.get("current")
-
-    required_fields = {
-        "temperature_2m",
-        "relative_humidity_2m",
-        "wind_speed_10m",
-    }
-
-    if (
-        not isinstance(current, dict) or
-        not required_fields.issubset(current)
-    ):
-        raise ProviderServiceError(
-            "Provider Service повернув неповні погодні дані."
-        )
-
-    location = provider_data.get("location")
-
-    if not isinstance(location, dict):
-        location = {}
-
-    location.update({
-        "name": CITY_NAME,
-        "country": COUNTRY_NAME,
-        "latitude": LATITUDE,
-        "longitude": LONGITUDE,
-    })
-
-    return {
-        "query": CITY_NAME,
-        "location": location,
-        "current": current,
-        "current_units": provider_data.get(
-            "current_units",
-            {},
-        ),
-        "source": provider_data.get(
-            "source",
-            "open-meteo",
-        ),
-        "collected_at": provider_data.get(
-            "collected_at",
-            datetime.now(timezone.utc).isoformat(),
-        ),
-    }
-
-
-def fetch_forecast_from_provider():
-    """Fetch 24-hour forecast from provider-service."""
-    try:
-        response = requests.get(
-            f"{PROVIDER_URL}/weather/forecast",
-            params={
-                "latitude": LATITUDE,
-                "longitude": LONGITUDE,
-                "timezone": WEATHER_TIMEZONE,
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
-
-    except requests.Timeout as error:
-        raise ProviderServiceError(
-            "Provider Service не відповідає вчасно.",
-            status_code=503,
-        ) from error
-
-    except requests.RequestException as error:
-        raise ProviderServiceError(
-            "Provider Service недоступний.",
-            status_code=503,
-        ) from error
-
-    provider_data = _raise_for_provider_response(response)
-
-    hourly = provider_data.get("hourly")
-
-    if not isinstance(hourly, dict):
-        raise ProviderServiceError(
-            "Provider Service повернув неповні дані прогнозу."
-        )
-
-    times = hourly.get("time")
-    temperatures = hourly.get("temperature_2m")
-
-    if (
-        not isinstance(times, list) or
-        not isinstance(temperatures, list) or
-        len(times) != len(temperatures)
-    ):
-        raise ProviderServiceError(
-            "Provider Service повернув неповні дані прогнозу."
-        )
-
-    location = provider_data.get("location")
-
-    if not isinstance(location, dict):
-        location = {}
-
-    location.update({
-        "name": CITY_NAME,
-        "country": COUNTRY_NAME,
-        "latitude": LATITUDE,
-        "longitude": LONGITUDE,
-        "timezone": WEATHER_TIMEZONE,
-    })
-
-    return {
-        "query": CITY_NAME,
-        "forecast_hours": FORECAST_HOURS,
-        "location": location,
-        "hourly": {
-            "time": times,
-            "temperature_2m": temperatures,
-        },
-        "hourly_units": provider_data.get(
-            "hourly_units",
-            {},
-        ),
-        "source": provider_data.get(
-            "source",
-            "open-meteo",
-        ),
-        "generated_at": provider_data.get(
-            "generated_at",
-            datetime.now(timezone.utc).isoformat(),
-        ),
-    }
-
-
-def fetch_history_from_provider(past_hours: int):
-    """Fetch historical hourly data from provider-service."""
-    try:
-        response = requests.get(
-            f"{PROVIDER_URL}/weather/history",
-            params={
-                "latitude": LATITUDE,
-                "longitude": LONGITUDE,
-                "timezone": WEATHER_TIMEZONE,
-                "past_hours": past_hours,
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
-
-    except requests.Timeout as error:
-        raise ProviderServiceError(
-            "Provider Service не відповідає вчасно.",
-            status_code=503,
-        ) from error
-
-    except requests.RequestException as error:
-        raise ProviderServiceError(
-            "Provider Service недоступний.",
-            status_code=503,
-        ) from error
-
-    provider_data = _raise_for_provider_response(response)
-
-    hourly = provider_data.get("hourly")
-
-    if not isinstance(hourly, dict):
-        raise ProviderServiceError(
-            "Provider Service повернув неповні історичні дані."
-        )
-
-    times = hourly.get("time")
-    temperatures = hourly.get("temperature_2m")
-
-    if (
-        not isinstance(times, list) or
-        not isinstance(temperatures, list) or
-        len(times) != len(temperatures)
-    ):
-        raise ProviderServiceError(
-            "Provider Service повернув неповні історичні дані."
-        )
-
-    return provider_data
 
 
 # ---------------------------------------------------------------------------
@@ -1133,85 +880,25 @@ def run_hourly_sync():
 
 
 # ---------------------------------------------------------------------------
-# Scheduler
+# RabbitMQ Consumer
 # ---------------------------------------------------------------------------
 
-def start_scheduler():
-    if scheduler.running:
-        return
-
-    scheduler.add_job(
-        func=run_hourly_sync,
-        trigger="interval",
-        minutes=SYNC_INTERVAL_MINUTES,
-        id="nadvirna-hourly-sync",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        next_run_time=datetime.now(timezone.utc),
-    )
-
-    scheduler.start()
-
-    app.logger.info(
-        "Weather scheduler started. "
-        "Sync interval: %d minutes.",
-        SYNC_INTERVAL_MINUTES,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Flask routes
-# ---------------------------------------------------------------------------
-
-@app.get("/health")
-def health():
+def process_rabbitmq_message(ch, method, properties, body):
     try:
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT 1;")
+        payload = json.loads(body.decode("utf-8"))
+        msg_type = payload.get("type")
+        data = payload.get("data", {})
+        fetched_at = datetime.now(timezone.utc)
 
-        return jsonify({
-            "service": "backend-service",
-            "status": "ok",
-            "database": "ok",
-            "provider": "configured",
-            "city": CITY_NAME,
-            "sync_interval_minutes": SYNC_INTERVAL_MINUTES,
-            "scheduler_running": scheduler.running,
-        })
+        if msg_type == "current":
+            current = data.get("current", {})
+            current_units = data.get("current_units", {})
+            raw_time = current.get("time")
 
-    except (
-        psycopg.Error,
-        RuntimeError,
-    ):
-        return jsonify({
-            "service": "backend-service",
-            "status": "error",
-            "database": "unavailable",
-        }), 503
-
-
-@app.get("/api/weather")
-def weather():
-    """Return the latest current-conditions snapshot."""
-    # 1. Try to fetch live current weather from provider-service
-    try:
-        current_data = fetch_weather_from_provider()
-
-        # Extract values
-        current = current_data.get("current", {})
-        current_units = current_data.get("current_units", {})
-        raw_time = current.get("time")
-
-        if raw_time:
-            current_time = parse_datetime(raw_time)
-            if current_time:
-                fetched_at = datetime.now(timezone.utc)
-                weather_hour = floor_to_hour(current_time)
-
-                # Persist live current snapshot to DB so we have historical context
-                try:
+            if raw_time:
+                current_time = parse_datetime(raw_time)
+                if current_time:
+                    weather_hour = floor_to_hour(current_time)
                     with get_connection() as connection:
                         with connection.cursor() as cursor:
                             cursor.execute(
@@ -1258,21 +945,93 @@ def weather():
                                     current_units.get("temperature_2m", TEMPERATURE_UNIT),
                                     current_units.get("relative_humidity_2m", HUMIDITY_UNIT),
                                     current_units.get("wind_speed_10m", WIND_SPEED_UNIT),
-                                    current_data.get("source", "open-meteo"),
+                                    data.get("source", "open-meteo"),
                                     "current",
                                     fetched_at,
                                     fetched_at,
                                 ),
                             )
-                except Exception as db_err:
-                    app.logger.warning("Could not persist live weather to DB: %s", db_err)
+                    app.logger.info("Persisted RabbitMQ current weather message")
 
-        return jsonify(current_data)
+        elif msg_type == "forecast":
+            points = normalize_forecast_points(data)
+            provider = data.get("source", "open-meteo")
+            with get_connection() as connection:
+                saved = save_forecast_points(connection, points, provider, fetched_at)
+                update_forecast_sync_state(connection, fetched_at)
+            app.logger.info("Persisted RabbitMQ forecast (%d points)", saved)
 
-    except ProviderServiceError as error:
-        app.logger.warning("Provider unavailable for live weather, falling back to DB: %s", error)
+        elif msg_type == "history":
+            points = normalize_history_points(data)
+            provider = data.get("source", "open-meteo")
+            with get_connection() as connection:
+                saved = save_history_points(connection, points, provider, fetched_at)
+                update_history_sync_state(connection, fetched_at)
+            app.logger.info("Persisted RabbitMQ history (%d points)", saved)
 
-    # 2. Fallback to database for a row that HAS humidity and wind speed
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception as error:
+        app.logger.error("Error processing RabbitMQ message: %s", error)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+
+def start_rabbitmq_consumer():
+    def consumer_loop():
+        while True:
+            try:
+                app.logger.info("Connecting to RabbitMQ at %s...", RABBITMQ_URL)
+                params = pika.URLParameters(RABBITMQ_URL)
+                connection = pika.BlockingConnection(params)
+                channel = connection.channel()
+                channel.queue_declare(queue=QUEUE_NAME, durable=True)
+                channel.basic_qos(prefetch_count=1)
+                channel.basic_consume(
+                    queue=QUEUE_NAME,
+                    on_message_callback=process_rabbitmq_message,
+                )
+                app.logger.info("RabbitMQ consumer listening on queue %s", QUEUE_NAME)
+                channel.start_consuming()
+            except Exception as err:
+                app.logger.warning("RabbitMQ consumer connection error: %s. Retrying in 5s...", err)
+                time.sleep(5)
+
+    thread = threading.Thread(target=consumer_loop, daemon=True)
+    thread.start()
+
+
+# ---------------------------------------------------------------------------
+# Flask routes
+# ---------------------------------------------------------------------------
+
+@app.get("/health")
+def health():
+    try:
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+
+        return jsonify({
+            "service": "backend-service",
+            "status": "ok",
+            "database": "ok",
+            "provider": "configured",
+            "city": CITY_NAME,
+        })
+
+    except (
+        psycopg.Error,
+        RuntimeError,
+    ):
+        return jsonify({
+            "service": "backend-service",
+            "status": "error",
+            "database": "unavailable",
+        }), 503
+
+
+@app.get("/api/weather")
+def weather():
+    """Return the latest current-conditions snapshot from database."""
     try:
         now_utc = datetime.now(timezone.utc)
         with get_connection() as connection:
@@ -1421,7 +1180,6 @@ def history():
 
     try:
         points = get_history_from_database(hours)
-        print(points)
         return jsonify({
             "hours": hours,
             "count": len(points),
@@ -1470,18 +1228,9 @@ def history():
 # Startup / shutdown
 # ---------------------------------------------------------------------------
 
-atexit.register(
-    lambda: (
-        scheduler.shutdown(wait=False)
-        if scheduler.running
-        else None
-    )
-)
-
-
 if __name__ == "__main__":
     create_tables()
-    start_scheduler()
+    start_rabbitmq_consumer()
 
     app.run(
         host=os.getenv(
@@ -1497,3 +1246,6 @@ if __name__ == "__main__":
         debug=is_debug_enabled(),
         use_reloader=False,
     )
+
+
+

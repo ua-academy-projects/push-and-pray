@@ -1396,10 +1396,12 @@ function renderHistoryTable(data) {
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener("click", () => {
                 visibleTableRowsCount += 10;
+                saveSessionState({ visible_table_rows: visibleTableRowsCount });
                 renderHistoryTable();
             });
         }
     }
+
 }
 
 
@@ -1557,6 +1559,40 @@ async function loadHistoryChart(
 }
 
 
+// ── Session preference persistence ────────────────────────────────────────
+
+async function fetchSessionState() {
+    try {
+        const response = await fetch("/api/session", { cache: "no-store" });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.history_hours && (data.history_hours === 24 || data.history_hours === 168)) {
+                currentHistoryHours = data.history_hours;
+                const activeBtn = currentHistoryHours === 168 ? historyToggle168 : historyToggle24;
+                activateToggle(activeBtn);
+            }
+            if (data.visible_table_rows && Number.isInteger(data.visible_table_rows)) {
+                visibleTableRowsCount = data.visible_table_rows;
+            }
+        }
+    } catch {
+        // Silently fall back to default preferences
+    }
+}
+
+async function saveSessionState(updates) {
+    try {
+        await fetch("/api/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updates),
+        });
+    } catch {
+        // Ignore session save errors
+    }
+}
+
+
 // ── Toggle handlers ───────────────────────────────────────────────────────
 
 function activateToggle(activeButton) {
@@ -1578,7 +1614,7 @@ function activateToggle(activeButton) {
 
 historyToggle24.addEventListener(
     "click",
-    () => {
+    async () => {
         if (currentHistoryHours === 24) {
             return;
         }
@@ -1586,13 +1622,14 @@ historyToggle24.addEventListener(
         currentHistoryHours = 24;
         activateToggle(historyToggle24);
         loadHistoryChart(24, true);
+        await saveSessionState({ history_hours: 24 });
     }
 );
 
 
 historyToggle168.addEventListener(
     "click",
-    () => {
+    async () => {
         if (currentHistoryHours === 168) {
             return;
         }
@@ -1600,8 +1637,10 @@ historyToggle168.addEventListener(
         currentHistoryHours = 168;
         activateToggle(historyToggle168);
         loadHistoryChart(168, true);
+        await saveSessionState({ history_hours: 168 });
     }
 );
+
 
 
 // ── Page-level loading ────────────────────────────────────────────────────
@@ -1643,8 +1682,10 @@ function startAutomaticRefresh() {
 
 document.addEventListener(
     "DOMContentLoaded",
-    () => {
+    async () => {
+        await fetchSessionState();
         loadPageData(true);
         startAutomaticRefresh();
     }
 );
+

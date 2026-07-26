@@ -35,6 +35,8 @@ Environment="APP_HOST=0.0.0.0"
 Environment="APP_PORT=5002"
 Environment="FLASK_DEBUG=false"
 Environment="EXTERNAL_WEATHER_URL=https://api.open-meteo.com/v1/forecast"
+Environment="RABBITMQ_URL=amqp://weather_user:weather_password@192.168.56.13:5672/"
+
 ExecStart=/opt/weather-app/provider-service/venv/bin/python /opt/weather-app/provider-service/app.py
 Restart=always
 RestartSec=5

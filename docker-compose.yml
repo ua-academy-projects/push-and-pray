@@ -16,6 +16,39 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: weather_user
+      RABBITMQ_DEFAULT_PASS: weather_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - -q
+        - ping
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   provider-service:
     build: ./provider-service
     restart: always
@@ -24,6 +57,10 @@ services:
       APP_PORT: "5002"
       FLASK_DEBUG: "false"
       EXTERNAL_WEATHER_URL: "https://api.open-meteo.com/v1/forecast"
+      RABBITMQ_URL: "amqp://weather_user:weather_password@rabbitmq:5672/"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD
@@ -45,10 +82,11 @@ services:
       FLASK_DEBUG: "false"
       DATABASE_URL: "postgresql://weather_user:weather_password@database:5432/weather_history"
       PROVIDER_URL: "http://provider-service:5002"
+      RABBITMQ_URL: "amqp://weather_user:weather_password@rabbitmq:5672/"
     depends_on:
       database:
         condition: service_healthy
-      provider-service:
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test:
@@ -71,10 +109,13 @@ services:
       APP_PORT: "5000"
       FLASK_DEBUG: "false"
       BACKEND_URL: "http://backend-service:5001"
+      REDIS_URL: "redis://redis:6379/0"
     ports:
       - "0.0.0.0:8080:5000"
     depends_on:
       backend-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:
@@ -90,3 +131,4 @@ services:
 
 volumes:
   postgres_data:
+

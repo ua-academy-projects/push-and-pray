@@ -27,6 +27,8 @@ Environment="APP_HOST=0.0.0.0"
 Environment="APP_PORT=5000"
 Environment="FLASK_DEBUG=false"
 Environment="BACKEND_URL=http://192.168.56.11:5001"
+Environment="REDIS_URL=redis://192.168.56.13:6379/0"
+
 ExecStartPre=/bin/bash -c 'until curl -fsS http://192.168.56.11:5001/health; do echo "Waiting for Backend Service..."; sleep 3; done'
 ExecStart=/opt/weather-app/ui-service/venv/bin/python /opt/weather-app/ui-service/app.py
 Restart=always

@@ -9,14 +9,32 @@ readonly DATABASE_USER="weather_user"
 readonly BACKEND_IP="192.168.56.11"
 readonly DATABASE_IP="192.168.56.13"
 
-log "Installing PostgreSQL"
+log "Installing PostgreSQL, Redis, and RabbitMQ"
 install_packages \
     postgresql \
-    postgresql-contrib
+    postgresql-contrib \
+    redis-server \
+    rabbitmq-server
 
 systemctl enable --now postgresql
+systemctl enable --now redis-server
+systemctl enable --now rabbitmq-server
+
+log "Configuring Redis for network access"
+sed -i "s/^bind .*/bind 0.0.0.0/" /etc/redis/redis.conf
+sed -i "s/^protected-mode yes/protected-mode no/" /etc/redis/redis.conf
+systemctl restart redis-server
+
+
+log "Configuring RabbitMQ user"
+if ! rabbitmqctl list_users | grep -q weather_user; then
+    rabbitmqctl add_user weather_user weather_password || true
+    rabbitmqctl set_user_tags weather_user administrator || true
+    rabbitmqctl set_permissions -p / weather_user ".*" ".*" ".*" || true
+fi
 
 log "Creating the PostgreSQL role and database"
+
 
 sudo -u postgres psql <<'SQL'
 DO

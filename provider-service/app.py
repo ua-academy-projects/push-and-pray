@@ -1,6 +1,10 @@
+import json
 import os
+import threading
+import time
 from datetime import datetime, timezone
 
+import pika
 import requests
 from flask import Flask, jsonify, request
 
@@ -11,10 +15,18 @@ EXTERNAL_WEATHER_URL = os.getenv(
     "https://api.open-meteo.com/v1/forecast",
 )
 
+RABBITMQ_URL = os.getenv(
+    "RABBITMQ_URL",
+    "amqp://weather_user:weather_password@127.0.0.1:5672/",
+)
+
 REQUEST_TIMEOUT = 10
 DEFAULT_TIMEZONE = "Europe/Kyiv"
 FORECAST_HOURS = 24
 MAX_HISTORY_HOURS = 168
+DEFAULT_LATITUDE = 48.6348
+DEFAULT_LONGITUDE = 24.5694
+QUEUE_NAME = "weather_data_queue"
 
 
 def is_debug_enabled():
@@ -23,6 +35,112 @@ def is_debug_enabled():
         "true",
         "yes",
     }
+
+
+def publish_to_rabbitmq(msg_type, payload):
+    """Publish a weather data message to RabbitMQ queue."""
+    try:
+        parameters = pika.URLParameters(RABBITMQ_URL)
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.queue_declare(queue=QUEUE_NAME, durable=True)
+
+        message = {
+            "type": msg_type,
+            "data": payload,
+            "published_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        channel.basic_publish(
+            exchange="",
+            routing_key=QUEUE_NAME,
+            body=json.dumps(message),
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # make message persistent
+            ),
+        )
+        connection.close()
+        app.logger.info("Published %s message to RabbitMQ queue %s", msg_type, QUEUE_NAME)
+    except Exception as error:
+        app.logger.warning("Could not publish %s to RabbitMQ: %s", msg_type, error)
+
+
+def _fetch_and_publish_all():
+    """Fetch current, forecast, and history from Open-Meteo and publish to RabbitMQ."""
+    # Current weather
+    try:
+        resp = requests.get(
+            EXTERNAL_WEATHER_URL,
+            params={
+                "latitude": DEFAULT_LATITUDE,
+                "longitude": DEFAULT_LONGITUDE,
+                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+                "timezone": DEFAULT_TIMEZONE,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.ok:
+            data = normalize_weather(resp.json(), DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_TIMEZONE)
+            publish_to_rabbitmq("current", data)
+    except Exception as err:
+        app.logger.warning("Auto-fetch current weather error: %s", err)
+
+    # Forecast
+    try:
+        resp = requests.get(
+            EXTERNAL_WEATHER_URL,
+            params={
+                "latitude": DEFAULT_LATITUDE,
+                "longitude": DEFAULT_LONGITUDE,
+                "hourly": "temperature_2m",
+                "forecast_hours": FORECAST_HOURS,
+                "timeformat": "unixtime",
+                "timezone": DEFAULT_TIMEZONE,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.ok:
+            data = normalize_forecast(resp.json(), DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_TIMEZONE)
+            publish_to_rabbitmq("forecast", data)
+    except Exception as err:
+        app.logger.warning("Auto-fetch forecast error: %s", err)
+
+    # History
+    try:
+        resp = requests.get(
+            EXTERNAL_WEATHER_URL,
+            params={
+                "latitude": DEFAULT_LATITUDE,
+                "longitude": DEFAULT_LONGITUDE,
+                "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+                "past_hours": MAX_HISTORY_HOURS,
+                "forecast_days": 0,
+                "timeformat": "unixtime",
+                "timezone": DEFAULT_TIMEZONE,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.ok:
+            data = normalize_history(resp.json(), DEFAULT_LATITUDE, DEFAULT_LONGITUDE, DEFAULT_TIMEZONE, MAX_HISTORY_HOURS)
+            publish_to_rabbitmq("history", data)
+    except Exception as err:
+        app.logger.warning("Auto-fetch history error: %s", err)
+
+
+def start_periodic_publisher():
+    def loop():
+        # Wait initial 5s for RabbitMQ broker to start up
+        time.sleep(5)
+        while True:
+            try:
+                _fetch_and_publish_all()
+            except Exception as e:
+                app.logger.error("Error in periodic publisher loop: %s", e)
+            time.sleep(60)  # Publish updates every 60s
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+
 
 
 def get_coordinate(name, minimum, maximum):
@@ -656,6 +774,8 @@ def hourly_history():
 
 
 if __name__ == "__main__":
+    start_periodic_publisher()
+
     app.run(
         host=os.getenv(
             "APP_HOST",
@@ -669,3 +789,4 @@ if __name__ == "__main__":
         ),
         debug=is_debug_enabled(),
     )
+

@@ -7,29 +7,40 @@
 ## 🏛 Архітектура
 
 ```text
-Browser -> UI Service -> Backend Service -> Provider Service -> Open-Meteo API
-                              |
-                              +-> PostgreSQL (weather_history)
+Browser <=======> UI Service <=======> Backend Service <=======> PostgreSQL (weather_history)
+                     ||                       ^
+                     \/                       || (Consumes)
+               Redis (Sessions)          RabbitMQ (Queue: weather_data_queue)
+                                             ^
+                                             || (Publishes)
+                                     Provider Service <=======> Open-Meteo API
 ```
 
 - **`ui-service`** (порт `5000` внутрішній, `8080` зовнішній):
   - Віддає HTML/CSS/JS інтерфейс.
-  - Проксіює всі запити `/api/*` виключно до `backend-service`.
+  - Управляє сесіями користувачів через Redis (`/api/session`).
+  - Проксіює всі погодні запити `/api/*` виключно до `backend-service`.
+
+- **`Redis`** (порт `6379`):
+  - Зберігає сесійний стан UI (вибраний період історії 24h/7d, пагінація, налаштування).
+  - Забезпечує відновлення стану UI після перезавантаження сторінки у браузері.
+
+- **`RabbitMQ`** (порт `5672`, Web UI `15672`):
+  - Брокер асинхронних повідомлень між `provider-service` та `backend-service`.
+  - Черга `weather_data_queue` транслює поточну погоду, прогнози та історію.
 
 - **`backend-service`** (порт `5001`):
+  - Асинхронно споживає (consume) погодні повідомлення з RabbitMQ та зберігає їх у PostgreSQL.
   - Володіє всією бізнес-логікою та доступом до БД PostgreSQL.
-  - Автоматичний щогодинний планувальник (APScheduler): кожні 60 хвилин запускає едину синхронізацію:
-    1. Оновлює 24-годинний прогноз.
-    2. Автоматично виявляє та заповнює пропущені години історії (Backfill) після відключень/downtime.
   - Надає API: `/api/weather`, `/api/forecast`, `/api/history?hours=24|168`.
 
 - **`provider-service`** (порт `5002`):
-  - Спілкується виключно з `backend-service` та зовнішнім Open-Meteo API.
-  - Не має доступу до бази даних і не запускає власні таймери.
-  - Маршрути: `/weather/current`, `/weather/forecast`, `/weather/history`.
+  - Спілкується з зовнішнім Open-Meteo API та публікує (publish) оновлення погодних даних у RabbitMQ.
+  - Не має прямого доступу до бази даних PostgreSQL.
 
 - **`PostgreSQL`** (порт `5432`):
   - Зберігає всі погодинні точки в єдиній таблиці `weather_hourly_points` із унікальним первинним ключем `(location_key, weather_at)`.
+
 
 ---
 
