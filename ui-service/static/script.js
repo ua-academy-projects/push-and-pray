@@ -1088,8 +1088,21 @@ async function loadForecast(showLoading = false) {
 
 // ── History chart ─────────────────────────────────────────────────────────
 
+let visibleTableRowsCount = 10;
+let lastHistoryData = null;
+
 function renderHistoryTable(data) {
     if (!historyResult) {
+        return;
+    }
+
+    if (data) {
+        lastHistoryData = data;
+    } else {
+        data = lastHistoryData;
+    }
+
+    if (!data) {
         return;
     }
 
@@ -1144,7 +1157,11 @@ function renderHistoryTable(data) {
 
     historyResult.classList.remove("empty-state");
 
-    const rows = points
+    const visiblePoints = points.slice(0, visibleTableRowsCount);
+    const hasMore = visibleTableRowsCount < points.length;
+    const remainingCount = points.length - visibleTableRowsCount;
+
+    const rows = visiblePoints
         .map((point) => `
             <div class="history-row" role="row">
                 <div
@@ -1220,6 +1237,20 @@ function renderHistoryTable(data) {
         `)
         .join("");
 
+    const loadMoreButtonHtml = hasMore
+        ? `
+        <div class="table-actions">
+            <button
+                id="load-more-btn"
+                type="button"
+                class="load-more-btn"
+            >
+                Показати ще 10 вимірювань (залишилось ${remainingCount})
+            </button>
+        </div>
+        `
+        : "";
+
     historyResult.innerHTML = `
         <div
             class="history-table"
@@ -1241,7 +1272,18 @@ function renderHistoryTable(data) {
                 ${rows}
             </div>
         </div>
+        ${loadMoreButtonHtml}
     `;
+
+    if (hasMore) {
+        const loadMoreBtn = document.getElementById("load-more-btn");
+        if (loadMoreBtn) {
+            loadMoreBtn.addEventListener("click", () => {
+                visibleTableRowsCount += 10;
+                renderHistoryTable();
+            });
+        }
+    }
 }
 
 

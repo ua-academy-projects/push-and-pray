@@ -500,6 +500,42 @@ button:disabled {
     content: "";
 }
 
+/* ── Load More button ─────────────────────────────────────── */
+
+.table-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+}
+
+.load-more-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 10px 24px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--accent-dark);
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+    transition:
+        background-color 140ms ease,
+        border-color 140ms ease,
+        transform 100ms ease;
+}
+
+.load-more-btn:hover {
+    background: var(--surface-soft);
+    border-color: var(--accent);
+}
+
+.load-more-btn:active {
+    transform: scale(0.98);
+}
+
 @media (max-width: 760px) {
     body {
         padding: 30px 16px 48px;
