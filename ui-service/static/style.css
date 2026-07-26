@@ -706,3 +706,62 @@ button:disabled {
     }
 
 }
+
+/* ── Interactive Chart Tooltip & Hover ───────────────────── */
+
+.chart-container {
+    position: relative;
+}
+
+.chart-hover-line {
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.chart-hover-dot {
+    fill: var(--surface);
+    stroke: var(--accent-dark);
+    stroke-width: 3;
+    r: 6;
+    pointer-events: none;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+}
+
+.chart-tooltip {
+    position: absolute;
+    z-index: 10;
+    padding: 8px 14px;
+    border-radius: 10px;
+    background: rgba(20, 35, 33, 0.92);
+    backdrop-filter: blur(8px);
+    color: #ffffff;
+    font-size: 13px;
+    line-height: 1.4;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(-12px);
+    transition: opacity 120ms ease, transform 120ms ease;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+    white-space: nowrap;
+}
+
+.chart-tooltip.visible {
+    opacity: 1;
+}
+
+.chart-tooltip .tooltip-time {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 11px;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+
+.chart-tooltip .tooltip-temp {
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+}
+

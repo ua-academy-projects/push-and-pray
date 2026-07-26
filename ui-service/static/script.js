@@ -891,6 +891,122 @@ function renderChart(
 
     svgElement.appendChild(xTitle);
     svgElement.appendChild(yTitle);
+
+    // ── Interactive Hover & Floating Tooltip ───────────────────
+
+    // Create or locate floating tooltip element inside containerEl
+    let tooltipEl = containerEl.querySelector(".chart-tooltip");
+    if (!tooltipEl) {
+        tooltipEl = document.createElement("div");
+        tooltipEl.className = "chart-tooltip";
+        containerEl.appendChild(tooltipEl);
+    }
+
+    // Hover vertical line
+    const hoverGuideLine = createSvgElement("line", {
+        x1: "0",
+        y1: padding.top,
+        x2: "0",
+        y2: height - padding.bottom,
+        class: "chart-hover-line",
+    });
+    hoverGuideLine.style.display = "none";
+    svgElement.appendChild(hoverGuideLine);
+
+    // Hover dot highlight
+    const hoverDot = createSvgElement("circle", {
+        cx: "0",
+        cy: "0",
+        r: "6",
+        class: "chart-hover-dot",
+    });
+    hoverDot.style.display = "none";
+    svgElement.appendChild(hoverDot);
+
+    function handlePointerMove(evt) {
+        const svgRect = svgElement.getBoundingClientRect();
+        const containerRect = containerEl.getBoundingClientRect();
+
+        if (svgRect.width === 0 || containerRect.width === 0) {
+            return;
+        }
+
+        const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+        const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+
+        // Check bounds
+        if (
+            clientX < svgRect.left ||
+            clientX > svgRect.right ||
+            clientY < svgRect.top ||
+            clientY > svgRect.bottom
+        ) {
+            hideTooltip();
+            return;
+        }
+
+        const mouseXInSvg = ((clientX - svgRect.left) / svgRect.width) * width;
+
+        // Find closest data point to mouse X
+        let closestIndex = 0;
+        let minDistance = Infinity;
+
+        points.forEach((point, idx) => {
+            const px = xPosition(point, idx);
+            const dist = Math.abs(px - mouseXInSvg);
+            if (dist < minDistance) {
+                minDistance = dist;
+                closestIndex = idx;
+            }
+        });
+
+        const activePoint = points[closestIndex];
+        const activeX = xPosition(activePoint, closestIndex);
+        const activeY = yPosition(activePoint.temperature);
+
+        // Position vertical hover line & active dot
+        hoverGuideLine.setAttribute("x1", activeX);
+        hoverGuideLine.setAttribute("x2", activeX);
+        hoverGuideLine.style.display = "block";
+
+        hoverDot.setAttribute("cx", activeX);
+        hoverDot.setAttribute("cy", activeY);
+        hoverDot.style.display = "block";
+
+        // Position floating HTML tooltip relative to container
+        const containerX = (activeX / width) * containerRect.width;
+        const containerY = (activeY / height) * containerRect.height;
+
+        tooltipEl.innerHTML = `
+            <div class="tooltip-time">${formatDate(activePoint.time)}</div>
+            <div class="tooltip-temp">${activePoint.temperature.toFixed(1)} ${temperatureUnit}</div>
+        `;
+
+        tooltipEl.style.left = `${containerX}px`;
+        tooltipEl.style.top = `${containerY}px`;
+
+        // Smart edge alignment
+        if (containerX < 70) {
+            tooltipEl.style.transform = "translate(0, -100%) translateY(-12px)";
+        } else if (containerX > containerRect.width - 70) {
+            tooltipEl.style.transform = "translate(-100%, -100%) translateY(-12px)";
+        } else {
+            tooltipEl.style.transform = "translate(-50%, -100%) translateY(-12px)";
+        }
+
+        tooltipEl.classList.add("visible");
+    }
+
+    function hideTooltip() {
+        hoverGuideLine.style.display = "none";
+        hoverDot.style.display = "none";
+        tooltipEl.classList.remove("visible");
+    }
+
+    svgElement.addEventListener("mousemove", handlePointerMove);
+    svgElement.addEventListener("mouseleave", hideTooltip);
+    svgElement.addEventListener("touchmove", handlePointerMove, { passive: true });
+    svgElement.addEventListener("touchend", hideTooltip);
 }
 
 
