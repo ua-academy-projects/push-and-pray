@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styles from "./App.module.css";
 import { AveragesSection } from "./components/AveragesSection";
 import { CurrentWeatherCard } from "./components/CurrentWeatherCard";
@@ -10,12 +10,31 @@ import { HourlyTimeline } from "./components/HourlyTimeline";
 import { StatusStrip } from "./components/StatusStrip";
 import { WeatherBackground } from "./components/WeatherBackground";
 import { WeatherMetrics } from "./components/WeatherMetrics";
+import { useSessionState } from "./hooks/useSessionState";
 import { useWeather } from "./hooks/useWeather";
 import { getWeatherInfo } from "./utils/weatherCode";
 
 export default function App() {
   const { data, status, reload } = useWeather();
+  const session = useSessionState();
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Restore the History overlay's open/closed state once, the first time the session finishes
+  // loading -- mirrors useSessionSyncedRange's hydrate-once pattern for the date-range hooks.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (session.status === "ready") setHistoryOpen(session.state?.history_open ?? false);
+  }, [session.status]);
+
+  function openHistory() {
+    setHistoryOpen(true);
+    session.patch({ history_open: true });
+  }
+
+  function closeHistory() {
+    setHistoryOpen(false);
+    session.patch({ history_open: false });
+  }
 
   // Default background before any data has loaded, or while day/night is unknown.
   const theme = data?.current ? getWeatherInfo(data.current.weather_code, data.current.is_day).theme : "clear-night";
@@ -84,9 +103,9 @@ export default function App() {
 
         <HourlyTimeline hourly={data.hourly} />
         <ForecastSection />
-        <AveragesSection />
+        <AveragesSection session={session} />
 
-        <button type="button" className={styles.historyTrigger} onClick={() => setHistoryOpen(true)}>
+        <button type="button" className={styles.historyTrigger} onClick={openHistory}>
           Open history ↗
         </button>
 
@@ -98,7 +117,7 @@ export default function App() {
         />
       </div>
 
-      <HistoryOverlay open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <HistoryOverlay open={historyOpen} onClose={closeHistory} session={session} />
     </div>
   );
 }

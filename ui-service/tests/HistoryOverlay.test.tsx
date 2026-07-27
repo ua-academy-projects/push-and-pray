@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HistoryOverlay } from "../src/components/HistoryOverlay";
-import { buildDailyRecordsResponse } from "./fixtures";
+import { buildDailyRecordsResponse, buildSessionStateStub } from "./fixtures";
+
+const session = buildSessionStateStub();
 
 function jsonResponse(body: unknown) {
   return { ok: true, status: 200, json: async () => body };
@@ -21,7 +23,7 @@ describe("HistoryOverlay", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<HistoryOverlay open={false} onClose={() => {}} />);
+    render(<HistoryOverlay open={false} onClose={() => {}} session={session} />);
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -30,7 +32,7 @@ describe("HistoryOverlay", () => {
   it("fetches and renders a plain list (no chart) of recorded days when open", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(buildDailyRecordsResponse())));
 
-    const { container } = render(<HistoryOverlay open={true} onClose={() => {}} />);
+    const { container } = render(<HistoryOverlay open={true} onClose={() => {}} session={session} />);
 
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByRole("list")).toBeInTheDocument();
@@ -41,7 +43,7 @@ describe("HistoryOverlay", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(buildDailyRecordsResponse())));
     const onClose = vi.fn();
 
-    render(<HistoryOverlay open={true} onClose={onClose} />);
+    render(<HistoryOverlay open={true} onClose={onClose} session={session} />);
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
 
     screen.getByRole("button", { name: /close history/i }).click();
@@ -52,7 +54,7 @@ describe("HistoryOverlay", () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(buildDailyRecordsResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<HistoryOverlay open={true} onClose={() => {}} />);
+    render(<HistoryOverlay open={true} onClose={() => {}} session={session} />);
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
 
     // Defaults to the "Last 30 days" preset per useDateRange("30"), shown as pressed.
@@ -67,7 +69,7 @@ describe("HistoryOverlay", () => {
   it("shows a friendly error state, not a raw exception, when the request fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 
-    render(<HistoryOverlay open={true} onClose={() => {}} />);
+    render(<HistoryOverlay open={true} onClose={() => {}} session={session} />);
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.queryByText(/ECONNREFUSED/)).not.toBeInTheDocument();

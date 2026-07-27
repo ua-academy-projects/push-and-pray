@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import health, internal_weather, public_weather, sync_trigger
+from app.api import health, internal_weather, public_weather, session, sync_trigger
 from app.config import get_settings
 from app.exceptions import PersistenceError
 
@@ -29,6 +29,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(public_weather.router)
+app.include_router(session.router)
 app.include_router(sync_trigger.router)
 app.include_router(internal_weather.router)
 

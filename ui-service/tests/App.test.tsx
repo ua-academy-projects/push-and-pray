@@ -7,6 +7,7 @@ import {
   buildEmptyWeatherResponse,
   buildForecastResponse,
   buildPeriodStatistics,
+  buildSessionResponse,
   buildSyncLogEntries,
   buildSyncStatusResponse,
   buildSyncTriggerResult,
@@ -24,6 +25,10 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
  * get a sensible fixture, mirroring how the real Backend answers different paths. */
 function installFetchRouter(overrides: Partial<Record<string, unknown>> = {}) {
   const routes: Route[] = [
+    // Checked before the generic "/api/session" route below, since that substring also
+    // matches this more specific path.
+    { match: (url) => url.includes("/api/session/state"), body: overrides.sessionPatch ?? buildSessionResponse() },
+    { match: (url) => url.includes("/api/session"), body: overrides.session ?? buildSessionResponse() },
     { match: (url) => url.includes("/api/sync/trigger"), body: overrides.syncTrigger ?? buildSyncTriggerResult() },
     { match: (url) => url.includes("/api/weather/forecast"), body: overrides.forecast ?? buildForecastResponse() },
     { match: (url) => url.includes("/api/weather/statistics/all"), body: overrides.statisticsAll ?? buildPeriodStatistics() },

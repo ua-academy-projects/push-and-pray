@@ -1,15 +1,23 @@
 import { useCharts } from "../hooks/useCharts";
 import { useDateRange } from "../hooks/useDateRange";
+import { useSessionSyncedRange } from "../hooks/useSessionSyncedRange";
+import type { UseSessionStateResult } from "../hooks/useSessionState";
 import { useStatistics } from "../hooks/useStatistics";
 import { AveragesCharts } from "./AveragesCharts";
 import { DateRangeSelector } from "./DateRangeSelector";
 import { StatCards } from "./StatCards";
 import styles from "./AveragesSection.module.css";
 
+interface AveragesSectionProps {
+  session: UseSessionStateResult;
+}
+
 /** Owns its own date-range state (independent of the History overlay's), and loads statistics
- * + chart data for that range. The only always-visible section with charts. */
-export function AveragesSection() {
+ * + chart data for that range. The only always-visible section with charts. The selected range
+ * is restored from `session` on load and persisted back to it on every change. */
+export function AveragesSection({ session }: AveragesSectionProps) {
   const range = useDateRange("30");
+  useSessionSyncedRange(session, "averages_range", range);
   const statistics = useStatistics(range.from, range.to);
   const charts = useCharts(range.from, range.to);
 

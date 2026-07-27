@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useDateRange } from "../hooks/useDateRange";
 import { useHistory } from "../hooks/useHistory";
+import { useSessionSyncedRange } from "../hooks/useSessionSyncedRange";
+import type { UseSessionStateResult } from "../hooks/useSessionState";
 import { dayLabel, kyivTodayString } from "../utils/dateFormat";
 import { getWeatherInfo } from "../utils/weatherCode";
 import { DateRangeSelector } from "./DateRangeSelector";
@@ -9,13 +11,17 @@ import styles from "./HistoryOverlay.module.css";
 interface HistoryOverlayProps {
   open: boolean;
   onClose: () => void;
+  session: UseSessionStateResult;
 }
 
 /** A plain list (no chart) of recorded daily data, in its own overlay with its own independent
  * date-range control -- History is deliberately not one of the always-visible sections. Only
- * fetches while `open`, so opening the page never pulls this data unnecessarily. */
-export function HistoryOverlay({ open, onClose }: HistoryOverlayProps) {
+ * fetches while `open`, so opening the page never pulls this data unnecessarily. The selected
+ * range is restored from `session` on load (even while closed, so it's ready by the time the
+ * user opens it) and persisted back to it on every change. */
+export function HistoryOverlay({ open, onClose, session }: HistoryOverlayProps) {
   const range = useDateRange("30");
+  useSessionSyncedRange(session, "history_range", range);
   const history = useHistory(range.from, range.to, open);
 
   useEffect(() => {

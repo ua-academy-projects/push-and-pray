@@ -1,5 +1,6 @@
 import type { ChartData } from "../types/chart";
 import type { ForecastResponse } from "../types/forecast";
+import type { SessionResponse, UIStatePatch } from "../types/session";
 import type { DailyRecord, DailyRecordsResponse, DailyStatistics, PeriodStatistics } from "../types/statistics";
 import type { SyncLogEntry, SyncStatusResponse, SyncTriggerResult } from "../types/sync";
 import type { WeatherResponse } from "../types/weather";
@@ -80,4 +81,33 @@ export async function postSyncTrigger(): Promise<SyncTriggerResult> {
     throw new Error(`Request to /api/sync/trigger failed with status ${response.status}`);
   }
   return (await response.json()) as SyncTriggerResult;
+}
+
+/** Ensures a session exists for this browser and returns its stored UI preferences (selected
+ * graph period, filters, toggles) -- never weather/business data. The Backend mints a new
+ * session id on the first call (no sessionId yet) and returns it in the body; the UI holds
+ * that id in localStorage, not a cookie, so this works across the Vagrant LAN deployment's
+ * separate origins without SameSite/HTTPS requirements. See docs/architecture.md. */
+export async function getSession(sessionId?: string): Promise<SessionResponse> {
+  const response = await fetch(`${BASE_URL}/api/session`, {
+    headers: sessionId ? { "X-Session-Id": sessionId } : undefined,
+  });
+  if (!response.ok) {
+    throw new Error(`Request to /api/session failed with status ${response.status}`);
+  }
+  return (await response.json()) as SessionResponse;
+}
+
+/** Persists a partial UI-state change for this browser's session. Only ever called with a
+ * session id already minted by getSession(). */
+export async function putSessionState(sessionId: string, patch: UIStatePatch): Promise<SessionResponse> {
+  const response = await fetch(`${BASE_URL}/api/session/state`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Session-Id": sessionId },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    throw new Error(`Request to /api/session/state failed with status ${response.status}`);
+  }
+  return (await response.json()) as SessionResponse;
 }

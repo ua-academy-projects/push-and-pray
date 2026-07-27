@@ -13,9 +13,10 @@ SkyIvano is a modern weather dashboard for a single fixed location — Ivano-Fra
 Three independently runnable application services plus PostgreSQL:
 
 - **UI Service** — React/TypeScript dashboard. Reads only.
-- **Backend Service** — FastAPI. Owns PostgreSQL directly: persists normalized data it receives from the Fetcher, serves the public API to the UI, exposes the internal Fetcher-facing contract. Never calls Open-Meteo.
-- **Weather Fetcher Service** — FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, pushes it to the Backend over HTTP. Never touches PostgreSQL.
+- **Backend Service** — FastAPI. Owns PostgreSQL directly: persists normalized data it receives from the Fetcher, serves the public API to the UI, exposes the internal Fetcher-facing contract. Also owns Redis, for ephemeral UI session state only (§16) — never calls Open-Meteo.
+- **Weather Fetcher Service** — FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, pushes it to the Backend over HTTP. Never touches PostgreSQL, never touches Redis.
 - **PostgreSQL** — relational storage, owned exclusively by the Backend Service.
+- **Redis** — ephemeral UI session state (selected graph period, filters, toggles), owned exclusively by the Backend Service. Never business/weather data, never authentication. Co-located on the `postgres` VM in the Vagrant deployment (§14, §16).
 
 ```mermaid
 flowchart TD
@@ -23,8 +24,10 @@ flowchart TD
     Fetcher --> OpenMeteo[Open-Meteo API]
     Fetcher -->|PUT /internal/weather/sync| Backend[Backend Service]
     Backend --> PostgreSQL[(PostgreSQL)]
+    Backend -->|GET/SET session:*, sliding TTL| Redis[(Redis)]
 
     User[Browser] --> UI[UI Service]
+    UI -->|GET /api/session, PUT /api/session/state| Backend
     UI -->|POST /api/sync/trigger| Backend
     Backend -->|POST /internal/fetch| Fetcher
 ```
@@ -161,6 +164,8 @@ This is the **only** way a user action can cause an Open-Meteo call — and even
 | `POST /api/sync/trigger` | The one deliberate exception to "Backend never calls Fetcher" — proxies to the Fetcher's `POST /internal/fetch` and relays the result. Never returns Open-Meteo's raw response or a stack trace. |
 | `GET /api/sync/history?limit=20` | Recent synchronization attempts, newest first (thin read over `weather_syncs`) — backs the UI's sync-history log. |
 | `GET /api/health` | Service status, direct database connectivity (`database_connected`). Returns HTTP 503 with `status: "degraded"` if PostgreSQL is unreachable. No side effects. |
+| `GET /api/session` | Ensures a Redis-backed session exists for this browser and returns its stored UI state, creating one with default state on the first call. See §16. |
+| `PUT /api/session/state` | Merges a partial UI-state change into the caller's session and refreshes its TTL. Requires a session id already minted by `GET /api/session`. See §16. |
 
 **Stage 3 endpoint change:** `GET /api/weather/history?days=` (Stage 1) is gone, replaced by `GET /api/weather/daily?from=&to=` — same "recorded daily rows, newest first" purpose, but `from`/`to` instead of a `days` count so "all available data" is directly expressible, and the response now carries the computed `average_*` fields. Nothing outside this repo's own tests depended on the old endpoint (the UI hasn't been rebuilt yet), so it was a clean rename rather than an addition alongside the old one.
 
@@ -245,7 +250,7 @@ is_stale = (now - last_synchronized_at) > WEATHER_DATA_MAX_AGE_MINUTES
 
 ## 11. Environment variables
 
-**backend-service**: `DATABASE_URL` *(required, no default)*, `DATABASE_ECHO`, `DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, `FETCHER_SERVICE_BASE_URL` *(used exclusively by `POST /api/sync/trigger`)*, `HTTP_TIMEOUT_SECONDS`, `WEATHER_DATA_MAX_AGE_MINUTES`, `BACKEND_PORT`, `BACKEND_CORS_ORIGINS`. No Open-Meteo URL, no scheduler settings, no location coordinates — the Backend persists whatever location the Fetcher reports and has no reason to know it independently.
+**backend-service**: `DATABASE_URL` *(required, no default)*, `DATABASE_ECHO`, `DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, `FETCHER_SERVICE_BASE_URL` *(used exclusively by `POST /api/sync/trigger`)*, `HTTP_TIMEOUT_SECONDS`, `WEATHER_DATA_MAX_AGE_MINUTES`, `REDIS_URL`, `REDIS_SESSION_TTL_SECONDS` *(session storage only, see §16)*, `BACKEND_PORT`, `BACKEND_CORS_ORIGINS`. No Open-Meteo URL, no scheduler settings, no location coordinates — the Backend persists whatever location the Fetcher reports and has no reason to know it independently.
 
 **fetcher-service**: `OPEN_METEO_BASE_URL`, `BACKEND_INTERNAL_BASE_URL`, `WEATHER_LOCATION_NAME`, `WEATHER_COUNTRY`, `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `WEATHER_PAST_DAYS` (default 10), `WEATHER_FORECAST_DAYS` (default 10), `WEATHER_SYNC_ENABLED`, `WEATHER_SYNC_ON_STARTUP`, `WEATHER_SYNC_INTERVAL_MINUTES`, `WEATHER_SYNC_STARTUP_FRESHNESS_MINUTES`, `HTTP_TIMEOUT_SECONDS`, `FETCHER_PORT`. No `DATABASE_URL` — this service never touches PostgreSQL.
 
@@ -315,3 +320,26 @@ The UI is a single scrolling page — no tabs, no page navigation — that reads
 **Deliberately one persistent theme, not a system light/dark toggle.** The original UI prompt asked for a derived dark-glass variant. This was a considered deviation: `WeatherBackground` already carries its own weather/day-night-driven theming (11 gradient variants) — layering a second, independent light/dark axis on top of that would fight it rather than complement it (a system "dark mode" has no coherent meaning over an already-dark stormy-night gradient). `global.css` documents this reasoning inline above its `:root` token block.
 
 **No horizontal page scroll.** Every horizontally-scrolling strip (Today's hour list, Forecast's day list) owns its own `overflow-x: auto`; `.app-content > *` sets `min-width: 0` so a flex item's default content-based minimum width can never stretch its ancestors past the viewport, and `overflow-x: hidden` on `html`/`body` is a hard backstop.
+
+## 16. UI session state (Redis)
+
+Redis stores exactly one thing: per-browser UI preferences (selected graph period, filters, toggles) so a refresh restores the previous view instead of resetting to defaults. It is **not** authentication, **not** a user system, and **never** holds weather/business data — that stays in PostgreSQL, owned by the Backend as described above. Redis follows the same ownership rule Postgres already does: it sits entirely behind the Backend Service, and the UI never gets a Redis client or URL, only the two endpoints below.
+
+**Session identity: a header, not a cookie.** The Backend mints an opaque UUID and returns it in the JSON body (`session_id`) rather than a `Set-Cookie`. The UI stores that id in `localStorage` and sends it back as a plain `X-Session-Id` header on the two session endpoints. This was a deliberate deviation from a more conventional cookie-based session: the Vagrant deployment serves the UI and Backend from two different bare LAN IPs over plain HTTP, with no shared domain and no TLS. A cookie would be cross-site there, requiring `SameSite=None; Secure` — which requires HTTPS this project doesn't have. A cookie would work in local dev (`localhost:5173` ↔ `localhost:8000`, same-site) but silently fail to persist on the actual LAN deployment. A header carried explicitly by the UI has no such restriction and behaves identically in both environments.
+
+**Storage shape.** One Redis key per session, `session:{uuid}`, holding one JSON blob (`app/schemas/session.py`'s `UIState`): `averages_range` and `history_range` (each `{preset, range_from, range_to}`, mirroring the UI's `useDateRange` hook — Averages and History each have their own, independent per docs above), and `history_open`. TTL defaults to 30 days (`REDIS_SESSION_TTL_SECONDS`) and slides forward on every read or write (`app/services/session_service.py`). An unknown or expired session id is indistinguishable from a first visit — `GET /api/session` just mints a fresh one rather than erroring.
+
+**Backend code layout**, mirroring the existing Postgres pattern (`app/database/session.py` → `app/cache/redis_client.py`):
+
+| File | Role |
+|---|---|
+| `app/cache/redis_client.py` | Redis client factory (`get_redis` FastAPI dependency) |
+| `app/schemas/session.py` | `DateRangeState`, `UIState`, `UIStatePatch`, `SessionResponse` |
+| `app/services/session_service.py` | `load_or_create`, `patch_state` — the only code that touches the `session:*` keys |
+| `app/api/session.py` | `GET /api/session`, `PUT /api/session/state` |
+
+**UI code layout**: `useSessionState` (`src/hooks/useSessionState.ts`) is called once, at the top of `App.tsx`, and passed down as a `session` prop to `AveragesSection` and `HistoryOverlay` — calling it more than once would race to mint two different session ids on a first visit, since the browser has no id to send until the first response comes back. It loads the session on mount, exposes `patch()` for optimistic local updates plus a debounced, coalesced `PUT` (multiple rapid changes within the debounce window are merged into one request, not one each). `useSessionSyncedRange` (`src/hooks/useSessionSyncedRange.ts`) wraps one `useDateRange` instance: it hydrates from the persisted value exactly once, the first time the session finishes loading, then pushes every later change back. `App.tsx` does the equivalent inline for the single `history_open` boolean.
+
+**Failure is non-fatal.** A session load/save failure degrades to "no persistence this visit" (`useSessionState`'s `status` becomes `"error"`, hooks simply skip hydration) rather than blocking the dashboard — the same posture the rest of the UI already takes toward its secondary concerns (e.g. a Forecast outage doesn't blank the Hero, §15).
+
+**Infra placement.** Redis runs on the `postgres` VM (`vagrant/postgres/provision.sh`) rather than a dedicated VM — it's this project's one "data/infra" node, as opposed to an application node (`backend`/`fetcher`/`ui`), so Redis shares it the same way it would share a data tier in a smaller deployment. Unauthenticated, like the rest of this project's internal-only services in v1 (§11/§12) — reachable only from inside the bridged LAN, and holding nothing more sensitive than a graph's date-range preset.

@@ -1,4 +1,11 @@
 import "@testing-library/jest-dom/vitest";
+import { beforeEach } from "vitest";
+
+// useSessionState persists its session id in localStorage -- clear it before every test so one
+// test's session id can never leak into the next.
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 // Recharts' ResponsiveContainer measures its wrapper via ResizeObserver and
 // offsetWidth/offsetHeight, neither of which jsdom implements -- without this, every chart

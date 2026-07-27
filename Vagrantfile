@@ -8,7 +8,7 @@ NODES = {
   postgres: {
     ip:        "192.168.0.220",
     ssh_port:  50110,
-    memory:    "512M",
+    memory:    "768M", # bumped from 512M -- this VM now also runs Redis (UI session storage)
     smp:       "1",
     provision: "vagrant/postgres/provision.sh",
   },

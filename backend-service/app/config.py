@@ -23,6 +23,11 @@ class Settings(BaseSettings):
 
     weather_data_max_age_minutes: int = 90
 
+    # --- Redis (UI session state, Sky Ivano's Redis integration) ---
+    # Session storage only -- never business/weather data. See docs/architecture.md.
+    redis_url: str = "redis://localhost:6379/0"
+    redis_session_ttl_seconds: int = 60 * 60 * 24 * 30  # 30 days, refreshed on every read/write
+
     backend_port: int = 8000
     backend_cors_origins: str = "http://localhost:5173"
 

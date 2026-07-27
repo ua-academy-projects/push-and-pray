@@ -6,6 +6,8 @@ Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no k
 
 The project was originally built as three services (UI, Backend, History) and has since been refactored into four (UI, Backend, a Weather Fetcher, PostgreSQL); the History Service no longer exists. See [docs/prompts/refactor-0-discovery-and-plan.md](docs/prompts/refactor-0-discovery-and-plan.md) for the full staged plan.
 
+Redis was added after that refactor, purely for ephemeral **UI session state** (selected graph period, filters, toggles) — never business/weather data, and never authentication. See [docs/architecture.md](docs/architecture.md) §16.
+
 
 ## Architecture at a glance
 
@@ -31,21 +33,24 @@ The UI never calls Open-Meteo or the Fetcher directly, and never triggers a *sch
 - **Backend**: Python 3.12, FastAPI, Pydantic, httpx, SQLAlchemy 2, Alembic, PostgreSQL, pytest
 - **Fetcher**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, pytest
 - **Database**: PostgreSQL (no SQLite anywhere — including tests), owned exclusively by the Backend
+- **Session storage**: Redis, owned exclusively by the Backend — UI preferences only, never business data
 
 ## Local setup overview
 
-Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), and a local PostgreSQL instance.
+Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), a local PostgreSQL instance, and a local Redis instance.
 
-PostgreSQL itself can be a native install or run in a plain Docker container purely as a local dev-database convenience — this does **not** make the project "use Docker": the three application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §14 for actual future containerization plans). The commands below use the container approach; swap in `createdb` if you have a native Postgres.
+PostgreSQL and Redis can each be a native install or run in a plain Docker container purely as a local dev convenience — this does **not** make the project "use Docker": the three application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §14 for actual future containerization plans). The commands below use the container approach; swap in `createdb`/a native Redis install if you prefer.
 
 ```bash
 docker run -d --name skyivano-postgres \
   -e POSTGRES_USER=skyivano -e POSTGRES_PASSWORD=skyivano -e POSTGRES_DB=skyivano \
   -p 5432:5432 -v skyivano-pgdata:/var/lib/postgresql/data postgres:16
 docker exec skyivano-postgres createdb -U skyivano skyivano_test
+
+docker run -d --name skyivano-redis -p 6379:6379 redis:7-alpine
 ```
 
-1. Databases created above (`skyivano` for dev, `skyivano_test` for tests).
+1. Databases created above (`skyivano` for dev, `skyivano_test` for tests) and Redis running.
 2. Copy each service's `.env.example` to `.env` and adjust if needed.
 3. Set up and run each service (see commands below).
 
@@ -87,7 +92,7 @@ An alternative to the native setup  above: [`Vagrantfile`](Vagrantfile) brings u
 
 | VM | LAN IP | Port |
 |---|---|---|
-| postgres | 192.168.0.220 | 5432 |
+| postgres | 192.168.0.220 | 5432 (Postgres), 6379 (Redis) |
 | backend | 192.168.0.221 | 8000 |
 | fetcher | 192.168.0.222 | 8002 |
 | ui | 192.168.0.223 | 5173 |
@@ -110,7 +115,7 @@ cd fetcher-service && pytest
 cd ui-service && npm test
 ```
 
-Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them (the whole suite, not just persistence tests, refuses to run otherwise). Fetcher Service tests mock Open-Meteo and the Backend's HTTP client — no live network calls, no database.
+Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them (the whole suite, not just persistence tests, refuses to run otherwise). They also need a real Redis reachable at `REDIS_URL` (session tests use logical DB 15, flushed after every test, so they never touch DB 0's dev data). Fetcher Service tests mock Open-Meteo and the Backend's HTTP client — no live network calls, no database.
 
 ## Documentation
 

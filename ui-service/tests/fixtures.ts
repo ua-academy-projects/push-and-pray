@@ -1,5 +1,7 @@
+import type { UseSessionStateResult } from "../src/hooks/useSessionState";
 import type { ChartData } from "../src/types/chart";
 import type { ForecastResponse } from "../src/types/forecast";
+import type { SessionResponse } from "../src/types/session";
 import type { DailyRecordsResponse, PeriodStatistics } from "../src/types/statistics";
 import type { SyncLogEntry, SyncStatusResponse, SyncTriggerResult } from "../src/types/sync";
 import type { WeatherResponse } from "../src/types/weather";
@@ -237,6 +239,30 @@ export function buildSyncTriggerResult(overrides: Partial<SyncTriggerResult> = {
     daily_records: 1,
     forecast_records: 10,
     hourly_records: 24,
+    ...overrides,
+  };
+}
+
+export function buildSessionResponse(overrides: Partial<SessionResponse> = {}): SessionResponse {
+  return {
+    session_id: "test-session-id",
+    state: {
+      averages_range: { preset: "30", range_from: null, range_to: null },
+      history_range: { preset: "30", range_from: null, range_to: null },
+      history_open: false,
+    },
+    ...overrides,
+  };
+}
+
+/** Stub for components that take `session` as a prop but aren't the ones under test for
+ * session behavior itself -- defaults to "loading" so useSessionSyncedRange never hydrates or
+ * pushes patches, keeping these tests focused on their own component. */
+export function buildSessionStateStub(overrides: Partial<UseSessionStateResult> = {}): UseSessionStateResult {
+  return {
+    state: null,
+    status: "loading",
+    patch: () => {},
     ...overrides,
   };
 }

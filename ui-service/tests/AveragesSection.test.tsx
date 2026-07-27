@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AveragesSection } from "../src/components/AveragesSection";
-import { buildChartData, buildPeriodStatistics } from "./fixtures";
+import { buildChartData, buildPeriodStatistics, buildSessionStateStub } from "./fixtures";
+
+const session = buildSessionStateStub();
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body };
@@ -32,7 +34,7 @@ afterEach(() => {
 describe("AveragesSection", () => {
   it("loads period statistics and renders StatCards from real data", async () => {
     installFetchRouter();
-    render(<AveragesSection />);
+    render(<AveragesSection session={session} />);
 
     await waitFor(() => expect(screen.getByText("Avg temperature")).toBeInTheDocument());
     expect(screen.getByText(/19\.4/)).toBeInTheDocument(); // average_temperature from the fixture
@@ -40,7 +42,7 @@ describe("AveragesSection", () => {
 
   it("renders all five chart panels, each backed by an <svg>", async () => {
     installFetchRouter();
-    render(<AveragesSection />);
+    render(<AveragesSection session={session} />);
 
     await waitFor(() => expect(screen.getByText(/Temperature \(avg/)).toBeInTheDocument());
 
@@ -60,7 +62,7 @@ describe("AveragesSection", () => {
 
   it("re-fetches statistics and charts with new bounds when the date range preset changes", async () => {
     const { calledUrls } = installFetchRouter();
-    render(<AveragesSection />);
+    render(<AveragesSection session={session} />);
 
     await waitFor(() => expect(screen.getByText("Avg temperature")).toBeInTheDocument());
     const callsBefore = calledUrls.length;
@@ -74,7 +76,7 @@ describe("AveragesSection", () => {
 
   it("shows a friendly error, not a blank section, when statistics fail to load", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({}, false, 500)));
-    render(<AveragesSection />);
+    render(<AveragesSection session={session} />);
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.getByText(/couldn't load averages/i)).toBeInTheDocument();
@@ -91,7 +93,7 @@ describe("AveragesSection", () => {
       }),
     );
 
-    render(<AveragesSection />);
+    render(<AveragesSection session={session} />);
 
     await waitFor(() => expect(screen.getByText(/no recorded data for this range/i)).toBeInTheDocument());
   });

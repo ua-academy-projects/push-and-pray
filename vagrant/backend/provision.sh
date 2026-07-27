@@ -3,16 +3,17 @@
 # pointed at the postgres VM, migrations, and a systemd unit to run it.
 #
 # Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile),
-# each with its own fixed IP - this guest reaches postgres directly at its
-# bridged IP, no NAT/slirp gateway needed. There is no forwarded-port
-# fallback to localhost for any service, so BACKEND_CORS_ORIGINS is set to
-# the ui-service VM's own LAN IP - every browser that loads the UI, on this
-# Mac or any other device, does so from that address, and that's what its
-# Origin header will carry.
+# each with its own fixed IP - this guest reaches postgres (and Redis, on the
+# same VM) directly at its bridged IP, no NAT/slirp gateway needed. There is
+# no forwarded-port fallback to localhost for any service, so
+# BACKEND_CORS_ORIGINS is set to the ui-service VM's own LAN IP - every
+# browser that loads the UI, on this Mac or any other device, does so from
+# that address, and that's what its Origin header will carry.
 set -euo pipefail
 
 APP_DIR="/app"
 POSTGRES_IP="192.168.0.220"
+REDIS_IP="192.168.0.220" # same VM as postgres -- see vagrant/postgres/provision.sh
 FETCHER_IP="192.168.0.222"
 UI_IP="192.168.0.223"
 DB_USER="skyivano"
@@ -39,6 +40,17 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+echo ">>> Waiting for redis (${REDIS_IP}:6379) to accept connections"
+apt-get install -y redis-tools
+for i in $(seq 1 30); do
+  if redis-cli -h "${REDIS_IP}" ping 2>/dev/null | grep -q PONG; then
+    echo "    redis is up"
+    break
+  fi
+  echo "    attempt ${i}/30: not ready yet, retrying in 2s"
+  sleep 2
+done
+
 echo ">>> Setting up backend-service"
 cd "${APP_DIR}"
 python3.12 -m venv .venv
@@ -47,6 +59,7 @@ python3.12 -m venv .venv
 [ -f .env ] || cp .env.example .env
 sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+psycopg://${DB_USER}:${DB_PASS}@${POSTGRES_IP}:5432/${DB_NAME}#" .env
 sed -i "s#^FETCHER_SERVICE_BASE_URL=.*#FETCHER_SERVICE_BASE_URL=http://${FETCHER_IP}:8002#" .env
+sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://${REDIS_IP}:6379/0#" .env
 sed -i "s#^BACKEND_CORS_ORIGINS=.*#BACKEND_CORS_ORIGINS=http://${UI_IP}:5173#" .env
 ./.venv/bin/alembic upgrade head
 
