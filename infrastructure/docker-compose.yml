@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: academy-postgres
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - academy-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: academy-redis
+    network_mode: host
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--protected-mode", "no"]
+    volumes:
+      - academy-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: academy-rabbitmq
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    volumes:
+      - academy-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  academy-postgres-data:
+    name: academy-postgres-data
+  academy-redis-data:
+    name: academy-redis-data
+  academy-rabbitmq-data:
+    name: academy-rabbitmq-data

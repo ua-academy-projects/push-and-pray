@@ -2,17 +2,11 @@
 set -euo pipefail
 
 apt-get update -y
-apt-get install -y docker.io
+apt-get install -y docker.io docker-compose-v2
 systemctl enable --now docker
 systemctl disable --now poller.service 2>/dev/null || true
 
-docker build --network host --tag academy-poller:latest /vagrant/app
+cd /vagrant/app
+docker compose down --remove-orphans 2>/dev/null || true
 docker rm --force academy-poller 2>/dev/null || true
-docker run --detach \
-  --name academy-poller \
-  --restart unless-stopped \
-  --network host \
-  --env PROXY_SERVICE_URL="${PROXY_SERVICE_URL}" \
-  --env WATCHED_CITIES=Kyiv,Warsaw,Berlin \
-  --env POLL_INTERVAL_SECONDS=900 \
-  academy-poller:latest
+docker compose up --detach --build --remove-orphans

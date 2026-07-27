@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: .
+      network: host
+    container_name: academy-backend
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      PORT: 5002
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s

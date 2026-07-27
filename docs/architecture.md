@@ -15,7 +15,8 @@
 ## Розміщення у Vagrant
 
 Vagrant відповідає за VM і bridged network. Кожен сервіс запускається в
-Docker-контейнері всередині відповідної VM:
+Docker-контейнері всередині відповідної VM. Provisioning-скрипт встановлює
+`docker.io` та Compose plugin, а потім виконує `docker compose up -d`:
 
 | VM | Контейнер | Порти на VM |
 |---|---|---|

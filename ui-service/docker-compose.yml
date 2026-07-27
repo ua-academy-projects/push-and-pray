@@ -1,0 +1,19 @@
+services:
+  ui:
+    build:
+      context: .
+      network: host
+    container_name: academy-ui
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      BACKEND_SERVICE_URL: ${BACKEND_SERVICE_URL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: 6379
+      PORT: 5000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s

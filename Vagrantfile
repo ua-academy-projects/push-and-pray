@@ -28,8 +28,9 @@ IPS = {
 VMS = {
 
   "db" => {
-    hostname:  "db",
-    provision: "./provision/db.sh",
+    hostname:      "db",
+    synced_folder: "infrastructure",
+    provision:     "./provision/db.sh",
     env: {
       "DB_NAME"     => DB_NAME,
       "DB_USER"     => DB_USER,

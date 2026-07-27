@@ -38,8 +38,9 @@ Poller за замовчуванням опитує Kyiv, Warsaw і Berlin ра�
 ## Vagrant
 
 Vagrant створює окремі VM, але всі application та infrastructure services
-працюють усередині Docker-контейнерів. Конфігурація IP-адрес і змінних
-середовища знаходиться у
+працюють усередині Docker-контейнерів. Provisioning-скрипти встановлюють
+Docker і Docker Compose, після чого запускають локальний для кожної VM
+`docker-compose.yml`. Конфігурація IP-адрес і змінних середовища знаходиться у
 [`Vagrantfile`](Vagrantfile).
 
 | VM | Docker-контейнери |
@@ -49,6 +50,9 @@ Vagrant створює окремі VM, але всі application та infrastru
 | `proxy` | `academy-proxy` |
 | `poller` | `academy-poller` |
 | `ui` | `academy-ui` |
+
+Compose-файли знаходяться в `infrastructure/`, `backend/`, `proxy/`,
+`poller-service/` та `ui-service/`.
 
 ```bash
 vagrant up

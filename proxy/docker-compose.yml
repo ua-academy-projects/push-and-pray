@@ -1,0 +1,17 @@
+services:
+  proxy:
+    build:
+      context: .
+      network: host
+    container_name: academy-proxy
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      PORT: 5001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
