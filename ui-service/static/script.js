@@ -1620,9 +1620,10 @@ historyToggle24.addEventListener(
         }
 
         currentHistoryHours = 24;
+        visibleTableRowsCount = 10;
         activateToggle(historyToggle24);
         loadHistoryChart(24, true);
-        await saveSessionState({ history_hours: 24 });
+        await saveSessionState({ history_hours: 24, visible_table_rows: 10 });
     }
 );
 
@@ -1635,9 +1636,10 @@ historyToggle168.addEventListener(
         }
 
         currentHistoryHours = 168;
+        visibleTableRowsCount = 10;
         activateToggle(historyToggle168);
         loadHistoryChart(168, true);
-        await saveSessionState({ history_hours: 168 });
+        await saveSessionState({ history_hours: 168, visible_table_rows: 10 });
     }
 );
 
