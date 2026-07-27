@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 
 readonly PRIVATE_ADDRESS="192.168.100.13"
 readonly HISTORY_ADDRESS="192.168.100.11"
@@ -7,7 +7,6 @@ readonly DATABASE_NAME="aegis_history"
 readonly DATABASE_USER="aegis_history"
 readonly PASSWORD_FILE="/tmp/aegis-mariadb-password"
 readonly MARIADB_CONFIG="/etc/mysql/mariadb.conf.d/60-aegis.cnf"
-readonly DUMP_FILE="/vagrant/init_data.sql"
 
 fail() {
   echo "Aegis MariaDB provisioning failed: $*" >&2
@@ -54,27 +53,19 @@ sql_password="${sql_password//\'/\'\'}"
 mariadb --protocol=socket <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DATABASE_NAME}\`
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DATABASE_USER}'@'${HISTORY_ADDRESS}'
-  IDENTIFIED BY '${sql_password}';
+CREATE USER IF NOT EXISTS '${DATABASE_USER}'@'${HISTORY_ADDRESS}';
 ALTER USER '${DATABASE_USER}'@'${HISTORY_ADDRESS}'
   IDENTIFIED BY '${sql_password}';
-GRANT ALL PRIVILEGES ON \`${DATABASE_NAME}\`.*
+REVOKE ALL PRIVILEGES, GRANT OPTION
+  FROM '${DATABASE_USER}'@'${HISTORY_ADDRESS}';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES
+  ON \`${DATABASE_NAME}\`.*
   TO '${DATABASE_USER}'@'${HISTORY_ADDRESS}';
 DELETE FROM mysql.global_priv WHERE User = '';
 DELETE FROM mysql.global_priv
 WHERE User = 'root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
 FLUSH PRIVILEGES;
 SQL
-
-# --- Інтеграція імпорту тестових даних ---
-if [[ -f "${DUMP_FILE}" ]]; then
-  echo "Found ${DUMP_FILE}, starting data import into ${DATABASE_NAME}..."
-  mariadb --protocol=socket "${DATABASE_NAME}" < "${DUMP_FILE}" || fail "Failed to import test data from ${DUMP_FILE}"
-  echo "Test data imported successfully."
-else
-  echo "No test data found at ${DUMP_FILE}, skipping import."
-fi
-# -----------------------------------------
 
 mariadb --protocol=socket --batch --skip-column-names <<SQL | grep -Fxq "${DATABASE_NAME}" || \
   fail "database verification failed"
@@ -90,6 +81,28 @@ SELECT CONCAT(User, '@', Host)
 FROM mysql.user
 WHERE User = '${DATABASE_USER}' AND Host = '${HISTORY_ADDRESS}';
 SQL
+
+expected_grants=(
+  ALTER
+  CREATE
+  DELETE
+  DROP
+  INDEX
+  INSERT
+  REFERENCES
+  SELECT
+  UPDATE
+)
+for privilege in "${expected_grants[@]}"; do
+  mariadb --protocol=socket --batch --skip-column-names <<SQL | \
+    grep -Fxq "${privilege}" || fail "missing ${privilege} grant for History"
+SELECT PRIVILEGE_TYPE
+FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES
+WHERE GRANTEE = CONCAT(QUOTE('${DATABASE_USER}'), '@', QUOTE('${HISTORY_ADDRESS}'))
+  AND TABLE_SCHEMA = '${DATABASE_NAME}'
+  AND PRIVILEGE_TYPE = '${privilege}';
+SQL
+done
 
 echo "MariaDB is healthy on ${PRIVATE_ADDRESS}:3306"
 echo "Verified ${DATABASE_NAME} and ${DATABASE_USER}@${HISTORY_ADDRESS}"

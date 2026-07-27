@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 
 <head>
   <meta charset="utf-8">
@@ -9,13 +9,14 @@
   <link rel="stylesheet" href="/static/blacklist.css">
 </head>
 
-<body>
+  <body>
   <header class="site-header">
     <a class="wordmark" href="/">Aegis</a>
-    <nav class="site-nav" aria-label="Primary">
-      <a href="/">Overview</a>
-      <a href="/blacklist" aria-current="page">Blacklist</a>
-    </nav>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/">Overview</a>
+        <a href="/blacklist" aria-current="page">Blacklist</a>
+        {% include "_theme_toggle.html" %}
+      </nav>
   </header>
   <main>
     <h1>Latest blacklist snapshot</h1>
@@ -317,8 +318,7 @@
         </div>
         <nav class="range-controls" aria-label="Turnover chart range">
           {% for days in (7, 30, 90) %}
-          <a href="/blacklist?range_days={{ days }}" {% if range_days==days %}aria-current="page" {% endif %}>{{ days }}
-            days</a>
+          <a href="/blacklist?range_days={{ days }}"{% if range_days == days %} aria-current="page"{% endif %}>{{ days }} days</a>
           {% endfor %}
         </nav>
       </div>
@@ -433,7 +433,7 @@
       var indicator = document.getElementById("blacklist-state-indicator");
       var snapshotId = Number(indicator.dataset.latestSnapshotId) || null;
       window.BlacklistPolling.start({
-        currentSnapshotId: snapshotId,
+        currentSnapshotId: {{ status.latest_snapshot_id if status.latest_snapshot_id is not none else "null" }},
         statusUrl: "/blacklist/status",
         indicator: indicator
       });

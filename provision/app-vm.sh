@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 
 readonly SERVICE_NAME="${1:-}"
 readonly PACKAGE_NAME="${2:-}"
 readonly PYTHON_BIN="python3.14"
 readonly APP_ROOT="/opt/aegis"
+readonly BASE_MARKER="/var/lib/aegis/.base-provisioned"
 readonly SERVICE_DIR="${APP_ROOT}/${SERVICE_NAME}"
 readonly SOURCE_DIR="/vagrant/services/${SERVICE_NAME}"
 readonly VENV_DIR="${SERVICE_DIR}/.venv"
@@ -24,59 +25,36 @@ esac
 
 [[ -f "${SOURCE_DIR}/pyproject.toml" ]] || fail "missing ${SOURCE_DIR}/pyproject.toml"
 [[ -d "${SOURCE_DIR}/src/${PACKAGE_NAME}" ]] || fail "missing service package source"
-
-export DEBIAN_FRONTEND=noninteractive
-
-apt-get update
-
-# Ubuntu 24.04 does not always provide the repository-required Python 3.14 in
-# its base package sources. Add the Python package archive only when needed.
-if ! apt-cache show python3.14 >/dev/null 2>&1; then
-  apt-get install --yes --no-install-recommends \
-    ca-certificates \
-    software-properties-common
-  add-apt-repository --yes ppa:deadsnakes/ppa
-  apt-get update
-fi
-
-apt-get install --yes --no-install-recommends \
-  ca-certificates \
-  curl \
-  python3-pip \
-  python3.14 \
-  python3.14-venv
-
-if ! id aegis >/dev/null 2>&1; then
-  useradd \
-    --system \
-    --home-dir "${APP_ROOT}" \
-    --shell /usr/sbin/nologin \
-    --user-group \
-    aegis
-fi
+[[ -f "${BASE_MARKER}" ]] || \
+  fail "base dependencies are missing; run provision/base-vm.sh first"
+command -v "${PYTHON_BIN}" >/dev/null || fail "${PYTHON_BIN} is unavailable"
+command -v rsync >/dev/null || fail "rsync is unavailable"
 
 install -d -o aegis -g aegis -m 0750 "${APP_ROOT}" "${SERVICE_DIR}"
 
-# Replace only the deployed service inputs so repeated provisioning cannot
-# leave removed source files behind.
-rm -rf "${SERVICE_DIR}/src"
+echo "==> Aegis application: synchronizing ${SERVICE_NAME}"
+install -d -o aegis -g aegis -m 0750 "${SERVICE_DIR}/src"
+rsync --archive --delete --chown=aegis:aegis \
+  "${SOURCE_DIR}/src/" "${SERVICE_DIR}/src/"
 install -o aegis -g aegis -m 0644 \
   "${SOURCE_DIR}/pyproject.toml" \
   "${SERVICE_DIR}/pyproject.toml"
-cp -a "${SOURCE_DIR}/src" "${SERVICE_DIR}/src"
-chown -R aegis:aegis "${SERVICE_DIR}/src"
 
 if [[ "${SERVICE_NAME}" == "history-service" ]]; then
-  rm -rf "${SERVICE_DIR}/alembic"
+  install -d -o aegis -g aegis -m 0750 "${SERVICE_DIR}/alembic"
   install -o aegis -g aegis -m 0644 \
     "${SOURCE_DIR}/alembic.ini" \
     "${SERVICE_DIR}/alembic.ini"
-  cp -a "${SOURCE_DIR}/alembic" "${SERVICE_DIR}/alembic"
-  chown -R aegis:aegis "${SERVICE_DIR}/alembic"
+  rsync --archive --delete --chown=aegis:aegis \
+    "${SOURCE_DIR}/alembic/" "${SERVICE_DIR}/alembic/"
 fi
 
 if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
+  echo "==> Aegis application: creating ${SERVICE_NAME} virtual environment"
   runuser -u aegis -- "${PYTHON_BIN}" -m venv "${VENV_DIR}"
+elif ! "${VENV_DIR}/bin/python" -c \
+  'import sys; raise SystemExit(sys.version_info[:2] != (3, 14))'; then
+  fail "${VENV_DIR} does not use Python 3.14; remove that service venv and reprovision"
 fi
 
 run_as_aegis() {
@@ -87,6 +65,7 @@ run_as_aegis() {
     "$@"
 }
 
+echo "==> Aegis application: installing ${SERVICE_NAME}"
 run_as_aegis "${VENV_DIR}/bin/python" -m pip install --upgrade pip || \
   fail "pip bootstrap failed for ${SERVICE_NAME}"
 run_as_aegis "${VENV_DIR}/bin/python" -m pip install --editable "${SERVICE_DIR}" || \
@@ -94,5 +73,21 @@ run_as_aegis "${VENV_DIR}/bin/python" -m pip install --editable "${SERVICE_DIR}"
 
 run_as_aegis "${VENV_DIR}/bin/python" -c "import ${PACKAGE_NAME}" || \
   fail "package import verification failed for ${PACKAGE_NAME}"
+
+[[ -x "${VENV_DIR}/bin/uvicorn" ]] || \
+  fail "uvicorn entry point is missing for ${SERVICE_NAME}"
+
+case "${SERVICE_NAME}" in
+  history-service)
+    [[ -x "${VENV_DIR}/bin/aegis-history-blacklist-consumer" ]] || \
+      fail "History blacklist consumer entry point is missing"
+    ;;
+  provider-service)
+    [[ -x "${VENV_DIR}/bin/aegis-provider-blacklist-worker" ]] || \
+      fail "Provider blacklist worker entry point is missing"
+    ;;
+  ui-service)
+    ;;
+esac
 
 echo "Verified ${PACKAGE_NAME} with ${VENV_DIR}/bin/python"

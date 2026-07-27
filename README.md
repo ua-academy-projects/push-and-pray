@@ -1,473 +1,345 @@
 # Aegis
 
-A small multi-service IP reputation application.
-
-Aegis checks public IPv4 and IPv6 addresses through AbuseIPDB and periodically
-synchronizes a limited AbuseIPDB blacklist into MariaDB.
-
-The web interface displays the latest locally persisted blacklist snapshot and
-updates automatically when a newer snapshot becomes available.
+Aegis is an educational multi-service IP reputation application. It validates
+public IPv4 and IPv6 addresses, checks them through AbuseIPDB, persists successful
+manual lookups, periodically retrieves blacklist snapshots, and presents the
+persisted data through a server-rendered web interface.
 
 ## Architecture
 
+Aegis has three independently configured application services:
+
+- **UI Service** renders pages, calls History for application data, and stores
+  anonymous browser theme preferences in Redis.
+- **History Service** provides the application API, orchestrates manual lookups,
+  exclusively owns MariaDB persistence, and consumes blacklist messages from
+  RabbitMQ.
+- **Provider Service** adapts the AbuseIPDB API. Its standalone worker polls for
+  blacklist snapshots, writes them to a local SQLite outbox, and publishes them
+  to RabbitMQ.
+
+The supporting infrastructure is:
+
+- **MariaDB**, the authoritative business-data store, accessed only by History;
+- **RabbitMQ**, used by Provider and History for asynchronous blacklist snapshot
+  delivery;
+- **Redis**, used by UI only for expiring theme state;
+- **SQLite**, used locally by the Provider worker as its durable delivery outbox.
+
+Provider never accesses MariaDB. UI talks only to History for application data;
+it does not call Provider or AbuseIPDB. RabbitMQ is not used for synchronous
+browser requests or manual lookup responses.
+
+### Data flows
+
+Manual lookup remains synchronous:
+
 ```text
 Browser
-  │
-  ▼
-UI Service ──HTTP──> History Service ──HTTP──> Provider Service
-                         │                    │
-                         ▼                    └──HTTPS──> AbuseIPDB
-                      MariaDB
+  → UI
+  → History
+  → Provider
+  → AbuseIPDB
+  → History
+  → UI
 ```
 
-Scheduled blacklist flow:
+Blacklist synchronization is asynchronous:
 
-Provider Service worker
-  -> AbuseIPDB Blacklist API
-  -> durable SQLite outbox
-  -> History Service
-  -> MariaDB
+```text
+Provider Worker
+  → AbuseIPDB
+  → SQLite Outbox
+  → RabbitMQ
+  → History Consumer
+  → MariaDB
+```
 
-Service responsibilities:
+Theme persistence is UI-local:
 
-- **UI Service** — renders the interface and communicates only with History Service.
+```text
+Browser session cookie
+  → UI Service
+  → Redis
+```
 
-- **History Service** — acts as the application backend, exclusively owns MariaDB, and stores complete blacklist snapshots.
-
-- **Provider Service** — adapts AbuseIPDB and owns periodic blacklist polling and durable delivery to History.
-
-More details: [`docs/architecture.md`](docs/architecture.md)
-
-## Stack
-
-- Python 3
-- FastAPI
-- Jinja2
-- HTTPX
-- Pydantic
-- SQLAlchemy 2.x
-- Alembic
-- MariaDB
-- pytest
-- Ruff
+See [Architecture](docs/architecture.md), [API contracts](docs/api-contracts.md),
+[Vagrant development](docs/development-vagrant.md), and
+[architecture decisions](docs/adr/) for detailed design information.
 
 ## Repository layout
 
 ```text
 services/
 ├── ui-service/
-├── provider-service/
-└── history-service/
+├── history-service/
+└── provider-service/
 
-docs/
-├── architecture.md
-├── api-contracts.md
-└── adr/
+provision/             Vagrant provisioning scripts
+scripts/               Repository verification helpers
+docs/                  Architecture and contract documentation
 ```
+
+Each service owns its dependencies, configuration, boundary models, and tests.
+There is no shared application package.
+
+## Runtime processes
+
+After installing the workspace, the five application processes can be started
+from the repository root in separate terminals:
+
+```bash
+# UI API
+.venv/bin/uvicorn ui_service.main:app \
+  --app-dir services/ui-service/src --host 127.0.0.1 --port 8000
+
+# History API
+.venv/bin/uvicorn history_service.main:app \
+  --app-dir services/history-service/src --host 127.0.0.1 --port 8002
+
+# History blacklist consumer
+.venv/bin/aegis-history-blacklist-consumer
+
+# Provider API
+.venv/bin/uvicorn provider_service.main:app \
+  --app-dir services/provider-service/src --host 127.0.0.1 --port 8001
+
+# Provider blacklist worker
+.venv/bin/aegis-provider-blacklist-worker
+```
+
+The API ports above match the current service-local environment examples.
+Exactly one Provider blacklist worker should run. Set
+`BLACKLIST_POLLING_ENABLED=true` only where periodic polling is intended.
 
 ## Configuration
 
-Each service loads its own `.env` file using a path anchored to that service, so
-commands behave the same from any working directory. Create the local files from
-the repository root:
+Each service loads its own `.env` file. Copy the tracked examples for local
+development:
 
 ```bash
 cp services/ui-service/.env.example services/ui-service/.env
-cp services/provider-service/.env.example services/provider-service/.env
 cp services/history-service/.env.example services/history-service/.env
+cp services/provider-service/.env.example services/provider-service/.env
 ```
 
-Replace the placeholders for required secrets. They must never be committed:
+Configuration references:
 
-- `ABUSEIPDB_API_KEY`
-- `MARIADB_PASSWORD`
-- `HISTORY_INGESTION_TOKEN` (the same value in Provider and History)
+- [UI environment example](services/ui-service/.env.example): History and Redis;
+- [History environment example](services/history-service/.env.example): MariaDB,
+  Provider, and RabbitMQ consumer settings;
+- [Provider environment example](services/provider-service/.env.example):
+  AbuseIPDB, polling, SQLite outbox, and RabbitMQ publisher settings.
+
+Replace placeholders locally and never commit real credentials. Provider owns
+the AbuseIPDB and RabbitMQ publisher credentials, History owns MariaDB and
+RabbitMQ consumer credentials, and UI owns Redis connection settings.
 
 ## Local development
 
-Install `uv` 0.11 (the supported tool range is enforced by the root project),
-then create the repository environment from the committed lockfile:
+Install the supported `uv` version and synchronize the locked workspace:
 
 ```bash
 uv sync --locked --all-packages --all-extras
 ```
 
-This installs all three independently declared service projects into `.venv`.
-Use `uv lock` after an intentional dependency change, review `uv.lock`, and
-commit the updated manifest and lockfile together. Normal setup and CI should
-use `--locked` so stale dependency metadata fails instead of being resolved
-implicitly.
+This creates one repository development environment containing the three
+independently declared service projects. MariaDB, RabbitMQ, and Redis must be
+available and the three service `.env` files must point to them before running
+the complete application locally. Ordinary unit tests mock external
+infrastructure and AbuseIPDB.
 
-Run a service from the repository root, for example:
+Database schema changes belong to History and are applied with Alembic:
 
 ```bash
-.venv/bin/uvicorn ui_service.main:app \
-  --app-dir services/ui-service/src \
-  --host 127.0.0.1 \
-  --port 8000
+.venv/bin/alembic -c services/history-service/alembic.ini upgrade head
 ```
 
-The standalone Provider blacklist worker is the sole periodic polling owner,
-independent of API worker count. Its default interval is 21600 seconds. Rate-limit
-metadata may move the next attempt later, while temporary failures use bounded
-5, 15, 30, and 60 minute retries. A known provider reset time is never bypassed.
+More service-specific setup is documented in the
+[UI](services/ui-service/README.md),
+[History](services/history-service/README.md), and
+[Provider](services/provider-service/README.md) READMEs.
 
-Verification commands:
+## Vagrant quick start
+
+The Vagrantfile uses VirtualBox with `bento/ubuntu-24.04` and defines five VMs
+on the host-only `192.168.100.0/24` network:
+
+| VM | Address | Currently provisioned |
+| --- | --- | --- |
+| `ui-vm` | `192.168.100.10` | UI API |
+| `history-vm` | `192.168.100.11` | History API, consumer, and Alembic migrations |
+| `provider-vm` | `192.168.100.12` | Provider API and Provider worker |
+| `db-vm` | `192.168.100.13` | MariaDB |
+| `infra-vm` | `192.168.100.14` | Native RabbitMQ, management plugin, and Redis |
+
+Create the host-local secret files expected by the Vagrantfile, then run:
+
+```bash
+umask 077
+mkdir -p ~/.config/aegis
+printf '%s\n' 'replace-with-a-local-database-password' \
+  > ~/.config/aegis/mariadb-password
+# Store the real development AbuseIPDB key in abuseipdb-api-key the same way.
+printf '%s\n' 'replace-with-a-provider-broker-password' \
+  > ~/.config/aegis/rabbitmq-provider-password
+printf '%s\n' 'replace-with-a-history-broker-password' \
+  > ~/.config/aegis/rabbitmq-history-password
+printf '%s\n' 'replace-with-an-admin-broker-password' \
+  > ~/.config/aegis/rabbitmq-admin-password
+
+vagrant up
+vagrant status
+scripts/smoke-test-vagrant.sh
+```
+
+The default secret locations are:
+
+```text
+~/.config/aegis/abuseipdb-api-key
+~/.config/aegis/mariadb-password
+~/.config/aegis/rabbitmq-provider-password
+~/.config/aegis/rabbitmq-history-password
+~/.config/aegis/rabbitmq-admin-password
+```
+
+They can be overridden with `AEGIS_PROVIDER_SECRET_FILE` and
+`AEGIS_DATABASE_SECRET_FILE`, or the corresponding
+`AEGIS_RABBITMQ_*_SECRET_FILE` variables. Keep these files outside the
+repository.
+
+MariaDB listens only on `db-vm`'s private address. Its schema owner accepts
+connections only from `history-vm`. History provisioning waits for an
+authenticated database connection, runs `alembic upgrade head`, and verifies
+the current migration head before starting History API. Reprovisioning does not
+automatically import `init_data.sql` or seed blacklist snapshots.
+
+RabbitMQ runs as a native systemd service, not a container. Applications use
+the `/aegis` virtual host with separate `aegis_provider` and `aegis_history`
+accounts; they never use `guest`. History declares queues, retry queues, and
+the DLQ. Broker state persists in RabbitMQ's native `/var/lib/rabbitmq`
+directory on `infra-vm`. The management UI is host-loopback only at
+`http://127.0.0.1:15672`; AMQP remains private at `192.168.100.14:5672`.
+
+Useful broker diagnostics are:
+
+```bash
+vagrant ssh infra-vm -c 'sudo rabbitmq-diagnostics -q ping'
+vagrant ssh infra-vm -c 'sudo rabbitmqctl list_queues -p /aegis name consumers messages'
+vagrant ssh infra-vm -c 'sudo rabbitmqctl list_bindings -p /aegis'
+vagrant ssh history-vm -c 'sudo systemctl status aegis-history-blacklist-consumer'
+```
+
+Redis also runs as a native service on `infra-vm`. It binds to loopback and
+`192.168.100.14`; UFW permits port 6379 only from `ui-vm`, and no host port is
+forwarded. Development Redis has no password because this endpoint is isolated
+to that private application path. Production deployments should use a
+restricted ACL user and runtime-supplied credentials.
+
+Theme state is non-authoritative and expiring. Development Redis uses periodic
+RDB snapshots, no AOF, a 128 MB memory limit, and `allkeys-lru` eviction.
+Administrative and bulk-destructive commands are disabled on the endpoint.
+
+```bash
+vagrant ssh infra-vm -c 'redis-cli -h 127.0.0.1 ping'
+scripts/verify-redis-theme-vagrant.sh
+```
+
+The complete smoke test is offline by default: it checks every process,
+dependency, health endpoint, migration, queue consumer, UI theme persistence,
+outbox path, console entry point, and a focused test selection without calling
+AbuseIPDB:
+
+```bash
+scripts/smoke-test-vagrant.sh
+```
+
+Live blacklist delivery is explicitly opt-in and performs at most one
+AbuseIPDB blacklist request. It stops the periodic worker to retain sole polling
+ownership, records the generated delivery ID through the SQLite outbox and
+confirmed RabbitMQ publication, then verifies MariaDB commit and the consumer
+ACK before restoring the worker. It reports available remaining-quota metadata
+and never purges the DLQ:
+
+```bash
+scripts/smoke-test-vagrant.sh --live-abuseipdb
+```
+
+The compatibility command `scripts/verify-vagrant.sh` accepts the same options.
+
+The five application processes run as separate systemd units:
+
+```text
+aegis-ui.service
+aegis-history-api.service
+aegis-history-blacklist-consumer.service
+aegis-provider-api.service
+aegis-provider-blacklist-worker.service
+```
+
+Use the same unit name with `status`, `restart`, or `stop`, and inspect logs
+through the journal:
+
+```bash
+vagrant ssh history-vm -c \
+  'sudo systemctl status aegis-history-api.service'
+vagrant ssh history-vm -c \
+  'sudo journalctl -u aegis-history-blacklist-consumer.service -f'
+vagrant ssh provider-vm -c \
+  'sudo systemctl restart aegis-provider-blacklist-worker.service'
+vagrant ssh ui-vm -c 'sudo systemctl stop aegis-ui.service'
+```
+
+For foreground diagnostics, stop the corresponding unit first and run its
+installed executable as `aegis` with the protected environment file:
+
+```bash
+# UI API (ui-vm)
+sudo -u aegis bash -c 'set -a; source /etc/aegis/ui.env; cd /opt/aegis/ui-service; exec .venv/bin/uvicorn ui_service.main:app --app-dir src --host 192.168.100.10 --port 8000'
+
+# History API or consumer (history-vm)
+sudo -u aegis bash -c 'set -a; source /etc/aegis/history.env; cd /opt/aegis/history-service; exec .venv/bin/uvicorn history_service.main:app --app-dir src --host 192.168.100.11 --port 8002'
+sudo -u aegis bash -c 'set -a; source /etc/aegis/history.env; cd /opt/aegis/history-service; exec .venv/bin/aegis-history-blacklist-consumer'
+
+# Provider API or worker (provider-vm)
+sudo -u aegis bash -c 'set -a; source /etc/aegis/provider.env; cd /opt/aegis/provider-service; exec .venv/bin/uvicorn provider_service.main:app --app-dir src --host 192.168.100.12 --port 8001'
+sudo -u aegis bash -c 'set -a; source /etc/aegis/provider.env; cd /opt/aegis/provider-service; exec .venv/bin/aegis-provider-blacklist-worker'
+```
+
+## Testing
+
+Run the standard repository checks:
 
 ```bash
 make check
+scripts/typecheck.sh
 ```
 
-Database schema changes must be applied through Alembic migrations. All
-migration commands in the History Service README run from the repository root.
-
-## Vagrant topology
-
-The base Vagrant environment creates four Ubuntu virtual machines with static
-addresses on the configured bridged network. The application VMs receive isolated Python environments, Provider
-Service is deployed on `provider-vm`, and the database VM receives MariaDB
-only. History and UI are not started yet.
-
-| Virtual machine | Address | Intended role |
-| --- | --- | --- |
-| `ui-vm` | `192.168.100.10` | User-facing UI Service |
-| `history-vm` | `192.168.100.11` | Internal History Service |
-| `provider-vm` | `192.168.100.12` | Internal Provider Service |
-| `db-vm` | `192.168.100.13` | Internal MariaDB host |
-
-Manage the environment from the repository root:
+Or run individual checks:
 
 ```bash
-vagrant up
-vagrant status
-vagrant ssh ui-vm
-vagrant ssh history-vm
-vagrant ssh provider-vm
-vagrant ssh db-vm
-vagrant halt
-vagrant destroy -f
+.venv/bin/uv lock --check
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/pytest
+scripts/typecheck.sh
 ```
 
-The `vagrant ssh <vm>` form accepts any virtual-machine name shown in the
-table. No Vagrant forwarded ports are configured; the host and other machines
-on the bridged `192.168.100.0/24` network can reach allowed guest ports.
-
-Before the first `vagrant up`, create the host-local password file used to
-provision MariaDB and configure History Service. Keep it outside the shared
-repository:
-
-```bash
-umask 077
-mkdir -p ~/.config/aegis
-printf '%s\n' 'choose-a-strong-local-password' > ~/.config/aegis/mariadb-password
-```
-
-The file must contain exactly one non-empty line using letters, numbers, dots,
-underscores, or the documented safe punctuation characters
-`~!@%^+=:-`. It remains on the host and is uploaded only to `db-vm` and
-`history-vm`; do not use the example text as the real password. To use another
-location, export `AEGIS_DATABASE_SECRET_FILE` with an absolute path before
-running Vagrant.
-
-MariaDB is bound to `192.168.100.13:3306` without a public forwarded port. The
-`aegis_history` account accepts connections only from History VM address
-`192.168.100.11`.
-
-Re-run database provisioning and check MariaDB health with:
-
-```bash
-vagrant provision db-vm
-vagrant ssh db-vm -c "sudo mysqladmin --protocol=socket ping"
-```
-
-Schema migrations remain the responsibility of History Service and are not run
-on `db-vm`.
-
-Create the host-local Provider API-key file outside the shared repository
-before provisioning `provider-vm`:
-
-```bash
-umask 077
-mkdir -p ~/.config/aegis
-printf '%s\n' 'your-real-abuseipdb-api-key' > ~/.config/aegis/abuseipdb-api-key
-printf '%s\n' 'replace-with-at-least-32-random-characters' \
-  > ~/.config/aegis/provider-history-ingestion-token
-```
-
-The key file must contain one non-empty line using letters, numbers, dots,
-underscores, or hyphens. Vagrant uploads it only to `provider-vm`; provisioning
-installs it as `/etc/aegis/provider.env` with restrictive permissions and
-removes the temporary upload. The key is not placed in the shared `/vagrant`
-directory, Vagrantfile, or a shell argument.
-
-The ingestion token is uploaded only to Provider and History and authenticates
-the internal snapshot-delivery endpoint. To keep either secret elsewhere,
-export its path before running Vagrant:
-
-```bash
-export AEGIS_PROVIDER_SECRET_FILE=/absolute/path/to/abuseipdb-api-key
-export AEGIS_INGESTION_SECRET_FILE=/absolute/path/to/provider-history-token
-vagrant up provider-vm
-```
-
-Provider Service runs as `aegis` through `aegis-provider.service` and listens
-on `192.168.100.12:8001`. Inspect its state and logs with:
-
-```bash
-vagrant ssh provider-vm -c "sudo systemctl status aegis-provider.service"
-vagrant ssh provider-vm -c "sudo journalctl -u aegis-provider.service -n 100 --no-pager"
-vagrant ssh provider-vm -c "sudo journalctl -u aegis-provider.service -f"
-```
-
-Reprovisioning `provider-vm` reinstalls only Provider dependencies, refreshes
-its environment and unit files, restarts the API and independent polling
-worker, and verifies both Provider API health endpoints. The worker stores
-pending deliveries under `/var/lib/aegis-provider`, owned by `aegis:aegis`
-with mode `0750`. API health does not prove worker health; check it separately:
-
-```bash
-vagrant ssh provider-vm -c \
-  "sudo systemctl status aegis-provider-blacklist-worker.service"
-vagrant ssh provider-vm -c \
-  "sudo journalctl -u aegis-provider-blacklist-worker.service -n 100 --no-pager"
-vagrant ssh provider-vm -c \
-  "sudo stat -c '%U:%G:%a %n' /var/lib/aegis-provider"
-```
-
-History Service runs as `aegis` through `aegis-history.service` and listens on
-`192.168.100.11:8002`. Provisioning writes the protected
-`/etc/aegis/history.env`, waits for MariaDB and Provider readiness, applies
-History-owned Alembic migrations from `/opt/aegis/history-service`, and then
-starts the History API. Provider polling runs separately through
-`aegis-provider-blacklist-worker.service`.
-
-Provider readiness verification calls only `/health/ready`; it does not make an
-AbuseIPDB request or consume API quota. History readiness executes a minimal
-MariaDB query. Inspect the deployed service with:
-
-```bash
-vagrant ssh history-vm -c "sudo systemctl status aegis-history.service"
-vagrant ssh history-vm -c "sudo journalctl -u aegis-history.service -n 100 --no-pager"
-vagrant ssh history-vm -c "sudo journalctl -u aegis-history.service -f"
-vagrant ssh history-vm -c "curl --fail http://192.168.100.11:8002/health/live"
-vagrant ssh history-vm -c "curl --fail http://192.168.100.11:8002/health/ready"
-```
-
-History is filtered by the guest firewall to UI, Provider ingestion, and local
-health-check sources; no Vagrant host port is forwarded.
-
-UI Service runs as `aegis` through `aegis-ui.service`, listens on
-`0.0.0.0:8000`, and calls History at `http://192.168.100.11:8002`. Its protected
-`/etc/aegis/ui.env` contains only `HISTORY_SERVICE_URL` and
-phase-specific `HISTORY_*_TIMEOUT_SECONDS`; it contains no Provider URL,
-AbuseIPDB key, or
-MariaDB settings. The server-rendered UI continues to keep internal service
-URLs out of browser-side JavaScript.
-
-Provisioning verifies UI liveness and its History-backed readiness from the
-guest. A Vagrant host trigger also verifies that the host can reach
-`http://192.168.100.10:8000`. Inspect the UI with:
-
-```bash
-curl --fail http://192.168.100.10:8000/health/live
-curl --fail http://192.168.100.10:8000/health/ready
-vagrant ssh ui-vm -c "sudo systemctl status aegis-ui.service"
-vagrant ssh ui-vm -c "sudo journalctl -u aegis-ui.service -n 100 --no-pager"
-vagrant ssh ui-vm -c "sudo journalctl -u aegis-ui.service -f"
-```
-
-No reverse proxy is required by the current project and none is installed.
-
-### Guest firewall policy
-
-All four guests use Ubuntu's UFW firewall with inbound traffic denied and
-outbound traffic allowed by default. TCP 22 remains open for Vagrant SSH. The
-rules assume `192.168.100.0/24` is a trusted bridged development network and
-that the configured host adapter (`Ethernet 4` in `Vagrantfile`) exists. They
-are not an Internet-edge firewall policy: SSH is not source-restricted and UI
-port 8000 is reachable from the whole subnet. The application rules are:
-
-| Destination | Allowed source | TCP port |
-| --- | --- | ---: |
-| `ui-vm` | bridged network `192.168.100.0/24` | 8000 |
-| `history-vm` | `ui-vm` (`192.168.100.10`) and `provider-vm` (`192.168.100.12`) | 8002 |
-| `provider-vm` | `history-vm` (`192.168.100.11`) | 8001 |
-| `db-vm` | `history-vm` (`192.168.100.11`) | 3306 |
-
-History and Provider also allow their own assigned addresses to reach their
-respective service ports for local provisioning health checks.
-
-Normal outbound access remains available for package installation. Provider
-can make outbound HTTPS requests to AbuseIPDB and TCP 8002 requests to History.
-Explicit outbound deny rules block UI from Provider TCP 8001 and MariaDB TCP
-3306, and block Provider from UI TCP 8000 and MariaDB TCP 3306.
-
-Inspect the effective rules on each guest:
-
-```bash
-vagrant ssh ui-vm -c "sudo ufw status verbose"
-vagrant ssh history-vm -c "sudo ufw status verbose"
-vagrant ssh provider-vm -c "sudo ufw status verbose"
-vagrant ssh db-vm -c "sudo ufw status verbose"
-```
-
-Verify allowed paths from their actual source guests:
-
-```bash
-curl --fail http://192.168.100.10:8000/health/live
-vagrant ssh ui-vm -c "curl --fail http://192.168.100.11:8002/health/live"
-vagrant ssh history-vm -c "curl --fail http://192.168.100.12:8001/health/live"
-vagrant ssh history-vm -c "timeout 3 bash -c '</dev/tcp/192.168.100.13/3306'"
-```
-
-Verify prohibited paths fail:
-
-```bash
-vagrant ssh ui-vm -c "! curl --connect-timeout 3 --max-time 5 http://192.168.100.12:8001/health/live"
-vagrant ssh ui-vm -c "! timeout 3 bash -c '</dev/tcp/192.168.100.13/3306'"
-vagrant ssh provider-vm -c "! timeout 3 bash -c '</dev/tcp/192.168.100.13/3306'"
-```
-
-### End-to-end deployment verification
-
-Run the default quota-free deployment verification from the repository root:
-
-```bash
-scripts/verify-vagrant.sh
-```
-
-It checks VM state and assigned addresses, health endpoints, UI pages, blacklist
-status, MariaDB and application units, History database readiness,
-UI-to-History communication, and application process ownership. It prints a
-PASS/FAIL summary and exits non-zero if any check fails. The default mode never
-calls a Provider lookup or blacklist endpoint and does not consume AbuseIPDB
-quota.
-
-To deliberately perform one live AbuseIPDB-backed reputation request, provide
-a global IP address using the explicitly opt-in mode:
-
-```bash
-scripts/verify-vagrant.sh --live-abuseipdb 8.8.8.8
-```
-
-This mode consumes AbuseIPDB quota and persists a successful manual lookup in
-History Service.
-
-For troubleshooting, inspect topology and enter a guest with:
-
-```bash
-vagrant status
-vagrant ssh <vm>
-```
-
-Inspect services, logs, and listening sockets inside the relevant guest:
-
-```bash
-sudo systemctl status aegis-ui.service
-sudo systemctl status aegis-history.service
-sudo systemctl status aegis-provider.service
-sudo systemctl status mariadb.service
-sudo journalctl -u aegis-history.service -n 100 --no-pager
-sudo journalctl -u aegis-history.service -f
-sudo ss -lntp
-```
-
-Check service health and MariaDB connectivity from the expected source VM:
-
-```bash
-curl --fail http://192.168.100.10:8000/health/live
-curl --fail http://192.168.100.11:8002/health/ready
-curl --fail http://192.168.100.12:8001/health/ready
-sudo mysqladmin --protocol=socket ping
-timeout 3 bash -c '</dev/tcp/192.168.100.13/3306'
-```
-
-The three application VMs are provisioned independently. Each receives only
-its own service source and dependency metadata under `/opt/aegis`, with a
-dedicated virtual environment owned by the restricted `aegis` system user.
-All three application services are started. Re-run provisioning after source
-or dependency changes with:
-
-```bash
-vagrant provision ui-vm
-vagrant provision history-vm
-vagrant provision provider-vm
-```
-
-Verify the installed package in any application VM with the corresponding
-command:
-
-```bash
-vagrant ssh ui-vm -c "/opt/aegis/ui-service/.venv/bin/python -c 'import ui_service'"
-vagrant ssh history-vm -c "/opt/aegis/history-service/.venv/bin/python -c 'import history_service'"
-vagrant ssh provider-vm -c "/opt/aegis/provider-service/.venv/bin/python -c 'import provider_service'"
-```
-
-### Deployment and rollback
-
-Provision in dependency order after creating all three host-local secret
-files:
-
-```bash
-vagrant up db-vm provider-vm history-vm ui-vm
-scripts/verify-vagrant.sh
-```
-
-For an application-only update, provision Provider, then History, then UI.
-Provider's API unit has no ordering dependency on its polling worker. The
-worker starts after network availability and recovers pending SQLite outbox
-rows after restart.
-
-For a safe operational rollback, stop the new polling owner first:
-
-```bash
-vagrant ssh provider-vm -c \
-  "sudo systemctl disable --now aegis-provider-blacklist-worker.service"
-```
-
-Keep `/var/lib/aegis-provider/blacklist-outbox.sqlite3` backed up and intact;
-it may contain fetched snapshots not yet acknowledged by History. Roll back
-Provider and History code/config together when their ingestion contract
-changes. If returning to a release where History owns scheduling, enable that
-scheduler only after the Provider worker is confirmed stopped, otherwise both
-owners can consume AbuseIPDB quota. The ingestion and turnover Alembic changes
-are additive and should normally remain during an application rollback.
-Downgrade them only after a database backup and only if loss of delivery
-idempotency and stored metrics is acceptable.
-
-## Current scope
-
-The application supports:
-
-- validation of public IPv4 and IPv6 addresses;
-- normalized individual AbuseIPDB lookups;
-- persistence of successful manual checks;
-- scheduled retrieval of up to 1000 blacklist entries;
-- complete blacklist snapshots in MariaDB;
-- full historical retention of accepted snapshots for the initial implementation;
-- tabular display of the latest successful snapshot;
-- automatic UI refresh when a new local snapshot is available;
-- server-rendered blacklist analytics and turnover charts;
-- rate-limit-aware retry behavior;
-- explicit separation between UI, application, and provider responsibilities.
-
-Not included yet:
-
-- authentication;
-- cron;
-- message queues;
-- caching;
-- multiple reputation providers;
-- Docker or Kubernetes;
-- cloud deployment.
-
-The existing manual-check table and API remain supported. Blacklist
-synchronization writes only to the blacklist snapshot and synchronization
-tables. Browser polling reads local state through UI Service and History
-Service; it never triggers Provider Service or an AbuseIPDB request.
-
-## Documentation
-
-- [Architecture](docs/architecture.md)
-- [API contracts](docs/api-contracts.md)
-- [Architecture decisions](docs/adr/)
+Opt-in MariaDB and RabbitMQ integration tests require dedicated infrastructure
+and their documented `RUN_MARIADB_TESTS` or `RUN_RABBITMQ_TESTS` configuration.
+The default test suite does not require live MariaDB, RabbitMQ, Redis, or
+AbuseIPDB.
+
+## Current limitations
+
+- AbuseIPDB is the only reputation provider.
+- There is no authentication or user management.
+- The Provider worker retrieves at most 1000 entries per blacklist snapshot.
+- Redis currently stores only anonymous UI theme preferences.
+- Blacklist delivery is at least once; History deduplicates deliveries by
+  delivery ID.
+- There is no Docker, Kubernetes, cloud deployment, or reverse proxy setup.
+
+The browser reads only persisted blacklist data through UI and History.
+Displaying or polling blacklist pages does not call Provider or consume
+AbuseIPDB quota.

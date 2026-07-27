@@ -6,7 +6,7 @@ from httpx2 import AsyncClient
 from ui_service.routes import unexpected_exception_handler
 from ui_service.schemas import BlacklistLastError
 
-from .conftest import FakeApplicationClient
+from .conftest import FakeApplicationClient, FakeThemeRepository
 
 API_SECRET = "TEST_ABUSEIPDB_SECRET_DO_NOT_LOG"
 
@@ -49,6 +49,18 @@ async def test_readiness_reflects_application_state(
     assert ready.headers["X-Request-ID"] == request_id
     assert unavailable.status_code == 503
     assert unavailable.json() == {"status": "not ready"}
+
+
+@pytest.mark.anyio
+async def test_readiness_reports_redis_failure(
+    client: AsyncClient, theme_repository: FakeThemeRepository
+) -> None:
+    theme_repository.ping_error = True
+
+    response = await client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not ready"}
 
 
 @pytest.mark.anyio

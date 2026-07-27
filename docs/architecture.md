@@ -1,388 +1,478 @@
-# Architecture
+# Aegis architecture
 
-## Goal
+## Purpose
 
-Build a small application with three independently runnable services and a relational database.
+Aegis is an educational multi-service IP reputation application. It validates
+public IPv4 and IPv6 addresses, performs individual AbuseIPDB reputation
+lookups, periodically retrieves AbuseIPDB blacklist snapshots, persists
+authoritative business data, and renders the persisted results.
 
-The priority is:
-1. understandable behavior;
-2. clear service boundaries;
-3. correct application behavior;
-4. reliable testing;
-5. future extensibility.
+The architecture favors explicit ownership, independently configured service
+boundaries, durable asynchronous delivery, and failure behavior that preserves
+the latest successful data.
 
-The application uses one application-facing service, one external-provider proxy, and one presentation service.
+## Logical services and runtime processes
 
-## Components
+A logical service owns a cohesive boundary and its configuration, models,
+tests, and dependencies. A runtime process is one independently supervised
+executable belonging to a logical service.
 
-### UI Service
-Responsibilities:
-- render the web interface;
-- accept an IP address from the user;
-- request reputation checks from History Service;
-- request lookup history from History Service;
-- request locally persisted blacklist status and entries from History Service;
-- display current results, history, blacklist data, and user-facing errors;
-- proxy the minimal browser blacklist-status poll to History Service.
+| Logical service | Runtime process | Purpose |
+| --- | --- | --- |
+| UI Service | UI API | Renders pages, handles browser requests, calls History, and manages anonymous theme state |
+| History Service | History API | Exposes `/api/v1/*`, orchestrates manual lookups, and reads and writes MariaDB |
+| History Service | History blacklist consumer | Consumes and transactionally persists blacklist messages |
+| Provider Service | Provider API | Exposes `/internal/v1/*` and adapts individual AbuseIPDB requests |
+| Provider Service | Provider blacklist worker | Polls AbuseIPDB, owns the SQLite outbox, and publishes blacklist messages |
 
-Restrictions:
-- no direct Provider Service access;
-- no direct AbuseIPDB access;
-- no database access;
-- no API keys or database credentials;
-- no persistence logic.
-
-*The UI communicates only with History Service.*
-
-### History Service
-History Service acts as the application provider and persistence owner.
-
-Responsibilities:
-- expose the application-facing API used by UI Service;
-- validate and normalize IPv4 and IPv6 addresses;
-- reject non-public addresses;
-- orchestrate reputation lookups;
-- call Provider Service for normalized AbuseIPDB data;
-- validate Provider Service responses;
-- persist successful lookup results;
-- return current results and history;
-- implement request idempotency;
-- manage database schema changes through Alembic.
-
-Additional responsibilities:
-
-- receive and persist normalized blacklist snapshots from Provider;
-- preserve complete historical snapshots;
-- record synchronization attempts and failures;
-- expose locally persisted blacklist data to UI;
-- compute blacklist analytics from MariaDB;
-- retain the latest successful snapshot after an update failure.
-
-The initial implementation retains every accepted complete snapshot and has no
-automatic pruning policy. Each snapshot contains no more than 1000 entries.
-
-Restrictions:
-- no direct AbuseIPDB access;
-- no AbuseIPDB API key;
-- no arbitrary upstream URLs from user input;
-- no provider-specific HTTP implementation outside the Provider Service client.
-
-*History Service is the only service allowed to access MariaDB.*
-
-### Provider Service
-Provider Service acts as an internal AbuseIPDB proxy and provider adapter.
-
-Responsibilities:
-- expose an internal reputation lookup API;
-- receive normalized lookup requests from History Service;
-- call AbuseIPDB;
-- validate the upstream response;
-- normalize provider-specific data into the internal service contract;
-- map provider failures into stable internal API errors;
-- use explicit HTTP timeouts;
-- preserve request ID propagation.
-
-Additional responsibilities:
-
-- own periodic AbuseIPDB blacklist polling and History delivery retries;
-- retain pending deliveries in a durable local SQLite outbox;
-- call the AbuseIPDB blacklist endpoint;
-- validate every returned blacklist entry;
-- normalize IPv4 and IPv6 addresses;
-- extract rate-limit response headers;
-- return normalized snapshot metadata and entries.
-
-Provider Service owns the periodic polling decision.
-
-Restrictions:
-- no public application history API;
-- no direct UI access;
-- no MariaDB access;
-- no MariaDB persistence;
-- no idempotency logic;
-- no History calls except authenticated blacklist snapshot delivery;
-- no arbitrary upstream URLs from request input.
-
-*Only Provider Service stores and uses the AbuseIPDB API key.*
-
-History Service exposes one authenticated blacklist snapshot-ingestion
-endpoint. Provider Service has no other write path into History.
-
----
-
-## Blacklist synchronization flow
+The API and background process within a logical service share service code and
+configuration, but not process lifecycle. Running the Provider API does not
+start polling. Running the History API does not start RabbitMQ consumption.
 
 ```text
-1. The standalone Provider worker determines that polling is due.
-2. Provider requests GET /api/v2/blacklist from AbuseIPDB.
-3. Provider validates and normalizes the response.
-4. Provider commits the snapshot to its local SQLite outbox.
-5. Provider delivers it to History's authenticated ingestion endpoint.
-6. History validates the stable delivery ID and snapshot.
-7. History stores the snapshot and every entry in one transaction.
-8. Provider records the acknowledgement and removes the pending payload.
-9. UI later reads the latest persisted snapshot from History Service.
+Browser
+  |
+  v
+UI Service (UI API) ------ HTTP ------> History Service (History API)
+  |                                           |
+  | Redis                                     | MariaDB
+  v                                           v
+Redis                                      MariaDB
+                                              |
+                                              | HTTP for manual lookups
+                                              v
+                                    Provider Service (Provider API)
+                                              |
+                                              v
+                                          AbuseIPDB
+
+Provider Service (Provider blacklist worker)
+  | AbuseIPDB
+  | SQLite outbox
+  v
+RabbitMQ ------> History Service (History blacklist consumer) ------> MariaDB
 ```
-
-```text
-Provider worker -> AbuseIPDB -> Provider SQLite outbox -> History -> MariaDB
-```
-
-The API process is not a dependency of the standalone worker. The worker and
-API share Provider code and configuration, not process lifecycle.
-
-## Manual lookup flow
-
-```text
-UI -> History -> Provider -> AbuseIPDB
-```
-
-The normalized result returns along the same path; History persists successful
-manual checks before responding to UI.
-
-## Analytics flow
-
-```text
-UI -> History -> MariaDB
-```
-
-Analytics use persisted snapshots only. They never call Provider or AbuseIPDB.
-
-## UI refresh flow
-
-The browser periodically asks UI Service whether the latest snapshot changed.
-
-UI Service reads snapshot state from History Service.
-
-```text
-Browser polling
-  -> UI Service
-  -> History Service
-  -> MariaDB
-```
-
-Browser polling must not trigger a Provider Service or AbuseIPDB request.
-
-If the snapshot identifier has not changed, UI should not reload the complete
-table.
-
-If synchronization fails, UI continues displaying the latest successful
-snapshot and shows a stale-data or synchronization warning where appropriate.
-
-The standalone Provider worker is independent of API worker count and protected
-by a singleton lock. Polling and History-delivery retries use separate durable
-clocks.
-
-
-
----
 
 ## Service boundaries
 
-### Application-facing boundary
-
-History Service owns the application API:
-
-* `POST /api/v1/checks`
-* `GET  /api/v1/checks`
-* `GET  /api/v1/checks/{history_id}`
-* `GET  /api/v1/blacklist/status`
-* `GET  /api/v1/blacklist`
-* `GET  /api/v1/blacklist/snapshots`
-* `GET  /api/v1/blacklist/snapshots/{snapshot_id}`
-
-UI Service communicates only with this API.
-
-### Provider boundary
-
-Provider Service owns the internal provider API:
-
-* `POST /internal/v1/reputation-checks`
-* `GET /internal/v1/blacklist`
-
-Only History Service may call these Provider endpoints. History separately owns
-`POST /internal/v1/blacklist/snapshots`, which accepts only authenticated
-Provider worker deliveries.
-*The provider contract must not expose unnecessary raw AbuseIPDB response data.*
-
----
-
-## Failure behavior
-
-* **Invalid request schema**: reject in History Service; do not call Provider Service; do not create history.
-* **Invalid or non-public IP**: reject in History Service before calling Provider Service; do not create history.
-* **Provider Service unavailable**: History Service returns a dependency-unavailable error; do not create history.
-* **AbuseIPDB timeout**: Provider Service returns an internal timeout error; History Service maps it to an application error; do not create history.
-* **AbuseIPDB authentication failure**: Provider Service returns a stable internal authentication error; do not create history.
-* **Invalid AbuseIPDB response**: Provider Service returns an invalid-upstream-response error; do not create history.
-* **Invalid Provider Service response**: History Service treats it as an invalid dependency response; do not create history.
-* **Database unavailable**: History Service returns a service-unavailable error; do not report the operation as successfully stored.
-* **Persistence failure after a successful provider lookup**: return a persistence-related service error; do not report a successful application result.
-* **Duplicate request ID with equivalent payload**: return the existing persisted result; do not call Provider Service again where the existing result can be resolved safely; do not create a second row.
-* **Duplicate request ID with different payload**: return `409 IDEMPOTENCY_CONFLICT`.
-
----
-
-## Data ownership
-
-**UI Service owns:**
-
-* HTML templates;
-* presentation models;
-* form state;
-* user-facing error presentation.
-
-**History Service owns:**
-
-* the application-facing reputation result model;
-* application request validation;
-* lookup orchestration;
-* idempotency rules;
-* persistence model;
-* history queries;
-* database migrations;
-* complete blacklist snapshots and entries;
-* blacklist synchronization runs and next-attempt metadata.
-
-**Provider Service owns:**
-
-* AbuseIPDB credentials;
-* AbuseIPDB request construction;
-* AbuseIPDB response models;
-* provider-specific normalization;
-* provider-specific failure mapping.
-
-**MariaDB owns:**
-
-* persisted lookup records;
-* persisted blacklist snapshots, entries, and synchronization runs;
-* Alembic version state.
-
-The original manual-check table remains supported by the manual-check API and
-is not read or written by blacklist synchronization.
-
-*Note: AbuseIPDB responses are treated as untrusted external data. Provider Service must validate them before returning an internal response. History Service must validate Provider Service responses before persistence.*
-
----
-
-## Configuration ownership
-
 ### UI Service
 
-* **May receive:** `HISTORY_SERVICE_URL`, phase-specific `HISTORY_*_TIMEOUT_SECONDS`
-- **Must not receive:** `PROVIDER_SERVICE_URL`, `ABUSEIPDB_API_KEY`, `DATABASE_URL`, `MARIADB_PASSWORD`
+UI Service owns presentation and anonymous UI state.
+
+Responsibilities:
+
+- render forms, history, blacklist tables, analytics, and safe errors;
+- submit manual lookups to History Service;
+- read persisted blacklist data and status from History Service;
+- poll History-backed status without triggering synchronization;
+- create anonymous browser session IDs;
+- load and save validated `light` or `dark` theme values in Redis;
+- refresh the cookie and Redis inactivity TTL during relevant activity.
+
+Restrictions:
+
+- communicates only with History Service for application data;
+- does not call Provider Service or AbuseIPDB;
+- does not access MariaDB or RabbitMQ;
+- does not store business data in Redis;
+- does not treat the anonymous session ID as an authenticated identity.
 
 ### History Service
 
-- **May receive:** `PROVIDER_SERVICE_URL`, phase-specific `PROVIDER_*_TIMEOUT_SECONDS`,
-  `MARIADB_HOST`, `MARIADB_PORT`, `MARIADB_DATABASE`, `MARIADB_USER`,
-  `MARIADB_PASSWORD`, `HISTORY_INGESTION_TOKEN`, and ingestion limits
-  documented in `services/history-service/.env.example`
-* **Must not receive:** `ABUSEIPDB_API_KEY`
+History Service is the application backend and sole MariaDB owner.
+
+Responsibilities:
+
+- expose the application API under `/api/v1/*`;
+- validate and normalize public IPv4 and IPv6 addresses;
+- enforce manual lookup request idempotency;
+- call Provider API for normalized manual reputation data;
+- persist successful manual lookup results;
+- expose lookup history, blacklist snapshots, status, and analytics;
+- own SQLAlchemy models, repositories, Alembic migrations, and transactions;
+- consume, validate, and persist complete RabbitMQ blacklist messages;
+- deduplicate snapshot delivery by `delivery_id`;
+- preserve the latest successful snapshot when later processing fails.
+
+Restrictions:
+
+- does not call AbuseIPDB directly and does not receive its API key;
+- does not expose MariaDB models directly across HTTP boundaries;
+- does not accept blacklist snapshots from Provider through HTTP;
+- does not put SQL in API handlers or RabbitMQ callbacks.
 
 ### Provider Service
 
-* **May receive:** `ABUSEIPDB_BASE_URL`, `ABUSEIPDB_API_KEY`, HTTP timeout
-  settings, Provider polling/outbox settings, `HISTORY_SERVICE_URL`, and
-  `HISTORY_INGESTION_TOKEN`
-* **Must not receive:** UI URLs, `DATABASE_URL`, `MARIADB_PASSWORD`
+Provider Service is the internal AbuseIPDB adapter.
 
----
+Responsibilities:
 
-## Security rules
+- expose the internal Provider API under `/internal/v1/*`;
+- authenticate to AbuseIPDB;
+- apply explicit HTTPX timeouts;
+- validate and normalize upstream data;
+- map provider failures into safe service errors;
+- extract rate-limit and `Retry-After` metadata;
+- own periodic blacklist polling in the standalone Provider blacklist worker;
+- commit complete messages to the SQLite outbox before publication;
+- publish persistent messages to RabbitMQ with publisher confirms;
+- retry retained outbox messages after broker or confirmation failures.
 
-* Secrets come from environment variables.
-* API keys and passwords are never logged.
-* User input cannot control the AbuseIPDB host.
-* External requests use explicit timeouts.
-* Service-to-service responses are validated.
-* Public errors do not expose stack traces, credentials, SQL, raw upstream responses, or internal URLs.
-* UI does not receive provider credentials.
-* Provider Service does not receive database credentials.
-* Tests do not call the live AbuseIPDB API by default.
+Restrictions:
 
----
+- does not communicate with UI Service;
+- does not access MariaDB or Redis;
+- does not deliver blacklist snapshots to History through HTTP;
+- does not implement application lookup idempotency;
+- does not consume blacklist messages.
 
-## Observability
+## Synchronous flows
 
-Each request should use a UUID request ID propagated through:
-`X-Request-ID: <uuid>`
-
-The propagation path is:
-`UI Service -> History Service -> Provider Service`
-
-Services write logs to stdout and include:
-
-* timestamp;
-* service name;
-* event name;
-* request ID;
-* status;
-* duration;
-* dependency name where relevant.
-
-* **History Service** should log database and Provider Service dependency events without logging credentials or complete request bodies unnecessarily.
-* **Provider Service** should identify AbuseIPDB as the upstream dependency without logging API keys or authorization headers.
-
----
-
-## Health checks
-
-Each service exposes:
-
-* `GET /health/live`
-* `GET /health/ready`
-
-**UI Service**
-
-* **live:** confirms the process can serve requests.
-* **ready:** calls History Service readiness and reports not-ready when History
-  Service or MariaDB is unavailable. It does not perform a provider lookup.
-
-**History Service**
-
-* **live:** confirms the process can serve requests.
-* **ready:** confirms MariaDB availability with a minimal database query. It
-  does not call Provider Service or AbuseIPDB.
-
-**Provider Service**
-
-* **live:** confirms the process can serve requests.
-* **ready:** confirms local initialization and required configuration. It
-  reports polling ownership and configured enablement without consuming
-  AbuseIPDB quota. The separately supervised worker must be checked
-  independently.
-
----
-
-## Deployment topology
-
-For a single Ubuntu test server, the intended topology is:
+### Manual lookup
 
 ```text
-UI Service       0.0.0.0:8000
-History Service  127.0.0.1:8002
-Provider Service  127.0.0.1:8001
-MariaDB          127.0.0.1:3306
-
+Browser -> UI API -> History API -> Provider API -> AbuseIPDB
+Browser <- UI API <- History API <- Provider API <- AbuseIPDB
 ```
 
-Only UI Service should be reachable externally.
-
-The manual request direction is:
+Detailed sequence:
 
 ```text
-UI :8000
-  -> History :8002
-  -> Provider :8001
+Browser          UI API          History API       Provider API       AbuseIPDB
+   |                |                 |                  |                 |
+   | submit IP      |                 |                  |                 |
+   |--------------->| lookup request  |                  |                 |
+   |                |---------------->| validate IP and  |                 |
+   |                |                 | request_id       |                 |
+   |                |                 | check idempotency|                 |
+   |                |                 | reputation check |                 |
+   |                |                 |----------------->| HTTPS request   |
+   |                |                 |                  |---------------->|
+   |                |                 |                  | validate and    |
+   |                |                 |                  | normalize       |
+   |                |                 |<-----------------| normalized data |
+   |                |                 | commit success   |                 |
+   |                |<----------------| persisted result |                 |
+   |<---------------| render response |                  |                 |
+```
+
+History persists a successful lookup before returning it. Failed provider
+lookups are not persisted. Reusing a `request_id` with the same payload returns
+the existing result; reusing it with a different payload returns
+`409 IDEMPOTENCY_CONFLICT`.
+
+### Persisted blacklist reads and analytics
+
+```text
+Browser -> UI API -> History API -> MariaDB
+```
+
+These reads use only persisted business data. Browser polling and page rendering
+never call Provider Service or AbuseIPDB and never consume provider quota.
+
+## Asynchronous blacklist synchronization
+
+```text
+Provider blacklist worker
   -> AbuseIPDB
+  -> SQLite outbox
+  -> RabbitMQ
+  -> History blacklist consumer
+  -> MariaDB
 ```
 
-Periodic synchronization is:
+Detailed sequence:
 
 ```text
-Provider worker -> AbuseIPDB -> Provider outbox -> History :8002 -> MariaDB
+Provider worker     AbuseIPDB       SQLite outbox       RabbitMQ       History consumer       MariaDB
+      |                  |                 |                 |                 |                  |
+      | fetch snapshot   |                 |                 |                 |                  |
+      |----------------->|                 |                 |                 |                  |
+      | validate and normalize             |                 |                 |                  |
+      |<-----------------|                 |                 |                 |                  |
+      | commit complete message            |                 |                 |                  |
+      |----------------------------------->|                 |                 |                  |
+      | publish persistent message          |                 |                 |                  |
+      |----------------------------------------------------->|                 |                  |
+      | publisher confirmation              |                 |                 |                  |
+      |<-----------------------------------------------------|                 |                  |
+      | mark outbox row published           |                 | deliver         |                  |
+      |----------------------------------->|                 |---------------->| validate         |
+      |                  |                 |                 |                 | transaction      |
+      |                  |                 |                 |                 |----------------->|
+      |                  |                 |                 |                 | commit           |
+      |                  |                 |                 |                 |<-----------------|
+      |                  |                 |                 | ACK             |                  |
+      |                  |                 |                 |<----------------|                  |
 ```
 
-Analytics are `UI -> History -> MariaDB`. Provider never accesses UI or
-MariaDB.
+The Provider blacklist worker is singleton-protected. Polling and publication
+retry schedules are stored independently, so a broker outage does not require
+another AbuseIPDB fetch and does not discard a completed snapshot.
+
+## Infrastructure responsibilities
+
+### MariaDB
+
+MariaDB is the authoritative application database. Only History Service may
+connect to it.
+
+It stores:
+
+- successful manual lookup records and their request IDs;
+- complete blacklist snapshots and entries;
+- provider and delivery metadata;
+- synchronization status used by blacklist reads;
+- analytics source data;
+- Alembic schema version state.
+
+Blacklist persistence is transactional: a snapshot and all of its entries
+commit together or roll back together. A failed delivery does not replace or
+delete the latest successful snapshot.
+
+### RabbitMQ
+
+RabbitMQ is the durable transport for completed blacklist snapshots. It is not
+used for browser requests, manual lookup responses, UI sessions, or database
+access.
+
+The configurable topology defaults to:
+
+| Element | Default |
+| --- | --- |
+| Main direct exchange | `aegis.blacklist` |
+| Main routing key | `blacklist.snapshot.complete` |
+| Main durable queue | `aegis.history.blacklist.snapshots` |
+| Retry direct exchange | `aegis.blacklist.retry` |
+| Retry queues | `aegis.history.blacklist.snapshots.retry.300`, `.retry.900`, `.retry.1800`, `.retry.3600` |
+| Retry routing keys | `blacklist.snapshot.retry.300`, `.retry.900`, `.retry.1800`, `.retry.3600` |
+| Dead-letter direct exchange | `aegis.blacklist.dead` |
+| Dead-letter routing key | `blacklist.snapshot.dead` |
+| Dead-letter queue | `aegis.history.blacklist.snapshots.dead` |
+
+The History blacklist consumer declares the exchanges, queues, bindings, retry
+TTL, and dead-letter return routing. The main, retry, and dead-letter queues are
+durable. Provider messages and consumer-generated retry/DLQ messages use
+persistent delivery mode.
+
+Provider enables publisher confirms and marks an outbox message published only
+after RabbitMQ returns a positive confirmation. The History consumer also uses
+confirmed publication when handing a failed message to a retry queue or DLQ.
+
+On the successful path, the consumer ACKs only after MariaDB commit. A duplicate
+is ACKed only after History resolves it to an already committed snapshot. On a
+processing failure, the original message is ACKed only after a persistent retry
+or DLQ copy receives publisher confirmation. If that handoff cannot be
+confirmed, the original is left unacknowledged so the broker can redeliver it.
+
+### Provider SQLite outbox
+
+The SQLite outbox is durable local state owned only by the Provider blacklist
+worker. It is not shared application storage and is not queried by UI or
+History.
+
+Before the first RabbitMQ publication attempt, the worker stores:
+
+- the versioned complete message;
+- `delivery_id` and correlation metadata;
+- creation and next-attempt timestamps;
+- publication attempt state;
+- polling schedule state.
+
+SQLite uses write-ahead logging and full synchronous commits. Pending messages
+survive worker restart and broker failure. A row is compacted only after a
+positive RabbitMQ publisher confirmation. MariaDB remains the authoritative
+store after consumption.
+
+### Redis
+
+Redis stores ephemeral UI state only. The implemented value is an anonymous
+session's validated `light` or `dark` theme.
+
+```text
+Browser              UI API                  Redis
+   |                    |                       |
+   | cookie/session ID  |                       |
+   |------------------->| GET theme:<session>   |
+   |                    |---------------------->|
+   |                    | theme or missing      |
+   |                    |<----------------------|
+   | rendered theme     | refresh inactivity TTL|
+   |<-------------------|---------------------->|
+   | POST light/dark    |                       |
+   |------------------->| SET with TTL           |
+   |                    |---------------------->|
+   | 303 redirect and refreshed cookie          |
+   |<-------------------|                       |
+```
+
+The browser cookie contains only a random UUID4 session ID. Redis values have an
+inactivity TTL and contain no credentials, blacklist snapshots, analytics,
+manual lookup records, or other authoritative business data. Redis loss cannot
+corrupt MariaDB data.
+
+## Snapshot delivery contract and idempotency
+
+A blacklist message contains a versioned schema, message type, `delivery_id`,
+correlation ID, producer, provider, creation timestamp, request metadata,
+rate-limit metadata, and the complete normalized snapshot required for
+persistence. Provider and History define separate boundary models.
+
+Delivery is at least once:
+
+- Provider assigns a stable UUID `delivery_id` before writing the outbox row.
+- The same ID is used in the message body and AMQP `message_id`.
+- History stores `delivery_id` under a unique database constraint.
+- A first delivery commits one snapshot and its entries.
+- A repeated delivery with an already committed `delivery_id` returns the
+  existing snapshot with `created=false`.
+- The accepted duplicate creates no second snapshot and is ACKed.
+- Delivery identity is immutable and first-commit-wins: if the same
+  `delivery_id` later carries different content, History still resolves it to
+  the original committed snapshot.
+- A concurrent duplicate that loses the unique-constraint race rolls back,
+  reloads the winning row, and is handled as an accepted duplicate.
+
+A different `delivery_id` for the same provider generation is a conflict rather
+than an accepted duplicate.
+
+## Failure behavior
+
+### Manual lookup failures
+
+- Invalid request data or a non-global IP is rejected by History before Provider
+  is called.
+- Provider unavailability, AbuseIPDB timeout, authentication failure, or invalid
+  upstream data returns a safe application error.
+- Failed lookups are not persisted.
+- If MariaDB persistence fails after a provider success, History fails the
+  request rather than returning an uncommitted result.
+
+### AbuseIPDB unavailable
+
+The Provider blacklist worker retains existing outbox messages and schedules a
+bounded later polling attempt. No failed fetch is sent to RabbitMQ, and no
+MariaDB snapshot is replaced or deleted.
+
+### Rate limiting
+
+Provider owns rate-limit behavior. It extracts supported limit, remaining,
+reset, and `Retry-After` metadata. The worker honors `Retry-After`, waits for a
+known reset when quota is empty, applies bounded delays, and avoids continuous
+retry. The next polling decision is retained in SQLite.
+
+### RabbitMQ unavailable
+
+The completed message remains in the SQLite outbox. Publication is rescheduled
+with bounded backoff, independently of the next AbuseIPDB polling time. Worker
+restart reopens the outbox and resumes pending publication.
+
+### Publish confirmation failure
+
+A timeout, negative acknowledgement, returned/unroutable message, connection
+failure, or other missing positive confirmation does not remove the outbox row.
+The worker increments its attempt state and reschedules publication.
+
+### Consumer database failure
+
+History rolls back the MariaDB transaction. Operational and explicitly
+retryable failures are copied to the next durable retry queue. The original
+message is ACKed only if that copy is publisher-confirmed; otherwise it remains
+unacknowledged.
+
+### Retry exhaustion and DLQ
+
+Temporary consumer failures use delayed retry tiers of 300, 900, 1800, and 3600
+seconds. After those tiers are exhausted, the message is copied to the durable
+dead-letter queue. Permanent validation or application failures go directly to
+the DLQ. The original is ACKed only after confirmed DLQ publication. Malformed
+messages therefore do not retry forever.
+
+### Redis unavailable
+
+Theme reads fall back to the default dark theme. Theme writes and deletes fail
+softly after logging a safe warning; the page remains usable. UI readiness
+reports not-ready when Redis `PING` fails. Redis failure does not affect
+authoritative business data, though UI readiness also depends on History.
+
+## Data ownership
+
+| Owner | Data |
+| --- | --- |
+| UI Service | Templates, presentation models, anonymous session handling, and theme behavior |
+| History Service | Application API models, idempotency, MariaDB schema and migrations, lookups, blacklist snapshots, entries, and analytics |
+| Provider Service | AbuseIPDB models and normalization, polling decisions, versioned outbound message model, and local outbox |
+| MariaDB | Authoritative persisted application records |
+| RabbitMQ | In-flight durable snapshot deliveries, retries, and dead letters |
+| Redis | Expiring anonymous UI theme values only |
+| Provider SQLite outbox | Pending Provider publication and worker scheduling state |
+
+Each service validates inputs at its own HTTP, AMQP, Redis, provider, or
+database boundary. Raw AbuseIPDB responses and ORM models do not cross service
+boundaries.
+
+## Security boundaries and secrets
+
+- Secrets are supplied through environment variables or protected runtime
+  environment files; real values are not committed.
+- Provider owns `ABUSEIPDB_API_KEY` and RabbitMQ publisher credentials.
+- History owns MariaDB and RabbitMQ consumer credentials.
+- UI owns History connection and Redis credentials.
+- Provider never receives MariaDB or Redis credentials.
+- UI never receives AbuseIPDB, MariaDB, or RabbitMQ credentials.
+- History never receives the AbuseIPDB API key.
+- RabbitMQ producer and consumer accounts should be separate and restricted to
+  their required virtual-host permissions.
+- Redis must be reachable only by UI and must contain no secrets or business
+  records.
+- MariaDB must be reachable only by History.
+- AbuseIPDB URLs are configuration-owned, require HTTPS, and cannot be selected
+  by request data.
+- API keys, passwords, authorization headers, connection strings, complete
+  blacklist payloads, SQL details, and raw upstream errors must not be logged.
+- Public errors do not expose stack traces, credentials, internal URLs, or
+  provider payloads.
+- Default tests mock AbuseIPDB and do not require live credentials.
+
+## Observability and health
+
+Manual requests use a UUID request ID propagated through:
+
+```text
+UI Service -> History Service -> Provider Service
+```
+
+Blacklist logs include correlation and delivery IDs where relevant without
+logging complete payloads.
+
+Each API process exposes:
+
+- `GET /health/live` for process liveness;
+- `GET /health/ready` for its owned dependencies.
+
+UI readiness checks History and Redis. History API readiness checks MariaDB.
+Provider API readiness validates local configuration without consuming
+AbuseIPDB quota. API health endpoints do not prove that the History blacklist
+consumer or Provider blacklist worker is running; supervisors must check those
+processes independently.
+
+## Current deployment status
+
+The implemented application architecture requires all five runtime processes,
+MariaDB, RabbitMQ, Redis, and the Provider SQLite outbox.
+
+The Vagrant deployment defines UI, History, Provider, database, and
+infrastructure VMs. RabbitMQ runs natively on the infrastructure VM with a
+dedicated `/aegis` virtual host, separate Provider and History accounts, and a
+host-loopback-only management port. Broker data uses the package-managed
+`/var/lib/rabbitmq` directory. The History blacklist consumer is deployed as a
+separate systemd process and declares the messaging topology.
+
+Redis also runs natively on the infrastructure VM and is reachable only from
+UI through the private network firewall. It is not forwarded to the host.
+Development uses no Redis password because the listener and UFW rules isolate
+the only remote client to `ui-vm`; production should use a restricted ACL user.
+Redis stores only TTL-bound theme values, uses periodic RDB snapshots without
+AOF, and is bounded to 128 MB with `allkeys-lru` eviction. Losing Redis still
+leaves UI pages available with the dark default theme. See the root
+[README](../README.md) for quick-start and diagnostic commands.

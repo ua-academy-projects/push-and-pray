@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 
 readonly UI_URL="http://192.168.100.10:8000"
 

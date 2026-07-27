@@ -26,6 +26,8 @@ from ui_service.schemas import (
     CheckResult,
     HistoryPage,
 )
+from ui_service.theme.repository import ThemeRepositoryError
+from ui_service.theme.service import ThemeService
 
 REQUEST_ID = UUID("6f5aa064-43e8-4dbb-a544-d60b68af5cbd")
 
@@ -242,14 +244,43 @@ def application_client() -> FakeApplicationClient:
     return FakeApplicationClient()
 
 
+class FakeThemeRepository:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+        self.ping_error = False
+
+    async def get_theme(self, session_id: str) -> str:
+        return self.values.get(session_id, "dark")
+
+    async def set_theme(self, session_id: str, theme: str) -> None:
+        self.values[session_id] = theme
+
+    async def delete_theme(self, session_id: str) -> None:
+        self.values.pop(session_id, None)
+
+    async def ping(self) -> None:
+        if self.ping_error:
+            raise ThemeRepositoryError("Theme storage is unavailable.")
+
+    async def close(self) -> None:
+        return None
+
+
+@pytest.fixture
+def theme_repository() -> FakeThemeRepository:
+    return FakeThemeRepository()
+
+
 @pytest.fixture
 async def client(
     application_client: FakeApplicationClient,
+    theme_repository: FakeThemeRepository,
 ) -> AsyncIterator[AsyncClient]:
     async def application_client_override() -> FakeApplicationClient:
         return application_client
 
     app.dependency_overrides[get_application_client] = application_client_override
+    app.state.theme_service = ThemeService(theme_repository)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as test_client:
         yield test_client

@@ -1,0 +1,6 @@
+<form class="theme-form" method="post" action="/theme">
+  <input type="hidden" name="theme" value="{{ theme_context.toggle_theme }}">
+  <button type="submit" aria-label="{{ theme_context.toggle_label }}" title="{{ theme_context.toggle_label }}">
+    <span aria-hidden="true">{{ theme_context.icon }}</span>
+  </button>
+</form>

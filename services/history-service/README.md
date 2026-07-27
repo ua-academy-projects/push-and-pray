@@ -27,7 +27,14 @@ PROVIDER_CONNECT_TIMEOUT_SECONDS=5
 PROVIDER_READ_TIMEOUT_SECONDS=10
 PROVIDER_WRITE_TIMEOUT_SECONDS=5
 PROVIDER_POOL_TIMEOUT_SECONDS=5
-PROVIDER_INGESTION_TOKEN=replace-with-at-least-32-characters
+RABBITMQ_HOST=127.0.0.1
+RABBITMQ_PORT=5672
+RABBITMQ_VIRTUAL_HOST=/
+RABBITMQ_USERNAME=aegis_history
+RABBITMQ_PASSWORD=replace-me
+RABBITMQ_EXCHANGE_NAME=aegis.blacklist
+RABBITMQ_QUEUE_NAME=aegis.history.blacklist.snapshots
+RABBITMQ_ROUTING_KEY=blacklist.snapshot.complete
 BLACKLIST_STALE_AFTER_SECONDS=43200
 ```
 
@@ -35,12 +42,19 @@ BLACKLIST_STALE_AFTER_SECONDS=43200
 host defaults to `127.0.0.1` and the port defaults to `3306`. Do not commit real
 credentials.
 
-## Blacklist ingestion
+## Blacklist consumption
 
 History does not run a periodic blacklist scheduler. The standalone Provider
-worker owns polling and sends normalized snapshots to the authenticated
-`POST /internal/v1/blacklist/snapshots` endpoint. History remains the sole
-MariaDB owner and saves accepted deliveries transactionally.
+worker owns polling and publishes normalized complete-snapshot messages through
+RabbitMQ. The standalone History blacklist consumer validates those messages
+and saves accepted deliveries transactionally. History remains the sole
+MariaDB owner; there is no HTTP snapshot-ingestion endpoint.
+
+Run the consumer independently of the History API:
+
+```bash
+.venv/bin/aegis-history-blacklist-consumer
+```
 
 Every accepted snapshot and all of its entries are retained in the initial
 implementation. There is no automatic pruning or retention window.
@@ -95,6 +109,12 @@ To validate downgrade behavior against a disposable database only:
 ```
 
 The application never calls `create_all()`.
+
+In Vagrant, History provisioning performs an authenticated `SELECT 1` readiness
+check before `alembic upgrade head`, then runs `alembic current --check-heads`.
+Both commands are safe to repeat. Database provisioning creates an empty
+migrated application database and does not automatically import the repository
+SQL dump or seed blacklist snapshots.
 
 ## Tests
 

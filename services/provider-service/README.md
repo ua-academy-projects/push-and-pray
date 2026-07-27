@@ -26,8 +26,13 @@ ABUSEIPDB_POOL_TIMEOUT_SECONDS=5
 ABUSEIPDB_OPERATION_TIMEOUT_SECONDS=20
 BLACKLIST_POLLING_ENABLED=false
 BLACKLIST_OUTBOX_PATH=var/provider-blacklist-outbox.sqlite3
-HISTORY_SERVICE_URL=http://127.0.0.1:8002
-HISTORY_INGESTION_TOKEN=replace-with-shared-secret
+RABBITMQ_HOST=127.0.0.1
+RABBITMQ_PORT=5672
+RABBITMQ_VIRTUAL_HOST=/
+RABBITMQ_USERNAME=aegis_provider
+RABBITMQ_PASSWORD=replace-me
+RABBITMQ_EXCHANGE_NAME=aegis.blacklist
+RABBITMQ_ROUTING_KEY=blacklist.snapshot.complete
 ```
 
 `ABUSEIPDB_API_KEY` is required and is read from the service-local environment
@@ -56,9 +61,10 @@ enabled:
 ```
 
 The API and worker are independent processes. The worker calls AbuseIPDB,
-commits every successful fetch to its SQLite outbox, and then calls only
-History's authenticated ingestion endpoint. Polling and delivery retries have
-separate clocks, so a History outage does not discard a fetched snapshot.
+commits every successful fetch to its SQLite outbox, and publishes the complete
+message to RabbitMQ with persistent delivery and publisher confirmation.
+Polling and publication retries have separate clocks, so a broker outage does
+not discard a fetched snapshot.
 Production must place `BLACKLIST_OUTBOX_PATH` on durable storage writable only
 by the Provider service account.
 

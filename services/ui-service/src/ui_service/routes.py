@@ -18,6 +18,7 @@ from ui_service.application_client import (
     ApplicationClientError,
     get_application_client,
 )
+from ui_service.config import Settings
 from ui_service.schemas import (
     BlacklistAnalytics,
     BlacklistPage,
@@ -28,6 +29,13 @@ from ui_service.schemas import (
     HistoryPage,
 )
 from ui_service.security_logging import log_sanitized_exception
+from ui_service.theme.http import (
+    ThemeContext,
+    get_theme_context,
+    get_theme_service,
+    get_theme_settings,
+)
+from ui_service.theme.service import ThemeService, ThemeUnavailableError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,6 +106,8 @@ def render_page(
     request: Request,
     *,
     request_id: str,
+    theme_context: ThemeContext,
+    settings: Settings,
     ip_address: str = "",
     max_age_days: str = "30",
     result: CheckResult | None = None,
@@ -105,9 +115,12 @@ def render_page(
     history: HistoryPage | None = None,
     history_error: str | None = None,
 ) -> HTMLResponse:
-    response = templates.TemplateResponse(
-        request=request,
+    return render_template(
+        request,
         name="index.html",
+        request_id=request_id,
+        theme_context=theme_context,
+        settings=settings,
         context={
             "ip_address": ip_address,
             "max_age_days": max_age_days,
@@ -117,7 +130,29 @@ def render_page(
             "history_error": history_error,
         },
     )
+
+
+def render_template(
+    request: Request,
+    *,
+    name: str,
+    request_id: str,
+    theme_context: ThemeContext,
+    settings: Settings,
+    context: dict[str, object],
+) -> HTMLResponse:
+    """Inject UI-owned theme state into every Jinja response."""
+    response = templates.TemplateResponse(
+        request=request,
+        name=name,
+        context={
+            **context,
+            "theme": theme_context.theme,
+            "theme_context": theme_context,
+        },
+    )
     response.headers["X-Request-ID"] = request_id
+    theme_context.apply_cookie(response, request, settings)
     return response
 
 
@@ -145,11 +180,13 @@ async def blacklist_style() -> Response:
 async def readiness(
     request: Request,
     application_client: Annotated[ApplicationClient, Depends(get_application_client)],
+    theme_service: Annotated[ThemeService, Depends(get_theme_service)],
 ) -> dict[str, str] | JSONResponse:
     request_id = request_id_for(request)
     try:
         await application_client.ready(request_id=request_id)
-    except ApplicationClientError:
+        await theme_service.ready()
+    except ApplicationClientError, ThemeUnavailableError:
         response = JSONResponse(status_code=503, content={"status": "not ready"})
     else:
         response = JSONResponse(content={"status": "ready"})
@@ -161,12 +198,16 @@ async def readiness(
 async def index(
     request: Request,
     application_client: Annotated[ApplicationClient, Depends(get_application_client)],
+    theme_context: Annotated[ThemeContext, Depends(get_theme_context)],
+    settings: Annotated[Settings, Depends(get_theme_settings)],
 ) -> HTMLResponse:
     request_id = request_id_for(request)
     history, history_error = await load_history(application_client, request_id)
     return render_page(
         request,
         request_id=request_id,
+        theme_context=theme_context,
+        settings=settings,
         history=history,
         history_error=history_error,
     )
@@ -176,6 +217,8 @@ async def index(
 async def blacklist(
     request: Request,
     application_client: Annotated[ApplicationClient, Depends(get_application_client)],
+    theme_context: Annotated[ThemeContext, Depends(get_theme_context)],
+    settings: Annotated[Settings, Depends(get_theme_settings)],
     page: Annotated[int, Query(ge=1)] = 1,
     range_days: TurnoverRange = TurnoverRange.thirty_days,
 ) -> HTMLResponse:
@@ -222,9 +265,12 @@ async def blacklist(
         except ApplicationClientError:
             turnover_error = "Turnover history is temporarily unavailable."
 
-    response = templates.TemplateResponse(
-        request=request,
+    return render_template(
+        request,
         name="blacklist.html",
+        request_id=request_id,
+        theme_context=theme_context,
+        settings=settings,
         context={
             "status": status_result,
             "blacklist": blacklist_page,
@@ -242,8 +288,6 @@ async def blacklist(
             "range_days": range_days,
         },
     )
-    response.headers["X-Request-ID"] = request_id
-    return response
 
 
 @router.get(
@@ -280,6 +324,8 @@ async def blacklist_status(
 async def submit_check(
     request: Request,
     application_client: Annotated[ApplicationClient, Depends(get_application_client)],
+    theme_context: Annotated[ThemeContext, Depends(get_theme_context)],
+    settings: Annotated[Settings, Depends(get_theme_settings)],
     ip_address: Annotated[str, Form()] = "",
     max_age_days: Annotated[str, Form()] = "30",
 ) -> HTMLResponse:
@@ -310,6 +356,8 @@ async def submit_check(
     return render_page(
         request,
         request_id=request_id,
+        theme_context=theme_context,
+        settings=settings,
         ip_address=ip_address,
         max_age_days=max_age_days,
         result=result,

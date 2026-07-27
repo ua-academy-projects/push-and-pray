@@ -13,6 +13,7 @@ dependencies = [
   "jinja2",
   "pydantic-settings",
   "python-multipart",
+  "redis",
   "uvicorn[standard]",
 ]
 

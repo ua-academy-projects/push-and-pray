@@ -8,8 +8,33 @@ PROVIDER_SECRET_FILE = File.expand_path(
 DATABASE_SECRET_FILE = File.expand_path(
   ENV.fetch("AEGIS_DATABASE_SECRET_FILE", "~/.config/aegis/mariadb-password"),
 )
+RABBITMQ_PROVIDER_SECRET_FILE = File.expand_path(
+  ENV.fetch(
+    "AEGIS_RABBITMQ_PROVIDER_SECRET_FILE",
+    "~/.config/aegis/rabbitmq-provider-password",
+  ),
+)
+RABBITMQ_HISTORY_SECRET_FILE = File.expand_path(
+  ENV.fetch(
+    "AEGIS_RABBITMQ_HISTORY_SECRET_FILE",
+    "~/.config/aegis/rabbitmq-history-password",
+  ),
+)
+RABBITMQ_ADMIN_SECRET_FILE = File.expand_path(
+  ENV.fetch(
+    "AEGIS_RABBITMQ_ADMIN_SECRET_FILE",
+    "~/.config/aegis/rabbitmq-admin-password",
+  ),
+)
 
 VMS = {
+  "infra-vm" => {
+    ip: "192.168.100.14",
+    cpus: 2,
+    memory: 2048,
+    infrastructure: true,
+    firewall_role: "infra",
+  },
   "db-vm" => {
     ip: "192.168.100.13",
     cpus: 1,
@@ -52,7 +77,16 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   VMS.each do |name, settings|
     config.vm.define name do |machine|
       machine.vm.hostname = name
-      machine.vm.network "public_network", ip: settings.fetch(:ip), bridge: "Ethernet 4"
+      machine.vm.network "private_network", ip: settings.fetch(:ip)
+
+      if settings[:infrastructure]
+        # Management is host-loopback only; AMQP remains on the private network.
+        machine.vm.network "forwarded_port",
+          guest: 15_672,
+          host: 15_672,
+          host_ip: "127.0.0.1",
+          auto_correct: false
+      end
 
       # VirtualBox-specific resource settings are intentionally kept together.
       machine.vm.provider "virtualbox" do |virtualbox|
@@ -66,6 +100,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         echo "Assigned addresses: $(hostname -I)"
       SHELL
 
+      # Common OS tooling and directories must exist before a service-specific
+      # virtual environment is installed or any systemd unit is started.
+      machine.vm.provision "shell", path: "provision/base-vm.sh"
+
       if settings.key?(:service)
         machine.vm.provision "shell",
           path: "provision/app-vm.sh",
@@ -76,6 +114,9 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         machine.vm.provision "file",
           source: PROVIDER_SECRET_FILE,
           destination: "/tmp/aegis-provider-api-key"
+        machine.vm.provision "file",
+          source: RABBITMQ_PROVIDER_SECRET_FILE,
+          destination: "/tmp/aegis-rabbitmq-provider-password"
         machine.vm.provision "shell", path: "provision/provider-vm.sh"
       end
 
@@ -83,7 +124,21 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         machine.vm.provision "file",
           source: DATABASE_SECRET_FILE,
           destination: "/tmp/aegis-mariadb-password"
+        machine.vm.provision "file",
+          source: RABBITMQ_HISTORY_SECRET_FILE,
+          destination: "/tmp/aegis-rabbitmq-history-password"
         machine.vm.provision "shell", path: "provision/history-vm.sh"
+      end
+
+      if settings[:infrastructure]
+        {
+          RABBITMQ_PROVIDER_SECRET_FILE => "/tmp/aegis-rabbitmq-provider-password",
+          RABBITMQ_HISTORY_SECRET_FILE => "/tmp/aegis-rabbitmq-history-password",
+          RABBITMQ_ADMIN_SECRET_FILE => "/tmp/aegis-rabbitmq-admin-password",
+        }.each do |source, destination|
+          machine.vm.provision "file", source: source, destination: destination
+        end
+        machine.vm.provision "shell", path: "provision/infra-vm.sh"
       end
 
       if settings[:deploy_ui]
