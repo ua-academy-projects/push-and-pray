@@ -2,33 +2,21 @@
 set -euo pipefail
 
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip
+apt-get install -y docker.io
+systemctl enable --now docker
+systemctl disable --now proxy.service 2>/dev/null || true
 
-python3 -m venv /opt/venv
-/opt/venv/bin/pip install --no-cache-dir -r /vagrant/app/requirements.txt
-
-cat > /etc/systemd/system/proxy.service <<EOF
-[Unit]
-Description=proxy-service
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/vagrant/app
-
-Environment=BACKEND_SERVICE_URL=${BACKEND_SERVICE_URL}
-Environment=RABBITMQ_URL=${RABBITMQ_URL}
-Environment=PORT=5001
-
-ExecStart=/opt/venv/bin/python /vagrant/app/proxy.py
-
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable proxy.service
-systemctl restart proxy.service
+docker build --network host --tag academy-proxy:latest /vagrant/app
+docker rm --force academy-proxy 2>/dev/null || true
+docker run --detach \
+  --name academy-proxy \
+  --restart unless-stopped \
+  --network host \
+  --env RABBITMQ_URL="${RABBITMQ_URL}" \
+  --env PORT=5001 \
+  --health-cmd="python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/health')\"" \
+  --health-interval=5s \
+  --health-timeout=3s \
+  --health-retries=12 \
+  --health-start-period=10s \
+  academy-proxy:latest

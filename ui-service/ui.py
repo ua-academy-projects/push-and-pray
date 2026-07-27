@@ -12,7 +12,7 @@ logger = logging.getLogger("ui-service")
 
 app = Flask(__name__)
 
-PROXY_SERVICE_URL = os.getenv("PROXY_SERVICE_URL", "http://localhost:5001")
+BACKEND_SERVICE_URL = os.getenv("BACKEND_SERVICE_URL", "http://localhost:5002")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -28,7 +28,7 @@ DEFAULT_UI_STATE = {
 
 
 def get_or_create_session_id() -> str:
-    """Читає session_id з cookie; якщо нема - генерує новий (без авторизації)."""
+    """Читає session_id з cookie; якщо нема - генерує новий."""
     return request.cookies.get("session_id") or str(uuid.uuid4())
 
 
@@ -86,21 +86,21 @@ def history():
     try:
         limit = request.args.get("limit")
         params = {"limit": limit} if limit else None
-        resp = requests.get(f"{PROXY_SERVICE_URL}/api/history", params=params, timeout=15)
+        resp = requests.get(f"{BACKEND_SERVICE_URL}/history", params=params, timeout=15)
         return jsonify(resp.json()), resp.status_code
     except requests.RequestException as exc:
-        logger.exception("Proxy недоступний")
-        return jsonify({"error": f"Proxy недоступний: {exc}"}), 502
+        logger.exception("Backend недоступний")
+        return jsonify({"error": f"Backend недоступний: {exc}"}), 502
 
 
 @app.route("/hourly", methods=["GET"])
 def hourly():
     try:
-        resp = requests.get(f"{PROXY_SERVICE_URL}/api/hourly", timeout=15)
+        resp = requests.get(f"{BACKEND_SERVICE_URL}/history/hourly", timeout=15)
         return jsonify(resp.json()), resp.status_code
     except requests.RequestException as exc:
-        logger.exception("Proxy недоступний")
-        return jsonify({"error": f"Proxy недоступний: {exc}"}), 502
+        logger.exception("Backend недоступний")
+        return jsonify({"error": f"Backend недоступний: {exc}"}), 502
 
 
 if __name__ == "__main__":

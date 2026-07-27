@@ -8,7 +8,7 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("backend-poller")
 
-# URL, за яким поллер звертається до самого Backend (як звичайний клієнт).
+# URL Proxy/Weather Fetcher, який поллер викликає за розкладом.
 PROXY_SERVICE_URL = os.getenv("PROXY_SERVICE_URL", "http://localhost:5001")
 
 # Список міст, які треба автоматично оновлювати - через кому в env-змінній.

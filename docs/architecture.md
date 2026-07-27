@@ -4,14 +4,33 @@
 
 | Компонент | Протокол / порт | Відповідальність |
 |---|---|---|
-| **UI Service** | HTTP 5000 | Віддає UI, створює анонімну browser-session і зберігає її UI-стан у Redis. |
+| **UI Service** | HTTP 5000, HTTP client | Віддає UI, зберігає анонімну UI-сесію в Redis і читає погодні дані безпосередньо з Backend. |
 | **Redis** | Redis 6379 | Тимчасове сховище `session:<UUID>` з TTL 24 години. Не містить бізнес-даних. |
 | **Poller** | HTTP client | За розкладом запускає отримання погоди для контрольованих міст. |
-| **Proxy Service** | HTTP 5001, AMQP client | Викликає Open-Meteo, читає історію через Backend і публікує нові погодні події в RabbitMQ. |
+| **Proxy Service / Weather Fetcher** | HTTP 5001, AMQP client | Приймає запуск лише від Poller, викликає Open-Meteo і публікує нові погодні події в RabbitMQ. |
 | **RabbitMQ** | AMQP 5672 | Durable queue `weather_events` для асинхронного передавання подій. |
-| **History Consumer** | AMQP consumer, SQL client | Споживає `weather_events`, підтверджує повідомлення після успішного запису в PostgreSQL. |
-| **Backend Service** | HTTP 5002, SQL client | Read API для історії та погодинного прогнозу. |
+| **Backend / History Service** | HTTP 5002, AMQP consumer, SQL client | Read API для історії та погодинного прогнозу; споживає `weather_events` і записує їх у PostgreSQL. |
 | **PostgreSQL** | SQL 5432 | Постійно зберігає історію погоди та погодинний прогноз. |
+
+## Розміщення у Vagrant
+
+Vagrant відповідає за VM і bridged network. Кожен сервіс запускається в
+Docker-контейнері всередині відповідної VM:
+
+| VM | Контейнер | Порти на VM |
+|---|---|---|
+| `ui` | `academy-ui` | `5000:5000` |
+| `poller` | `academy-poller` | немає |
+| `proxy` | `academy-proxy` | `5001:5001` |
+| `backend` | `academy-backend` | `5002:5002` |
+| `db` | `academy-postgres` | `5432:5432` |
+| `db` | `academy-redis` | `6379:6379` |
+| `db` | `academy-rabbitmq` | `5672:5672`, `15672:15672` |
+
+Контейнери використовують Docker host network усередині своєї VM. Це прибирає
+зайвий nested NAT між bridged VM і Docker та дозволяє звертатися до сервісів за
+статичними IP VM із `Vagrantfile`. Дані infrastructure containers зберігаються
+у named Docker volumes.
 
 ## Потоки даних
 
@@ -29,14 +48,19 @@
 2. Proxy викликає Open-Meteo Geocoding та Forecast API через HTTPS.
 3. Proxy публікує durable AMQP-повідомлення `weather_current` і
    `weather_hourly` до черги RabbitMQ `weather_events`.
-4. History Consumer споживає повідомлення і записує дані в PostgreSQL.
+4. RabbitMQ worker усередині Backend/History Service споживає повідомлення і
+   записує дані в PostgreSQL.
    Повідомлення підтверджується (`ack`) лише після commit; при помилці воно
    повертається до черги.
 
+Колишні синхронні `POST /history` та `POST /history/hourly` видалені. Таким
+чином єдиний write-path між Proxy і Backend проходить через RabbitMQ.
+
 ### Читання історії
 
-`Browser → UI → Proxy → Backend → PostgreSQL` використовує синхронний HTTP
-лише для читання. Це не замінює асинхронний запис через RabbitMQ.
+`Browser → UI → Backend → PostgreSQL` використовує синхронний HTTP лише для
+читання. UI не звертається до Proxy/Weather Fetcher. RabbitMQ не потрібен для
+request/response-запитів читання.
 
 ## Надійність черги
 

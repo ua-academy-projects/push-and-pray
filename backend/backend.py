@@ -3,7 +3,10 @@
 import os
 import json
 import logging
+import threading
+import time
 
+import pika
 import psycopg2
 import psycopg2.extras
 from flask import Flask, request, jsonify
@@ -12,6 +15,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("backend-service")
 
 app = Flask(__name__)
+
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
+QUEUE_NAME = "weather_events"
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -45,12 +51,9 @@ def init_db():
 def health():
     return jsonify({"status": "ok", "service": "backend-service"})
 
-@app.route("/history", methods=["POST"])
-def save_history():
-    payload = request.get_json(silent=True)
-    if not payload or "city" not in payload:
-        return jsonify({"error": "Поле 'city' є обов'язковим"}), 400
 
+def save_current(payload: dict):
+    """Persist one current-weather event consumed from RabbitMQ."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -58,8 +61,7 @@ def save_history():
                 """
                 INSERT INTO weather_history
                     (city, latitude, longitude, temperature, windspeed, status, raw_response)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, requested_at;
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
                 """,
                 (
                     payload.get("city"),
@@ -71,59 +73,17 @@ def save_history():
                     json.dumps(payload.get("raw_response", {})),
                 ),
             )
-            new_id, requested_at = cur.fetchone()
         conn.commit()
-        logger.info("Збережено запис #%s для міста %s", new_id, payload.get("city"))
-        return jsonify({"id": new_id, "requested_at": requested_at.isoformat()}), 201
-    except Exception as exc:  # noqa: BLE001
-        conn.rollback()
-        logger.exception("Помилка при збереженні запису")
-        return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 
 
-@app.route("/history", methods=["GET"])
-def get_history():
-    limit = request.args.get("limit", default=20, type=int)
-    limit = max(1, min(limit, 100))
-
-    conn = get_connection()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT id, requested_at, city, latitude, longitude,
-                       temperature, windspeed, source, status
-                FROM weather_history
-                ORDER BY requested_at DESC
-                LIMIT %s;
-                """,
-                (limit,),
-            )
-            rows = cur.fetchall()
-
-        for row in rows:
-            row["requested_at"] = row["requested_at"].isoformat()
-
-        return jsonify(rows)
-    finally:
-        conn.close()
-@app.route("/history/hourly", methods=["POST"])
-def save_hourly():
-    """
-    Приймає погодинний прогноз від Backend і зберігає/оновлює його
-    (UPSERT по (city, forecast_hour) - повторний запис тієї ж години
-    оновлює значення, а не створює дубль).
-    """
-    payload = request.get_json(silent=True)
-    if not payload or "city" not in payload or "hours" not in payload:
-        return jsonify({"error": "Поля 'city' та 'hours' є обов'язковими"}), 400
-
+def save_hourly(payload: dict):
+    """Upsert hourly forecast events consumed from RabbitMQ."""
     city = payload["city"]
     latitude = payload.get("latitude")
     longitude = payload.get("longitude")
-    hours = payload["hours"]
+    hours = payload.get("hours", [])
 
     conn = get_connection()
     try:
@@ -153,12 +113,71 @@ def save_hourly():
                     ),
                 )
         conn.commit()
-        logger.info("Збережено %s погодинних записів для міста %s", len(hours), city)
-        return jsonify({"city": city, "saved_hours": len(hours)}), 201
-    except Exception as exc:  # noqa: BLE001
-        conn.rollback()
-        logger.exception("Помилка при збереженні погодинного прогнозу")
-        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+def on_weather_event(channel, method, _properties, body):
+    """Handle and acknowledge one event only after its DB transaction commits."""
+    try:
+        message = json.loads(body)
+        event_type = message.get("type")
+        payload = message.get("payload", {})
+
+        if event_type == "weather_current":
+            save_current(payload)
+        elif event_type == "weather_hourly":
+            save_hourly(payload)
+        else:
+            logger.warning("Невідомий тип події: %s", event_type)
+
+        channel.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info("Оброблено RabbitMQ-подію %s", event_type)
+    except Exception:
+        logger.exception("Помилка обробки повідомлення - повертаю в чергу")
+        channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
+
+def consume_weather_events():
+    """Run the Backend's RabbitMQ consumer, reconnecting after broker failures."""
+    while True:
+        try:
+            connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+            channel = connection.channel()
+            channel.queue_declare(queue=QUEUE_NAME, durable=True)
+            channel.basic_qos(prefetch_count=1)
+            channel.basic_consume(queue=QUEUE_NAME, on_message_callback=on_weather_event)
+            logger.info("Backend слухає RabbitMQ-чергу '%s'", QUEUE_NAME)
+            channel.start_consuming()
+        except Exception:
+            logger.exception("RabbitMQ consumer зупинився; повторне підключення через 5 секунд")
+            time.sleep(5)
+
+
+@app.route("/history", methods=["GET"])
+def get_history():
+    limit = request.args.get("limit", default=20, type=int)
+    limit = max(1, min(limit, 100))
+
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, requested_at, city, latitude, longitude,
+                       temperature, windspeed, source, status
+                FROM weather_history
+                ORDER BY requested_at DESC
+                LIMIT %s;
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+
+        for row in rows:
+            row["requested_at"] = row["requested_at"].isoformat()
+
+        return jsonify(rows)
     finally:
         conn.close()
 
@@ -189,7 +208,9 @@ def get_hourly():
     finally:
         conn.close()
 
+
 if __name__ == "__main__":
     init_db()
+    threading.Thread(target=consume_weather_events, daemon=True).start()
     port = int(os.getenv("PORT", 5002))
     app.run(host="0.0.0.0", port=port)

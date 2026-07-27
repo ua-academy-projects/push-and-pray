@@ -51,12 +51,15 @@ services:
       - DB_NAME=taska-db
       - DB_USER=admin
       - DB_PASSWORD=admin
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
       - PORT=5002
     ports:
       - "5002:5002"
     depends_on:
       postgres-db:
-        condition: service_healthy   # <-- ключова зміна
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
@@ -69,12 +72,9 @@ services:
     build: ./proxy
     container_name: proxy-service
     environment:
-      - BACKEND_SERVICE_URL=http://backend-service:5002
       - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
       - PORT=5001
     depends_on:
-      backend-service:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     restart: unless-stopped
@@ -96,34 +96,18 @@ services:
          proxy-service:
             condition: service_healthy
 
-  backend-consumer:
-    build: ./backend-consumer
-    environment:
-      - DB_HOST=postgres-db
-      - DB_PORT=5432
-      - DB_NAME=taska-db
-      - DB_USER=admin
-      - DB_PASSWORD=admin
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    depends_on:
-      postgres-db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    restart: unless-stopped
-
   ui-service:
     build: ./ui-service
     container_name: ui-service
     environment:
-      - PROXY_SERVICE_URL=http://proxy-service:5001
+      - BACKEND_SERVICE_URL=http://backend-service:5002
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PORT=5000
     ports:
       - "5000:5000"
     depends_on:
-       proxy-service:
+       backend-service:
             condition: service_healthy
        redis:
             condition: service_healthy

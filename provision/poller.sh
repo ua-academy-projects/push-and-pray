@@ -2,30 +2,17 @@
 set -euo pipefail
 
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip
+apt-get install -y docker.io
+systemctl enable --now docker
+systemctl disable --now poller.service 2>/dev/null || true
 
-python3 -m venv /opt/venv
-/opt/venv/bin/pip install --no-cache-dir -r /vagrant/app/requirements.txt
-
-cat > /etc/systemd/system/poller.service << EOF
-[Unit]
-Description=poller-service
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/vagrant/app
-Environment=PROXY_SERVICE_URL=${PROXY_SERVICE_URL}
-Environment=WATCHED_CITIES=Kyiv,Warsaw,Berlin
-Environment=POLL_INTERVAL_SECONDS=900
-ExecStart=/opt/venv/bin/python /vagrant/app/poller.py
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable poller.service
-systemctl restart poller.service
+docker build --network host --tag academy-poller:latest /vagrant/app
+docker rm --force academy-poller 2>/dev/null || true
+docker run --detach \
+  --name academy-poller \
+  --restart unless-stopped \
+  --network host \
+  --env PROXY_SERVICE_URL="${PROXY_SERVICE_URL}" \
+  --env WATCHED_CITIES=Kyiv,Warsaw,Berlin \
+  --env POLL_INTERVAL_SECONDS=900 \
+  academy-poller:latest

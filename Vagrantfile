@@ -23,7 +23,6 @@ IPS = {
   "proxy"             => ENV['PROXY_IP'] || "192.168.1.17",
   "poller"            => ENV['POLLER_IP'] || "192.168.1.18",
   "ui"                => ENV['UI_IP'] || "192.168.1.19",
-  "backend-consumer"  => ENV['CONSUMER_IP'] || "192.168.1.20",
 }
 
 VMS = {
@@ -47,19 +46,7 @@ VMS = {
       "DB_NAME"     => DB_NAME,
       "DB_USER"     => DB_USER,
       "DB_PASSWORD" => DB_PASSWORD,
-    },
-  },
-
-  "backend-consumer" => {
-    hostname:      "backend-consumer",
-    synced_folder: "backend-consumer",
-    provision:     "./provision/backend-consumer.sh",
-    env: {
-      "DB_HOST"       => IPS["db"],
-      "DB_NAME"       => DB_NAME,
-      "DB_USER"       => DB_USER,
-      "DB_PASSWORD"   => DB_PASSWORD,
-      "RABBITMQ_URL"  => "amqp://admin:admin@#{IPS['db']}:5672/",
+      "RABBITMQ_URL" => "amqp://admin:admin@#{IPS['db']}:5672/",
     },
   },
 
@@ -68,7 +55,6 @@ VMS = {
     synced_folder: "proxy",
     provision:     "./provision/proxy.sh",
     env: {
-      "BACKEND_SERVICE_URL" => "http://#{IPS['backend']}:5002",
       "RABBITMQ_URL" => "amqp://admin:admin@#{IPS['db']}:5672/",
     },
   },
@@ -90,7 +76,7 @@ VMS = {
       { guest: 5000, host: 5000, host_ip: "0.0.0.0" }
     ],
     env: {
-      "PROXY_SERVICE_URL" => "http://#{IPS['proxy']}:5001",
+      "BACKEND_SERVICE_URL" => "http://#{IPS['backend']}:5002",
       "REDIS_HOST"        => IPS["db"],
     },
   },

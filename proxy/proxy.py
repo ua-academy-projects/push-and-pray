@@ -11,8 +11,6 @@ logger = logging.getLogger("proxy-service")
 
 app = Flask(__name__)
 
-BACKEND_SERVICE_URL = os.getenv("BACKEND_SERVICE_URL", "http://localhost:5002")
-
 GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_API = "https://api.open-meteo.com/v1/forecast"
 
@@ -106,8 +104,6 @@ def get_current_weather():
             "raw_response": weather_data,
         }
 
-        # БУЛО: requests.post(f"{BACKEND_SERVICE_URL}/history", json=record, timeout=10)
-        # СТАЛО: асинхронна публікація в чергу замість прямого HTTP-виклику
         try:
             publish_event("weather_current", record)
         except Exception as exc:  # the data must not be reported as saved when it was not queued
@@ -126,8 +122,6 @@ def get_current_weather():
             for t, temp, prec, code in zip(times, temps, precs, codes)
         ]
 
-        # БУЛО: requests.post(f"{BACKEND_SERVICE_URL}/history/hourly", json={...}, timeout=15)
-        # СТАЛО: асинхронна публікація в ту саму чергу з іншим типом події
         if hours:
             try:
                 publish_event("weather_hourly", {
@@ -144,31 +138,6 @@ def get_current_weather():
     except requests.RequestException as exc:
         logger.exception("Помилка звернення до публічного API")
         return jsonify({"error": f"Публічне API недоступне: {exc}"}), 502
-
-
-@app.route("/api/history", methods=["GET"])
-def get_history():
-    limit = request.args.get("limit", default=20)
-    try:
-        resp = requests.get(
-            f"{BACKEND_SERVICE_URL}/history", params={"limit": limit}, timeout=10
-        )
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except requests.RequestException as exc:
-        logger.exception("Помилка звернення до Backend Service")
-        return jsonify({"error": f"Backend Service недоступний: {exc}"}), 502
-
-
-@app.route("/api/hourly", methods=["GET"])
-def get_hourly():
-    try:
-        resp = requests.get(f"{BACKEND_SERVICE_URL}/history/hourly", timeout=10)
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except requests.RequestException as exc:
-        logger.exception("Помилка звернення до Backend Service (hourly)")
-        return jsonify({"error": f"Backend Service недоступний: {exc}"}), 502
 
 
 if __name__ == "__main__":

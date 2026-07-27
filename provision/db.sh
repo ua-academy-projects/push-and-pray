@@ -2,38 +2,55 @@
 set -euo pipefail
 
 apt-get update -y
-apt-get install -y postgresql postgresql-contrib
-apt-get install -y redis-server rabbitmq-server
+apt-get install -y docker.io
+systemctl enable --now docker
 
+# Stop services from the pre-container version when an existing VM is reprovisioned.
+systemctl disable --now postgresql.service 2>/dev/null || true
+systemctl disable --now redis-server.service 2>/dev/null || true
+systemctl disable --now rabbitmq-server.service 2>/dev/null || true
 
-PG_VERSION=$(ls /etc/postgresql)
-PG_CONF="/etc/postgresql/${PG_VERSION}/main/postgresql.conf"
-PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
+docker volume create academy-postgres-data
+docker volume create academy-redis-data
+docker volume create academy-rabbitmq-data
 
-sed -i "s/^#\?listen_addresses.*/listen_addresses = '*'/" "$PG_CONF"
+docker rm --force academy-postgres academy-redis academy-rabbitmq 2>/dev/null || true
 
-sed -i '/^bind /c\bind 0.0.0.0' /etc/redis/redis.conf
-sed -i 's/^protected-mode .*/protected-mode no/' /etc/redis/redis.conf
+docker run --detach \
+  --name academy-postgres \
+  --restart unless-stopped \
+  --network host \
+  --env POSTGRES_DB="${DB_NAME}" \
+  --env POSTGRES_USER="${DB_USER}" \
+  --env POSTGRES_PASSWORD="${DB_PASSWORD}" \
+  --mount source=academy-postgres-data,target=/var/lib/postgresql/data \
+  --health-cmd="pg_isready -U ${DB_USER} -d ${DB_NAME}" \
+  --health-interval=5s \
+  --health-timeout=5s \
+  --health-retries=12 \
+  postgres:15-alpine
 
-if ! grep -q "192.168.1.0/24" "$PG_HBA"; then
-  echo "host all all 192.168.1.0/24 md5" >> "$PG_HBA"
-fi
+docker run --detach \
+  --name academy-redis \
+  --restart unless-stopped \
+  --network host \
+  --mount source=academy-redis-data,target=/data \
+  --health-cmd="redis-cli ping" \
+  --health-interval=5s \
+  --health-timeout=3s \
+  --health-retries=12 \
+  redis:7-alpine \
+  redis-server --appendonly yes --protected-mode no
 
-systemctl restart postgresql
-systemctl restart redis-server
-
-rabbitmq-plugins enable rabbitmq_management
-systemctl restart rabbitmq-server
-
-rabbitmqctl list_users | grep -q "^admin" || \
-    rabbitmqctl add_user admin admin
-
-rabbitmqctl set_user_tags admin administrator
-rabbitmqctl set_permissions -p / admin ".*" ".*" ".*"
-
-cd /tmp
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';"
-
-sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE DATABASE \"${DB_NAME}\" OWNER ${DB_USER};"
+docker run --detach \
+  --name academy-rabbitmq \
+  --restart unless-stopped \
+  --network host \
+  --env RABBITMQ_DEFAULT_USER=admin \
+  --env RABBITMQ_DEFAULT_PASS=admin \
+  --mount source=academy-rabbitmq-data,target=/var/lib/rabbitmq \
+  --health-cmd="rabbitmq-diagnostics -q ping" \
+  --health-interval=5s \
+  --health-timeout=5s \
+  --health-retries=12 \
+  rabbitmq:3.13-management-alpine
