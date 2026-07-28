@@ -53,6 +53,11 @@ class ProviderServiceError(Exception):
         self.status_code = status_code
 
 
+class InvalidMessageError(Exception):
+    """Raised when RabbitMQ message format or content is invalid and should not be requeued."""
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -140,23 +145,34 @@ def create_tables():
     with open(migration_file, encoding="utf-8") as fh:
         migration_sql = fh.read()
 
-    with get_connection() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(migration_sql)
-            # Fix any corrupt historical rows that are in the future
-            cursor.execute(
-                """
-                UPDATE weather_hourly_points
-                SET data_kind = 'forecast'
-                WHERE data_kind = 'historical'
-                  AND weather_at > NOW();
-                """
-            )
+    max_retries = 30
+    for attempt in range(max_retries):
+        try:
+            with get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(migration_sql)
+                    # Fix any corrupt historical rows that are in the future
+                    cursor.execute(
+                        """
+                        UPDATE weather_hourly_points
+                        SET data_kind = 'forecast'
+                        WHERE data_kind = 'historical'
+                          AND weather_at > NOW();
+                        """
+                    )
 
-    app.logger.info(
-        "Schema migration applied: %s",
-        migration_file,
-    )
+            app.logger.info(
+                "Schema migration applied: %s",
+                migration_file,
+            )
+            return
+        except Exception as error:
+            if attempt == max_retries - 1:
+                app.logger.error("Failed to connect to database after %d attempts: %s", max_retries, error)
+                raise
+            app.logger.warning("Waiting for database connection (%d/%d): %s", attempt + 1, max_retries, error)
+            time.sleep(2)
+
 
 
 
@@ -718,243 +734,103 @@ def get_history_from_database(hours: int):
 
 
 # ---------------------------------------------------------------------------
-# Backfill — detect and fill missing historical hours
-# ---------------------------------------------------------------------------
-
-def backfill_missing_hours():
-    """Fill any gap in historical data since the last recorded hour."""
-    now_utc = floor_to_hour(datetime.now(timezone.utc))
-
-    with get_connection() as connection:
-        last_at = get_last_historical_hour(connection)
-
-    if last_at is None:
-        # No data at all — fetch full HISTORY_HOURS window
-        app.logger.info(
-            "No historical data found. "
-            "Fetching %d hours from provider.",
-            HISTORY_HOURS,
-        )
-        _do_history_fetch(HISTORY_HOURS)
-        return
-
-    last_hour = floor_to_hour(last_at)
-
-    # How many hours are missing (not counting the last stored hour itself)
-    missing_count = int(
-        (now_utc - last_hour).total_seconds() / 3600
-    )
-
-    if missing_count <= 0:
-        app.logger.info(
-            "Historical data is up-to-date "
-            "(last: %s).",
-            last_hour.isoformat(),
-        )
-        return
-
-    # Limit to what the API supports
-    hours_to_fetch = min(missing_count, HISTORY_HOURS)
-
-    app.logger.info(
-        "Backfilling %d missing historical hours "
-        "(last recorded: %s).",
-        missing_count,
-        last_hour.isoformat(),
-    )
-
-    _do_history_fetch(hours_to_fetch)
-
-
-def _do_history_fetch(past_hours: int):
-    """Fetch `past_hours` from provider and UPSERT into DB."""
-    fetched_at = datetime.now(timezone.utc)
-
-    provider_data = fetch_history_from_provider(past_hours)
-
-    points = normalize_history_points(provider_data)
-
-    provider = provider_data.get("source", "open-meteo")
-
-    with get_connection() as connection:
-        saved = save_history_points(
-            connection,
-            points,
-            provider,
-            fetched_at,
-        )
-
-        update_history_sync_state(connection, fetched_at)
-
-    app.logger.info(
-        "Historical data saved: %d points "
-        "(requested past_hours=%d).",
-        saved,
-        past_hours,
-    )
-
-    return saved
-
-
-# ---------------------------------------------------------------------------
-# Forecast refresh
-# ---------------------------------------------------------------------------
-
-def refresh_forecast():
-    """Fetch fresh 24-hour forecast and UPSERT into DB."""
-    fetched_at = datetime.now(timezone.utc)
-
-    app.logger.info(
-        "Requesting 24-hour forecast from Provider Service."
-    )
-
-    forecast_data = fetch_forecast_from_provider()
-    points = normalize_forecast_points(forecast_data)
-    provider = forecast_data.get("source", "open-meteo")
-
-    with get_connection() as connection:
-        saved = save_forecast_points(
-            connection,
-            points,
-            provider,
-            fetched_at,
-        )
-
-        update_forecast_sync_state(connection, fetched_at)
-
-    app.logger.info(
-        "Forecast saved: %d points.",
-        saved,
-    )
-
-    return saved
-
-
-# ---------------------------------------------------------------------------
-# Hourly sync job (forecast + history backfill)
-# ---------------------------------------------------------------------------
-
-def run_hourly_sync():
-    """Single scheduler job: refresh forecast + backfill history."""
-    if not sync_lock.acquire(blocking=False):
-        app.logger.warning(
-            "Hourly sync already in progress — skipping."
-        )
-        return
-
-    try:
-        # 1. Forecast
-        try:
-            refresh_forecast()
-
-        except ProviderServiceError as error:
-            app.logger.error(
-                "Forecast refresh failed: %s",
-                error,
-            )
-
-        except (psycopg.Error, RuntimeError) as error:
-            app.logger.error(
-                "Could not save forecast to database: %s",
-                error,
-            )
-
-        # 2. Historical backfill
-        try:
-            backfill_missing_hours()
-
-        except ProviderServiceError as error:
-            app.logger.error(
-                "History backfill failed: %s",
-                error,
-            )
-
-        except (psycopg.Error, RuntimeError) as error:
-            app.logger.error(
-                "Could not save history to database: %s",
-                error,
-            )
-
-    finally:
-        sync_lock.release()
-
-
-# ---------------------------------------------------------------------------
 # RabbitMQ Consumer
 # ---------------------------------------------------------------------------
 
 def process_rabbitmq_message(ch, method, properties, body):
+    delivery_tag = method.delivery_tag
+
     try:
-        payload = json.loads(body.decode("utf-8"))
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception as err:
+            raise InvalidMessageError(f"Invalid JSON payload: {err}") from err
+
+        if not isinstance(payload, dict):
+            raise InvalidMessageError("Payload is not a JSON object")
+
         msg_type = payload.get("type")
-        data = payload.get("data", {})
+        data = payload.get("data")
+        if not msg_type or not isinstance(data, dict):
+            raise InvalidMessageError("Missing or invalid 'type' / 'data' field in message")
+
         fetched_at = datetime.now(timezone.utc)
 
         if msg_type == "current":
-            current = data.get("current", {})
+            current = data.get("current")
+            if not isinstance(current, dict):
+                raise InvalidMessageError("Invalid 'current' payload structure")
+
             current_units = data.get("current_units", {})
             raw_time = current.get("time")
+            if not raw_time:
+                raise InvalidMessageError("Missing timestamp in current weather message")
 
-            if raw_time:
-                current_time = parse_datetime(raw_time)
-                if current_time:
-                    weather_hour = floor_to_hour(current_time)
-                    with get_connection() as connection:
-                        with connection.cursor() as cursor:
-                            cursor.execute(
-                                """
-                                INSERT INTO weather_hourly_points (
-                                    location_key,
-                                    weather_at,
-                                    temperature,
-                                    relative_humidity,
-                                    wind_speed,
-                                    temperature_unit,
-                                    humidity_unit,
-                                    wind_speed_unit,
-                                    provider,
-                                    data_kind,
-                                    source_generated_at,
-                                    fetched_at
-                                )
-                                VALUES (
-                                    %s, %s, %s, %s, %s,
-                                    %s, %s, %s, %s, %s,
-                                    %s, %s
-                                )
-                                ON CONFLICT (location_key, weather_at)
-                                DO UPDATE SET
-                                    temperature = EXCLUDED.temperature,
-                                    relative_humidity = COALESCE(
-                                        EXCLUDED.relative_humidity,
-                                        weather_hourly_points.relative_humidity
-                                    ),
-                                    wind_speed = COALESCE(
-                                        EXCLUDED.wind_speed,
-                                        weather_hourly_points.wind_speed
-                                    ),
-                                    data_kind = EXCLUDED.data_kind,
-                                    fetched_at = EXCLUDED.fetched_at;
-                                """,
-                                (
-                                    LOCATION_KEY,
-                                    weather_hour,
-                                    current.get("temperature_2m"),
-                                    current.get("relative_humidity_2m"),
-                                    current.get("wind_speed_10m"),
-                                    current_units.get("temperature_2m", TEMPERATURE_UNIT),
-                                    current_units.get("relative_humidity_2m", HUMIDITY_UNIT),
-                                    current_units.get("wind_speed_10m", WIND_SPEED_UNIT),
-                                    data.get("source", "open-meteo"),
-                                    "current",
-                                    fetched_at,
-                                    fetched_at,
-                                ),
-                            )
-                    app.logger.info("Persisted RabbitMQ current weather message")
+            current_time = parse_datetime(raw_time)
+            if not current_time:
+                raise InvalidMessageError("Invalid timestamp in current weather message")
+
+            weather_hour = floor_to_hour(current_time)
+            with get_connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO weather_hourly_points (
+                            location_key,
+                            weather_at,
+                            temperature,
+                            relative_humidity,
+                            wind_speed,
+                            temperature_unit,
+                            humidity_unit,
+                            wind_speed_unit,
+                            provider,
+                            data_kind,
+                            source_generated_at,
+                            fetched_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s,
+                            %s, %s
+                        )
+                        ON CONFLICT (location_key, weather_at)
+                        DO UPDATE SET
+                            temperature = EXCLUDED.temperature,
+                            relative_humidity = COALESCE(
+                                EXCLUDED.relative_humidity,
+                                weather_hourly_points.relative_humidity
+                            ),
+                            wind_speed = COALESCE(
+                                EXCLUDED.wind_speed,
+                                weather_hourly_points.wind_speed
+                            ),
+                            data_kind = EXCLUDED.data_kind,
+                            fetched_at = EXCLUDED.fetched_at;
+                        """,
+                        (
+                            LOCATION_KEY,
+                            weather_hour,
+                            current.get("temperature_2m"),
+                            current.get("relative_humidity_2m"),
+                            current.get("wind_speed_10m"),
+                            current_units.get("temperature_2m", TEMPERATURE_UNIT),
+                            current_units.get("relative_humidity_2m", HUMIDITY_UNIT),
+                            current_units.get("wind_speed_10m", WIND_SPEED_UNIT),
+                            data.get("source", "open-meteo"),
+                            "current",
+                            fetched_at,
+                            fetched_at,
+                        ),
+                    )
+            app.logger.info("Persisted RabbitMQ current weather message")
 
         elif msg_type == "forecast":
-            points = normalize_forecast_points(data)
+            try:
+                points = normalize_forecast_points(data)
+            except Exception as err:
+                raise InvalidMessageError(f"Forecast normalization failed: {err}") from err
+
             provider = data.get("source", "open-meteo")
             with get_connection() as connection:
                 saved = save_forecast_points(connection, points, provider, fetched_at)
@@ -962,17 +838,29 @@ def process_rabbitmq_message(ch, method, properties, body):
             app.logger.info("Persisted RabbitMQ forecast (%d points)", saved)
 
         elif msg_type == "history":
-            points = normalize_history_points(data)
+            try:
+                points = normalize_history_points(data)
+            except Exception as err:
+                raise InvalidMessageError(f"History normalization failed: {err}") from err
+
             provider = data.get("source", "open-meteo")
             with get_connection() as connection:
                 saved = save_history_points(connection, points, provider, fetched_at)
                 update_history_sync_state(connection, fetched_at)
             app.logger.info("Persisted RabbitMQ history (%d points)", saved)
 
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except Exception as error:
-        app.logger.error("Error processing RabbitMQ message: %s", error)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        else:
+            raise InvalidMessageError(f"Unknown message type: {msg_type}")
+
+        ch.basic_ack(delivery_tag=delivery_tag)
+
+    except InvalidMessageError as err:
+        app.logger.error("Invalid RabbitMQ message format: %s. Rejecting (requeue=False).", err)
+        ch.basic_nack(delivery_tag=delivery_tag, requeue=False)
+
+    except Exception as err:
+        app.logger.error("Error processing RabbitMQ message: %s. Requeuing (requeue=True).", err)
+        ch.basic_nack(delivery_tag=delivery_tag, requeue=True)
 
 
 def start_rabbitmq_consumer():

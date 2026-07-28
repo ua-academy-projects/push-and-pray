@@ -4,54 +4,25 @@ set -euo pipefail
 
 source /vagrant/providers/common.sh
 
-readonly SERVICE_NAME="provider-service"
-readonly SYSTEMD_SERVICE="weather-provider.service"
+configure_common_system
 
-install_python_runtime
-sync_python_service "${SERVICE_NAME}"
-
-if systemctl list-unit-files \
-    | grep -q '^weather-history.service'; then
-
-    log "Removing the legacy History Service unit"
-    systemctl disable --now weather-history.service
-    rm -f /etc/systemd/system/weather-history.service
-fi
-
-log "Writing the Provider Service systemd unit"
-
-cat > "/etc/systemd/system/${SYSTEMD_SERVICE}" <<'EOF'
-[Unit]
-Description=Weather Provider Service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=vagrant
-Group=vagrant
-WorkingDirectory=/opt/weather-app/provider-service
-Environment="APP_HOST=0.0.0.0"
-Environment="APP_PORT=5002"
-Environment="FLASK_DEBUG=false"
-Environment="EXTERNAL_WEATHER_URL=https://api.open-meteo.com/v1/forecast"
-Environment="RABBITMQ_URL=amqp://weather_user:weather_password@192.168.56.13:5672/"
-
-ExecStart=/opt/weather-app/provider-service/venv/bin/python /opt/weather-app/provider-service/app.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
+for service in weather-provider.service weather-history.service; do
+    if systemctl is-active --quiet "${service}" 2>/dev/null; then
+        log "Stopping native host systemd service ${service}"
+        systemctl disable --now "${service}" || true
+        rm -f "/etc/systemd/system/${service}"
+    fi
+done
 
 if command -v ufw >/dev/null 2>&1 \
     && ufw status | grep -q "Status: active"; then
 
-    log "Allowing the Provider port through the Ubuntu firewall"
-    ufw allow 5002/tcp
+    log "Allowing Provider port through firewall"
+    ufw allow 5002/tcp || true
 fi
 
-enable_and_restart_service "${SYSTEMD_SERVICE}"
+log "Launching Provider Service container via Docker Compose"
+cd /vagrant/provider-service
+docker compose up -d --build
 
-log "Provider Service provisioning completed"
+log "Provider Service VM provisioning completed"

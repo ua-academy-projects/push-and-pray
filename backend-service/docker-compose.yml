@@ -1,0 +1,25 @@
+services:
+  backend-service:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "5001"
+      FLASK_DEBUG: "false"
+      DATABASE_URL: "postgresql://weather_user:weather_password@192.168.56.13:5432/weather_history"
+      PROVIDER_URL: "http://192.168.56.12:5002"
+      RABBITMQ_URL: "amqp://weather_user:weather_password@192.168.56.13:5672/"
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s

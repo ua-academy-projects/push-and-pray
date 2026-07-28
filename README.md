@@ -7,40 +7,32 @@
 ## 🏛 Архітектура
 
 ```text
-Browser <=======> UI Service <=======> Backend Service <=======> PostgreSQL (weather_history)
-                     ||                       ^
-                     \/                       || (Consumes)
-               Redis (Sessions)          RabbitMQ (Queue: weather_data_queue)
-                                             ^
-                                             || (Publishes)
-                                     Provider Service <=======> Open-Meteo API
+Browser <=======> UI Service Container <=======> Backend Service Container <=======> PostgreSQL Container (weather_history)
+(MacBook /             || (192.168.56.10:5000)          ^ (192.168.56.11:5001)           ^ (192.168.56.13:5432)
+ LAN IP)               \/                               || (Consumes)                    |
+                 Redis Container                 RabbitMQ Container <====================+
+               (192.168.56.13:6379)            (192.168.56.13:5672/15672)                ^
+                                                                                          || (Publishes)
+                                                                                  Provider Service Container
+                                                                                    (192.168.56.12:5002) <===> Open-Meteo API
 ```
 
-- **`ui-service`** (порт `5000` внутрішній, `8080` зовнішній):
+- **`ui-service VM`** (`192.168.56.10`, контейнер `ui-service` порт `5000`):
   - Віддає HTML/CSS/JS інтерфейс.
-  - Управляє сесіями користувачів через Redis (`/api/session`).
-  - Проксіює всі погодні запити `/api/*` виключно до `backend-service`.
+  - Управляє сесіями користувачів через Redis (`192.168.56.13:6379`).
+  - Проксіює всі погодні запити `/api/*` виключно до Backend Service (`192.168.56.11:5001`).
 
-- **`Redis`** (порт `6379`):
-  - Зберігає сесійний стан UI (вибраний період історії 24h/7d, пагінація, налаштування).
-  - Забезпечує відновлення стану UI після перезавантаження сторінки у браузері.
-
-- **`RabbitMQ`** (порт `5672`, Web UI `15672`):
-  - Брокер асинхронних повідомлень між `provider-service` та `backend-service`.
-  - Черга `weather_data_queue` транслює поточну погоду, прогнози та історію.
-
-- **`backend-service`** (порт `5001`):
+- **`backend-service VM`** (`192.168.56.11`, контейнер `backend-service` порт `5001`):
   - Асинхронно споживає (consume) погодні повідомлення з RabbitMQ та зберігає їх у PostgreSQL.
-  - Володіє всією бізнес-логікою та доступом до БД PostgreSQL.
   - Надає API: `/api/weather`, `/api/forecast`, `/api/history?hours=24|168`.
 
-- **`provider-service`** (порт `5002`):
-  - Спілкується з зовнішнім Open-Meteo API та публікує (publish) оновлення погодних даних у RabbitMQ.
-  - Не має прямого доступу до бази даних PostgreSQL.
+- **`provider-service VM`** (`192.168.56.12`, контейнер `provider-service` порт `5002`):
+  - Періодично опитує Open-Meteo API та публікує (publish) оновлення погодних даних у RabbitMQ (`192.168.56.13:5672`).
 
-- **`PostgreSQL`** (порт `5432`):
-  - Зберігає всі погодинні точки в єдиній таблиці `weather_hourly_points` із унікальним первинним ключем `(location_key, weather_at)`.
-
+- **`database VM`** (`192.168.56.13`, Docker Compose):
+  - **`PostgreSQL 16`** (`5432`): Зберігає погодинні точки в єдиній таблиці `weather_hourly_points`.
+  - **`Redis 7`** (`6379`): Зберігає сесії користувачів UI з увімкненим збереженням `appendonly yes`.
+  - **`RabbitMQ 3`** (`5672`, Web UI `15672`): Брокер асинхронних повідомлень.
 
 ---
 
@@ -48,145 +40,142 @@ Browser <=======> UI Service <=======> Backend Service <=======> PostgreSQL (wea
 
 ```text
 weather-app/
-├── backend-service/          # Flask backend, DB міграції, планувальник
+├── backend-service/
 │   ├── app.py
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   ├── requirements.txt
 │   └── migrations/
 │       └── 001_unified_hourly_weather.sql
-├── provider-service/         # Flask провайдер для Open-Meteo API
-│   └── app.py
-├── ui-service/               # Flask UI, шаблони, графіки SVG, стилі
+├── database-service/
+│   └── docker-compose.yml
+├── provider-service/
 │   ├── app.py
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   └── requirements.txt
+├── ui-service/
+│   ├── app.py
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   ├── requirements.txt
 │   ├── static/
 │   │   ├── script.js
 │   │   └── style.css
 │   └── templates/
 │       └── index.html
-├── providers/                # Скрипти провіжнінгу для Vagrant
+├── providers/
 │   ├── common.sh
 │   ├── database.sh
 │   ├── backend.sh
 │   ├── provider.sh
 │   └── ui.sh
-├── docker-compose.yml
+├── tests/
 ├── Vagrantfile
-├── .gitignore
-└── README.md
+├── README.md
+└── docker-compose.yml
 ```
 
 ---
 
-## 🚀 Запуск проєкту
+## 🚀 Розгортання через Vagrant (VMware Fusion / Desktop)
 
-### Варіант 1: Docker Compose
+Всередині кожної VM відповідна частина проєкту запускається в ізольованому Docker-контейнері через Docker Compose.
 
-**Вимоги:** Docker та Docker Compose.
-
-```bash
-# Запустити всі сервіси у фоновому режимі з перебудовою
-docker compose up -d --build
-
-# Перевірити статус контейнерів
-docker compose ps
-
-# Переглянути логи
-docker compose logs -f
-```
-
-**Доступ у браузері:**
-[http://localhost:8080](http://localhost:8080)
-
-**Зупинка:**
-```bash
-docker compose down
-```
-
----
-
-### Варіант 2: Vagrant (VMware Desktop)
-
-**Вимоги:** Vagrant, VMware Desktop/Fusion та Vagrant VMware Utility.
+### Запуск та перевірка статусу ВМ
 
 ```bash
-# Запустити всі 4 віртуальні машини
+# Запустити всі 4 ВМ та виконати автоматичний провіжинінг
 vagrant up
 
 # Перевірити статус ВМ
 vagrant status
 
-# Якщо вносились зміни до коду, оновити сервіси на ВМ:
-vagrant provision
+# Валідація Vagrantfile
+vagrant validate
 ```
 
-Vagrant створює 4 віртуальні машини:
-| ВМ | IP | Опис |
-|---|---:|---|
-| `ui-service` | `192.168.56.10` | Веб-інтерфейс (порт `5000` прокинуто на хост `:8080`) |
-| `backend-service` | `192.168.56.11` | Backend API та планувальник (порт `5001`) |
-| `provider-service` | `192.168.56.12` | Інтеграція з Open-Meteo (порт `5002`) |
-| `database` | `192.168.56.13` | PostgreSQL 16 (порт `5432`) |
-
-**Доступ у браузері:**
-[http://localhost:8080](http://localhost:8080)
-
----
-
-## 🔗 API Endpoints
-
-### UI Service (Публічний API)
-
-- `GET /health` — Перевірка стану UI.
-- `GET /api/weather` — Поточна погода (температура, вологість, швидкість вітру).
-- `GET /api/forecast` — 24-годинний прогноз температури.
-- `GET /api/history?hours=24|168` — Історія вимірювань (за 24 години або 7 днів).
-
-### Backend Service (Внутрішній API)
-
-- `GET /health` — Перевірка стану backend та з'єднання з БД.
-- `GET /api/weather` — Жива поточна погода з fallback до БД.
-- `GET /api/forecast` — 24 точки прогнозу з БД (починаючи з поточної години).
-- `GET /api/history?hours=24|168` — Погодинна історія з БД.
-
-### Provider Service (Внутрішній API)
-
-- `GET /health` — Перевірка стану провайдера.
-- `GET /weather/current` — Поточний стан з Open-Meteo.
-- `GET /weather/forecast` — Прогноз на 24 години з Open-Meteo.
-- `GET /weather/history?past_hours=N` — Історія за останні `N` годин з Open-Meteo.
-
----
-
-## 🗄 База даних (PostgreSQL)
-
-Схема створена в міграції `001_unified_hourly_weather.sql`:
-
-- **`weather_hourly_points`**:
-  - `location_key` (`TEXT`) — ключ локації (`nadvirna`).
-  - `weather_at` (`TIMESTAMPTZ`) — година вимірювання/прогнозу.
-  - `temperature` (`DOUBLE PRECISION`) — температура (°C).
-  - `relative_humidity` (`DOUBLE PRECISION`) — відносна вологість (%).
-  - `wind_speed` (`DOUBLE PRECISION`) — швидкість вітру (km/h).
-  - `data_kind` (`TEXT`) — тип даних: `'current'`, `'forecast'`, або `'historical'`.
-  - `PRIMARY KEY (location_key, weather_at)` — запобігає появі дублікатів.
-
-- **`weather_sync_state`**:
-  - Зберігає метки часу останньої успішної синхронізації прогнозу та історії.
-
-### Підключення до БД локально (через Vagrant)
+### Перевірка статусу контейнерів на кожній ВМ
 
 ```bash
-# Пряме підключення з хоста
-psql -h 192.168.56.13 -U weather_user -d weather_history
-# Пароль: weather_password
+# Database VM (PostgreSQL, Redis, RabbitMQ)
+vagrant ssh database -c "docker compose -f /vagrant/database-service/docker-compose.yml ps"
 
-# Або через SSH у ВМ database
-vagrant ssh database -c "psql -U weather_user -d weather_history"
+# Provider VM
+vagrant ssh provider-service -c "docker compose -f /vagrant/provider-service/docker-compose.yml ps"
+
+# Backend VM
+vagrant ssh backend-service -c "docker compose -f /vagrant/backend-service/docker-compose.yml ps"
+
+# UI VM
+vagrant ssh ui-service -c "docker compose -f /vagrant/ui-service/docker-compose.yml ps"
+```
+
+### Перегляд логів контейнерів
+
+```bash
+vagrant ssh database -c "docker compose -f /vagrant/database-service/docker-compose.yml logs --tail=100"
+vagrant ssh provider-service -c "docker compose -f /vagrant/provider-service/docker-compose.yml logs --tail=100"
+vagrant ssh backend-service -c "docker compose -f /vagrant/backend-service/docker-compose.yml logs --tail=100"
+vagrant ssh ui-service -c "docker compose -f /vagrant/ui-service/docker-compose.yml logs --tail=100"
 ```
 
 ---
 
-## 📊 Інтерфейс користувача
+## 🌐 Мережа та IP-адреси
 
-1. **Картка поточного стану:** Показує локацію (Надвірна), поточну температуру, вологість, швидкість вітру та час вимірювання.
-2. **Графік прогнозу:** Інтерактивний SVG-графік температури на наступні 24 години.
-3. **Графік історії:** Інтерактивний SVG-графік із перемикачем діапазону **«24 години» / «7 днів»**.
-4. **Таблиця вимірювань:** Погодинний архів за останні 24 години з детальною інформацією.
+Усі 4 ВМ мають по два мережевих інтерфейси:
+1. **Приватна мережа (`192.168.56.x`)**: Для стабільного міжсервісного зв’язку контейнерів.
+2. **Bridged мережа (`public_network`)**: Для отримання IP-адреси від DHCP роутера та доступу з MacBook і пристроїв локальної мережі.
+
+### Команди перегляду всіх IP-адрес ВМ:
+
+```bash
+vagrant ssh ui-service -c "ip -4 -br addr"
+vagrant ssh backend-service -c "ip -4 -br addr"
+vagrant ssh provider-service -c "ip -4 -br addr"
+vagrant ssh database -c "ip -4 -br addr"
+```
+
+---
+
+## 💻 Доступ до Web UI та RabbitMQ Management
+
+### Доступ до UI:
+- **З MacBook (Port Forwarding)**: [http://localhost:8080](http://localhost:8080)
+- **З MacBook / Локальної мережі (Bridged IP)**: `http://<BRIDGED_IP_UI>:5000`
+- **Приватний IP UI VM**: `http://192.168.56.10:5000`
+
+### Доступ до RabbitMQ Management UI:
+- **З MacBook / Локальної мережі (Bridged IP)**: `http://<BRIDGED_IP_DATABASE>:15672`
+- **Приватний IP Database VM**: `http://192.168.56.13:15672`
+
+**Авторизація RabbitMQ:**
+- **Користувач:** `weather_user`
+- **Пароль:** `weather_password`
+
+---
+
+## 🗄 Перевірка бази даних (PostgreSQL у контейнері)
+
+Оскільки PostgreSQL працює у Docker-контейнері, для виконання SQL-запитів використовується команда `docker compose exec`:
+
+```bash
+# Підключення до psql всередині PostgreSQL контейнера на database VM
+vagrant ssh database -c "cd /vagrant/database-service && docker compose exec database psql -U weather_user -d weather_history"
+```
+
+Приклад перевірки записів у консолі psql:
+```sql
+SELECT weather_at, temperature, data_kind, fetched_at FROM weather_hourly_points ORDER BY weather_at DESC LIMIT 10;
+```
+
+---
+
+## 🧪 Тестування
+
+Запуск усіх автоматичних тестів з кореня проєкту:
+
+```bash
+python3 -m pytest -q
+```

@@ -17,91 +17,35 @@ install_packages() {
 }
 
 
-install_python_runtime() {
-    log "Installing the shared Python runtime"
-
-    install_packages \
-        python3 \
-        python3-venv \
-        rsync
-}
-
-
-install_python_requirements() {
-    local virtualenv_dir="$1"
-    local requirements_file="$2"
-
-    "${virtualenv_dir}/bin/pip" install \
-        --disable-pip-version-check \
-        --upgrade pip
-
-    "${virtualenv_dir}/bin/pip" install \
-        --disable-pip-version-check \
-        -r "${requirements_file}"
-}
-
-
-sync_python_service() {
-    local service_name="$1"
-    local source_dir="/vagrant/${service_name}/"
-    local target_dir="${APP_ROOT}/${service_name}"
-    local virtualenv_dir="${target_dir}/venv"
-    local import_check="from flask import Flask; import requests"
-
-    if [[ "${service_name}" == "backend-service" ]]; then
-        import_check="from flask import Flask; import requests, psycopg, apscheduler"
+install_docker() {
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        log "Docker and Docker Compose are already installed"
+        return 0
     fi
 
-    log "Synchronizing ${service_name}"
+    log "Installing Docker Engine and Docker Compose plugin"
+    apt-get update
+    install_packages ca-certificates curl gnupg lsb-release
 
-    install -d \
-        -o vagrant \
-        -g vagrant \
-        "${target_dir}"
-
-    rsync -a --delete \
-        --exclude '.env' \
-        --exclude '.venv' \
-        --exclude 'venv' \
-        --exclude '__pycache__' \
-        "${source_dir}" \
-        "${target_dir}/"
-
-    if [[ ! -x "${virtualenv_dir}/bin/python" ]]; then
-        log "Creating the ${service_name} virtual environment"
-        python3 -m venv "${virtualenv_dir}"
+    install -m 0755 -d /etc/apt/keyrings
+    if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
     fi
 
-    install_python_requirements \
-        "${virtualenv_dir}" \
-        "${target_dir}/requirements.txt"
+    local arch
+    arch="$(dpkg --print-architecture)"
+    local codename
+    codename="$(lsb_release -cs 2>/dev/null || echo "noble")"
 
-    if ! "${virtualenv_dir}/bin/python" \
-        -c "${import_check}"; then
+    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" \
+        > /etc/apt/sources.list.d/docker.list
 
-        log "Repairing the ${service_name} virtual environment"
-        rm -rf "${virtualenv_dir}"
-        python3 -m venv "${virtualenv_dir}"
+    apt-get update
+    install_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-        install_python_requirements \
-            "${virtualenv_dir}" \
-            "${target_dir}/requirements.txt"
-    fi
-
-    chown -R \
-        vagrant:vagrant \
-        "${target_dir}"
-}
-
-
-enable_and_restart_service() {
-    local service_name="$1"
-
-    log "Enabling ${service_name}"
-
-    systemctl daemon-reload
-    systemctl enable "${service_name}"
-    systemctl restart "${service_name}"
+    systemctl enable --now docker
+    usermod -aG docker vagrant || true
 }
 
 
@@ -127,6 +71,7 @@ configure_common_system() {
 
     install -d "${APP_ROOT}"
     configure_firewall
+    install_docker
 }
 
 
