@@ -12,6 +12,7 @@ required_variables=(
     AIRAWARE_DB_NAME
     AIRAWARE_DB_USER
     AIRAWARE_DB_PASSWORD
+    AIRAWARE_REDIS_PASSWORD
 )
 
 for variable_name in "${required_variables[@]}"; do
@@ -36,7 +37,10 @@ apt-get update
 apt-get install -y \
     postgresql \
     postgresql-client \
-    postgresql-contrib
+    postgresql-contrib \
+    redis-server \
+    redis-tools \
+    ufw
 
 PG_VERSION="$(
     find /etc/postgresql \
@@ -148,3 +152,40 @@ log "PostgreSQL listening sockets"
 ss -lntp | grep ':5432' || true
 
 log "Database provisioning completed"
+
+REDIS_CONF="/etc/redis/redis.conf"
+
+sed -Ei \
+    "s|^[#[:space:]]*bind .*|bind 127.0.0.1 ${AIRAWARE_DATABASE_IP}|" \
+    "${REDIS_CONF}"
+
+sed -Ei \
+    "s|^[#[:space:]]*protected-mode .*|protected-mode yes|" \
+    "${REDIS_CONF}"
+
+escaped_redis_password="$(
+    printf '%s' "${AIRAWARE_REDIS_PASSWORD}" |
+    sed 's/[&/]/\\&/g'
+)"
+
+if grep -Eq '^[#[:space:]]*requirepass ' "${REDIS_CONF}"; then
+    sed -Ei \
+        "s|^[#[:space:]]*requirepass .*|requirepass ${escaped_redis_password}|" \
+        "${REDIS_CONF}"
+else
+    printf '\nrequirepass %s\n' \
+        "${escaped_redis_password}" \
+        >>"${REDIS_CONF}"
+fi
+
+systemctl enable redis-server
+systemctl restart redis-server
+
+redis-cli \
+    -h 127.0.0.1 \
+    -a "${AIRAWARE_REDIS_PASSWORD}" \
+    --no-auth-warning \
+    ping
+
+ufw allow from "${AIRAWARE_BACKEND_IP}" to any port 5432 proto tcp
+ufw allow from "${AIRAWARE_FRONTEND_IP}" to any port 6379 proto tcp

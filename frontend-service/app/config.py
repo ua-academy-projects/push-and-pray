@@ -15,6 +15,20 @@ class Settings(BaseSettings):
         le=120,
     )
 
+    redis_url: str
+
+    session_key_prefix: str = "airaware:session:"
+
+    session_ttl_seconds: int = Field(
+        default=86400,
+        gt=0,
+        le=2_592_000,
+    )
+
+    flask_secret_key: str = Field(
+        min_length=16,
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

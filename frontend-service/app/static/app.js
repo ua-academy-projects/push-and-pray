@@ -70,10 +70,20 @@ const metricDefinitions = {
 };
 
 
+const defaultSessionPreferences = {
+    selected_city: null,
+    period_hours: 12,
+    selected_metric: "european_aqi",
+};
+
+
 let cities = [];
 let selectedCityCode = null;
-let selectedHours = 24;
+let selectedHours = defaultSessionPreferences.period_hours;
 let dashboardData = null;
+let sessionPreferences = {
+    ...defaultSessionPreferences,
+};
 let isLoading = false;
 
 
@@ -90,38 +100,73 @@ periodButtons.forEach((button) => {
     button.addEventListener("click", async () => {
         const hours = Number(button.dataset.hours);
 
-        if (hours === selectedHours || isLoading) {
+        if (
+            hours === selectedHours
+            || isLoading
+            || ![12, 24].includes(hours)
+        ) {
             return;
         }
 
         selectedHours = hours;
+        updateActivePeriodButton();
 
-        periodButtons.forEach((item) => {
-            item.classList.toggle(
-                "active",
-                Number(item.dataset.hours) === selectedHours
+        try {
+            await saveSessionPreferences({
+                period_hours: selectedHours,
+            });
+        } catch (error) {
+            showMessage(
+                pageMessage,
+                error.message
+                    || "The selected period could not be saved.",
+                "error"
             );
-        });
+        }
 
         await loadDashboard();
     });
 });
 
 
-metricSelect.addEventListener("change", () => {
-    if (!dashboardData) {
+metricSelect.addEventListener("change", async () => {
+    if (!metricDefinitions[metricSelect.value]) {
         return;
     }
 
-    renderChart(
-        dashboardData.history,
-        metricSelect.value
-    );
+    try {
+        await saveSessionPreferences({
+            selected_metric: metricSelect.value,
+        });
+    } catch (error) {
+        showMessage(
+            pageMessage,
+            error.message
+                || "The selected metric could not be saved.",
+            "error"
+        );
+    }
+
+    if (dashboardData) {
+        renderChart(
+            dashboardData.history,
+            metricSelect.value
+        );
+    }
 });
 
 
 async function initialize() {
+    setLoading(true);
+
+    showMessage(
+        pageMessage,
+        "Loading saved dashboard preferences..."
+    );
+
     try {
+        await loadSessionPreferences();
+
         const response = await fetch("/api/cities");
         const payload = await readJsonResponse(response);
 
@@ -136,21 +181,142 @@ async function initialize() {
         }
 
         cities = payload;
+
         renderCitySwitcher();
+        applyStoredPreferences();
 
-        selectedCityCode = cities[0].code;
+        const normalizedPreferences = {};
 
-        updateActiveCityButton();
+        if (
+            selectedCityCode
+            !== sessionPreferences.selected_city
+        ) {
+            normalizedPreferences.selected_city =
+                selectedCityCode;
+        }
+
+        if (
+            selectedHours
+            !== sessionPreferences.period_hours
+        ) {
+            normalizedPreferences.period_hours =
+                selectedHours;
+        }
+
+        if (
+            metricSelect.value
+            !== sessionPreferences.selected_metric
+        ) {
+            normalizedPreferences.selected_metric =
+                metricSelect.value;
+        }
+
+        if (
+            Object.keys(normalizedPreferences).length > 0
+        ) {
+            await saveSessionPreferences(
+                normalizedPreferences
+            );
+        }
 
         await loadDashboard();
 
     } catch (error) {
+        hideDashboard();
+
         showMessage(
             pageMessage,
-            error.message || "Could not load configured cities.",
+            error.message
+                || "Could not initialise the dashboard.",
             "error"
         );
+
+    } finally {
+        setLoading(false);
     }
+}
+
+
+async function loadSessionPreferences() {
+    const response = await fetch(
+        "/api/session/preferences"
+    );
+
+    const payload = await readJsonResponse(response);
+
+    if (!response.ok) {
+        throw new Error(extractErrorMessage(payload));
+    }
+
+    sessionPreferences = {
+        ...defaultSessionPreferences,
+        ...payload,
+    };
+
+    return sessionPreferences;
+}
+
+
+async function saveSessionPreferences(changes) {
+    const response = await fetch(
+        "/api/session/preferences",
+        {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(changes),
+        }
+    );
+
+    const payload = await readJsonResponse(response);
+
+    if (!response.ok) {
+        throw new Error(extractErrorMessage(payload));
+    }
+
+    sessionPreferences = {
+        ...defaultSessionPreferences,
+        ...payload,
+    };
+
+    return sessionPreferences;
+}
+
+
+function applyStoredPreferences() {
+    const storedCityExists = cities.some((city) => {
+        return (
+            city.code
+            === sessionPreferences.selected_city
+        );
+    });
+
+    selectedCityCode = storedCityExists
+        ? sessionPreferences.selected_city
+        : cities[0].code;
+
+    selectedHours = [12, 24].includes(
+        Number(sessionPreferences.period_hours)
+    )
+        ? Number(sessionPreferences.period_hours)
+        : defaultSessionPreferences.period_hours;
+
+    const storedMetricExists = Array.from(
+        metricSelect.options
+    ).some((option) => {
+        return (
+            option.value
+            === sessionPreferences.selected_metric
+        );
+    });
+
+    metricSelect.value = storedMetricExists
+        ? sessionPreferences.selected_metric
+        : defaultSessionPreferences.selected_metric;
+
+    updateActiveCityButton();
+    updateActivePeriodButton();
 }
 
 
@@ -176,6 +342,19 @@ function renderCitySwitcher() {
             selectedCityCode = city.code;
             updateActiveCityButton();
 
+            try {
+                await saveSessionPreferences({
+                    selected_city: selectedCityCode,
+                });
+            } catch (error) {
+                showMessage(
+                    pageMessage,
+                    error.message
+                        || "The selected city could not be saved.",
+                    "error"
+                );
+            }
+
             await loadDashboard();
         });
 
@@ -194,6 +373,7 @@ function updateActiveCityButton() {
                 button.dataset.cityCode === selectedCityCode;
 
             button.classList.toggle("active", isActive);
+
             button.setAttribute(
                 "aria-selected",
                 String(isActive)
@@ -202,7 +382,21 @@ function updateActiveCityButton() {
 }
 
 
+function updateActivePeriodButton() {
+    periodButtons.forEach((button) => {
+        button.classList.toggle(
+            "active",
+            Number(button.dataset.hours) === selectedHours
+        );
+    });
+}
+
+
 async function loadDashboard() {
+    if (!selectedCityCode) {
+        return;
+    }
+
     setLoading(true);
 
     showMessage(
@@ -243,7 +437,8 @@ async function loadDashboard() {
 
         showMessage(
             pageMessage,
-            error.message || "Could not load dashboard data.",
+            error.message
+                || "Could not load dashboard data.",
             "error"
         );
 
@@ -295,7 +490,11 @@ function renderDashboard(payload) {
         classifyEuropeanAqi(latest.european_aqi);
 
     renderLatestMetrics(latest);
-    renderChart(history, metricSelect.value);
+
+    renderChart(
+        history,
+        metricSelect.value
+    );
 }
 
 
@@ -324,6 +523,7 @@ function renderLatestMetrics(latest) {
         valueWrapper.className = "metric-card-value";
 
         const value = document.createElement("span");
+
         value.textContent = formatValue(
             latest[metricName]
         );
@@ -332,6 +532,7 @@ function renderLatestMetrics(latest) {
 
         if (definition.unit) {
             const unit = document.createElement("span");
+
             unit.className = "metric-unit";
             unit.textContent = definition.unit;
 
@@ -352,15 +553,31 @@ function renderChart(history, metricName) {
 
     const definition = metricDefinitions[metricName];
 
+    if (!definition) {
+        showMessage(
+            chartMessage,
+            "The selected chart metric is not supported.",
+            "error"
+        );
+
+        return;
+    }
+
     const points = history
         .filter((measurement) => {
-            return measurement[metricName] !== null
-                && measurement[metricName] !== undefined;
+            return (
+                measurement[metricName] !== null
+                && measurement[metricName] !== undefined
+            );
         })
         .map((measurement) => {
             return {
-                time: parseTimestamp(measurement.observed_at),
-                value: Number(measurement[metricName]),
+                time: parseTimestamp(
+                    measurement.observed_at
+                ),
+                value: Number(
+                    measurement[metricName]
+                ),
             };
         })
         .filter((point) => {
@@ -379,7 +596,7 @@ function renderChart(history, metricName) {
         showMessage(
             chartMessage,
             `No ${definition.label} measurements are available `
-            + `for the selected period.`
+            + "for the selected period."
         );
 
         return;
@@ -403,7 +620,9 @@ function renderChart(history, metricName) {
     const plotHeight =
         height - margin.top - margin.bottom;
 
-    const values = points.map((point) => point.value);
+    const values = points.map(
+        (point) => point.value
+    );
 
     let minimumValue = Math.min(...values);
     let maximumValue = Math.max(...values);
@@ -415,6 +634,7 @@ function renderChart(history, metricName) {
 
         minimumValue -= padding;
         maximumValue += padding;
+
     } else {
         const padding =
             (maximumValue - minimumValue) * 0.12;
@@ -427,8 +647,11 @@ function renderChart(history, metricName) {
         maximumValue += padding;
     }
 
-    const minimumTime = points[0].time.getTime();
-    const maximumTime = points.at(-1).time.getTime();
+    const minimumTime =
+        points[0].time.getTime();
+
+    const maximumTime =
+        points.at(-1).time.getTime();
 
     const timeRange = Math.max(
         maximumTime - minimumTime,
@@ -443,7 +666,10 @@ function renderChart(history, metricName) {
     const xScale = (time) => {
         return margin.left
             + (
-                (time.getTime() - minimumTime)
+                (
+                    time.getTime()
+                    - minimumTime
+                )
                 / timeRange
             ) * plotWidth;
     };
@@ -453,7 +679,10 @@ function renderChart(history, metricName) {
             + (
                 1
                 - (
-                    (value - minimumValue)
+                    (
+                        value
+                        - minimumValue
+                    )
                     / valueRange
                 )
             ) * plotHeight;
@@ -461,8 +690,6 @@ function renderChart(history, metricName) {
 
     drawGrid({
         svg: historyChart,
-        width,
-        height,
         margin,
         plotWidth,
         plotHeight,
@@ -487,8 +714,16 @@ function renderChart(history, metricName) {
         margin.top + plotHeight
     );
 
-    drawLine(historyChart, scaledPoints);
-    drawPoints(historyChart, scaledPoints, definition);
+    drawLine(
+        historyChart,
+        scaledPoints
+    );
+
+    drawPoints(
+        historyChart,
+        scaledPoints,
+        definition
+    );
 }
 
 
@@ -511,12 +746,20 @@ function drawGrid({
         index <= horizontalLines;
         index += 1
     ) {
-        const ratio = index / horizontalLines;
-        const y = margin.top + ratio * plotHeight;
+        const ratio =
+            index / horizontalLines;
+
+        const y =
+            margin.top
+            + ratio * plotHeight;
 
         const value =
             maximumValue
-            - ratio * (maximumValue - minimumValue);
+            - ratio
+            * (
+                maximumValue
+                - minimumValue
+            );
 
         svg.appendChild(
             createSvgElement("line", {
@@ -528,12 +771,15 @@ function drawGrid({
             })
         );
 
-        const label = createSvgElement("text", {
-            x: margin.left - 16,
-            y: y + 7,
-            "text-anchor": "end",
-            class: "chart-axis-label",
-        });
+        const label = createSvgElement(
+            "text",
+            {
+                x: margin.left - 16,
+                y: y + 7,
+                "text-anchor": "end",
+                class: "chart-axis-label",
+            }
+        );
 
         label.textContent = formatAxisValue(
             value,
@@ -548,12 +794,20 @@ function drawGrid({
         index <= verticalLines;
         index += 1
     ) {
-        const ratio = index / verticalLines;
-        const x = margin.left + ratio * plotWidth;
+        const ratio =
+            index / verticalLines;
+
+        const x =
+            margin.left
+            + ratio * plotWidth;
 
         const timestamp =
             minimumTime
-            + ratio * (maximumTime - minimumTime);
+            + ratio
+            * (
+                maximumTime
+                - minimumTime
+            );
 
         svg.appendChild(
             createSvgElement("line", {
@@ -565,12 +819,18 @@ function drawGrid({
             })
         );
 
-        const label = createSvgElement("text", {
-            x,
-            y: margin.top + plotHeight + 35,
-            "text-anchor": "middle",
-            class: "chart-axis-label",
-        });
+        const label = createSvgElement(
+            "text",
+            {
+                x,
+                y:
+                    margin.top
+                    + plotHeight
+                    + 35,
+                "text-anchor": "middle",
+                class: "chart-axis-label",
+            }
+        );
 
         label.textContent = formatChartTime(
             new Date(timestamp)
@@ -582,10 +842,13 @@ function drawGrid({
 
 
 function drawLine(svg, points) {
-    const path = createSvgElement("path", {
-        d: createLinePath(points),
-        class: "chart-line",
-    });
+    const path = createSvgElement(
+        "path",
+        {
+            d: createLinePath(points),
+            class: "chart-line",
+        }
+    );
 
     svg.appendChild(path);
 }
@@ -596,33 +859,45 @@ function drawArea(svg, points, baselineY) {
         return;
     }
 
-    const linePath = createLinePath(points);
+    const linePath =
+        createLinePath(points);
 
     const firstPoint = points[0];
     const lastPoint = points.at(-1);
 
-    const path = createSvgElement("path", {
-        d:
-            `${linePath} `
-            + `L ${lastPoint.x} ${baselineY} `
-            + `L ${firstPoint.x} ${baselineY} Z`,
-        class: "chart-area",
-    });
+    const path = createSvgElement(
+        "path",
+        {
+            d:
+                `${linePath} `
+                + `L ${lastPoint.x} ${baselineY} `
+                + `L ${firstPoint.x} ${baselineY} Z`,
+            class: "chart-area",
+        }
+    );
 
     svg.appendChild(path);
 }
 
 
-function drawPoints(svg, points, definition) {
+function drawPoints(
+    svg,
+    points,
+    definition
+) {
     points.forEach((point) => {
-        const circle = createSvgElement("circle", {
-            cx: point.x,
-            cy: point.y,
-            r: 6,
-            class: "chart-point",
-        });
+        const circle = createSvgElement(
+            "circle",
+            {
+                cx: point.x,
+                cy: point.y,
+                r: 6,
+                class: "chart-point",
+            }
+        );
 
-        const title = createSvgElement("title");
+        const title =
+            createSvgElement("title");
 
         title.textContent =
             `${formatDateTime(point.time)}: `
@@ -642,9 +917,16 @@ function drawPoints(svg, points, definition) {
 function createLinePath(points) {
     return points
         .map((point, index) => {
-            const command = index === 0 ? "M" : "L";
+            const command =
+                index === 0
+                    ? "M"
+                    : "L";
 
-            return `${command} ${point.x} ${point.y}`;
+            return (
+                `${command} `
+                + `${point.x} `
+                + `${point.y}`
+            );
         })
         .join(" ");
 }
@@ -654,8 +936,11 @@ function updateChartDescription(
     definition,
     points
 ) {
-    const title = historyChart.querySelector("title");
-    const description = historyChart.querySelector("desc");
+    const title =
+        historyChart.querySelector("title");
+
+    const description =
+        historyChart.querySelector("desc");
 
     if (title) {
         title.textContent =
@@ -676,6 +961,7 @@ function updateChartDescription(
         chartRangeDescription.textContent =
             `${formatDateTime(points[0].time)} — `
             + `${formatDateTime(points.at(-1).time)}`;
+
     } else {
         chartRangeDescription.textContent =
             `Last ${selectedHours} hours`;
@@ -693,8 +979,8 @@ function hideDashboard() {
 function setLoading(loading) {
     isLoading = loading;
 
-    refreshButton.disabled = loading
-        || !selectedCityCode;
+    refreshButton.disabled =
+        loading || !selectedCityCode;
 
     refreshButton.textContent = loading
         ? "Reloading..."
@@ -714,7 +1000,11 @@ function setLoading(loading) {
 }
 
 
-function showMessage(element, message, type = "") {
+function showMessage(
+    element,
+    message,
+    type = ""
+) {
     element.textContent = message;
     element.className = "status-message";
 
@@ -725,7 +1015,10 @@ function showMessage(element, message, type = "") {
 
 
 function classifyEuropeanAqi(value) {
-    if (value === null || value === undefined) {
+    if (
+        value === null
+        || value === undefined
+    ) {
         return "No classification available";
     }
 
@@ -754,7 +1047,10 @@ function classifyEuropeanAqi(value) {
 
 
 function formatValue(value) {
-    if (value === null || value === undefined) {
+    if (
+        value === null
+        || value === undefined
+    ) {
         return "N/A";
     }
 
@@ -769,9 +1065,10 @@ function formatValue(value) {
 
 
 function formatAxisValue(value, unit) {
-    const formatted = Math.abs(value) >= 100
-        ? value.toFixed(0)
-        : value.toFixed(1);
+    const formatted =
+        Math.abs(value) >= 100
+            ? value.toFixed(0)
+            : value.toFixed(1);
 
     return unit
         ? `${formatted}`
@@ -794,13 +1091,17 @@ function parseTimestamp(value) {
 
     const hasTimezone =
         normalizedValue.endsWith("Z")
-        || /[+-]\d{2}:\d{2}$/.test(normalizedValue);
+        || /[+-]\d{2}:\d{2}$/.test(
+            normalizedValue
+        );
 
     if (!hasTimezone) {
         normalizedValue += "Z";
     }
 
-    const date = new Date(normalizedValue);
+    const date = new Date(
+        normalizedValue
+    );
 
     return Number.isNaN(date.getTime())
         ? null
@@ -809,8 +1110,10 @@ function parseTimestamp(value) {
 
 
 function getSelectedTimezone() {
-    return dashboardData?.city?.timezone
-        || "Europe/Kyiv";
+    return (
+        dashboardData?.city?.timezone
+        || "Europe/Kyiv"
+    );
 }
 
 
@@ -818,7 +1121,9 @@ function formatDateTime(value) {
     const date = parseTimestamp(value);
 
     if (!date) {
-        return value ? String(value) : "Unknown";
+        return value
+            ? String(value)
+            : "Unknown";
     }
 
     return new Intl.DateTimeFormat(
@@ -833,7 +1138,8 @@ function formatDateTime(value) {
 
 
 function formatChartTime(date) {
-    const parsedDate = parseTimestamp(date);
+    const parsedDate =
+        parseTimestamp(date);
 
     if (!parsedDate) {
         return "Unknown";
@@ -872,23 +1178,35 @@ async function readJsonResponse(response) {
 }
 
 
-function createSvgElement(tagName, attributes = {}) {
-    const element = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        tagName
-    );
+function createSvgElement(
+    tagName,
+    attributes = {}
+) {
+    const element =
+        document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            tagName
+        );
 
-    Object.entries(attributes).forEach(([name, value]) => {
-        element.setAttribute(name, String(value));
-    });
+    Object.entries(attributes).forEach(
+        ([name, value]) => {
+            element.setAttribute(
+                name,
+                String(value)
+            );
+        }
+    );
 
     return element;
 }
 
 
 function clearSvg(svg) {
-    const title = svg.querySelector("title");
-    const description = svg.querySelector("desc");
+    const title =
+        svg.querySelector("title");
+
+    const description =
+        svg.querySelector("desc");
 
     svg.replaceChildren();
 

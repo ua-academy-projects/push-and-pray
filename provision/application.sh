@@ -13,6 +13,8 @@ required_variables=(
     AIRAWARE_DB_NAME
     AIRAWARE_DB_USER
     AIRAWARE_DB_PASSWORD
+    AIRAWARE_REDIS_PASSWORD
+    AIRAWARE_FLASK_SECRET_KEY
 )
 
 for variable_name in "${required_variables[@]}"; do
@@ -136,12 +138,17 @@ FETCH_MINUTE_OF_HOUR=5
 EOF
         ;;
 
-    frontend)
-        cat >"${SERVICE_DIRECTORY}/.env" <<EOF
+frontend)
+    cat >"${SERVICE_DIRECTORY}/.env" <<EOF
 BACKEND_SERVICE_URL=http://${AIRAWARE_BACKEND_IP}:8001
 HTTP_TIMEOUT_SECONDS=10
+
+REDIS_URL=redis://:${AIRAWARE_REDIS_PASSWORD}@${AIRAWARE_DATABASE_IP}:6379/0
+SESSION_KEY_PREFIX=airaware:session:
+SESSION_TTL_SECONDS=86400
+FLASK_SECRET_KEY=${AIRAWARE_FLASK_SECRET_KEY}
 EOF
-        ;;
+    ;;
 esac
 
 chown airaware:airaware "${SERVICE_DIRECTORY}/.env"

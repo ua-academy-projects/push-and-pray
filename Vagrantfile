@@ -21,6 +21,20 @@ DATABASE = {
   )
 }.freeze
 
+REDIS = {
+  password: ENV.fetch(
+    "AIRAWARE_REDIS_PASSWORD",
+    "airaware_redis_dev_password"
+  )
+}.freeze
+
+FRONTEND = {
+  secret_key: ENV.fetch(
+    "AIRAWARE_FLASK_SECRET_KEY",
+    "airaware_flask_development_secret"
+  )
+}.freeze
+
 # The order is intentional:
 # database -> backend -> fetcher -> frontend
 #
@@ -137,7 +151,9 @@ COMMON_ENV = {
   "AIRAWARE_DATABASE_IP" => VM_IPS.fetch("database"),
   "AIRAWARE_DB_NAME" => DATABASE.fetch(:name),
   "AIRAWARE_DB_USER" => DATABASE.fetch(:user),
-  "AIRAWARE_DB_PASSWORD" => DATABASE.fetch(:password)
+  "AIRAWARE_DB_PASSWORD" => DATABASE.fetch(:password),
+  "AIRAWARE_REDIS_PASSWORD" => REDIS.fetch(:password),
+  "AIRAWARE_FLASK_SECRET_KEY" => FRONTEND.fetch(:secret_key)
 }.freeze
 
 
