@@ -8,14 +8,14 @@ NODES = {
   postgres: {
     ip:        "192.168.0.220",
     ssh_port:  50110,
-    memory:    "768M", # bumped from 512M -- this VM now also runs Redis (UI session storage)
+    memory:    "1G", # bumped from 512M -- this VM now also runs Redis (UI session storage) and RabbitMQ (Fetcher->Backend async queue)
     smp:       "1",
     provision: "vagrant/postgres/provision.sh",
   },
   backend: {
     ip:        "192.168.0.221",
     ssh_port:  50111,
-    memory:    "768M",
+    memory:    "1G", # bumped from 768M -- this VM now also runs a second Python process, the RabbitMQ consumer worker
     smp:       "1",
     sync:      "backend-service",
     provision: "vagrant/backend/provision.sh",

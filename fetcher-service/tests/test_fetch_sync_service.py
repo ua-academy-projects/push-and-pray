@@ -1,27 +1,22 @@
 import asyncio
-import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
 import respx
 
+from app.exceptions import MessageBrokerPublishError, MessageBrokerUnavailableError
 from app.services import fetch_sync_service
-from tests.fixtures import build_open_meteo_response, make_settings
+from tests.fixtures import build_open_meteo_response, make_settings, mock_publisher
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-BACKEND_BASE = "http://backend-service.test"
 TODAY = datetime.now(ZoneInfo("Europe/Kyiv")).date().isoformat()
 
 
 @respx.mock
-async def test_run_fetch_sync_success_splits_observed_and_forecast_and_pushes_to_backend():
+async def test_run_fetch_sync_success_splits_observed_and_forecast_and_publishes_to_queue(monkeypatch):
     respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(200, json=build_open_meteo_response(days=21, past_days=10)))
-    put_route = respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(
-        return_value=httpx.Response(
-            200, json={"status": "success", "daily_records": 11, "forecast_records": 10, "hourly_records": 24}
-        )
-    )
+    sync_mock, _ = mock_publisher(monkeypatch)
 
     result = await fetch_sync_service.run_fetch_sync("scheduler", settings=make_settings())
 
@@ -30,9 +25,9 @@ async def test_run_fetch_sync_success_splits_observed_and_forecast_and_pushes_to
     assert result.daily_records == 11  # today + 10 past days
     assert result.forecast_records == 10
     assert result.hourly_records == 24
-    assert put_route.called
+    assert sync_mock.await_count == 1
 
-    body = json.loads(put_route.calls.last.request.content)
+    body = sync_mock.await_args.args[0]
     assert len(body["daily"]) == 11
     assert len(body["daily_forecast"]) == 10
     assert all(row["weather_date"] <= TODAY for row in body["daily"])
@@ -42,40 +37,36 @@ async def test_run_fetch_sync_success_splits_observed_and_forecast_and_pushes_to
 
 
 @respx.mock
-async def test_run_fetch_sync_open_meteo_failure_reports_failure_and_returns_failed():
+async def test_run_fetch_sync_open_meteo_failure_reports_failure_and_returns_failed(monkeypatch):
     respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(503))
-    failure_route = respx.post(f"{BACKEND_BASE}/internal/weather/sync-failure").mock(
-        return_value=httpx.Response(201, json={"status": "failed"})
-    )
+    _, failure_mock = mock_publisher(monkeypatch)
 
     result = await fetch_sync_service.run_fetch_sync("scheduler", settings=make_settings())
 
     assert result.status == "failed"
-    assert failure_route.called
-    body = json.loads(failure_route.calls.last.request.content)
+    assert failure_mock.await_count == 1
+    body = failure_mock.await_args.args[0]
     assert body["open_meteo_status_code"] == 503
     assert body["trigger_type"] == "scheduler"
 
 
 @respx.mock
-async def test_run_fetch_sync_open_meteo_timeout_records_null_status_code():
+async def test_run_fetch_sync_open_meteo_timeout_records_null_status_code(monkeypatch):
     respx.get(OPEN_METEO_URL).mock(side_effect=httpx.TimeoutException("timed out"))
-    failure_route = respx.post(f"{BACKEND_BASE}/internal/weather/sync-failure").mock(
-        return_value=httpx.Response(201, json={"status": "failed"})
-    )
+    _, failure_mock = mock_publisher(monkeypatch)
 
     result = await fetch_sync_service.run_fetch_sync("scheduler", settings=make_settings())
 
     assert result.status == "failed"
-    body = json.loads(failure_route.calls.last.request.content)
+    body = failure_mock.await_args.args[0]
     assert body["open_meteo_status_code"] is None
     assert body["open_meteo_duration_ms"] is not None
 
 
 @respx.mock
-async def test_run_fetch_sync_backend_unavailable_returns_failed_without_crashing():
+async def test_run_fetch_sync_broker_unavailable_returns_failed_without_crashing(monkeypatch):
     respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(200, json=build_open_meteo_response()))
-    respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(side_effect=httpx.ConnectError("refused"))
+    mock_publisher(monkeypatch, fail_sync=MessageBrokerUnavailableError("could not connect to RabbitMQ"))
 
     result = await fetch_sync_service.run_fetch_sync("scheduler", settings=make_settings())
 
@@ -83,9 +74,9 @@ async def test_run_fetch_sync_backend_unavailable_returns_failed_without_crashin
 
 
 @respx.mock
-async def test_run_fetch_sync_backend_timeout_returns_failed():
+async def test_run_fetch_sync_broker_publish_error_returns_failed(monkeypatch):
     respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(200, json=build_open_meteo_response()))
-    respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(side_effect=httpx.TimeoutException("timed out"))
+    mock_publisher(monkeypatch, fail_sync=MessageBrokerPublishError("channel closed"))
 
     result = await fetch_sync_service.run_fetch_sync("scheduler", settings=make_settings())
 
@@ -93,17 +84,13 @@ async def test_run_fetch_sync_backend_timeout_returns_failed():
 
 
 @respx.mock
-async def test_overlapping_fetch_is_prevented():
+async def test_overlapping_fetch_is_prevented(monkeypatch):
     async def slow_response(request):
         await asyncio.sleep(0.2)
         return httpx.Response(200, json=build_open_meteo_response())
 
     route = respx.get(OPEN_METEO_URL).mock(side_effect=slow_response)
-    respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(
-        return_value=httpx.Response(
-            200, json={"status": "success", "daily_records": 11, "forecast_records": 10, "hourly_records": 24}
-        )
-    )
+    mock_publisher(monkeypatch)
 
     settings = make_settings()
     first, second = await asyncio.gather(

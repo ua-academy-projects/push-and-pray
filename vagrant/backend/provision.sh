@@ -14,11 +14,14 @@ set -euo pipefail
 APP_DIR="/app"
 POSTGRES_IP="192.168.0.220"
 REDIS_IP="192.168.0.220" # same VM as postgres -- see vagrant/postgres/provision.sh
+RABBITMQ_IP="192.168.0.220" # same VM as postgres -- see vagrant/postgres/provision.sh
 FETCHER_IP="192.168.0.222"
 UI_IP="192.168.0.223"
 DB_USER="skyivano"
 DB_PASS="skyivano"
 DB_NAME="skyivano"
+RABBITMQ_USER="skyivano"
+RABBITMQ_PASS="skyivano"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -51,6 +54,17 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+echo ">>> Waiting for rabbitmq (${RABBITMQ_IP}:5672) to accept connections"
+for i in $(seq 1 30); do
+  if (exec 3<>"/dev/tcp/${RABBITMQ_IP}/5672") 2>/dev/null; then
+    exec 3<&- 3>&-
+    echo "    rabbitmq is up"
+    break
+  fi
+  echo "    attempt ${i}/30: not ready yet, retrying in 2s"
+  sleep 2
+done
+
 echo ">>> Setting up backend-service"
 cd "${APP_DIR}"
 python3.12 -m venv .venv
@@ -60,10 +74,11 @@ python3.12 -m venv .venv
 sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+psycopg://${DB_USER}:${DB_PASS}@${POSTGRES_IP}:5432/${DB_NAME}#" .env
 sed -i "s#^FETCHER_SERVICE_BASE_URL=.*#FETCHER_SERVICE_BASE_URL=http://${FETCHER_IP}:8002#" .env
 sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://${REDIS_IP}:6379/0#" .env
+sed -i "s#^RABBITMQ_URL=.*#RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@${RABBITMQ_IP}:5672/#" .env
 sed -i "s#^BACKEND_CORS_ORIGINS=.*#BACKEND_CORS_ORIGINS=http://${UI_IP}:5173#" .env
 ./.venv/bin/alembic upgrade head
 
-echo ">>> Installing systemd unit"
+echo ">>> Installing systemd units"
 cat > /etc/systemd/system/backend-service.service <<'EOF'
 [Unit]
 Description=SkyIvano Backend Service
@@ -82,9 +97,32 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+# A separate process from the API above -- consumes weather.sync / weather.sync_failure
+# from RabbitMQ and persists via the same app/services/persistence_service.py the API uses.
+# See app/broker/consumer.py and app/worker.py.
+cat > /etc/systemd/system/backend-worker.service <<'EOF'
+[Unit]
+Description=SkyIvano Backend Worker (RabbitMQ consumer)
+After=network.target
+
+[Service]
+Type=simple
+User=vagrant
+WorkingDirectory=/app
+EnvironmentFile=/app/.env
+ExecStart=/app/.venv/bin/python -m app.worker
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 chown -R vagrant:vagrant "${APP_DIR}/.venv"
 systemctl daemon-reload
 systemctl enable --now backend-service
+systemctl enable --now backend-worker
 
 echo ">>> Provisioning complete"
 echo "    Backend Service reachable at 192.168.0.221:8000 on the LAN"
+echo "    Backend Worker (RabbitMQ consumer) running as its own systemd service (backend-worker)"

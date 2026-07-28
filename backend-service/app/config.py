@@ -23,6 +23,16 @@ class Settings(BaseSettings):
 
     weather_data_max_age_minutes: int = 90
 
+    # --- RabbitMQ (async consumption of completed/failed syncs from the Fetcher) ---
+    # Consumed by app/worker.py (a separate process from the API), not by the FastAPI app
+    # itself -- see app/broker/consumer.py. The queue/exchange names must match the Fetcher's
+    # RabbitMQPublisher exactly, since whichever side connects first declares them.
+    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_sync_queue: str = "weather.sync"
+    rabbitmq_sync_failure_queue: str = "weather.sync_failure"
+    rabbitmq_dead_letter_exchange: str = "weather.dlx"
+    rabbitmq_prefetch_count: int = 10
+
     # --- Redis (UI session state, Sky Ivano's Redis integration) ---
     # Session storage only -- never business/weather data. See docs/architecture.md.
     redis_url: str = "redis://localhost:6379/0"

@@ -1,9 +1,23 @@
 from datetime import timedelta
+from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
 from app.config import Settings
 
 KYIV = ZoneInfo("Europe/Kyiv")
+
+
+def mock_publisher(monkeypatch, *, fail_sync: Exception | None = None, fail_sync_failure: Exception | None = None):
+    """Patches RabbitMQPublisher so tests never touch a real broker -- mirrors how respx used
+    to intercept the old HTTP PUT/POST to the Backend. Returns
+    (publish_weather_sync_mock, publish_sync_failure_mock) for call-argument assertions."""
+    from app.clients.rabbitmq_publisher import RabbitMQPublisher
+
+    sync_mock = AsyncMock(side_effect=fail_sync)
+    failure_mock = AsyncMock(side_effect=fail_sync_failure)
+    monkeypatch.setattr(RabbitMQPublisher, "publish_weather_sync", sync_mock)
+    monkeypatch.setattr(RabbitMQPublisher, "publish_sync_failure", failure_mock)
+    return sync_mock, failure_mock
 
 
 def make_settings(**overrides) -> Settings:

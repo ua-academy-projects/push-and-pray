@@ -3,10 +3,10 @@ import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from app.clients.backend_client import BackendClient
 from app.clients.open_meteo_client import OpenMeteoCallResult, fetch_forecast
+from app.clients.rabbitmq_publisher import RabbitMQPublisher
 from app.config import Settings, get_settings
-from app.exceptions import BackendServiceError, OpenMeteoError
+from app.exceptions import MessageBrokerError, OpenMeteoError
 from app.normalization.open_meteo_normalizer import normalize_open_meteo_response
 from app.schemas.sync import SyncResult
 
@@ -24,9 +24,13 @@ def is_sync_in_progress() -> bool:
 
 async def run_fetch_sync(trigger_type: str, settings: Settings | None = None) -> SyncResult:
     """The one function that performs a full fetch cycle: overlap check -> fetch Open-Meteo ->
-    normalize -> split observed/forecast -> push to the Backend -> record outcome. Called
+    normalize -> split observed/forecast -> publish to RabbitMQ -> record outcome. Called
     identically by the scheduler, POST /internal/fetch, and (indirectly, since the Backend
-    just forwards to that same endpoint) the UI's manual refresh button."""
+    just forwards to that same endpoint) the UI's manual refresh button.
+
+    A "success" result here means the fetch succeeded and the payload was handed to RabbitMQ
+    -- not that the Backend has persisted it yet. That happens asynchronously, on the
+    Backend's own worker process, some time after this function returns."""
     if _sync_lock.locked():
         logger.info("fetch skipped: overlapping execution prevented (trigger=%s)", trigger_type)
         return SyncResult(status="skipped", trigger_type=trigger_type, message="A fetch is already in progress")
@@ -82,14 +86,14 @@ async def run_fetch_sync(trigger_type: str, settings: Settings | None = None) ->
             },
         }
 
-        client = BackendClient(settings)
+        publisher = RabbitMQPublisher(settings)
         try:
-            await client.put_weather_sync(payload)
-        except BackendServiceError as exc:
-            logger.error("fetch failed: backend service error: %s", exc)
+            await publisher.publish_weather_sync(payload)
+        except MessageBrokerError as exc:
+            logger.error("fetch failed: message broker error: %s", exc)
             return SyncResult(status="failed", trigger_type=trigger_type, message=str(exc))
 
-        logger.info("backend persistence completed")
+        logger.info("published to weather.sync queue")
         logger.info("fetch succeeded: trigger=%s", trigger_type)
         return SyncResult(
             status="success",
@@ -111,7 +115,7 @@ async def _record_failure(
     exc: OpenMeteoError,
     call_result: OpenMeteoCallResult | None = None,
 ) -> None:
-    """Best-effort: if the Backend is also unreachable, there's nowhere to record the failure
+    """Best-effort: if RabbitMQ is also unreachable, there's nowhere to record the failure
     except the local logs above -- that's expected and not itself an error."""
     request_url = call_result.request_url if call_result else exc.request_url
     status_code = call_result.status_code if call_result else exc.status_code
@@ -134,9 +138,9 @@ async def _record_failure(
         "open_meteo_duration_ms": duration_ms,
     }
 
-    client = BackendClient(settings)
+    publisher = RabbitMQPublisher(settings)
     try:
-        await client.post_sync_failure(payload)
-        logger.info("fetch failure recorded in backend")
-    except BackendServiceError:
-        logger.warning("could not record fetch failure -- backend service unreachable")
+        await publisher.publish_sync_failure(payload)
+        logger.info("fetch failure published to weather.sync_failure queue")
+    except MessageBrokerError:
+        logger.warning("could not record fetch failure -- message broker unreachable")

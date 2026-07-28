@@ -53,3 +53,15 @@ class BackendServiceUnavailableError(BackendServiceError):
 
 class BackendServiceResponseError(BackendServiceError):
     """A non-2xx response from the Backend Service."""
+
+
+class MessageBrokerError(Exception):
+    """Base for anything that goes wrong publishing a sync result to RabbitMQ."""
+
+
+class MessageBrokerUnavailableError(MessageBrokerError):
+    """Could not connect to RabbitMQ."""
+
+
+class MessageBrokerPublishError(MessageBrokerError):
+    """Connected, but the publish itself failed."""

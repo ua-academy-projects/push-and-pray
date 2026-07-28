@@ -147,94 +147,6 @@ def test_sync_status_reports_freshness_and_manual_trigger_state(db_session, monk
     assert body["next_scheduled_at"] is None
 
 
-def test_put_weather_sync_upserts_and_returns_ack(db_session, monkeypatch):
-    payload = build_upsert_payload(daily_forecast=[build_daily_forecast()])
-
-    with _client(monkeypatch) as client:
-        response = client.put("/internal/weather/sync", json=payload)
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "success"
-    assert body["daily_records"] == 1
-    assert body["forecast_records"] == 1
-    assert body["hourly_records"] == 24
-
-    from app.models import CurrentWeather, DailyForecast
-
-    assert db_session.query(CurrentWeather).count() == 1
-    assert db_session.query(DailyForecast).count() == 1
-
-
-def test_put_weather_sync_rejects_invalid_payload(monkeypatch):
-    with _client(monkeypatch) as client:
-        response = client.put("/internal/weather/sync", json={"location": {"name": "Ivano-Frankivsk"}})
-
-    assert response.status_code == 422
-
-
-def test_put_weather_sync_rollback_preserves_prior_data_on_failure(db_session, monkeypatch):
-    good_payload = build_upsert_payload(current={"temperature": 31.5})
-    with _client(monkeypatch) as client:
-        client.put("/internal/weather/sync", json=good_payload).raise_for_status()
-
-        same_time = "2026-07-20T05:00:00+00:00"
-        broken_hourly_row = {
-            "weather_time": same_time,
-            "temperature": 1.0,
-            "apparent_temperature": 1.0,
-            "humidity": 50.0,
-            "precipitation_probability": 0.0,
-            "precipitation": 0.0,
-            "weather_code": 1,
-            "cloud_cover": 0.0,
-            "visibility": 10000.0,
-            "wind_speed": 1.0,
-            "wind_direction": 1.0,
-        }
-        broken_payload = build_upsert_payload(
-            current={"temperature": 999.0},
-            hourly=[broken_hourly_row, {**broken_hourly_row, "temperature": 2.0}],
-        )
-        response = client.put("/internal/weather/sync", json=broken_payload)
-
-    assert response.status_code == 500
-    assert "999" not in response.text  # no leaked internals/values from the failed attempt
-
-    from app.models import CurrentWeather
-
-    db_session.expire_all()
-    assert db_session.query(CurrentWeather).one().temperature == 31.5
-
-
-def test_post_sync_failure_records_failure_without_touching_existing_data(db_session, monkeypatch):
-    good_payload = build_upsert_payload(current={"temperature": 20.0})
-    with _client(monkeypatch) as client:
-        client.put("/internal/weather/sync", json=good_payload).raise_for_status()
-
-        failure_payload = {
-            "location": {"name": "Ivano-Frankivsk", "country": "Ukraine", "latitude": 48.9226, "longitude": 24.7111, "timezone": "Europe/Kyiv"},
-            "trigger_type": "scheduler",
-            "started_at": "2026-07-20T10:00:00+00:00",
-            "completed_at": "2026-07-20T10:00:10+00:00",
-            "error_message": "Open-Meteo request timed out after 10s",
-            "open_meteo_status_code": None,
-            "open_meteo_duration_ms": 10000,
-        }
-        response = client.post("/internal/weather/sync-failure", json=failure_payload)
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["status"] == "failed"
-    assert body["error_message"] == "Open-Meteo request timed out after 10s"
-
-    from app.models import CurrentWeather, WeatherSync
-
-    db_session.expire_all()
-    assert db_session.query(CurrentWeather).one().temperature == 20.0  # untouched
-    assert db_session.query(WeatherSync).count() == 2  # the earlier success + this failure
-
-
 @respx.mock
 def test_sync_trigger_calls_fetcher_once_and_returns_summary(monkeypatch):
     fetch_route = respx.post(f"{FETCHER_BASE}/internal/fetch").mock(
@@ -292,10 +204,10 @@ async def test_sync_trigger_second_concurrent_call_does_not_duplicate_fetch(monk
 
 
 def test_sync_history_returns_recent_syncs_newest_first_with_trigger_types(db_session, monkeypatch):
-    with _client(monkeypatch) as client:
-        client.put("/internal/weather/sync", json=build_upsert_payload(sync={"trigger_type": "scheduler"})).raise_for_status()
-        client.put("/internal/weather/sync", json=build_upsert_payload(sync={"trigger_type": "internal_endpoint"})).raise_for_status()
+    _seed(db_session, sync={"trigger_type": "scheduler"})
+    _seed(db_session, sync={"trigger_type": "internal_endpoint"})
 
+    with _client(monkeypatch) as client:
         response = client.get("/api/sync/history")
 
     assert response.status_code == 200
@@ -305,10 +217,10 @@ def test_sync_history_returns_recent_syncs_newest_first_with_trigger_types(db_se
 
 
 def test_sync_history_respects_limit(db_session, monkeypatch):
-    with _client(monkeypatch) as client:
-        for _ in range(3):
-            client.put("/internal/weather/sync", json=build_upsert_payload()).raise_for_status()
+    for _ in range(3):
+        _seed(db_session)
 
+    with _client(monkeypatch) as client:
         response = client.get("/api/sync/history", params={"limit": 2})
 
     assert len(response.json()) == 2

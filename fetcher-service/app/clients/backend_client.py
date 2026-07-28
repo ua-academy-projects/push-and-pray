@@ -7,9 +7,11 @@ from app.exceptions import BackendServiceResponseError, BackendServiceTimeoutErr
 
 
 class BackendClient:
-    """The only way the Fetcher ever talks to the Backend -- always HTTP, never a direct
-    import of its code or models. Used for the push half of a sync (PUT/POST) and, for the
-    startup-freshness check only, one read against the Backend's public sync-status endpoint."""
+    """The only remaining way the Fetcher talks to the Backend over HTTP -- always a direct
+    import-free HTTP call, never a direct import of its code or models. Used only for the
+    startup-freshness check: one read against the Backend's public sync-status endpoint. The
+    push half of a sync (what used to be PUT/POST here) now goes through
+    app.clients.rabbitmq_publisher.RabbitMQPublisher instead."""
 
     def __init__(self, settings: Settings):
         self._base_url = settings.backend_internal_base_url
@@ -32,14 +34,6 @@ class BackendClient:
                 status_code=response.status_code,
             )
         return response
-
-    async def put_weather_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
-        response = await self._request("PUT", "/internal/weather/sync", json=payload)
-        return response.json()
-
-    async def post_sync_failure(self, payload: dict[str, Any]) -> dict[str, Any]:
-        response = await self._request("POST", "/internal/weather/sync-failure", json=payload)
-        return response.json()
 
     async def get_sync_status(self) -> dict[str, Any]:
         response = await self._request("GET", "/api/sync-status")

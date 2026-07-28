@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     backend_internal_base_url: str = "http://localhost:8000"
     http_timeout_seconds: float = 10.0
 
+    # --- RabbitMQ (async push of completed/failed syncs to the Backend) ---
+    # This is the only way a sync result reaches the Backend now -- see
+    # app/clients/rabbitmq_publisher.py. backend_internal_base_url above is kept only for the
+    # one remaining read, GET /api/sync-status, used by the startup freshness check.
+    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_sync_queue: str = "weather.sync"
+    rabbitmq_sync_failure_queue: str = "weather.sync_failure"
+    rabbitmq_dead_letter_exchange: str = "weather.dlx"
+
     weather_location_name: str = "Ivano-Frankivsk"
     weather_country: str = "Ukraine"
     weather_latitude: float = 48.9226

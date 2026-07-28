@@ -2,7 +2,7 @@ import httpx
 import respx
 from fastapi.testclient import TestClient
 
-from tests.fixtures import build_open_meteo_response
+from tests.fixtures import build_open_meteo_response, mock_publisher
 
 BACKEND_BASE = "http://backend-service.test"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -20,13 +20,9 @@ def _client(monkeypatch) -> TestClient:
 
 
 @respx.mock
-def test_internal_fetch_endpoint_actually_calls_open_meteo_and_pushes_to_backend(monkeypatch):
+def test_internal_fetch_endpoint_actually_calls_open_meteo_and_publishes_to_queue(monkeypatch):
     open_meteo_route = respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(200, json=build_open_meteo_response()))
-    put_route = respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(
-        return_value=httpx.Response(
-            200, json={"status": "success", "daily_records": 11, "forecast_records": 10, "hourly_records": 24}
-        )
-    )
+    sync_mock, _ = mock_publisher(monkeypatch)
 
     with _client(monkeypatch) as client:
         response = client.post("/internal/fetch")
@@ -35,7 +31,7 @@ def test_internal_fetch_endpoint_actually_calls_open_meteo_and_pushes_to_backend
     body = response.json()
     assert body["status"] == "success"
     assert open_meteo_route.called
-    assert put_route.called
+    assert sync_mock.await_count == 1
     # never leaks raw Open-Meteo field names
     assert "temperature_2m" not in response.text
 

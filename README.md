@@ -8,38 +8,42 @@ The project was originally built as three services (UI, Backend, History) and ha
 
 Redis was added after that refactor, purely for ephemeral **UI session state** (selected graph period, filters, toggles) — never business/weather data, and never authentication. See [docs/architecture.md](docs/architecture.md) §16.
 
+RabbitMQ was added after that to decouple the Fetcher from the Backend: a completed (or failed) sync is now published to a durable queue instead of being pushed over a synchronous HTTP call, and a separate worker process on the Backend consumes it and persists it. See "Architecture at a glance" below.
 
 ## Architecture at a glance
 
 ```
-Scheduled sync:  Fetcher Scheduler -> Weather Fetcher Service -> Open-Meteo -> Weather Fetcher Service -> Backend Service -> PostgreSQL
+Scheduled sync:  Fetcher Scheduler -> Weather Fetcher Service -> Open-Meteo -> Weather Fetcher Service -> RabbitMQ -> Backend Worker -> PostgreSQL
 User reads:      Browser -> UI Service -> Backend Service -> PostgreSQL
-Manual refresh:  Browser -> UI Service -> Backend Service -> Weather Fetcher Service -> Open-Meteo -> Weather Fetcher Service -> Backend Service -> PostgreSQL
+Manual refresh:  Browser -> UI Service -> Backend Service -> Weather Fetcher Service -> Open-Meteo -> Weather Fetcher Service -> RabbitMQ -> Backend Worker -> PostgreSQL
 ```
 
-Three independently runnable services, each with a single responsibility, plus PostgreSQL:
+The Fetcher never waits for that last hop to complete -- publishing to RabbitMQ is fire-and-forget, so "Manual refresh" confirms the request was queued, not that it's been persisted yet; the UI picks up the actual result on its next poll of `/api/weather` or `/api/sync/history`.
+
+Four independently runnable services, each with a single responsibility, plus PostgreSQL and RabbitMQ:
 
 | Service | Responsibility |
 |---|---|
 | **ui-service** | React/TypeScript dashboard. Talks only to the Backend's public API. |
-| **backend-service** | FastAPI. Owns PostgreSQL directly — persistence, upserts, sync-attempt bookkeeping, the public API. Never calls Open-Meteo; never calls the Fetcher except to proxy one manual-refresh action. |
-| **fetcher-service** | FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, pushes it to the Backend over HTTP. Never touches PostgreSQL. |
+| **backend-service** | FastAPI. Owns PostgreSQL directly — the public API, plus (in a separate worker process, `app/worker.py`) consuming synced weather data from RabbitMQ and persisting it. Never calls Open-Meteo; never calls the Fetcher except to proxy one manual-refresh action. |
+| **fetcher-service** | FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, and publishes it to RabbitMQ for the Backend to consume. Never touches PostgreSQL, never calls the Backend to push data. |
 
 The UI never calls Open-Meteo or the Fetcher directly, and never triggers a *scheduled* sync — it only ever reads data the Backend has already persisted, plus one explicit "Refresh now" action that still routes through the Backend. Full rules and diagrams: [docs/architecture.md](docs/architecture.md).
 
 ## Technology stack
 
 - **UI**: React, TypeScript, Vite, CSS Modules, Recharts, Vitest + React Testing Library
-- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, SQLAlchemy 2, Alembic, PostgreSQL, pytest
-- **Fetcher**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, pytest
+- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, SQLAlchemy 2, Alembic, PostgreSQL, aio-pika, pytest
+- **Fetcher**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, aio-pika, pytest
 - **Database**: PostgreSQL (no SQLite anywhere — including tests), owned exclusively by the Backend
 - **Session storage**: Redis, owned exclusively by the Backend — UI preferences only, never business data
+- **Messaging**: RabbitMQ — the Fetcher publishes completed/failed syncs; a separate Backend worker process consumes and persists them
 
 ## Local setup overview
 
-Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), a local PostgreSQL instance, and a local Redis instance.
+Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), a local PostgreSQL instance, a local Redis instance, and a local RabbitMQ instance.
 
-PostgreSQL and Redis can each be a native install or run in a plain Docker container purely as a local dev convenience — this does **not** make the project "use Docker": the three application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §14 for actual future containerization plans). The commands below use the container approach; swap in `createdb`/a native Redis install if you prefer.
+PostgreSQL, Redis, and RabbitMQ can each be a native install or run in a plain Docker container purely as a local dev convenience — this does **not** make the project "use Docker": the four application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §14 for actual future containerization plans). The commands below use the container approach; swap in `createdb`/a native Redis or RabbitMQ install if you prefer.
 
 ```bash
 docker run -d --name skyivano-postgres \
@@ -48,9 +52,13 @@ docker run -d --name skyivano-postgres \
 docker exec skyivano-postgres createdb -U skyivano skyivano_test
 
 docker run -d --name skyivano-redis -p 6379:6379 redis:7-alpine
+
+docker run -d --name skyivano-rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
 
-1. Databases created above (`skyivano` for dev, `skyivano_test` for tests) and Redis running.
+The default `guest`/`guest` credentials work fine for local dev (unlike over the LAN in the Vagrant setup below, RabbitMQ's restriction on `guest` only applies to non-localhost connections). Management UI at `http://localhost:15672` once the container's up.
+
+1. Databases created above (`skyivano` for dev, `skyivano_test` for tests), Redis, and RabbitMQ running.
 2. Copy each service's `.env.example` to `.env` and adjust if needed.
 3. Set up and run each service (see commands below).
 
@@ -58,15 +66,22 @@ Detailed setup, migrations, and environment variables: [docs/architecture.md](do
 
 ## Running the services
 
-Order doesn't strictly matter — `backend-service` serves stored data even with the Fetcher stopped (stale but not broken), and `fetcher-service` records a failed sync locally if the Backend is unreachable rather than crashing. For a fresh database, start the Backend first so its migrations run before the Fetcher's first push arrives.
+Order doesn't strictly matter — `backend-service` serves stored data even with the Fetcher stopped (stale but not broken), and `fetcher-service` logs a failed publish locally if RabbitMQ is unreachable rather than crashing. For a fresh database, start the Backend first so its migrations run before the Backend Worker/Fetcher start consuming/publishing.
 
-**Backend Service**:
+**Backend Service** (the public API):
 ```bash
 cd backend-service
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
+```
+
+**Backend Worker** (a separate process, same venv as above — consumes synced weather data from RabbitMQ and persists it; nothing shows up in the API above until this is also running):
+```bash
+cd backend-service
+source .venv/bin/activate
+python -m app.worker
 ```
 
 **Weather Fetcher Service**:
@@ -92,10 +107,12 @@ An alternative to the native setup  above: [`Vagrantfile`](Vagrantfile) brings u
 
 | VM | LAN IP | Port |
 |---|---|---|
-| postgres | 192.168.0.220 | 5432 (Postgres), 6379 (Redis) |
-| backend | 192.168.0.221 | 8000 |
+| postgres | 192.168.0.220 | 5432 (Postgres), 6379 (Redis), 5672 (RabbitMQ), 15672 (RabbitMQ management UI) |
+| backend | 192.168.0.221 | 8000 (API service; the RabbitMQ-consuming worker is a second process on this same VM, no port of its own) |
 | fetcher | 192.168.0.222 | 8002 |
 | ui | 192.168.0.223 | 5173 |
+
+**RabbitMQ management UI**: `http://192.168.0.220:15672`, logged in as `skyivano`/`skyivano` (created by `vagrant/postgres/provision.sh` — the default `guest`/`guest` login only works from `localhost` on the broker's own host, which this isn't). Shows both queues (`weather.sync`, `weather.sync_failure`), their message rates and consumer counts, and the two dead-letter queues (`weather.sync.dead`, `weather.sync_failure.dead`) a poison message ends up on — see `docs/architecture.md` §17.
 
 Bridged networking (`vmnet_bridged`) needs root, and a separate macOS Objective-C runtime quirk (`+[NSNumber initialize] ... fork()`) crashes QEMU on some machines unless one extra environment variable is set. Always bring the environment up with:
 
@@ -115,7 +132,7 @@ cd fetcher-service && pytest
 cd ui-service && npm test
 ```
 
-Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them (the whole suite, not just persistence tests, refuses to run otherwise). They also need a real Redis reachable at `REDIS_URL` (session tests use logical DB 15, flushed after every test, so they never touch DB 0's dev data). Fetcher Service tests mock Open-Meteo and the Backend's HTTP client — no live network calls, no database.
+Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `skyivano_test` before running them (the whole suite, not just persistence tests, refuses to run otherwise). They also need a real Redis reachable at `REDIS_URL` (session tests use logical DB 15, flushed after every test, so they never touch DB 0's dev data). The RabbitMQ consumer (`app/broker/consumer.py`) is tested against a real test-database session but without a live broker — the message-handling functions are called directly with an in-memory body, the same way the API used to be exercised via its old PUT/POST endpoints. Fetcher Service tests mock Open-Meteo and RabbitMQ publishing — no live network calls, no broker, no database.
 
 ## Documentation
 
@@ -128,6 +145,7 @@ Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `s
 ## Known limitations (v1)
 
 - Single hardcoded location (Ivano-Frankivsk) — no location picker.
-- Internal endpoints (`/internal/*`) have no authentication — see security notes in [docs/architecture.md](docs/architecture.md).
+- The Fetcher's internal endpoints (`/internal/*`) have no authentication, nor does RabbitMQ (default `guest`/`guest` locally) — see security notes in [docs/architecture.md](docs/architecture.md). The Backend itself no longer exposes any `/internal/*` HTTP endpoint at all — synced data arrives over RabbitMQ instead.
+- "Refresh now" confirms the request was queued, not that it's been persisted — the dashboard shows the actual result a moment later, on its next poll.
 - No containerization, orchestration, or CI/CD yet.
 - No system light/dark theme toggle — a deliberate choice, since the background already carries its own weather/day-night theming; see `docs/architecture.md` §15.

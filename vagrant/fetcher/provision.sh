@@ -5,12 +5,16 @@
 # Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile),
 # each with its own fixed IP - this guest reaches backend-service directly
 # at its bridged IP, no NAT/slirp gateway needed. The Fetcher never touches
-# PostgreSQL directly (see docs/architecture.md), so there's nothing here
-# pointed at the postgres VM.
+# PostgreSQL directly (see docs/architecture.md). It does now talk to RabbitMQ, on the
+# postgres VM (see vagrant/postgres/provision.sh) -- publishing sync results there instead
+# of calling the Backend over HTTP.
 set -euo pipefail
 
 APP_DIR="/app"
 BACKEND_IP="192.168.0.221"
+RABBITMQ_IP="192.168.0.220" # same VM as postgres -- see vagrant/postgres/provision.sh
+RABBITMQ_USER="skyivano"
+RABBITMQ_PASS="skyivano"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -31,6 +35,17 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+echo ">>> Waiting for rabbitmq (${RABBITMQ_IP}:5672) to accept connections"
+for i in $(seq 1 30); do
+  if (exec 3<>"/dev/tcp/${RABBITMQ_IP}/5672") 2>/dev/null; then
+    exec 3<&- 3>&-
+    echo "    rabbitmq is up"
+    break
+  fi
+  echo "    attempt ${i}/30: not ready yet, retrying in 2s"
+  sleep 2
+done
+
 echo ">>> Setting up fetcher-service"
 cd "${APP_DIR}"
 python3.12 -m venv .venv
@@ -38,6 +53,7 @@ python3.12 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 [ -f .env ] || cp .env.example .env
 sed -i "s#^BACKEND_INTERNAL_BASE_URL=.*#BACKEND_INTERNAL_BASE_URL=http://${BACKEND_IP}:8000#" .env
+sed -i "s#^RABBITMQ_URL=.*#RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@${RABBITMQ_IP}:5672/#" .env
 
 echo ">>> Installing systemd unit"
 cat > /etc/systemd/system/fetcher-service.service <<'EOF'

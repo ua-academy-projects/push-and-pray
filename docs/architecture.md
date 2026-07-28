@@ -4,43 +4,48 @@ This is the technical source of truth for the project: architecture, service bou
 
 ## 1. Purpose
 
-SkyIvano is a modern weather dashboard for a single fixed location — Ivano-Frankivsk, Ukraine — built to demonstrate a clean multi-service architecture: independent services, HTTP-only communication, one service owning persistence, and background synchronization decoupled from user traffic. No Docker/Kubernetes/CI/cloud yet — that is intentionally deferred (see §13).
+SkyIvano is a modern weather dashboard for a single fixed location — Ivano-Frankivsk, Ukraine — built to demonstrate a clean multi-service architecture: independent services, HTTP communication for reads and one manual-refresh trigger, asynchronous messaging for the Fetcher→Backend data hand-off, one service owning persistence, and background synchronization decoupled from user traffic. No Docker/Kubernetes/CI/cloud yet — that is intentionally deferred (see §13).
 
 ## 2. High-level architecture
 
-**Refactor complete (Stage 4 of 4).** SkyIvano was originally built as three services (UI, Backend, History) and has been restructured into four: UI, Backend, a Weather Fetcher, and PostgreSQL. Stage 1 merged the old History Service's persistence layer into the Backend. Stage 2 extracted all Open-Meteo/scheduling responsibility out of the Backend into a new Weather Fetcher Service. Stage 3 added the statistics/forecast API the UI needs: daily averages computed at persist time, one-day/period/all-time statistics, and chart-ready time series, all computed in the Backend from PostgreSQL. Stage 4 rebuilt the UI to consume all of it — see §15 for the UI's own architecture and design decisions. The History Service no longer exists in the repository at all — see `docs/prompts/refactor-0-discovery-and-plan.md` for the full staged plan.
+**Refactor complete (Stage 5 of 5).** SkyIvano was originally built as three services (UI, Backend, History) and has been restructured into four application services (UI, Backend, a Weather Fetcher) plus PostgreSQL, Redis, and RabbitMQ. Stage 1 merged the old History Service's persistence layer into the Backend. Stage 2 extracted all Open-Meteo/scheduling responsibility out of the Backend into a new Weather Fetcher Service, connected to the Backend by a synchronous internal HTTP contract. Stage 3 added the statistics/forecast API the UI needs. Stage 4 rebuilt the UI to consume all of it — see §15. Stage 5 replaced that Stage 2 HTTP contract with asynchronous messaging over RabbitMQ: the Fetcher publishes a completed (or failed) sync instead of pushing it over HTTP, and a separate worker process on the Backend consumes and persists it — see §5, §7, §8, §17. The History Service no longer exists in the repository at all — see `docs/prompts/refactor-0-discovery-and-plan.md` for the full staged plan.
 
-Three independently runnable application services plus PostgreSQL:
+Four independently runnable application processes (across four services) plus PostgreSQL, Redis, and RabbitMQ:
 
 - **UI Service** — React/TypeScript dashboard. Reads only.
-- **Backend Service** — FastAPI. Owns PostgreSQL directly: persists normalized data it receives from the Fetcher, serves the public API to the UI, exposes the internal Fetcher-facing contract. Also owns Redis, for ephemeral UI session state only (§16) — never calls Open-Meteo.
-- **Weather Fetcher Service** — FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, pushes it to the Backend over HTTP. Never touches PostgreSQL, never touches Redis.
-- **PostgreSQL** — relational storage, owned exclusively by the Backend Service.
+- **Backend Service** — FastAPI. Owns PostgreSQL directly: serves the public API to the UI. Also owns Redis, for ephemeral UI session state only (§16) — never calls Open-Meteo.
+- **Backend Worker** — a separate process from the Backend Service above (same codebase, `python -m app.worker`), consuming synced weather data from RabbitMQ and persisting it via the same `persistence_service` the API used to call synchronously. Not a distinct "service" in the Stage-2 sense — it shares the Backend's database, schema, and code, just not its request/response cycle. See §17.
+- **Weather Fetcher Service** — FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, and publishes it to RabbitMQ for the Backend Worker to consume. Never touches PostgreSQL, never touches Redis, never pushes data to the Backend over HTTP anymore.
+- **PostgreSQL** — relational storage, owned exclusively by the Backend Service (and its Worker process).
 - **Redis** — ephemeral UI session state (selected graph period, filters, toggles), owned exclusively by the Backend Service. Never business/weather data, never authentication. Co-located on the `postgres` VM in the Vagrant deployment (§14, §16).
+- **RabbitMQ** — the durable queue carrying completed/failed syncs from the Fetcher to the Backend Worker (§17). Co-located on the same `postgres` VM (§14, §17).
 
 ```mermaid
 flowchart TD
     Scheduler[Fetcher Scheduler] --> Fetcher[Weather Fetcher Service]
     Fetcher --> OpenMeteo[Open-Meteo API]
-    Fetcher -->|PUT /internal/weather/sync| Backend[Backend Service]
-    Backend --> PostgreSQL[(PostgreSQL)]
+    Fetcher -->|publish weather.sync / weather.sync_failure| RabbitMQ[(RabbitMQ)]
+    RabbitMQ -->|consume| Worker[Backend Worker]
+    Worker --> PostgreSQL[(PostgreSQL)]
+    Backend --> PostgreSQL
     Backend -->|GET/SET session:*, sliding TTL| Redis[(Redis)]
 
     User[Browser] --> UI[UI Service]
-    UI -->|GET /api/session, PUT /api/session/state| Backend
+    UI -->|GET /api/session, PUT /api/session/state| Backend[Backend Service]
     UI -->|POST /api/sync/trigger| Backend
     Backend -->|POST /internal/fetch| Fetcher
 ```
 
-The bottom edge (`UI → Backend → Fetcher`) is the **one** path by which a user action can reach the Fetcher — the manual "Refresh now" button. It is never a direct UI→Fetcher call, and the Backend never initiates it on its own; see §4.
+The bottom edge (`UI → Backend → Fetcher`) is the **one** path by which a user action can reach the Fetcher — the manual "Refresh now" button. It is never a direct UI→Fetcher call, and the Backend never initiates it on its own; see §4. Note that this edge still ends at the Fetcher over HTTP — only the *data hand-off after the fetch* (the former `PUT /internal/weather/sync`) moved to RabbitMQ, not this trigger.
 
 ## 3. Service responsibilities
 
 | Service | Owns | Does NOT do |
 |---|---|---|
 | UI | Rendering persisted data, polling the Backend, the manual refresh button | Call Open-Meteo, call the Fetcher directly, access Postgres, trigger a *scheduled* sync |
-| Backend | Persistence (upserts, sync-attempt bookkeeping), read queries, freshness calculation, public + Fetcher-facing internal APIs, proxying one manual-refresh call to the Fetcher | Call Open-Meteo, run a scheduler, contain SQLAlchemy-free normalization logic |
-| Fetcher | Open-Meteo integration, normalization, scheduled + on-demand synchronization | Access Postgres, contain SQLAlchemy models, serve the UI directly |
+| Backend (API process) | Read queries, freshness calculation, public API, proxying one manual-refresh call to the Fetcher, session state (Redis) | Call Open-Meteo, run a scheduler, consume from RabbitMQ, contain SQLAlchemy-free normalization logic |
+| Backend Worker (separate process) | Consuming `weather.sync`/`weather.sync_failure` from RabbitMQ, persistence (upserts, sync-attempt bookkeeping) via the same `persistence_service` the API process used to call directly | Serve any HTTP endpoint, call Open-Meteo or the Fetcher |
+| Fetcher | Open-Meteo integration, normalization, scheduled + on-demand synchronization, publishing results to RabbitMQ | Access Postgres, contain SQLAlchemy models, serve the UI directly, call the Backend to push data |
 
 ## 4. Strict service-boundary rules
 
@@ -55,7 +60,7 @@ These are hard rules, not suggestions:
 7. The Backend Service accesses PostgreSQL directly — the only service that does.
 8. The Backend Service never calls Open-Meteo.
 9. **The Backend calls the Fetcher in exactly one case:** `POST /api/sync/trigger` (public, UI-facing) forwards synchronously to the Fetcher's `POST /internal/fetch`, on behalf of the UI's manual "Refresh now" button. No other Backend code path may call the Fetcher — the Backend does not poll it, does not manage its scheduler, does not otherwise know it exists.
-10. The Fetcher sends normalized data to the Backend only via the internal HTTP contract (§7) — no shared code, no shared ORM/schema models.
+10. The Fetcher sends normalized data to the Backend only by publishing to RabbitMQ (§8, §17) — no shared code, no shared ORM/schema models, and (as of Stage 5) no direct HTTP call for this either.
 11. Every service is independently runnable and configured entirely through environment variables (no hardcoded URLs/credentials).
 
 **Why the UI never triggers a scheduled synchronization:** synchronization is fundamentally an operational concern (freshness, rate-limiting calls to a third-party API, avoiding duplicate work) that must happen on a predictable schedule regardless of whether anyone is looking at the site. Letting ordinary page loads trigger external calls would make Open-Meteo traffic proportional to visitor traffic and couple page latency to a third-party API. The one deliberate exception — a manual refresh button — is a distinct, explicit user action, rate-limited by the same overlap-prevention lock the scheduler itself uses (§5), and it still never touches Open-Meteo directly from the UI's side.
@@ -71,7 +76,8 @@ sequenceDiagram
     participant S as Fetcher Scheduler
     participant F as Weather Fetcher Service
     participant O as Open-Meteo
-    participant B as Backend Service
+    participant Q as RabbitMQ
+    participant W as Backend Worker
     participant P as PostgreSQL
 
     S->>F: trigger run_fetch_sync(trigger_type)
@@ -79,11 +85,14 @@ sequenceDiagram
     F->>O: GET /v1/forecast?...&past_days=10&forecast_days=10
     O-->>F: raw forecast JSON
     F->>F: validate + normalize; split daily rows into observed (date <= today) vs. forecast (date > today)
-    F->>B: PUT /internal/weather/sync (current + daily + daily_forecast + hourly + sync metadata)
-    B->>B: BEGIN transaction: upsert location/current/daily/daily_forecast/hourly, record sync success
-    B->>P: commit
-    B-->>F: persistence ack (record counts)
-    F->>F: release fetch lock, log outcome
+    F->>Q: publish weather.sync (current + daily + daily_forecast + hourly + sync metadata)
+    Q-->>F: publish confirmed (message accepted onto the queue)
+    F->>F: release fetch lock, log outcome ("success" means published, not yet persisted)
+    Note over Q,P: asynchronous from here -- may happen milliseconds or longer after F returns
+    Q->>W: deliver message
+    W->>W: BEGIN transaction: upsert location/current/daily/daily_forecast/hourly, record sync success
+    W->>P: commit
+    W-->>Q: ack (message deleted from the queue)
 ```
 
 Trigger types: `startup`, `scheduler`, `internal_endpoint`. All three call the **same** `run_fetch_sync()` function in the Fetcher (moved from the Backend's `run_weather_sync()` in Stage 1, renamed since it no longer also persists) — the scheduler callback itself contains no business logic, only configuration (see `fetcher-service/app/scheduler/weather_scheduler.py`).
@@ -92,11 +101,11 @@ Trigger types: `startup`, `scheduler`, `internal_endpoint`. All three call the *
 
 **Open-Meteo request window:** `past_days=WEATHER_PAST_DAYS` (default 10) and `forecast_days=WEATHER_FORECAST_DAYS` (default 10) are requested in the same call. The Fetcher splits the returned `daily` array by comparing each row's date to "today" in `WEATHER_TIMEZONE`: dates ≤ today go in the payload's `daily` field (observed, accumulated forever in `daily_weather` — see §8); dates > today go in `daily_forecast` (replaced, not accumulated, in the `daily_forecast` table). Today's own row is treated as observed, not forecast — it's the current day's actual data, not a prediction.
 
-**Persistence is a real HTTP call now (Stage 2 change from Stage 1).** In Stage 1, persistence was an in-process function call within the same service that also fetched Open-Meteo; now it's `PUT /internal/weather/sync` across the Fetcher→Backend boundary. `persistence_service.upsert_weather()` itself (models, transaction, upsert logic) is otherwise unchanged from Stage 1 — it gained one new step (`_upsert_daily_forecast`, a replace-not-accumulate upsert) but its guarantees are the same.
+**Persistence is now decoupled from the fetch entirely (Stage 5 change from Stage 2).** In Stage 2, persistence was a synchronous `PUT /internal/weather/sync` HTTP call across the Fetcher→Backend boundary — `run_fetch_sync` didn't return until the Backend had committed. As of Stage 5, the Fetcher publishes to RabbitMQ and returns as soon as the broker accepts the message; the actual database write happens later, in the Backend Worker's own process, off the Fetcher's critical path. `persistence_service.upsert_weather()` itself (models, transaction, upsert logic) is completely unchanged by this — only *what calls it* changed, from a FastAPI route handler to a RabbitMQ message handler (`app/broker/consumer.py`). See §17 for the queue contract and delivery guarantees.
 
-Startup behavior: on boot, if `WEATHER_SYNC_ON_STARTUP=true`, the Fetcher asks the Backend's **public** `GET /api/sync-status` (a lightweight read, not part of the internal push contract) for the latest successful sync time; if it's newer than `WEATHER_SYNC_STARTUP_FRESHNESS_MINUTES` ago, startup sync is skipped. If the Backend can't be reached to answer that question, the Fetcher fetches anyway (fail-open) — unlike Stage 1's equivalent check against PostgreSQL (a Backend-internal precondition), a temporarily-unreachable Backend has no bearing on whether the Fetcher can still do its own job.
+Startup behavior: on boot, if `WEATHER_SYNC_ON_STARTUP=true`, the Fetcher asks the Backend's **public** `GET /api/sync-status` (a lightweight HTTP read — this one check was never part of the push contract, and stays HTTP even after Stage 5) for the latest successful sync time; if it's newer than `WEATHER_SYNC_STARTUP_FRESHNESS_MINUTES` ago, startup sync is skipped. If the Backend can't be reached to answer that question, the Fetcher fetches anyway (fail-open) — unlike Stage 1's equivalent check against PostgreSQL (a Backend-internal precondition), a temporarily-unreachable Backend has no bearing on whether the Fetcher can still do its own job.
 
-Overlap prevention: an in-process lock in the Fetcher, shared by the scheduler job and `POST /internal/fetch` (and therefore also the Backend's proxy, since it just calls that same endpoint). APScheduler is additionally configured with `max_instances=1`, `coalesce=True`, `replace_existing=True`, and a reasonable `misfire_grace_time`. The Backend has a **second, separate** lock scoped only to `POST /api/sync/trigger` itself, so a double-click of the UI's refresh button is rejected immediately without even reaching the Fetcher.
+Overlap prevention: an in-process lock in the Fetcher, shared by the scheduler job and `POST /internal/fetch` (and therefore also the Backend's proxy, since it just calls that same endpoint). APScheduler is additionally configured with `max_instances=1`, `coalesce=True`, `replace_existing=True`, and a reasonable `misfire_grace_time`. The Backend has a **second, separate** lock scoped only to `POST /api/sync/trigger` itself, so a double-click of the UI's refresh button is rejected immediately without even reaching the Fetcher. None of this changed in Stage 5 — these locks govern the fetch itself, not the now-asynchronous persistence step after it.
 
 ## 6. User read flow
 
@@ -127,6 +136,8 @@ sequenceDiagram
     participant B as Backend Service
     participant F as Weather Fetcher Service
     participant O as Open-Meteo
+    participant Q as RabbitMQ
+    participant W as Backend Worker
     participant P as PostgreSQL
 
     U->>UI: click "Refresh now"
@@ -135,15 +146,19 @@ sequenceDiagram
     B->>F: POST /internal/fetch
     F->>O: GET /v1/forecast?...
     O-->>F: raw forecast JSON
-    F->>B: PUT /internal/weather/sync
-    B->>P: upsert (same transaction as §5)
-    B-->>F: ack
-    F-->>B: SyncResult (status/records)
-    B-->>UI: SyncTriggerResult (status/records, never raw Open-Meteo data or a stack trace)
+    F->>Q: publish weather.sync
+    Q-->>F: publish confirmed
+    F-->>B: SyncResult (status="success" -- fetched and published, not yet persisted)
+    B-->>UI: SyncTriggerResult (status/records reflect what was fetched, never raw Open-Meteo data or a stack trace)
     UI-->>U: update "last synced" + re-fetch /api/weather
+    Note over Q,P: asynchronous, same as §5 from here
+    Q->>W: deliver message
+    W->>P: upsert (same transaction as §5)
 ```
 
 This is the **only** way a user action can cause an Open-Meteo call — and even then, the Backend never calls Open-Meteo itself, it only forwards to the one service that does. A Fetcher outage during this flow returns `{"status": "failed", ...}` with HTTP 200, not a 500 — a Fetcher being unreachable is a reported condition, not a Backend crash.
+
+**As of Stage 5, this flow's HTTP response no longer means "persisted."** Through Stage 2–4, `SyncTriggerResult` reflected a completed database write, because the whole chain was synchronous. Now the Fetcher returns to the Backend as soon as it has published to RabbitMQ — the Backend Worker's actual upsert happens afterward, out of band (§5, §17). A `"success"` status here means "Open-Meteo was called and the result was queued," not "the dashboard already reflects it." The UI's immediate re-fetch of `/api/weather` right after this may still show the *previous* data; the next poll tick (`useWeather`'s 60-second interval, §15) is what actually picks up the Worker's write once it lands. This was a deliberate trade-off: a "queued" response accurately describes what the Fetcher can promise once persistence is decoupled from it, rather than the Backend blocking the HTTP response on a RabbitMQ consumer it doesn't control.
 
 ## 8. API contracts
 
@@ -161,7 +176,7 @@ This is the **only** way a user action can cause an Open-Meteo call — and even
 | `GET /api/weather/statistics/all` | Same shape as the period endpoint, spanning every stored date ever recorded. |
 | `GET /api/weather/charts?from=&to=` | Chart-ready time series (temperature/humidity/precipitation/wind), ordered ascending by date. Omitting `from`/`to` returns every stored date — not hardcoded to 10. |
 | `GET /api/sync-status` | Latest status, last success/attempt time, whether a *manual* refresh is currently in flight through this Backend, staleness. Also read by the Fetcher itself for its startup-freshness check (§5). |
-| `POST /api/sync/trigger` | The one deliberate exception to "Backend never calls Fetcher" — proxies to the Fetcher's `POST /internal/fetch` and relays the result. Never returns Open-Meteo's raw response or a stack trace. |
+| `POST /api/sync/trigger` | The one deliberate exception to "Backend never calls Fetcher" — proxies to the Fetcher's `POST /internal/fetch` and relays the result. Never returns Open-Meteo's raw response or a stack trace. **As of Stage 5, a `"success"` status means the fetch succeeded and was published to RabbitMQ — not that the Backend Worker has persisted it yet** (§7, §17). |
 | `GET /api/sync/history?limit=20` | Recent synchronization attempts, newest first (thin read over `weather_syncs`) — backs the UI's sync-history log. |
 | `GET /api/health` | Service status, direct database connectivity (`database_connected`). Returns HTTP 503 with `status: "degraded"` if PostgreSQL is unreachable. No side effects. |
 | `GET /api/session` | Ensures a Redis-backed session exists for this browser and returns its stored UI state, creating one with default state on the first call. See §16. |
@@ -169,12 +184,7 @@ This is the **only** way a user action can cause an Open-Meteo call — and even
 
 **Stage 3 endpoint change:** `GET /api/weather/history?days=` (Stage 1) is gone, replaced by `GET /api/weather/daily?from=&to=` — same "recorded daily rows, newest first" purpose, but `from`/`to` instead of a `days` count so "all available data" is directly expressible, and the response now carries the computed `average_*` fields. Nothing outside this repo's own tests depended on the old endpoint (the UI hasn't been rebuilt yet), so it was a clean rename rather than an addition alongside the old one.
 
-### Backend — internal (Fetcher-facing only, never called by the UI)
-
-| Endpoint | Description |
-|---|---|
-| `PUT /internal/weather/sync` | Accepts one normalized dataset from a successful Fetcher sync: location, current, daily (observed), daily_forecast, hourly, plus Open-Meteo call metadata. Upserts everything in one transaction (`persistence_service.upsert_weather`) and records a successful sync. Returns a lightweight ack (record counts), never the full persisted representation — the Fetcher doesn't read weather data back. **Unauthenticated in v1 — see §11.** |
-| `POST /internal/weather/sync-failure` | Records a failed synchronization attempt (the Fetcher couldn't get valid data to `PUT`) — an audit row only, never touches the weather tables. |
+**Backend — internal HTTP:** none. As of Stage 5, the Backend exposes no `/internal/*` HTTP endpoint at all — the Fetcher-facing contract that used to live at `PUT /internal/weather/sync` / `POST /internal/weather/sync-failure` is now the RabbitMQ contract in §17.
 
 ### Weather Fetcher Service
 
@@ -184,7 +194,7 @@ This is the **only** way a user action can cause an Open-Meteo call — and even
 | `GET /internal/scheduler/status` | Enabled/running, configured interval, next run time, in-progress flag — the Fetcher's own scheduler state (moved here from the Backend in Stage 2). |
 | `GET /health` | Service status only — the Fetcher has no database to check connectivity against. |
 
-**Why the split into public vs. internal on the Backend:** it makes the UI-safe surface explicit and small, and keeps admin/operational actions clearly separated so they're easy to lock down later (see §11).
+**Why the Fetcher still keeps a public/internal split even though the Backend no longer has one:** the Fetcher's `/internal/*` endpoints (manual fetch trigger, scheduler status) are genuinely admin/operational surface that must never be UI-reachable, the same reasoning that originally motivated the Backend's split too — it made the UI-safe surface explicit and small, and kept admin/operational actions clearly separated so they're easy to lock down later (see §11). The Backend's half of that split disappeared in Stage 5 simply because its internal side (the Fetcher-push contract) stopped being HTTP at all, not because the underlying reasoning stopped applying.
 
 ## 9. Database schema
 
@@ -219,7 +229,7 @@ Owned exclusively by the Backend Service. SQLAlchemy 2 models + Alembic migratio
 `id, location_id (FK), started_at, completed_at, status, source, trigger_type, open_meteo_request_url, open_meteo_status_code, open_meteo_duration_ms, records_received, daily_records_received, forecast_records_received, hourly_records_received, error_message, created_at`
 `status ∈ {in_progress, success, failed, skipped}`. `trigger_type ∈ {startup, scheduler, internal_endpoint}`. This is the only table that gets a **new row on every sync attempt** — it's the audit trail; it does not store weather values. `forecast_records_received` (new in Stage 2) counts the `daily_forecast` rows from that sync, alongside the existing daily/hourly counts.
 
-`open_meteo_request_url`, `open_meteo_status_code`, and `open_meteo_duration_ms` record the actual outbound call to Open-Meteo (the only external API this system calls, and now only the Fetcher makes it) — not just whether the resulting sync succeeded, but what was requested, what HTTP status came back, and how long it took. The Fetcher measures these around its `open_meteo_client` call and forwards them to the Backend as part of `PUT /internal/weather/sync` (success case) or `POST /internal/weather/sync-failure` (failure case, where `open_meteo_status_code`/`open_meteo_duration_ms` may be null if the call never returned, e.g. a timeout). All three columns are nullable for `skipped` syncs, which never call Open-Meteo at all.
+`open_meteo_request_url`, `open_meteo_status_code`, and `open_meteo_duration_ms` record the actual outbound call to Open-Meteo (the only external API this system calls, and now only the Fetcher makes it) — not just whether the resulting sync succeeded, but what was requested, what HTTP status came back, and how long it took. The Fetcher measures these around its `open_meteo_client` call and forwards them to the Backend Worker as part of the `weather.sync` message (success case) or `weather.sync_failure` message (failure case, where `open_meteo_status_code`/`open_meteo_duration_ms` may be null if the call never returned, e.g. a timeout). All three columns are nullable for `skipped` syncs, which never call Open-Meteo at all.
 
 All weather tables use `INSERT ... ON CONFLICT (...) DO UPDATE` on their unique constraints. Database constraints are the final protection against duplicates, not just application-level checks.
 
@@ -235,7 +245,7 @@ All weather tables use `INSERT ... ON CONFLICT (...) DO UPDATE` on their unique 
 
 If Open-Meteo, the Fetcher→Backend push, or persistence fails:
 - A failed sync attempt is recorded (`weather_syncs.status = failed`, with `error_message`).
-- Previously persisted data is never deleted or partially overwritten — `PUT /internal/weather/sync` runs in one transaction; any failure rolls the whole thing back (enforced by `persistence_service.upsert_weather`, unchanged since Stage 1). A `PersistenceError` from that rollback is caught by an explicit FastAPI exception handler and returned as a clean `500` with no leaked internals — not a raw traceback.
+- Previously persisted data is never deleted or partially overwritten — `persistence_service.upsert_weather` runs in one transaction; any failure rolls the whole thing back, unchanged since Stage 1. A `PersistenceError` from that rollback used to be caught by an explicit FastAPI exception handler and returned as a clean `500` when this ran inside `PUT /internal/weather/sync`; as of Stage 5 it's raised inside the Backend Worker's message handler instead, where it causes that message to be nacked and dead-lettered rather than turned into an HTTP response (§17) — either way, the rollback guarantee itself is identical.
 - The UI keeps showing the last successful data, marked stale if applicable.
 
 If no data has ever been persisted (fresh install, first sync hasn't run/succeeded yet): `GET /api/weather` returns a clear "no data yet" response — never fabricated values. The UI shows a friendly empty/initializing state.
@@ -250,9 +260,11 @@ is_stale = (now - last_synchronized_at) > WEATHER_DATA_MAX_AGE_MINUTES
 
 ## 11. Environment variables
 
-**backend-service**: `DATABASE_URL` *(required, no default)*, `DATABASE_ECHO`, `DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, `FETCHER_SERVICE_BASE_URL` *(used exclusively by `POST /api/sync/trigger`)*, `HTTP_TIMEOUT_SECONDS`, `WEATHER_DATA_MAX_AGE_MINUTES`, `REDIS_URL`, `REDIS_SESSION_TTL_SECONDS` *(session storage only, see §16)*, `BACKEND_PORT`, `BACKEND_CORS_ORIGINS`. No Open-Meteo URL, no scheduler settings, no location coordinates — the Backend persists whatever location the Fetcher reports and has no reason to know it independently.
+**backend-service**: `DATABASE_URL` *(required, no default)*, `DATABASE_ECHO`, `DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, `FETCHER_SERVICE_BASE_URL` *(used exclusively by `POST /api/sync/trigger`)*, `HTTP_TIMEOUT_SECONDS`, `WEATHER_DATA_MAX_AGE_MINUTES`, `RABBITMQ_URL`, `RABBITMQ_SYNC_QUEUE`, `RABBITMQ_SYNC_FAILURE_QUEUE`, `RABBITMQ_DEAD_LETTER_EXCHANGE`, `RABBITMQ_PREFETCH_COUNT` *(read only by the Worker process, `app/worker.py` — see §17)*, `REDIS_URL`, `REDIS_SESSION_TTL_SECONDS` *(session storage only, see §16)*, `BACKEND_PORT`, `BACKEND_CORS_ORIGINS`. No Open-Meteo URL, no scheduler settings, no location coordinates — the Backend persists whatever location the Fetcher reports and has no reason to know it independently.
 
-**fetcher-service**: `OPEN_METEO_BASE_URL`, `BACKEND_INTERNAL_BASE_URL`, `WEATHER_LOCATION_NAME`, `WEATHER_COUNTRY`, `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `WEATHER_PAST_DAYS` (default 10), `WEATHER_FORECAST_DAYS` (default 10), `WEATHER_SYNC_ENABLED`, `WEATHER_SYNC_ON_STARTUP`, `WEATHER_SYNC_INTERVAL_MINUTES`, `WEATHER_SYNC_STARTUP_FRESHNESS_MINUTES`, `HTTP_TIMEOUT_SECONDS`, `FETCHER_PORT`. No `DATABASE_URL` — this service never touches PostgreSQL.
+**fetcher-service**: `OPEN_METEO_BASE_URL`, `BACKEND_INTERNAL_BASE_URL` *(as of Stage 5, used only for the read-only startup freshness check, `GET /api/sync-status` — no longer for pushing data)*, `RABBITMQ_URL`, `RABBITMQ_SYNC_QUEUE`, `RABBITMQ_SYNC_FAILURE_QUEUE`, `RABBITMQ_DEAD_LETTER_EXCHANGE`, `WEATHER_LOCATION_NAME`, `WEATHER_COUNTRY`, `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`, `WEATHER_PAST_DAYS` (default 10), `WEATHER_FORECAST_DAYS` (default 10), `WEATHER_SYNC_ENABLED`, `WEATHER_SYNC_ON_STARTUP`, `WEATHER_SYNC_INTERVAL_MINUTES`, `WEATHER_SYNC_STARTUP_FRESHNESS_MINUTES`, `HTTP_TIMEOUT_SECONDS`, `FETCHER_PORT`. No `DATABASE_URL` — this service never touches PostgreSQL.
+
+The `RABBITMQ_*` queue/exchange names must match between the two services exactly — whichever process connects to RabbitMQ first declares the queue with its dead-letter arguments, and the other side's declaration must be identical or RabbitMQ rejects it (`PRECONDITION_FAILED`). There is no shared config file enforcing this; it's an implicit contract between two independent `.env` files, same as the queue/exchange names themselves.
 
 **ui-service**: `VITE_BACKEND_BASE_URL` — the *only* configuration value the UI has. No Open-Meteo URL, no Fetcher Service URL, no database configuration, no internal sync endpoint ever appears in UI code or env. Unchanged since before the refactor.
 
@@ -260,7 +272,8 @@ is_stale = (now - last_synchronized_at) > WEATHER_DATA_MAX_AGE_MINUTES
 
 ## 12. Production security considerations (not implemented in v1)
 
-- `/internal/*` endpoints on both the Backend and the Fetcher have no authentication in this assignment. In production they should require a network boundary (private network / VPC), a shared secret or mTLS, and should not be reachable from the public internet.
+- `/internal/*` endpoints on the Fetcher have no authentication in this assignment (the Backend no longer has any `/internal/*` HTTP endpoint at all, as of Stage 5). In production they should require a network boundary (private network / VPC), a shared secret or mTLS, and should not be reachable from the public internet.
+- RabbitMQ itself has no meaningful access control in this assignment beyond a non-`guest` username/password (required anyway once the Fetcher and Backend Worker are on different LAN hosts — RabbitMQ refuses `guest` from outside `localhost`). No TLS on the AMQP connection, no per-queue permission scoping beyond the one shared user. Production should add TLS and a narrower-permissioned user per service.
 - CORS on the Backend is currently permissive to the local UI origin only — production would tighten this to the real UI domain.
 - No rate limiting on `POST /api/sync/trigger` or `POST /internal/fetch` — production should add it to prevent abuse of the manual trigger (the in-process locks prevent *overlapping* fetches, not repeated rapid ones from a determined caller).
 
@@ -274,7 +287,7 @@ is_stale = (now - last_synchronized_at) > WEATHER_DATA_MAX_AGE_MINUTES
 6. **Public read endpoints never call Open-Meteo or the Fetcher** — reads and syncs are fully decoupled code paths, with one narrow, explicit exception (`POST /api/sync/trigger`).
 7. **Failed synchronization never deletes existing data** — transactions + "keep last good state" semantics.
 8. **Database constraints prevent duplicates** — uniqueness is enforced at the DB level, application upserts are the mechanism, not the guarantee.
-9. **APScheduler is acceptable for this local, single-instance version** — it's in-process, simple, and sufficient without adding a message queue or external scheduler. Now runs in the Fetcher rather than the Backend, same reasoning.
+9. **APScheduler is acceptable for this local, single-instance version** — it's in-process, simple, and sufficient without adding an external scheduler. Now runs in the Fetcher rather than the Backend, same reasoning. (Stage 5 did add a message queue, RabbitMQ — but for decoupling the Fetcher's data hand-off to the Backend, an unrelated concern from *when the fetch itself runs*, which this decision is about. See decision 26.)
 10. **A future Kubernetes deployment should replace the in-process scheduler with a CronJob (or another single external scheduler)** — running APScheduler inside multiple Fetcher replicas would cause duplicate syncs; that's explicitly out of scope for v1 but documented so the migration path is clear.
 11. **Internal endpoints require protection in production** — deliberately left open in v1 per assignment scope, documented in §12.
 12. **Stored data can be returned as stale, with explicit metadata** — the system never silently presents old data as current.
@@ -291,6 +304,10 @@ is_stale = (now - last_synchronized_at) > WEATHER_DATA_MAX_AGE_MINUTES
 23. **Daily averages are computed and stored at persist time, not at read time (Stage 3)** — `average_temperature`/`average_apparent_temperature`/`average_humidity`/`average_wind_speed`/`average_cloud_cover` are columns on `daily_weather`, not values recalculated from `hourly_weather` on every statistics/chart request. Since `hourly_weather` accumulates forever and is never pruned, recomputing an average across a growing table on every read would get slower over time for no benefit — the value for a given day never changes after that day's last sync, so it's cheap to compute once and store.
 24. **`GET /api/weather/history?days=` was replaced, not kept alongside `GET /api/weather/daily?from=&to=`** — both exist to serve the same "recorded daily rows" need; keeping two endpoints doing almost the same thing would just be two things to keep in sync for no benefit, since nothing outside this repo's own tests depended on the old one yet (the UI hasn't been rebuilt). See §8.
 25. **`dominant_weather_condition` is computed from `weather_code` at read time, not stored as a column** — unlike the `average_*` fields (expensive-ish to recompute, since they'd need `hourly_weather`), bucketing an already-stored `weather_code` into clear/cloudy/rain/snow is a cheap, pure function (`weather_condition.bucket_for_code()`) with no need for a redundant stored copy that could drift from the code it's derived from.
+26. **The Fetcher→Backend data hand-off was converted from synchronous HTTP to asynchronous RabbitMQ messaging (Stage 5)** — decoupling *when a fetch completes* from *when it's persisted* means a slow or momentarily-unavailable database no longer blocks the Fetcher's fetch cycle, and a burst of manual-refresh clicks can't turn into a pile of blocked HTTP requests waiting on the Backend's single-writer database. The trade-off, accepted deliberately: persistence is no longer confirmed within the same request/response cycle that triggered it (§7).
+27. **Persistence moved into a separate Backend Worker process (`app/worker.py`), not an in-process consumer inside the FastAPI app** — a long-running RabbitMQ consumer loop has a different lifecycle and failure mode than a request/response API server; running it as its own process means a consumer crash or restart never affects API availability, and vice versa, and the two can be scaled or restarted independently later. The cost is a second process to run per environment (a second systemd unit in the Vagrant deployment, §14) — accepted since it mirrors the same "separate process per concern" reasoning already applied to the Fetcher's scheduler (decision 19).
+28. **Two queues (`weather.sync`, `weather.sync_failure`), mirroring the two former HTTP endpoints 1:1** — rather than one queue with a discriminator field. This kept the message bodies identical to the existing `WeatherUpsertRequest`/`SyncFailureRequest` Pydantic schemas with zero redesign, and lets each queue's dead-letter behavior, consumer logic, and any future scaling be reasoned about independently.
+29. **A message that can't be processed is dead-lettered once, not retried indefinitely** — both queues declare `x-dead-letter-exchange`/`x-dead-letter-routing-key` pointing at a shared `weather.dlx` exchange, routing a nacked message to `<queue>.dead`. The Backend Worker's consumer (`app/broker/consumer.py`) always nacks with `requeue=False` on any failure — a bad message shape or a rolled-back persistence error will not succeed on a bare retry, so looping it back onto the same queue forever would just be a slow-motion outage; landing it once on the dead-letter queue for manual inspection was judged simpler than building retry-count tracking (e.g. inspecting `x-death` headers) for a local, single-instance assignment. `persistence_service`'s upserts being idempotent (decision 8) means the one case that *is* safely retryable — redelivery after the Worker crashes mid-write, before acking — is already handled by RabbitMQ's own redelivery-on-disconnect behavior, without needing the dead-letter path at all.
 
 ## 14. Future work (explicitly out of scope now)
 
@@ -343,3 +360,31 @@ Redis stores exactly one thing: per-browser UI preferences (selected graph perio
 **Failure is non-fatal.** A session load/save failure degrades to "no persistence this visit" (`useSessionState`'s `status` becomes `"error"`, hooks simply skip hydration) rather than blocking the dashboard — the same posture the rest of the UI already takes toward its secondary concerns (e.g. a Forecast outage doesn't blank the Hero, §15).
 
 **Infra placement.** Redis runs on the `postgres` VM (`vagrant/postgres/provision.sh`) rather than a dedicated VM — it's this project's one "data/infra" node, as opposed to an application node (`backend`/`fetcher`/`ui`), so Redis shares it the same way it would share a data tier in a smaller deployment. Unauthenticated, like the rest of this project's internal-only services in v1 (§11/§12) — reachable only from inside the bridged LAN, and holding nothing more sensitive than a graph's date-range preset.
+
+## 17. Async sync delivery (RabbitMQ)
+
+As of Stage 5, this is the *only* way a completed or failed Fetcher sync reaches the Backend — the Stage 2 `PUT /internal/weather/sync` / `POST /internal/weather/sync-failure` HTTP endpoints are gone (§8). See §5 and §7 for where this sits in the two sync flows, and decisions 26–29 (§13) for why.
+
+**The contract: two durable queues, one per outcome.**
+
+| Queue | Published by | Consumed by | Message body |
+|---|---|---|---|
+| `weather.sync` | Fetcher, on a successful fetch+normalize (`RabbitMQPublisher.publish_weather_sync`) | Backend Worker (`handle_weather_sync_message`) | Same shape as the old `WeatherUpsertRequest`: location, current, daily, daily_forecast, hourly, source, sync metadata |
+| `weather.sync_failure` | Fetcher, when Open-Meteo or normalization failed (`RabbitMQPublisher.publish_sync_failure`) | Backend Worker (`handle_sync_failure_message`) | Same shape as the old `SyncFailureRequest`: location, trigger_type, timestamps, error_message, Open-Meteo call metadata |
+
+Both are declared durable, and every message is published with `delivery_mode=PERSISTENT` — a RabbitMQ restart doesn't lose an unconsumed message. Queue/exchange names are configurable (`RABBITMQ_SYNC_QUEUE`, `RABBITMQ_SYNC_FAILURE_QUEUE`, `RABBITMQ_DEAD_LETTER_EXCHANGE`, §11) but must match between the two services, since whichever side connects first declares them.
+
+**Delivery guarantee: at-least-once, made safe by idempotent upserts.** The Backend Worker acknowledges a message only after `persistence_service.upsert_weather`/`record_sync_failure` has committed (`app/broker/consumer.py`'s `message.process()` block) — not on receipt. If the Worker crashes or disconnects between receiving a message and acking it, RabbitMQ redelivers it to the next available consumer. Since every persistence write here is an upsert on a stable unique key (§9), replaying the same message twice is harmless — this is the same reasoning that already made the Stage 2 HTTP contract safe to retry, just applied to redelivery instead of an HTTP retry.
+
+**Poison messages: dead-lettered once, not retried forever.** Both queues are declared with `x-dead-letter-exchange`/`x-dead-letter-routing-key` pointing at a `weather.dlx` direct exchange, bound to `<queue>.dead`. Any exception while processing a message — a body that doesn't parse as JSON, one that fails Pydantic validation, or a `PersistenceError` from a rolled-back transaction — causes the consumer to nack with `requeue=False`, which RabbitMQ routes to the matching dead-letter queue instead of redelivering it to the same queue forever (decision 29). There is currently no automated alerting or reprocessing off the dead-letter queues — inspecting `weather.sync.dead`/`weather.sync_failure.dead` via the management UI (below) is a manual, operational step, acceptable for this assignment's scope but a clear gap for production (§12, §14).
+
+**Backend code layout**, mirroring the existing Redis pattern above (`app/broker/consumer.py` is the RabbitMQ analogue of `app/cache/redis_client.py`):
+
+| File | Role |
+|---|---|
+| `app/broker/consumer.py` | `handle_weather_sync_message`/`handle_sync_failure_message` (pure decode-and-persist, unit-tested directly), `consume_forever` (the actual aio-pika connection/queue/consumer plumbing) |
+| `app/worker.py` | Entry point (`python -m app.worker`) — runs `consume_forever` in its own `asyncio.run`, as its own OS process, separate from `uvicorn app.main:app` |
+
+**Fetcher code layout**: `app/clients/rabbitmq_publisher.py`'s `RabbitMQPublisher` is the only thing that talks to RabbitMQ — a short-lived `aio_pika.connect_robust` connection per publish, mirroring how `BackendClient` (still used for the one remaining HTTP read, `GET /api/sync-status`) opens a short-lived `httpx.AsyncClient` per request. `app/services/fetch_sync_service.py` calls it exactly where it used to call `BackendClient.put_weather_sync`/`post_sync_failure` — the rest of that function (fetch, normalize, split observed/forecast) is untouched by this refactor.
+
+**Infra placement.** RabbitMQ runs on the `postgres` VM (`vagrant/postgres/provision.sh`), the same "data/infra" node as Postgres and Redis, for the same reason Redis is there (§16) — it's shared infrastructure, not an application node. Unlike Postgres/Redis, RabbitMQ needs a real, non-`guest` user even in this unauthenticated-by-design v1 (§12): RabbitMQ refuses `guest` logins from anywhere but `localhost` on the broker's own host, and both the Fetcher and Backend Worker VMs connect to it over the bridged LAN, not from `localhost`. The management UI (`rabbitmq_management` plugin, port 15672) is enabled for local inspection of queue depth and the dead-letter queues; it carries the same credentials and the same lack of TLS as the AMQP port itself.

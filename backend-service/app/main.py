@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import health, internal_weather, public_weather, session, sync_trigger
+from app.api import health, public_weather, session, sync_trigger
 from app.config import get_settings
 from app.exceptions import PersistenceError
 
@@ -12,11 +12,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# NOTE: /internal/* endpoints are unauthenticated in this assignment (v1). In production
-# they must sit behind a private network boundary and/or a shared secret -- see
-# docs/architecture.md §11. The UI must never call them; only /api/* is UI-facing.
-# As of Stage 2, this service no longer runs a scheduler or calls Open-Meteo -- that moved to
-# the Weather Fetcher Service. This app's lifespan has no startup/shutdown work of its own.
+# As of the RabbitMQ refactor, this app exposes no /internal/* HTTP endpoints at all -- the
+# Fetcher's sync results arrive over RabbitMQ instead, consumed by the separate worker process
+# in app/worker.py (app/broker/consumer.py), not by this FastAPI app. The one remaining
+# exception to "Backend never calls Fetcher," POST /api/sync/trigger, is itself public
+# (UI-facing), not internal. This app's lifespan has no startup/shutdown work of its own.
 app = FastAPI(title="SkyIvano Backend Service")
 
 settings = get_settings()
@@ -31,7 +31,6 @@ app.include_router(health.router)
 app.include_router(public_weather.router)
 app.include_router(session.router)
 app.include_router(sync_trigger.router)
-app.include_router(internal_weather.router)
 
 
 @app.exception_handler(PersistenceError)

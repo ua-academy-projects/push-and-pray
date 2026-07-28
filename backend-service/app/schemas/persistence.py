@@ -111,9 +111,9 @@ class DailyForecastOut(DailyForecastIn):
 
 
 class WeatherUpsertRequest(BaseModel):
-    """Body of PUT /internal/weather/sync -- one full normalized dataset from one successful
-    Fetcher sync attempt (the internal HTTP contract between fetcher-service and this
-    service, added in Stage 2 of the refactor)."""
+    """Body of a weather.sync RabbitMQ message -- one full normalized dataset from one
+    successful Fetcher sync attempt. Consumed by app/broker/consumer.py on the Backend's
+    worker process, not received over HTTP."""
 
     location: LocationIn
     current: CurrentWeatherIn
@@ -147,13 +147,3 @@ class WeatherHourlyResponse(BaseModel):
 class WeatherForecastResponse(BaseModel):
     location: LocationOut | None = None
     forecast: list[DailyForecastOut] = []
-
-
-class PersistResult(BaseModel):
-    """Response of PUT /internal/weather/sync -- a lightweight ack for the Fetcher, which
-    doesn't read weather data back. Never the full persisted representation."""
-
-    status: str = "success"
-    daily_records: int
-    forecast_records: int
-    hourly_records: int

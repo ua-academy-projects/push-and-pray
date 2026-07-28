@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from app.scheduler import weather_scheduler
-from tests.fixtures import build_open_meteo_response, make_settings
+from tests.fixtures import build_open_meteo_response, make_settings, mock_publisher
 
 BACKEND_BASE = "http://backend-service.test"
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -66,16 +66,12 @@ async def test_startup_sync_skipped_when_backend_reports_recent_successful_data(
 
 
 @respx.mock
-async def test_startup_sync_runs_when_backend_reports_no_recent_data():
+async def test_startup_sync_runs_when_backend_reports_no_recent_data(monkeypatch):
     respx.get(f"{BACKEND_BASE}/api/sync-status").mock(
         return_value=httpx.Response(200, json={"last_synchronized_at": None})
     )
     open_meteo_route = respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(200, json=build_open_meteo_response()))
-    respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(
-        return_value=httpx.Response(
-            200, json={"status": "success", "daily_records": 11, "forecast_records": 10, "hourly_records": 24}
-        )
-    )
+    mock_publisher(monkeypatch)
 
     settings = make_settings(weather_sync_on_startup=True)
     await weather_scheduler.maybe_run_startup_sync(settings)
@@ -84,17 +80,13 @@ async def test_startup_sync_runs_when_backend_reports_no_recent_data():
 
 
 @respx.mock
-async def test_startup_sync_runs_anyway_when_backend_unreachable():
+async def test_startup_sync_runs_anyway_when_backend_unreachable(monkeypatch):
     """Fail-open: unlike Stage 1's equivalent check against PostgreSQL (a Backend-internal
     precondition), the Backend being unreachable has no bearing on whether the Fetcher can
     still do its own job, so a failed freshness check must not block the fetch."""
     respx.get(f"{BACKEND_BASE}/api/sync-status").mock(side_effect=httpx.ConnectError("refused"))
     open_meteo_route = respx.get(OPEN_METEO_URL).mock(return_value=httpx.Response(200, json=build_open_meteo_response()))
-    respx.put(f"{BACKEND_BASE}/internal/weather/sync").mock(
-        return_value=httpx.Response(
-            200, json={"status": "success", "daily_records": 11, "forecast_records": 10, "hourly_records": 24}
-        )
-    )
+    mock_publisher(monkeypatch)
 
     settings = make_settings(weather_sync_on_startup=True)
     await weather_scheduler.maybe_run_startup_sync(settings)

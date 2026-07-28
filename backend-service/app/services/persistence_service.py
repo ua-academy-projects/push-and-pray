@@ -211,8 +211,9 @@ def _upsert_hourly_weather(db: Session, location_id: int, rows) -> int:
 
 
 def upsert_weather(db: Session, payload: WeatherUpsertRequest):
-    """The whole PUT /internal/weather operation, as one transaction: all writes succeed together or
-    none of them do -- a malformed payload can never partially overwrite previously good data."""
+    """The whole weather.sync persistence operation, as one transaction: all writes succeed
+    together or none of them do -- a malformed payload can never partially overwrite
+    previously good data."""
     logger.info("persistence started: trigger_type=%s", payload.sync.trigger_type)
     try:
         location = _find_or_create_location(db, payload.location)

@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Provisions the postgres VM: installs PostgreSQL, creates the skyivano and
 # skyivano_test databases, and opens it up so the backend-service VM can
-# reach it. Also installs Redis on this same VM (session storage for the
-# UI - see docs/architecture.md), since it shares this VM's role as the
-# project's one "data/infra" node rather than an application node. Safe to
-# re-run.
+# reach it. Also installs Redis and RabbitMQ on this same VM (UI session
+# storage and the Fetcher->Backend async queue, respectively - see
+# docs/architecture.md), since it shares this VM's role as the project's
+# one "data/infra" node rather than an application node. Safe to re-run.
 #
 # Networking note: all VMs are bridged onto the host's LAN (see
 # Vagrantfile), each with its own fixed IP - no NAT/slirp gateway trick
-# needed. Only the backend-service VM talks to Postgres or Redis directly,
-# so pg_hba.conf and Redis's bind address are both scoped to that VM's
-# specific bridged IP, not the whole LAN.
+# needed. Only the backend-service and fetcher-service VMs talk to this
+# VM's services directly, so pg_hba.conf and Redis's bind address are both
+# scoped to the backend VM's specific bridged IP, not the whole LAN.
+# RabbitMQ has no equivalent "bind to one IP" step here -- it listens on
+# all interfaces by default, so both the fetcher (publisher) and backend
+# (consumer) VMs can reach it without extra config.
 set -euo pipefail
 
 DB_USER="skyivano"
@@ -19,6 +22,8 @@ DB_NAME="skyivano"
 DB_TEST_NAME="skyivano_test"
 BACKEND_IP="192.168.0.221"
 OWN_IP="192.168.0.220"
+RABBITMQ_USER="skyivano"
+RABBITMQ_PASS="skyivano"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -63,6 +68,22 @@ sed -i "s/^bind .*/bind 127.0.0.1 ${OWN_IP}/" "$REDIS_CONF"
 sed -i "s/^protected-mode .*/protected-mode no/" "$REDIS_CONF"
 systemctl restart redis-server
 
+echo ">>> Installing RabbitMQ"
+apt-get install -y rabbitmq-server
+
+echo ">>> Enabling the management UI (http://${OWN_IP}:15672)"
+rabbitmq-plugins enable --offline rabbitmq_management
+
+# guest/guest only works from localhost (RabbitMQ refuses it over the network on purpose),
+# and both the fetcher-service and backend-service VMs connect to this one over the bridged
+# LAN -- so a real user is required, unlike Redis/Postgres above which use a fixed
+# app-level user already. Also usable to log into the management UI from the host Mac.
+rabbitmqctl add_user "${RABBITMQ_USER}" "${RABBITMQ_PASS}" || true
+rabbitmqctl set_user_tags "${RABBITMQ_USER}" administrator
+rabbitmqctl set_permissions -p / "${RABBITMQ_USER}" ".*" ".*" ".*"
+systemctl restart rabbitmq-server
+
 echo ">>> Provisioning complete"
 echo "    Postgres reachable at 192.168.0.220:5432 on the LAN (user=${DB_USER} db=${DB_NAME}/${DB_TEST_NAME})"
 echo "    Redis reachable at 192.168.0.220:6379 on the LAN (UI session state only)"
+echo "    RabbitMQ reachable at 192.168.0.220:5672 on the LAN (user=${RABBITMQ_USER}), management UI at :15672"
