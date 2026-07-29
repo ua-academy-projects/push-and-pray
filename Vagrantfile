@@ -91,7 +91,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   VMS.each do |name, settings|
     config.vm.define name do |machine|
       machine.vm.hostname = name
-      machine.vm.network "private_network", ip: settings.fetch(:ip)
+      machine.vm.network "public_network", ip: settings.fetch(:ip)
 
       # VirtualBox-specific resource settings are intentionally kept together.
       machine.vm.provider "virtualbox" do |virtualbox|
@@ -99,6 +99,11 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         virtualbox.cpus = settings.fetch(:cpus)
         virtualbox.memory = settings.fetch(:memory)
         virtualbox.gui = false
+        virtualbox.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+        virtualbox.customize ["modifyvm", :id, "--accelerate3d", "off"]
+        virtualbox.customize ["modifyvm", :id, "--vram", "32"]
+        virtualbox.customize ["modifyvm", :id, "--paravirtprovider", "kvm"]
+        virtualbox.customize ["modifyvm", :id, "--nested-hw-virt", "off"]
       end
 
       machine.vm.provision "shell", privileged: false, inline: <<~SHELL
