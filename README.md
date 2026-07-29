@@ -42,39 +42,54 @@ Browser <=======> UI Service Container <=======> Backend Service Container <====
 weather-app/
 ├── backend-service/
 │   ├── app.py
-│   ├── docker-compose.yml
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── migrations/
-│       └── 001_unified_hourly_weather.sql
-├── database-service/
-│   └── docker-compose.yml
+│   ├── migrations/
+│   │   └── 001_unified_hourly_weather.sql
+│   └── tests/
 ├── provider-service/
 │   ├── app.py
-│   ├── docker-compose.yml
 │   ├── Dockerfile
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── tests/
 ├── ui-service/
 │   ├── app.py
-│   ├── docker-compose.yml
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── static/
 │   │   ├── script.js
 │   │   └── style.css
-│   └── templates/
-│       └── index.html
-├── providers/
-│   ├── common.sh
-│   ├── database.sh
-│   ├── backend.sh
-│   ├── provider.sh
-│   └── ui.sh
+│   ├── templates/
+│   │   └── index.html
+│   └── tests/
+├── infrastructure/
+│   ├── compose/
+│   │   ├── backend-service.yml
+│   │   ├── database-service.yml
+│   │   ├── provider-service.yml
+│   │   └── ui-service.yml
+│   └── vagrant/
+│       ├── Vagrantfile
+│       └── provisioning/
+│           ├── backend.sh
+│           ├── common.sh
+│           ├── database.sh
+│           ├── provider.sh
+│           └── ui.sh
 ├── tests/
-├── Vagrantfile
+├── .env.example
+├── requirements-test.txt
+├── Vagrantfile              # коренева точка входу
 ├── README.md
-└── docker-compose.yml
+└── LICENSE
 ```
+
+Код, Dockerfile, залежності та локальні тести кожного Python-сервісу
+залишаються в його каталозі. Усі операційні конфігурації згруповані в
+`infrastructure/`: кожна VM запускає лише власний Compose-проєкт.
+Кореневий `Vagrantfile` завантажує основну конфігурацію з
+`infrastructure/vagrant/Vagrantfile`, тому команди Vagrant і наявний стан
+`.vagrant` залишаються сумісними.
 
 ---
 
@@ -99,25 +114,25 @@ vagrant validate
 
 ```bash
 # Database VM (PostgreSQL, Redis, RabbitMQ)
-vagrant ssh database -c "docker compose -f /vagrant/database-service/docker-compose.yml ps"
+vagrant ssh database -c "docker compose -f /vagrant/infrastructure/compose/database-service.yml ps"
 
 # Provider VM
-vagrant ssh provider-service -c "docker compose -f /vagrant/provider-service/docker-compose.yml ps"
+vagrant ssh provider-service -c "docker compose -f /vagrant/infrastructure/compose/provider-service.yml ps"
 
 # Backend VM
-vagrant ssh backend-service -c "docker compose -f /vagrant/backend-service/docker-compose.yml ps"
+vagrant ssh backend-service -c "docker compose -f /vagrant/infrastructure/compose/backend-service.yml ps"
 
 # UI VM
-vagrant ssh ui-service -c "docker compose -f /vagrant/ui-service/docker-compose.yml ps"
+vagrant ssh ui-service -c "docker compose -f /vagrant/infrastructure/compose/ui-service.yml ps"
 ```
 
 ### Перегляд логів контейнерів
 
 ```bash
-vagrant ssh database -c "docker compose -f /vagrant/database-service/docker-compose.yml logs --tail=100"
-vagrant ssh provider-service -c "docker compose -f /vagrant/provider-service/docker-compose.yml logs --tail=100"
-vagrant ssh backend-service -c "docker compose -f /vagrant/backend-service/docker-compose.yml logs --tail=100"
-vagrant ssh ui-service -c "docker compose -f /vagrant/ui-service/docker-compose.yml logs --tail=100"
+vagrant ssh database -c "docker compose -f /vagrant/infrastructure/compose/database-service.yml logs --tail=100"
+vagrant ssh provider-service -c "docker compose -f /vagrant/infrastructure/compose/provider-service.yml logs --tail=100"
+vagrant ssh backend-service -c "docker compose -f /vagrant/infrastructure/compose/backend-service.yml logs --tail=100"
+vagrant ssh ui-service -c "docker compose -f /vagrant/infrastructure/compose/ui-service.yml logs --tail=100"
 ```
 
 ---
@@ -162,8 +177,12 @@ vagrant ssh database -c "ip -4 -br addr"
 
 ```bash
 # Підключення до psql всередині PostgreSQL контейнера на database VM
-vagrant ssh database -c "cd /vagrant/database-service && docker compose exec database psql -U weather_user -d weather_history"
+vagrant ssh database -c "docker compose -f /vagrant/infrastructure/compose/database-service.yml exec database psql -U weather_user -d weather_history"
 ```
+
+Compose-проєкт бази даних і надалі має ім’я `database-service`, а PostgreSQL
+використовує наявний Docker volume `database-service_postgres_data`.
+Переміщення YAML-файлу не створює новий volume і не видаляє наявні дані.
 
 Приклад перевірки записів у консолі psql:
 ```sql

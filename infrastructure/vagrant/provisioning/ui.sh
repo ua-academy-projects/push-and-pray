@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-source /vagrant/providers/common.sh
+source /vagrant/infrastructure/vagrant/provisioning/common.sh
 
 configure_common_system
 
@@ -20,7 +20,8 @@ if command -v ufw >/dev/null 2>&1 \
 fi
 
 log "Launching UI Service container via Docker Compose"
-cd /vagrant/ui-service
-docker compose up -d --build
+docker compose \
+    --file /vagrant/infrastructure/compose/ui-service.yml \
+    up -d --build
 
 log "UI Service VM provisioning completed"

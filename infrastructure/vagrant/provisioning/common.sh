@@ -6,7 +6,6 @@ export DEBIAN_FRONTEND=noninteractive
 
 readonly APP_ROOT="/opt/weather-app"
 
-
 log() {
     printf '\n[weather-app] %s\n' "$*"
 }

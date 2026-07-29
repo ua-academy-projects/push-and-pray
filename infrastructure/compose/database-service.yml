@@ -1,3 +1,5 @@
+name: database-service
+
 services:
   database:
     image: postgres:16
@@ -58,5 +60,8 @@ services:
 
 volumes:
   postgres_data:
+    name: database-service_postgres_data
   redis_data:
+    name: database-service_redis_data
   rabbitmq_data:
+    name: database-service_rabbitmq_data

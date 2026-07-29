@@ -12,17 +12,18 @@ class ArchitectureContractTests(unittest.TestCase):
         self.provider_requirements = (
             ROOT / "provider-service" / "requirements.txt"
         ).read_text(encoding="utf-8")
+        compose_root = ROOT / "infrastructure" / "compose"
         self.database_compose = (
-            ROOT / "database-service" / "docker-compose.yml"
+            compose_root / "database-service.yml"
         ).read_text(encoding="utf-8")
         self.backend_compose = (
-            ROOT / "backend-service" / "docker-compose.yml"
+            compose_root / "backend-service.yml"
         ).read_text(encoding="utf-8")
         self.provider_compose = (
-            ROOT / "provider-service" / "docker-compose.yml"
+            compose_root / "provider-service.yml"
         ).read_text(encoding="utf-8")
         self.ui_compose = (
-            ROOT / "ui-service" / "docker-compose.yml"
+            compose_root / "ui-service.yml"
         ).read_text(encoding="utf-8")
 
     def test_compose_exposes_required_local_ports(self):
@@ -52,6 +53,12 @@ class ArchitectureContractTests(unittest.TestCase):
             "delete from",
         ):
             self.assertNotIn(forbidden, combined)
+
+    def test_postgres_volume_name_is_preserved(self):
+        self.assertIn(
+            "name: database-service_postgres_data",
+            self.database_compose,
+        )
 
     def test_provider_routes_are_present(self):
         for route in (

@@ -1,6 +1,8 @@
+name: ui-service
+
 services:
   ui-service:
-    build: .
+    build: ../../ui-service
     restart: unless-stopped
     environment:
       APP_HOST: "0.0.0.0"

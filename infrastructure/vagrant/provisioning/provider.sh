@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-source /vagrant/providers/common.sh
+source /vagrant/infrastructure/vagrant/provisioning/common.sh
 
 configure_common_system
 
@@ -22,7 +22,8 @@ if command -v ufw >/dev/null 2>&1 \
 fi
 
 log "Launching Provider Service container via Docker Compose"
-cd /vagrant/provider-service
-docker compose up -d --build
+docker compose \
+    --file /vagrant/infrastructure/compose/provider-service.yml \
+    up -d --build
 
 log "Provider Service VM provisioning completed"
