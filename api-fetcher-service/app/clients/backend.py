@@ -4,15 +4,11 @@ import httpx
 
 from app.config import Settings
 from app.exceptions import BackendServiceError
-from app.schemas import (
-    AirQualityMeasurementCreate,
-    City,
-    MeasurementSaveResult,
-)
+from app.schemas import City
 
 
 class BackendClient:
-    """Client for the AirAware Backend Service."""
+    """HTTP client used only for Backend request-response operations."""
 
     def __init__(self, settings: Settings) -> None:
         self._base_url = settings.backend_service_url.rstrip("/")
@@ -30,35 +26,10 @@ class BackendClient:
             )
 
         try:
-            return [
-                City.model_validate(item)
-                for item in payload
-            ]
+            return [City.model_validate(item) for item in payload]
         except ValueError as exc:
             raise BackendServiceError(
                 "Backend returned invalid city data"
-            ) from exc
-
-    async def save_measurement(
-        self,
-        measurement: AirQualityMeasurementCreate,
-    ) -> MeasurementSaveResult:
-        payload = await self._request_json(
-            "POST",
-            "/api/measurements",
-            json=measurement.model_dump(mode="json"),
-        )
-
-        if not isinstance(payload, dict):
-            raise BackendServiceError(
-                "Backend returned an invalid save response"
-            )
-
-        try:
-            return MeasurementSaveResult.model_validate(payload)
-        except ValueError as exc:
-            raise BackendServiceError(
-                "Backend returned malformed measurement data"
             ) from exc
 
     async def is_ready(self) -> bool:
@@ -79,8 +50,6 @@ class BackendClient:
         self,
         method: str,
         path: str,
-        *,
-        json: dict[str, Any] | None = None,
     ) -> Any:
         try:
             async with httpx.AsyncClient(
@@ -89,7 +58,6 @@ class BackendClient:
                 response = await client.request(
                     method,
                     f"{self._base_url}{path}",
-                    json=json,
                 )
 
                 response.raise_for_status()
@@ -100,10 +68,7 @@ class BackendClient:
             ) from exc
 
         except httpx.HTTPStatusError as exc:
-            detail = self._extract_error_detail(
-                exc.response
-            )
-
+            detail = self._extract_error_detail(exc.response)
             raise BackendServiceError(
                 f"Backend Service returned HTTP "
                 f"{exc.response.status_code}: {detail}"
@@ -122,9 +87,7 @@ class BackendClient:
             ) from exc
 
     @staticmethod
-    def _extract_error_detail(
-        response: httpx.Response,
-    ) -> str:
+    def _extract_error_detail(response: httpx.Response) -> str:
         try:
             payload = response.json()
         except ValueError:
@@ -132,7 +95,6 @@ class BackendClient:
 
         if isinstance(payload, dict):
             detail = payload.get("detail")
-
             if isinstance(detail, str):
                 return detail
 

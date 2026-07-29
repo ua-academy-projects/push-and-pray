@@ -7,6 +7,17 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
     database_url: str
+    rabbitmq_url: str
+
+    rabbitmq_exchange: str = "airaware.measurements"
+    rabbitmq_queue: str = "airaware.measurements.persist"
+    rabbitmq_routing_key: str = "measurement.created"
+    rabbitmq_dead_letter_exchange: str = (
+        "airaware.measurements.dead-letter"
+    )
+    rabbitmq_dead_letter_queue: str = (
+        "airaware.measurements.dead-letter"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

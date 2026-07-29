@@ -22,10 +22,8 @@ class AirQualityMeasurementCreate(BaseModel):
 
     european_aqi: float | None = None
     us_aqi: float | None = None
-
     pm2_5: float | None = None
     pm10: float | None = None
-
     nitrogen_dioxide: float | None = None
     ozone: float | None = None
     carbon_monoxide: float | None = None
@@ -35,25 +33,11 @@ class AirQualityMeasurementCreate(BaseModel):
     source_status_code: int = 200
 
 
-class SavedMeasurement(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    id: int
-    observed_at: datetime
-
-
-class MeasurementSaveResult(BaseModel):
-    created: bool
-    measurement: SavedMeasurement
-
-
 class CityFetchResult(BaseModel):
     city_code: str
     city_name: str
-
     status: str
-    created: bool | None = None
-    measurement_id: int | None = None
+    message_id: str | None = None
     observed_at: datetime | None = None
     error: str | None = None
 
@@ -61,13 +45,10 @@ class CityFetchResult(BaseModel):
 class FetchRunResult(BaseModel):
     started_at: datetime
     finished_at: datetime
-
     total_cities: int
     successful: int
     failed: int
-    created: int
-    duplicates: int
-
+    published: int
     results: list[CityFetchResult]
 
 

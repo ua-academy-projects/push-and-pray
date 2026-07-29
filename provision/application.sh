@@ -15,6 +15,9 @@ required_variables=(
     AIRAWARE_DB_PASSWORD
     AIRAWARE_REDIS_PASSWORD
     AIRAWARE_FLASK_SECRET_KEY
+    AIRAWARE_RABBITMQ_USER
+    AIRAWARE_RABBITMQ_PASSWORD
+    AIRAWARE_RABBITMQ_VHOST
 )
 
 for variable_name in "${required_variables[@]}"; do
@@ -118,12 +121,36 @@ encoded_database_password="$(
         "${AIRAWARE_DB_PASSWORD}"
 )"
 
+encoded_rabbitmq_user="$(
+    python3 -c \
+        'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe=""))' \
+        "${AIRAWARE_RABBITMQ_USER}"
+)"
+
+encoded_rabbitmq_password="$(
+    python3 -c \
+        'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe=""))' \
+        "${AIRAWARE_RABBITMQ_PASSWORD}"
+)"
+
+encoded_rabbitmq_vhost="$(
+    python3 -c \
+        'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe=""))' \
+        "${AIRAWARE_RABBITMQ_VHOST}"
+)"
+
 log "Creating service environment configuration"
 
 case "${AIRAWARE_ROLE}" in
     backend)
         cat >"${SERVICE_DIRECTORY}/.env" <<EOF
 DATABASE_URL=postgresql+psycopg://${AIRAWARE_DB_USER}:${encoded_database_password}@${AIRAWARE_DATABASE_IP}:5432/${AIRAWARE_DB_NAME}
+RABBITMQ_URL=amqp://${encoded_rabbitmq_user}:${encoded_rabbitmq_password}@${AIRAWARE_DATABASE_IP}:5672/${encoded_rabbitmq_vhost}
+RABBITMQ_EXCHANGE=airaware.measurements
+RABBITMQ_QUEUE=airaware.measurements.persist
+RABBITMQ_ROUTING_KEY=measurement.created
+RABBITMQ_DEAD_LETTER_EXCHANGE=airaware.measurements.dead-letter
+RABBITMQ_DEAD_LETTER_QUEUE=airaware.measurements.dead-letter
 EOF
         ;;
 
@@ -131,6 +158,12 @@ EOF
         cat >"${SERVICE_DIRECTORY}/.env" <<EOF
 OPEN_METEO_AIR_QUALITY_URL=https://air-quality-api.open-meteo.com/v1/air-quality
 BACKEND_SERVICE_URL=http://${AIRAWARE_BACKEND_IP}:8001
+RABBITMQ_URL=amqp://${encoded_rabbitmq_user}:${encoded_rabbitmq_password}@${AIRAWARE_DATABASE_IP}:5672/${encoded_rabbitmq_vhost}
+RABBITMQ_EXCHANGE=airaware.measurements
+RABBITMQ_QUEUE=airaware.measurements.persist
+RABBITMQ_ROUTING_KEY=measurement.created
+RABBITMQ_DEAD_LETTER_EXCHANGE=airaware.measurements.dead-letter
+RABBITMQ_DEAD_LETTER_QUEUE=airaware.measurements.dead-letter
 HTTP_TIMEOUT_SECONDS=15
 FETCH_ON_STARTUP=true
 SCHEDULER_ENABLED=true
@@ -177,9 +210,38 @@ TimeoutStopSec=20
 WantedBy=multi-user.target
 EOF
 
+
+if [[ "${AIRAWARE_ROLE}" == "backend" ]]; then
+    cat >"/etc/systemd/system/airaware-backend-consumer.service" <<EOF
+[Unit]
+Description=AirAware Backend RabbitMQ Consumer
+Wants=network-online.target
+After=network-online.target airaware-backend.service
+
+[Service]
+Type=simple
+User=airaware
+Group=airaware
+WorkingDirectory=${SERVICE_DIRECTORY}
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${SERVICE_DIRECTORY}/.venv/bin/python -m app.consumer
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
+
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
 systemctl restart "${SERVICE_NAME}"
+
+if [[ "${AIRAWARE_ROLE}" == "backend" ]]; then
+    systemctl enable airaware-backend-consumer
+    systemctl restart airaware-backend-consumer
+fi
 
 log "Waiting for ${SERVICE_NAME} HTTP endpoint"
 

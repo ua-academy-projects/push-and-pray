@@ -113,3 +113,12 @@ class DashboardResponse(BaseModel):
     hours: int
     latest: MeasurementResponse | None
     history: list[MeasurementResponse]
+
+class MeasurementEvent(BaseModel):
+    schema_version: int = Field(ge=1)
+    message_id: str = Field(min_length=1, max_length=100)
+    event_type: str = Field(
+        pattern=r"^air_quality\.measurement\.collected$"
+    )
+    published_at: datetime
+    payload: MeasurementCreate

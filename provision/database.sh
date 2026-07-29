@@ -13,6 +13,10 @@ required_variables=(
     AIRAWARE_DB_USER
     AIRAWARE_DB_PASSWORD
     AIRAWARE_REDIS_PASSWORD
+    AIRAWARE_FETCHER_IP
+    AIRAWARE_RABBITMQ_USER
+    AIRAWARE_RABBITMQ_PASSWORD
+    AIRAWARE_RABBITMQ_VHOST
 )
 
 for variable_name in "${required_variables[@]}"; do
@@ -40,6 +44,7 @@ apt-get install -y \
     postgresql-contrib \
     redis-server \
     redis-tools \
+    rabbitmq-server \
     ufw
 
 PG_VERSION="$(
@@ -151,8 +156,6 @@ psql \
 log "PostgreSQL listening sockets"
 ss -lntp | grep ':5432' || true
 
-log "Database provisioning completed"
-
 REDIS_CONF="/etc/redis/redis.conf"
 
 sed -Ei \
@@ -187,5 +190,54 @@ redis-cli \
     --no-auth-warning \
     ping
 
+log "Configuring RabbitMQ"
+
+RABBITMQ_CONF="/etc/rabbitmq/rabbitmq.conf"
+
+cat >"${RABBITMQ_CONF}" <<EOF
+listeners.tcp.1 = 127.0.0.1:5672
+listeners.tcp.2 = ${AIRAWARE_DATABASE_IP}:5672
+management.tcp.ip = ${AIRAWARE_DATABASE_IP}
+management.tcp.port = 15672
+loopback_users.guest = true
+EOF
+
+systemctl enable rabbitmq-server
+systemctl restart rabbitmq-server
+rabbitmq-plugins enable rabbitmq_management
+systemctl restart rabbitmq-server
+
+if rabbitmqctl list_vhosts -q | grep -Fxq "${AIRAWARE_RABBITMQ_VHOST}"; then
+    log "RabbitMQ vhost already exists"
+else
+    rabbitmqctl add_vhost "${AIRAWARE_RABBITMQ_VHOST}"
+fi
+
+if rabbitmqctl list_users -q | awk '{print $1}' | grep -Fxq "${AIRAWARE_RABBITMQ_USER}"; then
+    rabbitmqctl change_password \
+        "${AIRAWARE_RABBITMQ_USER}" \
+        "${AIRAWARE_RABBITMQ_PASSWORD}"
+else
+    rabbitmqctl add_user \
+        "${AIRAWARE_RABBITMQ_USER}" \
+        "${AIRAWARE_RABBITMQ_PASSWORD}"
+fi
+
+rabbitmqctl set_permissions \
+    -p "${AIRAWARE_RABBITMQ_VHOST}" \
+    "${AIRAWARE_RABBITMQ_USER}" \
+    '.*' '.*' '.*'
+
+rabbitmqctl set_user_tags \
+    "${AIRAWARE_RABBITMQ_USER}" \
+    management
+
+rabbitmq-diagnostics -q ping
+rabbitmq-diagnostics -q listeners
+
 ufw allow from "${AIRAWARE_BACKEND_IP}" to any port 5432 proto tcp
 ufw allow from "${AIRAWARE_FRONTEND_IP}" to any port 6379 proto tcp
+ufw allow from "${AIRAWARE_BACKEND_IP}" to any port 5672 proto tcp
+ufw allow from "${AIRAWARE_FETCHER_IP}" to any port 5672 proto tcp
+
+log "Infrastructure provisioning completed"

@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 
 from app.clients.backend import BackendClient
 from app.clients.open_meteo import OpenMeteoClient
+from app.clients.rabbitmq import RabbitMQPublisher
 from app.config import get_settings
 from app.schemas import FetchRunResult, FetchStatus
 from app.service import FetchService
@@ -48,10 +49,12 @@ async def lifespan(
 
     backend_client = BackendClient(settings)
     open_meteo_client = OpenMeteoClient(settings)
+    rabbitmq_publisher = RabbitMQPublisher(settings)
 
     fetch_service = FetchService(
         backend_client=backend_client,
         open_meteo_client=open_meteo_client,
+        rabbitmq_publisher=rabbitmq_publisher,
     )
 
     scheduler = AsyncIOScheduler(
@@ -61,6 +64,7 @@ async def lifespan(
     app.state.fetch_service = fetch_service
     app.state.backend_client = backend_client
     app.state.scheduler = scheduler
+    app.state.rabbitmq_publisher = rabbitmq_publisher
 
     if settings.scheduler_enabled:
         scheduler.add_job(
@@ -98,7 +102,7 @@ app = FastAPI(
     title="AirAware API Fetcher Service",
     description=(
         "Collects air-quality data from Open-Meteo "
-        "and submits it to the Backend Service."
+        "and publishes measurement events to RabbitMQ."
     ),
     version="0.2.0",
     lifespan=lifespan,
@@ -136,6 +140,7 @@ async def readiness_check(
     request: Request,
 ) -> dict[str, str]:
     backend_client = get_backend_client(request)
+    rabbitmq_publisher = request.app.state.rabbitmq_publisher
 
     if not await backend_client.is_ready():
         raise HTTPException(
@@ -143,10 +148,17 @@ async def readiness_check(
             detail="Backend Service is unavailable",
         )
 
+    if not await rabbitmq_publisher.is_ready():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RabbitMQ is unavailable",
+        )
+
     return {
         "service": "api-fetcher-service",
         "status": "ready",
         "backend_service": "connected",
+        "rabbitmq": "connected",
     }
 
 

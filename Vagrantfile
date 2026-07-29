@@ -28,6 +28,15 @@ REDIS = {
   )
 }.freeze
 
+RABBITMQ = {
+  user: ENV.fetch("AIRAWARE_RABBITMQ_USER", "airaware"),
+  password: ENV.fetch(
+    "AIRAWARE_RABBITMQ_PASSWORD",
+    "airaware_rabbitmq_dev_password"
+  ),
+  vhost: ENV.fetch("AIRAWARE_RABBITMQ_VHOST", "airaware")
+}.freeze
+
 FRONTEND = {
   secret_key: ENV.fetch(
     "AIRAWARE_FLASK_SECRET_KEY",
@@ -44,14 +53,14 @@ MACHINES = {
   "database" => {
     hostname: "airaware-database",
     ip_suffix: 213,
-    memory: 1024,
-    cpus: 1,
+    memory: 2048,
+    cpus: 2,
     type: :database
   },
   "backend" => {
     hostname: "airaware-backend",
     ip_suffix: 211,
-    memory: 768,
+    memory: 1024,
     cpus: 1,
     type: :application
   },
@@ -153,7 +162,10 @@ COMMON_ENV = {
   "AIRAWARE_DB_USER" => DATABASE.fetch(:user),
   "AIRAWARE_DB_PASSWORD" => DATABASE.fetch(:password),
   "AIRAWARE_REDIS_PASSWORD" => REDIS.fetch(:password),
-  "AIRAWARE_FLASK_SECRET_KEY" => FRONTEND.fetch(:secret_key)
+  "AIRAWARE_FLASK_SECRET_KEY" => FRONTEND.fetch(:secret_key),
+  "AIRAWARE_RABBITMQ_USER" => RABBITMQ.fetch(:user),
+  "AIRAWARE_RABBITMQ_PASSWORD" => RABBITMQ.fetch(:password),
+  "AIRAWARE_RABBITMQ_VHOST" => RABBITMQ.fetch(:vhost)
 }.freeze
 
 
