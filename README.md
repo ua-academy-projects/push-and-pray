@@ -114,6 +114,15 @@ An alternative to the native setup  above: [`Vagrantfile`](Vagrantfile) brings u
 
 **RabbitMQ management UI**: `http://192.168.0.220:15672`, logged in as `skyivano`/`skyivano` (created by `vagrant/postgres/provision.sh` — the default `guest`/`guest` login only works from `localhost` on the broker's own host, which this isn't). Shows both queues (`weather.sync`, `weather.sync_failure`), their message rates and consumer counts, and the two dead-letter queues (`weather.sync.dead`, `weather.sync_failure.dead`) a poison message ends up on — see `docs/architecture.md` §17.
 
+**Pausing/resuming the Backend Worker (consumer)**, e.g. to inspect a message in the management UI's "Get messages" panel before it gets consumed and acked: the worker uses a robust RabbitMQ connection that auto-reconnects, so there's no reliable way to pause it from the management UI itself (force-closing its connection there just triggers an immediate reconnect) — stop/start the actual process instead:
+
+```bash
+sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant ssh backend -c "sudo systemctl stop backend-worker"
+# ...trigger a sync, inspect the message via the management UI (Queues -> weather.sync -> Get messages,
+# ack mode "Nack message requeue true" so it isn't lost)...
+sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant ssh backend -c "sudo systemctl start backend-worker"
+```
+
 Bridged networking (`vmnet_bridged`) needs root, and a separate macOS Objective-C runtime quirk (`+[NSNumber initialize] ... fork()`) crashes QEMU on some machines unless one extra environment variable is set. Always bring the environment up with:
 
 ```bash
