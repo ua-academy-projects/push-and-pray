@@ -1,11 +1,12 @@
-"""Standalone singleton worker for blacklist polling and durable delivery."""
+"""Standalone singleton worker for polling and direct RabbitMQ publication."""
 
 import asyncio
 import fcntl
 import logging
+import random
 import signal
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO, Protocol
@@ -14,20 +15,26 @@ from uuid import UUID, uuid4
 from provider_service.config import Settings, get_settings
 from provider_service.exceptions import ApplicationError, RateLimitExceededError
 from provider_service.main import create_abuseipdb_http_client
-from provider_service.outbox import BlacklistOutbox
 from provider_service.polling_policy import PollingPolicy
 from provider_service.provider import AbuseIPDBProvider
 from provider_service.rabbitmq_publisher import (
     AioPikaBlacklistPublisher,
+    BlacklistPublishingConnectionError,
     BlacklistPublishingError,
+    BlacklistPublishingRejectedError,
+    BlacklistPublishingSerializationError,
+    BlacklistPublishingTimeoutError,
+    BlacklistPublishingUnroutableError,
 )
 from provider_service.schemas import (
     BlacklistSnapshotMessage,
     InternalBlacklistRequest,
+    InternalBlacklistResponse,
 )
 from provider_service.service import ReputationProvider, ReputationProxyService
 
 logger = logging.getLogger(__name__)
+WORKER_LOCK_PATH = Path("/tmp/aegis-provider-blacklist-worker.lock")
 
 
 class PublisherGateway(Protocol):
@@ -35,11 +42,20 @@ class PublisherGateway(Protocol):
 
     async def publish(self, message: BlacklistSnapshotMessage) -> None: ...
 
+    async def close(self) -> None: ...
+
+
+class BlacklistPublicationExhaustedError(RuntimeError):
+    """A fetched snapshot could not be confirmed within the retry bound."""
+
+
+class WorkerShutdownRequested(Exception):
+    """Interrupt an in-process retry delay during graceful shutdown."""
+
 
 @contextmanager
-def singleton_worker_lock(outbox_path: Path) -> Iterator[None]:
-    """Reject a second worker process regardless of API worker count."""
-    lock_path = outbox_path.with_suffix(f"{outbox_path.suffix}.lock")
+def singleton_worker_lock(lock_path: Path = WORKER_LOCK_PATH) -> Iterator[None]:
+    """Reject a second worker process without storing application data."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     handle: IO[str] = lock_path.open("a+")
     try:
@@ -56,67 +72,77 @@ def singleton_worker_lock(outbox_path: Path) -> Iterator[None]:
 
 
 class BlacklistPollingWorker:
-    """Run independent polling and durable RabbitMQ publishing schedules."""
+    """Poll AbuseIPDB and publish each completed snapshot directly."""
 
     def __init__(
         self,
         *,
         provider: ReputationProvider,
         publisher: PublisherGateway,
-        outbox: BlacklistOutbox,
         policy: PollingPolicy,
+        publish_max_attempts: int,
         confidence_minimum: int = 90,
         clock: Callable[[], datetime] | None = None,
         delivery_id_factory: Callable[[], UUID] | None = None,
         service: ReputationProxyService | None = None,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
+        jitter: Callable[[int], float] | None = None,
     ) -> None:
         self.provider = provider
         self.publisher = publisher
-        self.outbox = outbox
         self.policy = policy
+        self.publish_max_attempts = publish_max_attempts
         self.confidence_minimum = confidence_minimum
         self.clock = clock or (lambda: datetime.now(UTC))
         self.delivery_id_factory = delivery_id_factory or uuid4
         self.service = service or ReputationProxyService(clock=self.clock)
+        self.sleep = sleep or asyncio.sleep
+        self.jitter = jitter or (
+            lambda delay: random.uniform(0, min(delay * 0.1, 30.0))
+        )
+        self.next_poll_at: datetime | None = None
+        self.poll_failure_attempts = 0
+        self._stop_event: asyncio.Event | None = None
 
     async def tick(self) -> None:
-        """Perform each independently due action at most once."""
+        """Poll and publish once when the in-memory schedule is due."""
         now = self.clock()
-        next_poll_at = self.outbox.get_next_poll_at()
         logger.info(
-            "provider_blacklist_worker_tick next_poll_at=%s",
-            next_poll_at.isoformat() if next_poll_at else None,
+            "provider_blacklist_worker_tick",
+            extra={
+                "next_poll_at": (
+                    self.next_poll_at.isoformat() if self.next_poll_at else None
+                )
+            },
         )
-        if next_poll_at is None or next_poll_at <= now:
-            await self._poll(now)
-        await self._publish_one(self.clock())
+        if self.next_poll_at is None or self.next_poll_at <= now:
+            await self._poll_and_publish(now)
 
     async def run(self, stop_event: asyncio.Event) -> None:
-        while not stop_event.is_set():
-            await self.tick()
-            now = self.clock()
-            due_times = [
-                value
-                for value in (
-                    self.outbox.get_next_poll_at(),
-                    self.outbox.next_due_at(),
+        self._stop_event = stop_event
+        try:
+            while not stop_event.is_set():
+                try:
+                    await self.tick()
+                except WorkerShutdownRequested:
+                    return
+                now = self.clock()
+                delay = (
+                    max(0.0, (self.next_poll_at - now).total_seconds())
+                    if self.next_poll_at is not None
+                    else 60.0
                 )
-                if value is not None
-            ]
-            delay = (
-                max(0.0, min((due - now).total_seconds() for due in due_times))
-                if due_times
-                else 60.0
-            )
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=min(delay, 60.0))
-            except TimeoutError:
-                continue
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=min(delay, 60.0))
+                except TimeoutError:
+                    continue
+        finally:
+            self._stop_event = None
 
-    async def _poll(self, now: datetime) -> None:
+    async def _poll_and_publish(self, now: datetime) -> None:
         logger.info(
-            "provider_blacklist_poll_started confidence_minimum=%s limit=1000",
-            self.confidence_minimum,
+            "provider_blacklist_poll_started",
+            extra={"confidence_minimum": self.confidence_minimum, "limit": 1000},
         )
         try:
             snapshot = await self.service.blacklist(
@@ -126,128 +152,179 @@ class BlacklistPollingWorker:
                 self.provider,
             )
         except RateLimitExceededError as error:
-            next_poll_at = self.policy.after_rate_limit(
+            self.poll_failure_attempts += 1
+            self.next_poll_at = self.policy.after_rate_limit(
                 now,
                 retry_after_seconds=error.retry_after_seconds,
                 reset_at=error.reset_at,
             )
-            attempts = self.outbox.get_poll_failure_attempts() + 1
-            self.outbox.set_poll_state(
-                next_poll_at=next_poll_at, failure_attempts=attempts
-            )
             logger.warning(
-                "provider_blacklist_poll_rate_limited "
-                "failure_attempts=%s next_poll_at=%s",
-                attempts,
-                next_poll_at.isoformat(),
+                "provider_blacklist_poll_rate_limited",
+                extra={
+                    "failure_attempts": self.poll_failure_attempts,
+                    "next_poll_at": self.next_poll_at.isoformat(),
+                },
             )
             return
         except ApplicationError as error:
-            attempts = self.outbox.get_poll_failure_attempts() + 1
-            next_poll_at = self.policy.after_poll_failure(now, attempt=attempts)
-            self.outbox.set_poll_state(
-                next_poll_at=next_poll_at,
-                failure_attempts=attempts,
+            self.poll_failure_attempts += 1
+            self.next_poll_at = self.policy.after_poll_failure(
+                now, attempt=self.poll_failure_attempts
             )
             logger.warning(
-                "provider_blacklist_poll_failed error_code=%s "
-                "failure_attempts=%s next_poll_at=%s",
-                error.code,
-                attempts,
-                next_poll_at.isoformat(),
+                "provider_blacklist_poll_failed",
+                extra={
+                    "error_code": error.code,
+                    "failure_attempts": self.poll_failure_attempts,
+                    "next_poll_at": self.next_poll_at.isoformat(),
+                },
             )
             return
 
         delivery_id = self.delivery_id_factory()
-        self.outbox.enqueue(delivery_id=delivery_id, snapshot=snapshot, now=now)
-        next_poll_at = self.policy.after_success(
-            now,
+        message = self._message_for(
+            delivery_id=delivery_id,
+            snapshot=snapshot,
+            created_at=now,
+        )
+        logger.info(
+            "provider_blacklist_poll_succeeded",
+            extra={
+                "delivery_id": str(delivery_id),
+                "correlation_id": str(delivery_id),
+                "entry_count": len(snapshot.items),
+                "provider_generated_at": snapshot.generated_at.isoformat(),
+            },
+        )
+
+        publish_attempts = await self._publish_with_retry(message)
+        self.poll_failure_attempts = 0
+        self.next_poll_at = self.policy.after_success(
+            self.clock(),
             remaining=snapshot.rate_limit.remaining,
             reset_at=snapshot.rate_limit.reset_at,
         )
-        self.outbox.set_poll_state(
-            next_poll_at=next_poll_at,
-            failure_attempts=0,
-        )
         logger.info(
-            "provider_blacklist_poll_succeeded delivery_id=%s entry_count=%s "
-            "provider_generated_at=%s next_poll_at=%s",
-            delivery_id,
-            len(snapshot.items),
-            snapshot.generated_at.isoformat(),
-            next_poll_at.isoformat(),
-        )
-        logger.info(
-            "provider_blacklist_outbox_enqueued delivery_id=%s",
-            delivery_id,
+            "provider_blacklist_publish_confirmed",
+            extra={
+                "delivery_id": str(delivery_id),
+                "correlation_id": str(delivery_id),
+                "attempts": publish_attempts,
+                "next_poll_at": self.next_poll_at.isoformat(),
+            },
         )
 
-    async def _publish_one(self, now: datetime) -> None:
-        pending = self.outbox.next_pending(now)
-        if pending is None:
+    async def _publish_with_retry(self, message: BlacklistSnapshotMessage) -> int:
+        for attempt in range(1, self.publish_max_attempts + 1):
+            logger.info(
+                "provider_blacklist_publish_attempt",
+                extra={
+                    "delivery_id": str(message.delivery_id),
+                    "correlation_id": str(message.correlation_id),
+                    "attempt": attempt,
+                    "max_attempts": self.publish_max_attempts,
+                },
+            )
+            try:
+                await self.publisher.connect()
+                await self.publisher.publish(message)
+                return attempt
+            except (
+                BlacklistPublishingSerializationError,
+                BlacklistPublishingUnroutableError,
+            ):
+                logger.exception(
+                    "provider_blacklist_publish_permanent_failure",
+                    extra={
+                        "delivery_id": str(message.delivery_id),
+                        "correlation_id": str(message.correlation_id),
+                        "attempt": attempt,
+                    },
+                )
+                raise
+            except (
+                BlacklistPublishingConnectionError,
+                BlacklistPublishingRejectedError,
+                BlacklistPublishingTimeoutError,
+            ) as error:
+                with suppress(BlacklistPublishingError):
+                    await self.publisher.close()
+                exhausted = attempt >= self.publish_max_attempts
+                delay = (
+                    None
+                    if exhausted
+                    else self.policy.publish_delay_for_attempt(attempt)
+                )
+                log_failure = logger.error if exhausted else logger.warning
+                log_failure(
+                    "provider_blacklist_publish_failed",
+                    extra={
+                        "delivery_id": str(message.delivery_id),
+                        "correlation_id": str(message.correlation_id),
+                        "error_type": type(error).__name__,
+                        "attempt": attempt,
+                        "max_attempts": self.publish_max_attempts,
+                        "retry_delay_seconds": delay,
+                        "exhausted": exhausted,
+                    },
+                )
+                if exhausted:
+                    raise BlacklistPublicationExhaustedError(
+                        "RabbitMQ publication retries were exhausted."
+                    ) from error
+                assert delay is not None
+                await self._wait_before_retry(delay + self.jitter(delay))
+        raise AssertionError("Publication retry loop exited without a result.")
+
+    async def _wait_before_retry(self, delay: float) -> None:
+        stop_event = self._stop_event
+        if stop_event is None:
+            await self.sleep(delay)
             return
-        logger.info(
-            "provider_blacklist_publish_attempt delivery_id=%s attempt=%s",
-            pending.message.delivery_id,
-            pending.attempts + 1,
-        )
         try:
-            await self.publisher.connect()
-            await self.publisher.publish(pending.message)
-        except BlacklistPublishingError as error:
-            attempts = pending.attempts + 1
-            next_attempt_at = self.policy.after_publish_failure(now, attempt=attempts)
-            self.outbox.reschedule(
-                pending.message.delivery_id,
-                attempts=attempts,
-                next_attempt_at=next_attempt_at,
-            )
-            logger.warning(
-                "provider_blacklist_publish_failed delivery_id=%s "
-                "error_type=%s attempt=%s next_attempt_at=%s",
-                pending.message.delivery_id,
-                type(error).__name__,
-                attempts,
-                next_attempt_at.isoformat(),
-            )
+            await asyncio.wait_for(stop_event.wait(), timeout=delay)
+        except TimeoutError:
             return
-        logger.info(
-            "provider_blacklist_publish_confirmed delivery_id=%s",
-            pending.message.delivery_id,
-        )
-        self.outbox.mark_published(
-            pending.message.delivery_id, published_at=self.clock()
-        )
-        logger.info(
-            "provider_blacklist_outbox_published delivery_id=%s",
-            pending.message.delivery_id,
+        raise WorkerShutdownRequested
+
+    @staticmethod
+    def _message_for(
+        *,
+        delivery_id: UUID,
+        snapshot: InternalBlacklistResponse,
+        created_at: datetime,
+    ) -> BlacklistSnapshotMessage:
+        return BlacklistSnapshotMessage(
+            schema_version=1,
+            message_type="blacklist.snapshot.complete",
+            delivery_id=delivery_id,
+            correlation_id=delivery_id,
+            producer="aegis-provider-service",
+            provider=snapshot.provider,
+            created_at=created_at,
+            snapshot=snapshot,
         )
 
 
 async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
     logger.info(
-        "provider_blacklist_worker_starting poll_interval_seconds=%s "
-        "confidence_minimum=%s outbox_path=%s rabbitmq_host=%s "
-        "rabbitmq_port=%s rabbitmq_virtual_host=%s rabbitmq_exchange=%s "
-        "rabbitmq_routing_key=%s",
-        settings.blacklist_poll_interval_seconds,
-        settings.blacklist_confidence_minimum,
-        settings.blacklist_outbox_path,
-        settings.rabbitmq_host,
-        settings.rabbitmq_port,
-        settings.rabbitmq_virtual_host,
-        settings.rabbitmq_exchange_name,
-        settings.rabbitmq_routing_key,
+        "provider_blacklist_worker_starting",
+        extra={
+            "poll_interval_seconds": settings.blacklist_poll_interval_seconds,
+            "confidence_minimum": settings.blacklist_confidence_minimum,
+            "rabbitmq_host": settings.rabbitmq_host,
+            "rabbitmq_port": settings.rabbitmq_port,
+            "rabbitmq_virtual_host": settings.rabbitmq_virtual_host,
+            "rabbitmq_exchange": settings.rabbitmq_exchange_name,
+            "rabbitmq_routing_key": settings.rabbitmq_routing_key,
+            "publish_max_attempts": settings.rabbitmq_publish_max_attempts,
+        },
     )
     if not settings.blacklist_polling_enabled:
         logger.info("provider_blacklist_polling_disabled")
         return
-    with singleton_worker_lock(settings.blacklist_outbox_path):
-        logger.info(
-            "provider_blacklist_singleton_lock_acquired outbox_path=%s",
-            settings.blacklist_outbox_path,
-        )
-        outbox = BlacklistOutbox(settings.blacklist_outbox_path)
+    with singleton_worker_lock():
+        logger.info("provider_blacklist_singleton_lock_acquired")
         abuseipdb_client = create_abuseipdb_http_client(settings)
         publisher = AioPikaBlacklistPublisher(settings)
         try:
@@ -259,7 +336,6 @@ async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
                     ),
                 ),
                 publisher=publisher,
-                outbox=outbox,
                 policy=PollingPolicy(
                     interval_seconds=settings.blacklist_poll_interval_seconds,
                     publish_initial_seconds=(
@@ -269,6 +345,7 @@ async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
                         settings.rabbitmq_publish_retry_maximum_seconds
                     ),
                 ),
+                publish_max_attempts=settings.rabbitmq_publish_max_attempts,
                 confidence_minimum=settings.blacklist_confidence_minimum,
             )
             await worker.run(stop_event)
@@ -276,7 +353,6 @@ async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
             logger.info("provider_blacklist_worker_shutting_down")
             await abuseipdb_client.aclose()
             await publisher.close()
-            outbox.close()
             logger.info("provider_blacklist_worker_stopped")
 
 

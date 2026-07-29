@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from enum import IntEnum
+from enum import StrEnum
 from pathlib import Path
 from time import monotonic
 from typing import Annotated
@@ -53,10 +53,11 @@ BASE_STYLE = (Path(__file__).parent / "static" / "style.css").read_text(
 )
 
 
-class TurnoverRange(IntEnum):
-    seven_days = 7
-    thirty_days = 30
-    ninety_days = 90
+class TurnoverRange(StrEnum):
+    seven_days = "7"
+    thirty_days = "30"
+    ninety_days = "90"
+    all = "all"
 
 
 def request_id_for(request: Request) -> str:
@@ -252,16 +253,23 @@ async def blacklist(
             )
         except ApplicationClientError:
             analytics_error = "Snapshot analytics are temporarily unavailable."
-        range_to = datetime.now(UTC).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ) + timedelta(days=1)
         try:
-            turnover = await application_client.blacklist_turnover(
-                from_=range_to - timedelta(days=range_days),
-                to=range_to,
-                interval="day",
-                request_id=request_id,
-            )
+            if range_days is TurnoverRange.all:
+                turnover = await application_client.blacklist_turnover(
+                    period="all",
+                    interval="auto",
+                    request_id=request_id,
+                )
+            else:
+                range_to = datetime.now(UTC).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) + timedelta(days=1)
+                turnover = await application_client.blacklist_turnover(
+                    from_=range_to - timedelta(days=int(range_days)),
+                    to=range_to,
+                    interval="auto",
+                    request_id=request_id,
+                )
         except ApplicationClientError:
             turnover_error = "Turnover history is temporarily unavailable."
 

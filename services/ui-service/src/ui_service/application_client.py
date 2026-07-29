@@ -104,20 +104,24 @@ class ApplicationClient:
     async def blacklist_turnover(
         self,
         *,
-        from_: datetime,
-        to: datetime,
-        interval: str,
+        from_: datetime | None = None,
+        to: datetime | None = None,
+        period: str | None = None,
+        interval: str = "auto",
         request_id: str,
     ) -> BlacklistTurnover:
+        params: dict[str, int | str] = {"interval": interval}
+        if from_ is not None:
+            params["from"] = from_.isoformat().replace("+00:00", "Z")
+        if to is not None:
+            params["to"] = to.isoformat().replace("+00:00", "Z")
+        if period is not None:
+            params["period"] = period
         response = await self._request(
             "GET",
             "/api/v1/blacklist/analytics/turnover",
             request_id=request_id,
-            params={
-                "from": from_.isoformat().replace("+00:00", "Z"),
-                "to": to.isoformat().replace("+00:00", "Z"),
-                "interval": interval,
-            },
+            params=params,
         )
         return self._validated_response(
             response, BlacklistTurnover, request_id=request_id

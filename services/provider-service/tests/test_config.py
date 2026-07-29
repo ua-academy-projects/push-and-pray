@@ -66,6 +66,7 @@ def test_enabled_worker_does_not_require_obsolete_history_http_settings(
     assert not hasattr(settings, "history_ingestion_token")
     assert settings.rabbitmq_publish_retry_initial_seconds == 30
     assert settings.rabbitmq_publish_retry_maximum_seconds == 900
+    assert settings.rabbitmq_publish_max_attempts == 5
 
 
 def test_rabbitmq_settings_load_from_environment(
@@ -80,6 +81,7 @@ def test_rabbitmq_settings_load_from_environment(
     monkeypatch.setenv("RABBITMQ_ROUTING_KEY", "snapshots.complete")
     monkeypatch.setenv("RABBITMQ_CONNECTION_TIMEOUT_SECONDS", "7")
     monkeypatch.setenv("RABBITMQ_PUBLISH_TIMEOUT_SECONDS", "8")
+    monkeypatch.setenv("RABBITMQ_PUBLISH_MAX_ATTEMPTS", "7")
 
     settings = Settings(_env_file=None, abuseipdb_api_key="test-key")
 
@@ -91,6 +93,7 @@ def test_rabbitmq_settings_load_from_environment(
     assert settings.rabbitmq_routing_key == "snapshots.complete"
     assert settings.rabbitmq_connection_timeout_seconds == 7
     assert settings.rabbitmq_publish_timeout_seconds == 8
+    assert settings.rabbitmq_publish_max_attempts == 7
     assert settings.rabbitmq_password.get_secret_value() == "publisher-secret"
     assert "publisher-secret" not in repr(settings)
     assert "publisher-secret" not in str(settings.model_dump(mode="json"))

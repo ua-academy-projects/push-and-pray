@@ -169,7 +169,7 @@ class AioPikaBlacklistPublisher:
             raise BlacklistPublishingRejectedError(
                 "RabbitMQ rejected the blacklist message."
             ) from None
-        except (AMQPError, OSError):
+        except AMQPError, OSError:
             raise BlacklistPublishingConnectionError(
                 "RabbitMQ publish failed."
             ) from None

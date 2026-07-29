@@ -6,9 +6,7 @@ readonly PRIVATE_NETWORK="192.168.100.0/24"
 readonly UI_ADDRESS="192.168.100.10"
 readonly HISTORY_ADDRESS="192.168.100.11"
 readonly PROVIDER_ADDRESS="192.168.100.12"
-readonly DATABASE_ADDRESS="192.168.100.13"
 readonly INFRASTRUCTURE_ADDRESS="192.168.100.14"
-readonly VAGRANT_NAT_GATEWAY="10.0.2.2"
 
 fail() {
   echo "Aegis firewall provisioning failed: $*" >&2
@@ -16,7 +14,7 @@ fail() {
 }
 
 case "${ROLE}" in
-  ui|history|provider|db|infra)
+  ui|history|provider|infra)
     ;;
   *)
     fail "unsupported firewall role '${ROLE}'"
@@ -40,7 +38,7 @@ case "${ROLE}" in
       comment "Aegis History from network"
     ufw deny out to "${PROVIDER_ADDRESS}" port 8001 proto tcp \
       comment "Block UI direct Provider access"
-    ufw deny out to "${DATABASE_ADDRESS}" port 3306 proto tcp \
+    ufw deny out to "${INFRASTRUCTURE_ADDRESS}" port 3306 proto tcp \
       comment "Block UI database access"
     ;;
   history)
@@ -54,22 +52,20 @@ case "${ROLE}" in
       comment "Aegis Provider from History"
     ufw allow from "${PROVIDER_ADDRESS}" to any port 8001 proto tcp \
       comment "Provider local health checks"
-    ufw deny out to "${DATABASE_ADDRESS}" port 3306 proto tcp \
+    ufw deny out to "${INFRASTRUCTURE_ADDRESS}" port 3306 proto tcp \
       comment "Block Provider database access"
     ufw deny out to "${UI_ADDRESS}" port 8000 proto tcp \
       comment "Block Provider UI access"
     ;;
-  db)
+  infra)
     ufw allow from "${HISTORY_ADDRESS}" to any port 3306 proto tcp \
       comment "MariaDB from History"
-    ;;
-  infra)
     ufw allow from "${PROVIDER_ADDRESS}" to any port 5672 proto tcp \
       comment "RabbitMQ publisher from Provider"
     ufw allow from "${HISTORY_ADDRESS}" to any port 5672 proto tcp \
       comment "RabbitMQ consumer from History"
-    ufw allow from "${VAGRANT_NAT_GATEWAY}" to any port 15672 proto tcp \
-      comment "RabbitMQ management through host-loopback forwarding"
+    ufw allow from "${PRIVATE_NETWORK}" to any port 15672 proto tcp \
+      comment "RabbitMQ management on the private network"
     ufw allow from "${UI_ADDRESS}" to any port 6379 proto tcp \
       comment "Redis theme state from UI"
     ;;

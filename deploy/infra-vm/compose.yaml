@@ -1,0 +1,89 @@
+name: aegis-infra-vm
+
+services:
+  mariadb:
+    image: mariadb:11.8
+    container_name: aegis-mariadb
+    env_file:
+      - ${AEGIS_INFRA_ENV_FILE:-/etc/aegis/infra.env}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-name-resolve
+    ports:
+      - "192.168.100.14:3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ./mariadb-init.sh:/docker-entrypoint-initdb.d/10-aegis-history-user.sh:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mariadb-admin ping --silent --host=127.0.0.1
+          --user="$${MARIADB_USER}" --password="$${MARIADB_PASSWORD}"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: aegis-rabbitmq
+    hostname: aegis-rabbitmq
+    env_file:
+      - ${AEGIS_INFRA_ENV_FILE:-/etc/aegis/infra.env}
+    ports:
+      - "192.168.100.14:5672:5672"
+      - "192.168.100.14:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ${AEGIS_RABBITMQ_DEFINITIONS_FILE:-/etc/aegis/rabbitmq-definitions.json}:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - -q
+        - ping
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    image: redis:8.2-alpine
+    container_name: aegis-redis
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+    ports:
+      - "192.168.100.14:6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ${AEGIS_REDIS_ACL_FILE:-/etc/aegis/redis-users.acl}:/usr/local/etc/redis/users.acl:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          REDISCLI_AUTH="$$(cat /run/secrets/aegis_redis_password 2>/dev/null ||
+          awk '/^user aegis_ui / {for (i=1;i<=NF;i++) if ($$i ~ /^>/)
+          {sub(/^>/, "", $$i); print $$i}}'
+          /usr/local/etc/redis/users.acl)"
+          redis-cli --no-auth-warning -h 127.0.0.1 --user aegis_ui ping
+          | grep -Fxq PONG
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  mariadb-data:
+    name: aegis-mariadb-data
+  rabbitmq-data:
+    name: aegis-rabbitmq-data
+  redis-data:
+    name: aegis-redis-data

@@ -328,7 +328,7 @@ class AbuseIPDBProvider:
                 if reset_timestamp is not None
                 else None
             )
-        except (OSError, OverflowError, ValueError):
+        except OSError, OverflowError, ValueError:
             reset_at = None
         return RateLimitMetadata(
             limit=limit,

@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 from history_service.blacklist_read import BlacklistReadService
@@ -10,7 +10,7 @@ from history_service.blacklist_repository import (
     IpVersionCount,
     ScoreBucketCount,
     SnapshotChurnCount,
-    TurnoverSnapshotSummary,
+    TurnoverBucketSummary,
 )
 from history_service.models import (
     BlacklistSnapshot,
@@ -335,24 +335,28 @@ def turnover_query(
 
 def test_hourly_turnover_uses_latest_snapshot_and_emits_missing_buckets() -> None:
     repository = Mock()
-    repository.turnover_snapshots_between.return_value = [
-        TurnoverSnapshotSummary(
+    repository.turnover_data_range.return_value = (
+        datetime(2026, 7, 22, 12, 10, tzinfo=UTC),
+        datetime(2026, 7, 22, 14, 0, tzinfo=UTC),
+    )
+    repository.turnover_buckets_between.return_value = [
+        TurnoverBucketSummary(
             snapshot_id=40,
-            provider_generated_at=datetime(2026, 7, 22, 12, 10, tzinfo=UTC),
+            period_start=datetime(2026, 7, 22, 12, 0, tzinfo=UTC),
             turnover_percent=Decimal("10.00"),
             added_count=10,
             removed_count=5,
         ),
-        TurnoverSnapshotSummary(
+        TurnoverBucketSummary(
             snapshot_id=41,
-            provider_generated_at=datetime(2026, 7, 22, 12, 59, tzinfo=UTC),
+            period_start=datetime(2026, 7, 22, 12, 0, tzinfo=UTC),
             turnover_percent=Decimal("20.00"),
             added_count=20,
             removed_count=8,
         ),
-        TurnoverSnapshotSummary(
+        TurnoverBucketSummary(
             snapshot_id=42,
-            provider_generated_at=datetime(2026, 7, 22, 14, 0, tzinfo=UTC),
+            period_start=datetime(2026, 7, 22, 14, 0, tzinfo=UTC),
             turnover_percent=None,
             added_count=None,
             removed_count=None,
@@ -413,7 +417,8 @@ def test_daily_and_weekly_bucket_boundaries(
     expected: list[datetime],
 ) -> None:
     repository = Mock()
-    repository.turnover_snapshots_between.return_value = []
+    repository.turnover_data_range.return_value = (from_, to)
+    repository.turnover_buckets_between.return_value = []
     result = BlacklistReadService(repository).turnover(
         Mock(), turnover_query(from_=from_, to=to, interval=interval)
     )
@@ -423,7 +428,11 @@ def test_daily_and_weekly_bucket_boundaries(
 
 def test_turnover_query_normalizes_offset_boundaries_to_utc() -> None:
     repository = Mock()
-    repository.turnover_snapshots_between.return_value = []
+    repository.turnover_data_range.return_value = (
+        datetime(2026, 7, 22, 0, 30, tzinfo=UTC),
+        datetime(2026, 7, 22, 2, 0, tzinfo=UTC),
+    )
+    repository.turnover_buckets_between.return_value = []
     query = BlacklistTurnoverQuery.model_validate(
         {
             "from": "2026-07-22T03:30:00+03:00",
@@ -439,6 +448,133 @@ def test_turnover_query_normalizes_offset_boundaries_to_utc() -> None:
         datetime(2026, 7, 22, 1, 0, tzinfo=UTC),
         datetime(2026, 7, 22, 2, 0, tzinfo=UTC),
     ]
+
+
+@pytest.mark.parametrize(
+    ("duration", "expected_granularity"),
+    [
+        (timedelta(hours=48), "hour"),
+        (timedelta(hours=49), "day"),
+        (timedelta(days=31), "day"),
+        (timedelta(days=32), "week"),
+        (timedelta(days=180), "week"),
+        (timedelta(days=181), "month"),
+    ],
+)
+def test_automatic_turnover_selects_granularity_for_requested_range(
+    duration: timedelta,
+    expected_granularity: str,
+) -> None:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = start + duration
+    repository = Mock()
+    repository.turnover_data_range.return_value = (start, end)
+    repository.turnover_buckets_between.return_value = []
+
+    result = BlacklistReadService(repository).turnover(
+        Mock(),
+        turnover_query(from_=start, to=end, interval="auto"),
+    )
+
+    assert result.interval == expected_granularity
+    assert result.granularity == expected_granularity
+    assert result.requested_period == "custom"
+    assert result.bucket_count == len(result.points)
+    repository.turnover_buckets_between.assert_called_once_with(
+        ANY,
+        provider="AbuseIPDB",
+        from_=start,
+        to=end,
+        granularity=expected_granularity,
+    )
+
+
+def test_all_available_turnover_uses_data_bounds_and_month_boundaries() -> None:
+    start = datetime(2025, 12, 20, 8, 30, tzinfo=UTC)
+    end = datetime(2026, 7, 2, 14, 0, tzinfo=UTC)
+    repository = Mock()
+    repository.turnover_data_range.return_value = (start, end)
+    repository.turnover_buckets_between.return_value = [
+        TurnoverBucketSummary(
+            snapshot_id=42,
+            period_start=datetime(2026, 7, 1, tzinfo=UTC),
+            turnover_percent=Decimal("12.50"),
+            added_count=5,
+            removed_count=2,
+        )
+    ]
+
+    result = BlacklistReadService(repository).turnover(
+        Mock(), BlacklistTurnoverQuery(period="all")
+    )
+
+    assert result.requested_period == "all"
+    assert result.from_ == start
+    assert result.to == end
+    assert result.effective_start == start
+    assert result.effective_end == end
+    assert result.granularity == "month"
+    assert [point.period_start for point in result.points] == [
+        datetime(2025, 12, 1, tzinfo=UTC),
+        datetime(2026, 1, 1, tzinfo=UTC),
+        datetime(2026, 2, 1, tzinfo=UTC),
+        datetime(2026, 3, 1, tzinfo=UTC),
+        datetime(2026, 4, 1, tzinfo=UTC),
+        datetime(2026, 5, 1, tzinfo=UTC),
+        datetime(2026, 6, 1, tzinfo=UTC),
+        datetime(2026, 7, 1, tzinfo=UTC),
+    ]
+    assert result.points[-1].snapshot_id == 42
+
+
+def test_turnover_empty_dataset_returns_metadata_without_querying_buckets() -> None:
+    repository = Mock()
+    repository.turnover_data_range.return_value = None
+
+    result = BlacklistReadService(repository).turnover(
+        Mock(), BlacklistTurnoverQuery(period="all")
+    )
+
+    assert result.requested_period == "all"
+    assert result.effective_start is None
+    assert result.effective_end is None
+    assert result.bucket_count == 0
+    assert result.points == []
+    repository.turnover_buckets_between.assert_not_called()
+
+
+def test_partial_dataset_preserves_ordered_empty_requested_buckets() -> None:
+    requested_start = datetime(2026, 7, 1, tzinfo=UTC)
+    requested_end = datetime(2026, 7, 5, tzinfo=UTC)
+    available_start = datetime(2026, 7, 2, 12, tzinfo=UTC)
+    available_end = datetime(2026, 7, 3, 12, tzinfo=UTC)
+    repository = Mock()
+    repository.turnover_data_range.return_value = (available_start, available_end)
+    repository.turnover_buckets_between.return_value = [
+        TurnoverBucketSummary(
+            snapshot_id=20,
+            period_start=datetime(2026, 7, 3, tzinfo=UTC),
+            turnover_percent=Decimal("8.00"),
+            added_count=4,
+            removed_count=3,
+        )
+    ]
+
+    result = BlacklistReadService(repository).turnover(
+        Mock(),
+        turnover_query(
+            from_=requested_start,
+            to=requested_end,
+            interval="auto",
+        ),
+    )
+
+    assert result.effective_start == available_start
+    assert result.effective_end == available_end
+    assert result.bucket_count == 4
+    assert [point.period_start.day for point in result.points] == [1, 2, 3, 4]
+    assert [point.snapshot_id for point in result.points] == [None, None, 20, None]
+    assert result.points[0].added_count is None
 
 
 def test_analytics_executes_five_database_queries_independent_of_pair_limit() -> None:

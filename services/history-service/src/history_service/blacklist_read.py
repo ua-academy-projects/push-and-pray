@@ -2,13 +2,13 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from history_service.blacklist_repository import (
     BlacklistRepository,
-    TurnoverSnapshotSummary,
 )
 from history_service.config import get_settings
 from history_service.models import BlacklistSnapshot, BlacklistSyncRun
@@ -199,37 +199,70 @@ class BlacklistReadService:
     def turnover(
         self, session: Session, query: BlacklistTurnoverQuery
     ) -> BlacklistTurnoverResponse:
-        """Return bounded UTC buckets from persisted snapshot summaries only."""
+        """Return adaptive UTC buckets from persisted snapshot summaries only."""
         try:
-            records = self.repository.turnover_snapshots_between(
+            available_range = self.repository.turnover_data_range(
                 session,
                 provider="AbuseIPDB",
-                from_=query.from_,
-                to=query.to,
             )
         except SQLAlchemyError as error:
             raise HistoryUnavailableError from error
 
-        latest_by_bucket: dict[datetime, TurnoverSnapshotSummary] = {}
-        for record in records:
-            period_start = self._period_start(
-                record.provider_generated_at, query.interval
+        requested_period = "custom" if query.from_ is not None else "all"
+        if available_range is None:
+            granularity = query.interval if query.interval != "auto" else "hour"
+            return BlacklistTurnoverResponse(
+                **{
+                    "from": query.from_,
+                    "to": query.to,
+                    "interval": granularity,
+                    "requested_period": requested_period,
+                    "effective_start": None,
+                    "effective_end": None,
+                    "granularity": granularity,
+                    "bucket_count": 0,
+                    "points": [],
+                }
             )
-            previous = latest_by_bucket.get(period_start)
-            if previous is None or (
-                record.provider_generated_at,
-                record.snapshot_id,
-            ) > (
-                previous.provider_generated_at,
-                previous.snapshot_id,
-            ):
-                latest_by_bucket[period_start] = record
+
+        available_start, available_end = available_range
+        range_start = query.from_ or available_start
+        range_end = query.to or available_end
+        duration = range_end - range_start
+        granularity = (
+            query.interval
+            if query.interval != "auto"
+            else self._adaptive_granularity(duration)
+        )
+        query_end = (
+            range_end if query.to is not None else range_end + timedelta(microseconds=1)
+        )
+
+        try:
+            records = self.repository.turnover_buckets_between(
+                session,
+                provider="AbuseIPDB",
+                from_=range_start,
+                to=query_end,
+                granularity=granularity,
+            )
+        except SQLAlchemyError as error:
+            raise HistoryUnavailableError from error
+
+        by_bucket = {self._utc(record.period_start): record for record in records}
 
         points: list[BlacklistTurnoverPoint] = []
-        period_start = self._period_start(query.from_, query.interval)
-        step = self._interval_step(query.interval)
-        while period_start < query.to:
-            bucket_record = latest_by_bucket.get(period_start)
+        period_start = self._period_start(range_start, granularity)
+        final_period = self._period_start(
+            (
+                range_end - timedelta(microseconds=1)
+                if query.to is not None
+                else range_end
+            ),
+            granularity,
+        )
+        while period_start <= final_period:
+            bucket_record = by_bucket.get(period_start)
             points.append(
                 BlacklistTurnoverPoint(
                     period_start=period_start,
@@ -252,12 +285,21 @@ class BlacklistReadService:
                     ),
                 )
             )
-            period_start += step
+            period_start = self._next_period(period_start, granularity)
+
+        overlaps = available_end >= range_start and available_start < query_end
+        effective_start = max(available_start, range_start) if overlaps else None
+        effective_end = min(available_end, range_end) if overlaps else None
         return BlacklistTurnoverResponse(
             **{
-                "from": query.from_,
-                "to": query.to,
-                "interval": query.interval,
+                "from": range_start,
+                "to": range_end,
+                "interval": granularity,
+                "requested_period": requested_period,
+                "effective_start": effective_start,
+                "effective_end": effective_end,
+                "granularity": granularity,
+                "bucket_count": len(points),
                 "points": points,
             }
         )
@@ -285,12 +327,28 @@ class BlacklistReadService:
         return minimum + 9
 
     @staticmethod
-    def _interval_step(interval: str) -> timedelta:
-        return {
-            "hour": timedelta(hours=1),
-            "day": timedelta(days=1),
-            "week": timedelta(weeks=1),
-        }[interval]
+    def _adaptive_granularity(
+        duration: timedelta,
+    ) -> Literal["hour", "day", "week", "month"]:
+        if duration <= timedelta(hours=48):
+            return "hour"
+        if duration <= timedelta(days=31):
+            return "day"
+        if duration <= timedelta(days=180):
+            return "week"
+        return "month"
+
+    @staticmethod
+    def _next_period(period_start: datetime, interval: str) -> datetime:
+        if interval == "hour":
+            return period_start + timedelta(hours=1)
+        if interval == "day":
+            return period_start + timedelta(days=1)
+        if interval == "week":
+            return period_start + timedelta(weeks=1)
+        if period_start.month == 12:
+            return period_start.replace(year=period_start.year + 1, month=1, day=1)
+        return period_start.replace(month=period_start.month + 1, day=1)
 
     @staticmethod
     def _period_start(value: datetime, interval: str) -> datetime:
@@ -300,7 +358,9 @@ class BlacklistReadService:
             return current.replace(minute=0, second=0, microsecond=0)
         if interval == "day":
             return day_start
-        return day_start - timedelta(days=day_start.weekday())
+        if interval == "week":
+            return day_start - timedelta(days=day_start.weekday())
+        return day_start.replace(day=1)
 
     def _page(
         self,

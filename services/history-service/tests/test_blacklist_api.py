@@ -202,7 +202,7 @@ async def test_blacklist_analytics_pair_limit_is_bounded(
 @pytest.mark.parametrize(
     "query",
     [
-        "from=2026-07-22T00:00:00Z&to=2026-07-23T00:00:00Z&interval=month",
+        "from=2026-07-22T00:00:00Z&to=2026-07-23T00:00:00Z&interval=quarter",
         "from=2026-07-22T00:00:00Z&to=2027-07-24T00:00:00Z&interval=day",
         "from=2026-07-23T00:00:00Z&to=2026-07-22T00:00:00Z&interval=day",
         "from=2026-07-22T00:00:00&to=2026-07-23T00:00:00Z&interval=day",
@@ -256,6 +256,47 @@ async def test_blacklist_turnover_endpoint_uses_explicit_nulls(
         "snapshot_id": None,
     }
     service.turnover.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_blacklist_turnover_all_mode_returns_adaptive_metadata(
+    client: AsyncClient, override_dependency: Any
+) -> None:
+    service = Mock()
+    service.turnover.return_value = BlacklistTurnoverResponse.model_validate(
+        {
+            "from": "2026-01-02T08:00:00Z",
+            "to": "2026-07-22T12:00:00Z",
+            "interval": "month",
+            "requested_period": "all",
+            "effective_start": "2026-01-02T08:00:00Z",
+            "effective_end": "2026-07-22T12:00:00Z",
+            "granularity": "month",
+            "bucket_count": 0,
+            "points": [],
+        }
+    )
+    override_dependency(get_blacklist_read_service, service)
+
+    response = await client.get(
+        "/api/v1/blacklist/analytics/turnover?period=all&interval=auto"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "from": "2026-01-02T08:00:00Z",
+        "to": "2026-07-22T12:00:00Z",
+        "interval": "month",
+        "requested_period": "all",
+        "effective_start": "2026-01-02T08:00:00Z",
+        "effective_end": "2026-07-22T12:00:00Z",
+        "granularity": "month",
+        "bucket_count": 0,
+        "points": [],
+    }
+    query = service.turnover.call_args.args[1]
+    assert query.period == "all"
+    assert query.interval == "auto"
 
 
 @pytest.mark.anyio

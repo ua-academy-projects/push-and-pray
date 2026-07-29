@@ -1,0 +1,43 @@
+name: aegis-ui-vm
+
+services:
+  ui:
+    build:
+      context: ../../services/ui-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_UI_IMAGE:-aegis/ui-service:local}
+    container_name: aegis-ui
+    command:
+      - uvicorn
+      - ui_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    env_file:
+      - ${AEGIS_UI_ENV_FILE:-/etc/aegis/ui.env}
+    ports:
+      - "192.168.100.10:8000:8000"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8000/health/live', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

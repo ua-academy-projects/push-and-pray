@@ -188,26 +188,47 @@
 }
 
 .range-controls {
+  align-items: center;
+  display: flex;
   flex-wrap: wrap;
+  gap: 0.5rem;
   justify-content: flex-end;
   white-space: nowrap;
 }
 
-.range-controls a {
+.range-controls label {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.range-controls select,
+.range-controls button {
+  background: var(--panel-raised);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
-  color: var(--text-dim);
+  color: var(--ink);
   font-family: var(--mono);
   font-size: 0.78rem;
   padding: 0.35rem 0.65rem;
-  text-decoration: none;
 }
 
-.range-controls a[aria-current="page"] {
+.range-controls button {
   background: var(--accent);
   border-color: var(--accent);
   color: #04211d;
+  cursor: pointer;
   font-weight: 700;
+}
+
+.turnover-range-summary {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+}
+
+.turnover-range-summary time {
+  color: var(--ink);
+  font-family: var(--mono);
 }
 
 .turnover-chart-grid {
@@ -234,6 +255,43 @@
   font-family: var(--mono);
   font-size: 11px;
   text-anchor: middle;
+}
+
+.chart-tick {
+  stroke: var(--hairline-strong);
+  stroke-width: 1;
+}
+
+.chart-tick-label {
+  fill: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.chart-hit-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.chart-hit-target:focus {
+  fill: var(--accent-dim);
+  outline: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.analytics-empty-state {
+  background: var(--panel-raised);
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  margin: 1rem 0;
+  padding: 1.25rem;
+}
+
+.analytics-empty-state h3 {
+  color: var(--ink);
+  margin-top: 0;
 }
 
 .turnover-line {

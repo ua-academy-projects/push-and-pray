@@ -2,9 +2,13 @@
 
 The Provider is an internal AbuseIPDB proxy. It accepts normalized lookup
 requests from History Service, validates and normalizes AbuseIPDB responses,
-and returns a provider-independent internal result. A separate Provider worker
-owns periodic blacklist polling and keeps pending History deliveries in a
-small local SQLite outbox. Provider never accesses MariaDB or UI.
+and returns a provider-independent internal result. A separate Provider Worker
+owns periodic blacklist polling and publishes complete snapshots directly to
+RabbitMQ. Provider never accesses MariaDB, Redis, or UI.
+
+The target Vagrant deployment runs Provider API and Provider Worker in separate
+containers on `provider-vm`. The current application and provisioning code
+still require a later implementation phase to match that deployment design.
 
 ## Configuration
 
@@ -25,7 +29,6 @@ ABUSEIPDB_WRITE_TIMEOUT_SECONDS=5
 ABUSEIPDB_POOL_TIMEOUT_SECONDS=5
 ABUSEIPDB_OPERATION_TIMEOUT_SECONDS=20
 BLACKLIST_POLLING_ENABLED=false
-BLACKLIST_OUTBOX_PATH=var/provider-blacklist-outbox.sqlite3
 RABBITMQ_HOST=127.0.0.1
 RABBITMQ_PORT=5672
 RABBITMQ_VIRTUAL_HOST=/
@@ -60,13 +63,12 @@ enabled:
 .venv/bin/aegis-provider-blacklist-worker
 ```
 
-The API and worker are independent processes. The worker calls AbuseIPDB,
-commits every successful fetch to its SQLite outbox, and publishes the complete
-message to RabbitMQ with persistent delivery and publisher confirmation.
-Polling and publication retries have separate clocks, so a broker outage does
-not discard a fetched snapshot.
-Production must place `BLACKLIST_OUTBOX_PATH` on durable storage writable only
-by the Provider service account.
+The API and worker are independent processes and separate deployment
+containers. The worker calls AbuseIPDB and publishes the complete message
+directly to RabbitMQ with persistent delivery, mandatory routing, and publisher
+confirmation. A fetched message remains stable during bounded in-process
+publication retry. RabbitMQ is the first durable delivery boundary after a
+positive confirmation.
 
 `POST /internal/v1/reputation-checks` is the internal provider-proxy boundary
 for History Service. It accepts only a canonical public `ip_address` and a
@@ -86,11 +88,13 @@ abstractions when deciding its next poll.
 `GET /health/live` and `GET /health/ready` are quota-free API-process checks.
 Their payload identifies Provider as the polling owner and readiness reports
 whether polling is configured, but neither endpoint proves the separate worker
-is running. In a systemd deployment, check it independently:
+container is running. In the target Vagrant deployment, check it independently:
 
 ```bash
-systemctl is-active aegis-provider-blacklist-worker.service
-journalctl -u aegis-provider-blacklist-worker.service -n 100 --no-pager
+vagrant ssh provider-vm -c \
+  'cd /opt/aegis/deploy && sudo docker compose ps provider-worker'
+vagrant ssh provider-vm -c \
+  'cd /opt/aegis/deploy && sudo docker compose logs provider-worker'
 ```
 
 Tests replace the reputation provider or use HTTPX mock transports. The default

@@ -28,7 +28,6 @@ class Settings(BaseSettings):
     blacklist_polling_enabled: bool = False
     blacklist_poll_interval_seconds: int = Field(default=21600, ge=60)
     blacklist_confidence_minimum: int = Field(default=90, ge=0, le=100)
-    blacklist_outbox_path: Path = Path("var/provider-blacklist-outbox.sqlite3")
     rabbitmq_host: str = Field(default="127.0.0.1", min_length=1)
     rabbitmq_port: int = Field(default=5672, ge=1, le=65535)
     rabbitmq_virtual_host: str = Field(default="/", min_length=1)
@@ -42,6 +41,7 @@ class Settings(BaseSettings):
     rabbitmq_publish_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     rabbitmq_publish_retry_initial_seconds: int = Field(default=30, ge=1, le=3600)
     rabbitmq_publish_retry_maximum_seconds: int = Field(default=900, ge=1, le=21600)
+    rabbitmq_publish_max_attempts: int = Field(default=5, ge=1, le=20)
 
     @field_validator("abuseipdb_base_url")
     @classmethod

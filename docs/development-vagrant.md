@@ -1,470 +1,341 @@
-# Vagrant development environment
+# Vagrant container deployment
 
-This guide covers the repository's five-VM VirtualBox environment. RabbitMQ,
-Redis, and MariaDB are native Ubuntu services; Docker commands do not apply to
-this deployment.
+## Status
 
-## Prerequisites
+The repository implements this deployment with Vagrant, VirtualBox, Docker
+Engine, and the Docker Compose plugin.
 
-Install:
+## Windows PowerShell workflow
 
-- Vagrant;
-- VirtualBox, the provider configured by the `Vagrantfile`;
-- Git.
+The normal Windows workflow uses native PowerShell. WSL, a host Bash shell,
+Docker Desktop, and host-side Python are not required.
 
-The base box is `bento/ubuntu-24.04`. The configured guests allocate six virtual
-CPUs and 6 GB RAM in total. Allow at least 8 GB free host RAM so VirtualBox and
-the host remain usable, six logical CPU threads, and approximately 20 GB free
-disk for dynamically allocated guest disks, package caches, and database data.
-The repository does not set a fixed virtual-disk size.
+Prerequisites:
 
-The only forwarded host port is TCP 15672 on `127.0.0.1` for RabbitMQ
-management. It must be free. The host-only network uses
-`192.168.100.0/24`; make sure it does not conflict with an existing host or VPN
-route. Redis, AMQP, and MariaDB have no host-forwarded ports.
+- 64-bit Windows with hardware virtualization enabled;
+- Oracle VirtualBox;
+- Vagrant with the VirtualBox provider;
+- Git for Windows to obtain the checkout.
 
-## First start
+Run PowerShell in the repository root. Initialize the untracked deployment
+secrets once; the script prompts for the AbuseIPDB API key and generates the
+remaining passwords without printing their values:
 
-Clone the repository and enter it:
-
-```bash
-git clone <repository-url> Aegis
-cd Aegis
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\Initialize-AegisVagrant.ps1
 ```
 
-Create development secrets outside the repository:
+The default secret directory is `$HOME\.config\aegis`. Existing files are
+preserved unless `-Force` is supplied.
 
-```bash
-umask 077
-mkdir -p ~/.config/aegis
-printf '%s\n' 'your-real-abuseipdb-key' \
-  > ~/.config/aegis/abuseipdb-api-key
-printf '%s\n' 'choose-a-development-database-password' \
-  > ~/.config/aegis/mariadb-password
-printf '%s\n' 'choose-a-provider-rabbitmq-password' \
-  > ~/.config/aegis/rabbitmq-provider-password
-printf '%s\n' 'choose-a-history-rabbitmq-password' \
-  > ~/.config/aegis/rabbitmq-history-password
-printf '%s\n' 'choose-a-management-rabbitmq-password' \
-  > ~/.config/aegis/rabbitmq-admin-password
-```
+The supported lifecycle commands are:
 
-These values are development-only. Do not reuse production credentials.
-
-Start and verify the environment:
-
-```bash
+```powershell
+vagrant validate
 vagrant up
-scripts/smoke-test-vagrant.sh
-```
-
-The first run downloads the box, installs operating-system and Python
-dependencies, and builds three virtual environments. A typical first provision
-takes roughly 10–30 minutes, but network speed and package mirrors can make it
-longer. Subsequent provisioning is normally faster.
-
-Open:
-
-- UI: `http://192.168.100.10:8000/`
-- RabbitMQ management: `http://127.0.0.1:15672/`
-
-Log in to RabbitMQ management as `aegis_admin` with the local admin password.
-History and Provider diagnostics are intentionally reached from their guests,
-not through forwarded host ports.
-
-## Topology and ports
-
-| VM | Address | Processes and infrastructure |
-| --- | --- | --- |
-| `ui-vm` | `192.168.100.10` | UI API |
-| `history-vm` | `192.168.100.11` | History API and History blacklist consumer |
-| `provider-vm` | `192.168.100.12` | Provider API, Provider blacklist worker, and SQLite outbox |
-| `db-vm` | `192.168.100.13` | MariaDB |
-| `infra-vm` | `192.168.100.14` | RabbitMQ, management plugin, and Redis |
-
-| Endpoint | Guest binding | Allowed caller or host mapping |
-| --- | --- | --- |
-| UI HTTP | `192.168.100.10:8000` | Host-only subnet |
-| History HTTP | `192.168.100.11:8002` | UI and local History diagnostics |
-| Provider HTTP | `192.168.100.12:8001` | History and local Provider diagnostics |
-| MariaDB | `192.168.100.13:3306` | History only |
-| RabbitMQ AMQP | `192.168.100.14:5672` | Provider and History only |
-| RabbitMQ management | guest `15672` | host `127.0.0.1:15672` |
-| Redis | `127.0.0.1:6379`, `192.168.100.14:6379` | UI only |
-
-The synchronous path is Browser → UI → History → Provider → AbuseIPDB.
-Blacklist delivery is Provider Worker → SQLite outbox → RabbitMQ → History
-Consumer → MariaDB. Browser theme state is UI → Redis. Only History receives
-MariaDB credentials.
-
-## Runtime processes
-
-| Unit | VM | Working directory | Environment |
-| --- | --- | --- | --- |
-| `aegis-ui.service` | `ui-vm` | `/opt/aegis/ui-service` | `/etc/aegis/ui.env` |
-| `aegis-history-api.service` | `history-vm` | `/opt/aegis/history-service` | `/etc/aegis/history.env` |
-| `aegis-history-blacklist-consumer.service` | `history-vm` | `/opt/aegis/history-service` | `/etc/aegis/history.env` |
-| `aegis-provider-api.service` | `provider-vm` | `/opt/aegis/provider-service` | `/etc/aegis/provider.env` |
-| `aegis-provider-blacklist-worker.service` | `provider-vm` | `/opt/aegis/provider-service` | `/etc/aegis/provider.env` |
-
-All run as the unprivileged `aegis` user. APIs, worker, and consumer are
-separate processes; neither background process runs inside FastAPI.
-
-## Configuration and secrets
-
-The host secret paths can be overridden before invoking Vagrant:
-
-| Default host path | Override |
-| --- | --- |
-| `~/.config/aegis/abuseipdb-api-key` | `AEGIS_PROVIDER_SECRET_FILE` |
-| `~/.config/aegis/mariadb-password` | `AEGIS_DATABASE_SECRET_FILE` |
-| `~/.config/aegis/rabbitmq-provider-password` | `AEGIS_RABBITMQ_PROVIDER_SECRET_FILE` |
-| `~/.config/aegis/rabbitmq-history-password` | `AEGIS_RABBITMQ_HISTORY_SECRET_FILE` |
-| `~/.config/aegis/rabbitmq-admin-password` | `AEGIS_RABBITMQ_ADMIN_SECRET_FILE` |
-
-Provisioning uploads secrets temporarily, writes the relevant protected
-`/etc/aegis/*.env` file, and removes the temporary upload. Redis has no
-development password: it is bound to the infrastructure VM and UFW permits
-only `ui-vm`. Production should use a restricted Redis ACL account.
-
-Do not print, copy into tickets, or commit `/etc/aegis/*.env`.
-
-## Common commands
-
-List and enter guests:
-
-```bash
 vagrant status
-vagrant ssh ui-vm
-vagrant ssh history-vm
+vagrant ssh infra-vm
 vagrant ssh provider-vm
-vagrant ssh db-vm
-vagrant ssh infra-vm
+vagrant ssh history-vm
+vagrant ssh ui-vm
+vagrant provision <vm>
+vagrant reload <vm>
+vagrant halt
+vagrant destroy -f
 ```
 
-Inspect application status and logs:
+`vagrant up` provisions the infrastructure VM first, followed by Provider,
+History, and UI. When provisioning an individual application VM, keep
+`infra-vm` running; UI also requires `history-vm`, and History’s manual lookup
+path requires `provider-vm`.
+
+The repository is mounted from its native Windows checkout into `/vagrant`
+with the VirtualBox shared-folder provider. Provisioning scripts execute
+inside the Linux guests; no repository Bash script is executed by Windows.
+
+## Four-VM topology
+
+All VMs use the private `192.168.100.0/24` network.
+
+| VM | Address | Required containers |
+| --- | --- | --- |
+| `ui-vm` | `192.168.100.10` | `aegis-ui` |
+| `history-vm` | `192.168.100.11` | `aegis-history-api`, `aegis-history-consumer` |
+| `provider-vm` | `192.168.100.12` | `aegis-provider-api`, `aegis-provider-worker` |
+| `infra-vm` | `192.168.100.14` | `aegis-mariadb`, `aegis-rabbitmq`, `aegis-redis` |
+
+There is no database VM. Application VMs remain separate, and each application
+runtime has its own container.
+
+```mermaid
+flowchart TB
+    Host[Development host]
+
+    subgraph U[ui-vm · 192.168.100.10]
+        UI[aegis-ui]
+    end
+
+    subgraph H[history-vm · 192.168.100.11]
+        HA[aegis-history-api]
+        HC[aegis-history-consumer]
+    end
+
+    subgraph P[provider-vm · 192.168.100.12]
+        PA[aegis-provider-api]
+        PW[aegis-provider-worker]
+    end
+
+    subgraph I[infra-vm · 192.168.100.14]
+        DB[aegis-mariadb]
+        MQ[aegis-rabbitmq]
+        RD[aegis-redis]
+    end
+
+    Host -->|private UI access| UI
+    UI --> HA
+    UI --> RD
+    HA --> PA
+    HA --> DB
+    PW --> MQ
+    MQ --> HC
+    HC --> DB
+```
+
+## Host responsibilities
+
+VM hosts provide:
+
+- Docker Engine and the Compose plugin;
+- private networking and firewall policy;
+- protected deployment environment and secret files;
+- persistent infrastructure volume directories on `infra-vm`;
+- startup and supervision of the local Compose stack.
+
+VM hosts must not install or execute application virtualenvs, Uvicorn,
+Provider Worker, or History Consumer directly. Docker Compose creates,
+reconciles, and restarts all application and infrastructure containers.
+
+## Compose stacks
+
+Each VM owns one Compose project.
+
+### ui-vm
+
+The UI stack contains one service:
+
+```text
+aegis-ui
+  command: UI ASGI server
+  publishes: 192.168.100.10:8000
+  dependencies: History API, Redis
+```
+
+### history-vm
+
+The History stack contains two services built from the same History image:
+
+```text
+aegis-history-api
+  command: History ASGI server
+  publishes: 192.168.100.11:8002
+
+aegis-history-consumer
+  command: History Consumer entry point
+  publishes: no host port
+```
+
+Both receive History-owned MariaDB and RabbitMQ consumer configuration. Only
+the API receives the Provider API URL needed for manual lookups. Alembic runs as
+an explicit one-shot container command before the API and consumer are started
+against a new schema.
+
+### provider-vm
+
+The Provider stack contains two services built from the same Provider image:
+
+```text
+aegis-provider-api
+  command: Provider ASGI server
+  publishes: 192.168.100.12:8001
+
+aegis-provider-worker
+  command: Provider Worker entry point
+  publishes: no host port
+```
+
+Only one Provider Worker container may run. Provider API does not own polling.
+Provider Worker fetches a complete snapshot and publishes it directly to
+RabbitMQ with persistent delivery, mandatory routing, and publisher confirms.
+It has no local database or durable application-state volume.
+
+### infra-vm
+
+The infrastructure stack contains:
+
+```text
+aegis-mariadb
+  private port: 3306
+  persistent volume: MariaDB data
+
+aegis-rabbitmq
+  private port: 5672
+  private management port: 15672
+  persistent volume: RabbitMQ data
+  management plugin: enabled
+
+aegis-redis
+  private port: 6379
+  persistent or disposable volume according to UI-session policy
+```
+
+Sharing one VM does not mean sharing credentials, container filesystems, or
+logical ownership. History remains the sole owner and application client of
+MariaDB data.
+
+## Network policy
+
+Required application paths:
+
+| Source | Destination | Port | Purpose |
+| --- | --- | --- | --- |
+| Browser/host-only network | `ui-vm` | 8000 | UI |
+| `ui-vm` | `history-vm` | 8002 | Application API |
+| `ui-vm` | `infra-vm` | 6379 | UI preferences |
+| `history-vm` | `provider-vm` | 8001 | Manual lookups |
+| `history-vm` | `infra-vm` | 3306 | History-owned persistence |
+| `history-vm` | `infra-vm` | 5672 | Consumer and retry/DLQ publication |
+| `provider-vm` | `infra-vm` | 5672 | Snapshot publication |
+| Private Vagrant network | `infra-vm` | 15672 | RabbitMQ management |
+
+Forbidden paths include UI to Provider or MariaDB, Provider to MariaDB or
+Redis, and direct Provider-to-History snapshot delivery.
+
+Container ports bind only where cross-VM traffic requires them. RabbitMQ
+management must not bind publicly on the host.
+
+## Secrets and environment ownership
+
+Host-local secret files remain outside the repository:
+
+```text
+~/.config/aegis/abuseipdb-api-key
+~/.config/aegis/mariadb-password
+~/.config/aegis/mariadb-root-password
+~/.config/aegis/rabbitmq-provider-password
+~/.config/aegis/rabbitmq-history-password
+~/.config/aegis/rabbitmq-admin-password
+~/.config/aegis/redis-ui-password
+```
+
+They are rendered into protected container environment or secret files with
+the following ownership:
+
+- UI: History URL and Redis connection settings;
+- History API and Consumer: MariaDB credentials and RabbitMQ consumer
+  credentials;
+- History API: Provider API URL;
+- Provider API and Worker: AbuseIPDB configuration where required;
+- Provider Worker: RabbitMQ publisher credentials;
+- infrastructure containers: only their own bootstrap credentials and config.
+
+Secrets must not be baked into images, committed Compose files, health output,
+or logs.
+
+## Persistent data and migration
+
+Persistent infrastructure data belongs on `infra-vm`:
+
+- MariaDB data directory or named volume;
+- RabbitMQ data directory or named volume;
+- optional Redis persistence used only for disposable UI state.
+
+Moving an existing environment to this topology requires:
+
+1. stop History writes and the old Provider Worker;
+2. publish or explicitly disposition any already-fetched pending deliveries
+   before removing the old deployment;
+3. take a consistent MariaDB backup;
+4. start MariaDB on `infra-vm` with a fresh persistent volume;
+5. restore and validate the backup;
+6. run History Alembic migrations as a one-shot container;
+7. verify schema head, row counts, constraints, and delivery IDs;
+8. start RabbitMQ and Redis containers and validate their health;
+9. start Provider and History background containers;
+10. start History API and UI;
+11. destroy the former database VM only after validation and backup retention.
+
+The target Provider Worker has no private persistent delivery store. RabbitMQ
+is the first durable delivery boundary after publisher confirmation.
+
+## Startup order
+
+Recommended provisioning order:
+
+1. Create all four VMs and private firewall rules.
+2. Start the `infra-vm` Compose stack.
+3. Wait for MariaDB, RabbitMQ, and Redis health checks.
+4. Run the History migration container.
+5. Start Provider API and Provider Worker.
+6. Start History API and History Consumer.
+7. Start UI Service.
+8. Run cross-VM health and delivery verification.
+
+Compose dependency declarations do not replace cross-VM readiness checks.
+
+## Operations
+
+Target diagnostics use container commands:
 
 ```bash
-vagrant ssh ui-vm -c 'sudo systemctl status aegis-ui.service'
-vagrant ssh history-vm -c 'sudo systemctl status aegis-history-api.service aegis-history-blacklist-consumer.service'
-vagrant ssh provider-vm -c 'sudo systemctl status aegis-provider-api.service aegis-provider-blacklist-worker.service'
-vagrant ssh history-vm -c 'sudo journalctl -u aegis-history-blacklist-consumer.service -n 100 --no-pager'
-vagrant ssh provider-vm -c 'sudo journalctl -u aegis-provider-blacklist-worker.service -f'
+vagrant ssh infra-vm -c 'sudo docker compose -f /vagrant/deploy/infra-vm/compose.yaml ps'
+vagrant ssh history-vm -c 'sudo docker compose -f /vagrant/deploy/history-vm/compose.yaml logs history-consumer'
+vagrant ssh provider-vm -c 'sudo docker compose -f /vagrant/deploy/provider-vm/compose.yaml restart provider-worker'
+vagrant ssh ui-vm -c 'sudo docker compose -f /vagrant/deploy/ui-vm/compose.yaml logs ui'
 ```
 
-Check MariaDB and the History-owned schema:
-
-```bash
-vagrant ssh db-vm -c 'sudo mysqladmin --protocol=socket ping'
-vagrant ssh history-vm -c \
-  "sudo -u aegis bash -c 'set -a; source /etc/aegis/history.env; cd /opt/aegis/history-service; .venv/bin/alembic -c alembic.ini current --check-heads'"
-```
-
-Check RabbitMQ:
-
-```bash
-vagrant ssh infra-vm -c 'sudo rabbitmq-diagnostics -q ping'
-vagrant ssh infra-vm -c \
-  'sudo rabbitmqctl list_queues -p /aegis name messages_ready messages_unacknowledged consumers'
-vagrant ssh infra-vm -c 'sudo rabbitmqctl list_bindings -p /aegis'
-```
-
-Inside `infra-vm`, the native-service form requested by RabbitMQ tooling is:
-
-```bash
-sudo rabbitmqctl list_queues -p /aegis \
-  name messages_ready messages_unacknowledged consumers
-```
-
-A Docker-hosted RabbitMQ uses a command such as
-`docker exec <container> rabbitmqctl ...`. That is not the Vagrant command:
-there is no RabbitMQ container in this environment.
-
-Check Redis without revealing theme session keys:
-
-```bash
-vagrant ssh infra-vm -c 'redis-cli -h 127.0.0.1 ping'
-vagrant ssh infra-vm -c 'redis-cli -h 127.0.0.1 DBSIZE'
-```
-
-Inspect the Provider outbox without changing it:
-
-```bash
-vagrant ssh provider-vm -c \
-  "sudo -u aegis sqlite3 /var/lib/aegis-provider/blacklist-outbox.sqlite3 '.tables'"
-vagrant ssh provider-vm -c \
-  "sudo -u aegis sqlite3 /var/lib/aegis-provider/blacklist-outbox.sqlite3 'SELECT COUNT(*) FROM blacklist_outbox;'"
-```
-
-## Theme verification
-
-Use the theme control in the UI to switch between light and dark, refresh the
-page, and confirm the selected theme remains. The automated equivalent also
-checks TTL, Redis restart, UI restart, and the default-theme fallback:
-
-```bash
-scripts/verify-redis-theme-vagrant.sh
-```
-
-For manual inspection, obtain the `theme_session` cookie locally from browser
-developer tools. Do not paste it into shared logs. In a private terminal:
-
-```bash
-vagrant ssh infra-vm
-redis-cli -h 127.0.0.1 --raw GET "theme:<local-session-id>"
-redis-cli -h 127.0.0.1 TTL "theme:<local-session-id>"
-```
-
-Allowed values are `light` and `dark`. Redis failure does not stop UI pages;
-theme reads fall back to dark, although `/health/ready` reports the dependency
-failure.
-
-## Blacklist synchronization verification
-
-The offline smoke test checks the worker, outbox path, broker topology,
-registered consumer, database migration, and History blacklist status without
-calling AbuseIPDB:
-
-```bash
-scripts/smoke-test-vagrant.sh
-vagrant ssh provider-vm -c \
-  'sudo journalctl -u aegis-provider-blacklist-worker.service -n 100 --no-pager'
-vagrant ssh history-vm -c \
-  'sudo journalctl -u aegis-history-blacklist-consumer.service -n 100 --no-pager'
-```
-
-An explicitly live trace performs at most one blacklist request, reports the
-remaining rate limit when AbuseIPDB supplies it, and follows one `delivery_id`
-through outbox, confirmed publication, MariaDB commit, and ACK:
-
-```bash
-scripts/smoke-test-vagrant.sh --live-abuseipdb
-```
-
-Do not use live mode casually. The independently scheduled Provider worker also
-owns normal polling and consumes quota according to its persisted schedule.
-
-## Reprovisioning and lifecycle
-
-Re-run all idempotent provisioners:
-
-```bash
-vagrant provision
-```
-
-Reprovision one role after source, dependency, unit, or configuration changes:
-
-```bash
-vagrant provision provider-vm
-vagrant provision history-vm
-vagrant provision ui-vm
-vagrant provision infra-vm
-vagrant provision db-vm
-```
-
-Use `vagrant reload <vm>` after changing VM-level networking or VirtualBox
-settings. A service-only configuration change normally needs provisioning or a
-`systemctl restart`, not a VM reload.
-
-Destroy and recreate an individual VM when its base operating-system state or
-virtual disk must be rebuilt:
-
-```bash
-vagrant destroy provider-vm
-vagrant up provider-vm
-```
-
-This deletes that guest's local data. Avoid `vagrant destroy` for ordinary
-application updates.
-
-## Troubleshooting
-
-### Port or network conflicts
-
-If `127.0.0.1:15672` is occupied, identify and stop the conflicting host
-process; the Vagrantfile deliberately disables automatic port correction.
-If `192.168.100.0/24` overlaps a VPN or existing route, change the complete
-private-network plan consistently in the Vagrantfile, provisioning
-configuration, firewall rules, and documentation before recreating the VMs.
-
-### Missing console scripts
-
-```bash
-vagrant ssh history-vm -c \
-  'test -x /opt/aegis/history-service/.venv/bin/aegis-history-blacklist-consumer'
-vagrant ssh provider-vm -c \
-  'test -x /opt/aegis/provider-service/.venv/bin/aegis-provider-blacklist-worker'
-```
-
-If either fails, reprovision that application VM and inspect the provisioning
-output for `pip` installation errors.
-
-### Migration failure
-
-Check MariaDB, History configuration permissions, and Alembic output:
-
-```bash
-vagrant ssh db-vm -c 'sudo systemctl status mariadb.service'
-vagrant ssh history-vm -c \
-  "sudo -u aegis bash -c 'set -a; source /etc/aegis/history.env; cd /opt/aegis/history-service; .venv/bin/alembic -c alembic.ini upgrade head'"
-```
-
-### RabbitMQ authentication or no consumer
-
-```bash
-vagrant ssh infra-vm -c 'sudo rabbitmqctl list_permissions -p /aegis'
-vagrant ssh history-vm -c 'sudo systemctl restart aegis-history-blacklist-consumer.service'
-vagrant ssh infra-vm -c \
-  'sudo rabbitmqctl list_queues -p /aegis name consumers messages_ready messages_unacknowledged'
-```
-
-Confirm the Provider and History password files used by Vagrant still match
-their generated `/etc/aegis/*.env` configuration; do not print either value.
-Reprovision `infra-vm`, then the affected application VM, after rotating one.
-
-### Messages in the DLQ
-
-Inspect without deleting:
-
-```bash
-vagrant ssh infra-vm -c \
-  "sudo rabbitmqctl list_queues -p /aegis name messages | grep 'aegis.history.blacklist.snapshots.dead'"
-vagrant ssh history-vm -c \
-  'sudo journalctl -u aegis-history-blacklist-consumer.service --since today --no-pager'
-```
-
-Do not purge or replay DLQ messages until their validation or persistence
-failure is understood.
-
-### Redis unavailable
-
-```bash
-vagrant ssh infra-vm -c 'sudo systemctl status redis-server.service'
-vagrant ssh infra-vm -c 'redis-cli -h 127.0.0.1 ping'
-vagrant ssh ui-vm -c 'curl --fail http://192.168.100.10:8000/health/live'
-```
-
-UI liveness and pages should remain available with the dark default;
-readiness may fail until Redis returns.
-
-### AbuseIPDB 401 or 429
-
-A 401 normally means the host API-key file is invalid; replace it and
-reprovision `provider-vm`. A 429 means the worker must honor `Retry-After` or
-the reset time. Do not repeatedly restart or force live tests:
-
-```bash
-vagrant ssh provider-vm -c \
-  "sudo journalctl -u aegis-provider-blacklist-worker.service --since today --no-pager | grep -E 'rate_limited|next_poll_at'"
-```
-
-### UTC interpretation
-
-Provider timestamps require an explicit offset. History stores normalized UTC
-values in MariaDB's timezone-neutral `DATETIME(6)` columns. Check guest clocks
-and database UTC separately:
-
-```bash
-vagrant ssh provider-vm -c 'timedatectl'
-vagrant ssh history-vm -c 'timedatectl'
-vagrant ssh db-vm -c \
-  "sudo mariadb --protocol=socket -e 'SELECT @@system_time_zone, @@session.time_zone, UTC_TIMESTAMP(6);'"
-```
-
-Do not reinterpret stored UTC values as the host's local timezone.
-
-### Outbox lock or permissions
-
-Only one worker may hold the adjacent SQLite lock:
-
-```bash
-vagrant ssh provider-vm -c \
-  'sudo systemctl status aegis-provider-blacklist-worker.service'
-vagrant ssh provider-vm -c \
-  "sudo stat -c '%U:%G:%a %n' /var/lib/aegis-provider /var/lib/aegis-provider/blacklist-outbox.sqlite3"
-```
-
-The directory must be `aegis:aegis` mode `750`. Stop the supervised worker
-before any foreground worker diagnostic. Do not delete a lock while a worker
-process is running.
-
-## Data reset procedures
-
-These operations are destructive. Back up anything needed first and reset only
-the owning subsystem.
-
-### Application database
-
-The cleanest complete database reset is an exact-VM replacement:
-
-```bash
-vagrant ssh history-vm -c \
-  'sudo systemctl stop aegis-history-api.service aegis-history-blacklist-consumer.service'
-vagrant destroy db-vm
-vagrant up db-vm
-vagrant provision history-vm
-```
-
-This removes MariaDB application data only; it does not clear RabbitMQ, Redis,
-or the Provider outbox.
-
-### RabbitMQ queues
-
-Deleting queues destroys ready, unacknowledged-after-requeue, retry, and DLQ
-messages. Stop the consumer first. Delete only the named `/aegis` queues, then
-restart the consumer so application-declared topology is recreated:
-
-```bash
-vagrant ssh history-vm -c \
-  'sudo systemctl stop aegis-history-blacklist-consumer.service'
-vagrant ssh infra-vm -c \
-  'for queue in aegis.history.blacklist.snapshots aegis.history.blacklist.snapshots.retry.300 aegis.history.blacklist.snapshots.retry.900 aegis.history.blacklist.snapshots.retry.1800 aegis.history.blacklist.snapshots.retry.3600 aegis.history.blacklist.snapshots.dead; do sudo rabbitmqctl delete_queue -p /aegis "$queue"; done'
-vagrant ssh history-vm -c \
-  'sudo systemctl start aegis-history-blacklist-consumer.service'
-```
-
-This does not reset MariaDB delivery IDs or the Provider outbox. Re-delivering
-an already committed `delivery_id` remains an accepted duplicate.
-
-### Redis UI preferences
-
-Delete one locally known anonymous session key:
+Infrastructure diagnostics run inside their containers:
 
 ```bash
 vagrant ssh infra-vm -c \
-  "redis-cli -h 127.0.0.1 DEL 'theme:<local-session-id>'"
+  'sudo docker exec aegis-rabbitmq rabbitmq-diagnostics -q ping'
+vagrant ssh infra-vm -c \
+  'sudo docker exec aegis-rabbitmq rabbitmqctl list_queues -p /aegis name consumers messages'
+vagrant ssh infra-vm -c \
+  'sudo docker exec aegis-mariadb mariadb-admin ping'
+vagrant ssh infra-vm -c \
+  'sudo docker exec aegis-redis redis-cli ping'
 ```
 
-Redis bulk flush commands are disabled. Theme keys also expire after 30 days
-and use `allkeys-lru` eviction. Do not expose session identifiers in shared
-logs.
+Exact deployment directories and Compose service names must remain consistent
+with the implementation when it is added.
 
-### Provider SQLite outbox
+## Verification requirements
 
-The outbox may contain fetched but unpublished snapshots. Preserve it unless a
-deliberate data-loss reset is required:
+The deployment smoke test must verify:
 
-```bash
-vagrant ssh provider-vm -c \
-  'sudo systemctl stop aegis-provider-blacklist-worker.service'
-vagrant ssh provider-vm -c \
-  "sudo -u aegis sqlite3 /var/lib/aegis-provider/blacklist-outbox.sqlite3 'PRAGMA wal_checkpoint(TRUNCATE);'"
-vagrant ssh provider-vm -c \
-  'sudo -u aegis mkdir /var/lib/aegis-provider/outbox-reset-backup'
-vagrant ssh provider-vm -c \
-  'sudo -u aegis mv /var/lib/aegis-provider/blacklist-outbox.sqlite3* /var/lib/aegis-provider/outbox-reset-backup/'
-vagrant ssh provider-vm -c \
-  'sudo systemctl start aegis-provider-blacklist-worker.service'
-```
+- exactly four Vagrant VMs exist;
+- the former database VM does not exist;
+- every required container is running on the correct VM;
+- no application Python process or legacy application unit runs on a VM host;
+- History API and History Consumer are different containers;
+- Provider API and Provider Worker are different containers;
+- MariaDB, RabbitMQ, and Redis run together on `infra-vm`;
+- only History can connect to MariaDB;
+- only UI can connect to Redis;
+- Provider publishes and History consumes through RabbitMQ;
+- RabbitMQ publisher confirmations, persistent messages, ACK-after-commit,
+  retry queues, and DLQ behavior remain intact;
+- UI and API health endpoints work;
+- MariaDB is at the current Alembic head;
+- container restart policies and persistent infrastructure volumes work.
 
-The move is recoverable, but it discards the active polling schedule and
-pending-delivery state. The worker creates a fresh database. Move or rename an
-existing `outbox-reset-backup` directory before repeating this reset.
+Ordinary unit tests must still mock external infrastructure. Live AbuseIPDB
+verification remains explicitly opt-in.
 
-## Security warning
+## Security scope
 
-The Vagrant users, passwords, network policy, and HTTP-only cookies are for an
-isolated development machine. They are not production secret management,
-transport security, or Internet-edge firewall configuration. Never commit the
-host secret files, guest environment files, API keys, database passwords, or
-RabbitMQ passwords.
+This Vagrant design is for an isolated development environment. Host-only
+networking, local secret files, and HTTP are not production Internet-edge
+security. Production must add appropriate TLS, secret management, backups, and
+host hardening without changing the logical service ownership described here.

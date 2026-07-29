@@ -1,0 +1,186 @@
+{
+  "users": [
+    {
+      "name": "aegis_provider",
+      "password": "local-provider-rabbitmq-password",
+      "tags": ""
+    },
+    {
+      "name": "aegis_history",
+      "password": "local-history-rabbitmq-password",
+      "tags": ""
+    },
+    {
+      "name": "aegis_admin",
+      "password": "local-rabbitmq-admin-password",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/aegis"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "aegis_provider",
+      "vhost": "/aegis",
+      "configure": "^aegis\\.blacklist$",
+      "write": "^aegis\\.blacklist$",
+      "read": "^$"
+    },
+    {
+      "user": "aegis_history",
+      "vhost": "/aegis",
+      "configure": "^(aegis\\.blacklist(\\.retry|\\.dead)?|aegis\\.history\\.blacklist\\.snapshots(\\.retry\\.(300|900|1800|3600)|\\.dead)?)$",
+      "write": "^(aegis\\.blacklist(\\.retry|\\.dead)?|aegis\\.history\\.blacklist\\.snapshots(\\.retry\\.(300|900|1800|3600)|\\.dead)?)$",
+      "read": "^(aegis\\.blacklist(\\.retry|\\.dead)?|aegis\\.history\\.blacklist\\.snapshots(\\.retry\\.(300|900|1800|3600)|\\.dead)?)$"
+    },
+    {
+      "user": "aegis_admin",
+      "vhost": "/aegis",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "aegis.blacklist",
+      "vhost": "/aegis",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "aegis.blacklist.retry",
+      "vhost": "/aegis",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "aegis.blacklist.dead",
+      "vhost": "/aegis",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "aegis.history.blacklist.snapshots",
+      "vhost": "/aegis",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "aegis.history.blacklist.snapshots.dead",
+      "vhost": "/aegis",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "aegis.history.blacklist.snapshots.retry.300",
+      "vhost": "/aegis",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 300000,
+        "x-dead-letter-exchange": "aegis.blacklist",
+        "x-dead-letter-routing-key": "blacklist.snapshot.complete"
+      }
+    },
+    {
+      "name": "aegis.history.blacklist.snapshots.retry.900",
+      "vhost": "/aegis",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 900000,
+        "x-dead-letter-exchange": "aegis.blacklist",
+        "x-dead-letter-routing-key": "blacklist.snapshot.complete"
+      }
+    },
+    {
+      "name": "aegis.history.blacklist.snapshots.retry.1800",
+      "vhost": "/aegis",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 1800000,
+        "x-dead-letter-exchange": "aegis.blacklist",
+        "x-dead-letter-routing-key": "blacklist.snapshot.complete"
+      }
+    },
+    {
+      "name": "aegis.history.blacklist.snapshots.retry.3600",
+      "vhost": "/aegis",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 3600000,
+        "x-dead-letter-exchange": "aegis.blacklist",
+        "x-dead-letter-routing-key": "blacklist.snapshot.complete"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "aegis.blacklist",
+      "vhost": "/aegis",
+      "destination": "aegis.history.blacklist.snapshots",
+      "destination_type": "queue",
+      "routing_key": "blacklist.snapshot.complete",
+      "arguments": {}
+    },
+    {
+      "source": "aegis.blacklist.dead",
+      "vhost": "/aegis",
+      "destination": "aegis.history.blacklist.snapshots.dead",
+      "destination_type": "queue",
+      "routing_key": "blacklist.snapshot.dead",
+      "arguments": {}
+    },
+    {
+      "source": "aegis.blacklist.retry",
+      "vhost": "/aegis",
+      "destination": "aegis.history.blacklist.snapshots.retry.300",
+      "destination_type": "queue",
+      "routing_key": "blacklist.snapshot.retry.300",
+      "arguments": {}
+    },
+    {
+      "source": "aegis.blacklist.retry",
+      "vhost": "/aegis",
+      "destination": "aegis.history.blacklist.snapshots.retry.900",
+      "destination_type": "queue",
+      "routing_key": "blacklist.snapshot.retry.900",
+      "arguments": {}
+    },
+    {
+      "source": "aegis.blacklist.retry",
+      "vhost": "/aegis",
+      "destination": "aegis.history.blacklist.snapshots.retry.1800",
+      "destination_type": "queue",
+      "routing_key": "blacklist.snapshot.retry.1800",
+      "arguments": {}
+    },
+    {
+      "source": "aegis.blacklist.retry",
+      "vhost": "/aegis",
+      "destination": "aegis.history.blacklist.snapshots.retry.3600",
+      "destination_type": "queue",
+      "routing_key": "blacklist.snapshot.retry.3600",
+      "arguments": {}
+    }
+  ]
+}

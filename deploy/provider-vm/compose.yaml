@@ -1,0 +1,68 @@
+name: aegis-provider-vm
+
+x-provider-common: &provider-common
+  build:
+    context: ../../services/provider-service
+    dockerfile: Dockerfile
+  image: ${AEGIS_PROVIDER_IMAGE:-aegis/provider-service:local}
+  env_file:
+    - ${AEGIS_PROVIDER_ENV_FILE:-/etc/aegis/provider.env}
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=32m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 45s
+
+services:
+  provider-api:
+    <<: *provider-common
+    container_name: aegis-provider-api
+    command:
+      - uvicorn
+      - provider_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    ports:
+      - "192.168.100.12:8001:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8001/health/live', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  provider-worker:
+    <<: *provider-common
+    container_name: aegis-provider-worker
+    command:
+      - aegis-provider-blacklist-worker
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, pathlib;
+          current = os.getpid();
+          needle = b'aegis-provider-blacklist-worker';
+          assert any(needle in path.read_bytes()
+          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
+          if path.parts[-2] != str(current))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

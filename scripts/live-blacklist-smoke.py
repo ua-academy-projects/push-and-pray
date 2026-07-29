@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from provider_service.blacklist_worker import create_abuseipdb_http_client
 from provider_service.config import get_settings
-from provider_service.outbox import BlacklistOutbox
 from provider_service.provider import AbuseIPDBProvider
 from provider_service.rabbitmq_publisher import AioPikaBlacklistPublisher
 from provider_service.schemas import BlacklistSnapshotMessage, InternalBlacklistRequest
@@ -22,7 +21,6 @@ async def run() -> None:
 
     delivery_id = uuid4()
     now = datetime.now(UTC)
-    outbox = BlacklistOutbox(settings.blacklist_outbox_path)
     client = create_abuseipdb_http_client(settings)
     publisher = AioPikaBlacklistPublisher(settings)
     try:
@@ -37,18 +35,18 @@ async def run() -> None:
             ),
             provider,
         )
-        outbox.enqueue(delivery_id=delivery_id, snapshot=snapshot, now=now)
-        row = outbox.connection.execute(
-            "SELECT payload_json FROM blacklist_outbox WHERE delivery_id = ?",
-            (str(delivery_id),),
-        ).fetchone()
-        if row is None:
-            raise RuntimeError("The live delivery was not written to the outbox.")
-
-        message = BlacklistSnapshotMessage.model_validate_json(row["payload_json"])
+        message = BlacklistSnapshotMessage(
+            schema_version=1,
+            message_type="blacklist.snapshot.complete",
+            delivery_id=delivery_id,
+            correlation_id=delivery_id,
+            producer="aegis-provider-service",
+            provider=snapshot.provider,
+            created_at=now,
+            snapshot=snapshot,
+        )
         await publisher.connect()
         await publisher.publish(message)
-        outbox.mark_published(delivery_id, published_at=datetime.now(UTC))
         print(
             json.dumps(
                 {
@@ -62,7 +60,6 @@ async def run() -> None:
     finally:
         await publisher.close()
         await client.aclose()
-        outbox.close()
 
 
 if __name__ == "__main__":

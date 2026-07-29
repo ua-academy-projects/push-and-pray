@@ -107,11 +107,12 @@ def test_turnover_range_query_reads_snapshot_summary_columns_only() -> None:
     session = Mock(spec=Session)
     session.execute.return_value = []
 
-    result = BlacklistRepository().turnover_snapshots_between(
+    result = BlacklistRepository().turnover_buckets_between(
         session,
         provider="AbuseIPDB",
         from_=GENERATED_AT,
         to=GENERATED_AT + timedelta(days=1),
+        granularity="hour",
     )
 
     sql = str(session.execute.call_args.args[0])
@@ -119,7 +120,39 @@ def test_turnover_range_query_reads_snapshot_summary_columns_only() -> None:
     assert "blacklist_snapshots.added_count" in sql
     assert "blacklist_snapshots.removed_count" in sql
     assert "blacklist_snapshot_entries" not in sql
+    assert "row_number()" in sql.lower()
+    assert "PARTITION BY" in sql
     assert result == []
+
+
+@pytest.mark.parametrize(
+    ("granularity", "sql_fragment"),
+    [
+        ("hour", "date_format"),
+        ("day", "date("),
+        ("week", "timestampadd"),
+        ("month", "date_format"),
+    ],
+)
+def test_turnover_aggregation_uses_deterministic_mariadb_buckets(
+    granularity: str,
+    sql_fragment: str,
+) -> None:
+    session = Mock(spec=Session)
+    session.execute.return_value = []
+
+    BlacklistRepository().turnover_buckets_between(
+        session,
+        provider="AbuseIPDB",
+        from_=GENERATED_AT,
+        to=GENERATED_AT + timedelta(days=1),
+        granularity=granularity,
+    )
+
+    sql = str(session.execute.call_args.args[0]).lower()
+    assert sql_fragment.lower() in sql
+    assert "row_number()" in sql
+    assert "order by ranked_turnover_snapshots.period_start asc" in sql
 
 
 def test_duplicate_constraints_and_foreign_key_cascades_are_declared() -> None:

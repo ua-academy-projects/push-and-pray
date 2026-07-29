@@ -6,7 +6,6 @@ readonly APP_USER="aegis"
 readonly APP_ROOT="/opt/aegis"
 readonly CONFIG_DIRECTORY="/etc/aegis"
 readonly STATE_DIRECTORY="/var/lib/aegis"
-readonly PROVIDER_OUTBOX_DIRECTORY="/var/lib/aegis-provider"
 readonly BASE_MARKER="${STATE_DIRECTORY}/.base-provisioned"
 
 fail() {
@@ -57,14 +56,12 @@ apt-get install --yes --no-install-recommends \
   python3.14-dev \
   python3.14-venv \
   redis-tools \
-  rsync \
-  sqlite3
+  rsync
 
 command -v "${PYTHON_BIN}" >/dev/null || fail "${PYTHON_BIN} is unavailable"
 command -v git >/dev/null || fail "Git is unavailable"
 command -v curl >/dev/null || fail "curl is unavailable"
 command -v jq >/dev/null || fail "jq is unavailable"
-command -v sqlite3 >/dev/null || fail "SQLite CLI is unavailable"
 command -v mariadb >/dev/null || fail "MariaDB client is unavailable"
 command -v redis-cli >/dev/null || fail "Redis CLI is unavailable"
 command -v amqp-declare-queue >/dev/null || \
@@ -83,12 +80,11 @@ fi
 progress "preparing application, configuration, and state directories"
 install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 \
   "${APP_ROOT}" \
-  "${STATE_DIRECTORY}" \
-  "${PROVIDER_OUTBOX_DIRECTORY}"
+  "${STATE_DIRECTORY}"
 install -d -o root -g "${APP_USER}" -m 0750 "${CONFIG_DIRECTORY}"
 
-# Application logs go to stdout/stderr and are collected by systemd-journald;
-# no application-owned log directory is required.
+# Application logs go to container stdout/stderr and remain available through
+# `docker logs`; no application-owned host log directory is required.
 touch "${BASE_MARKER}"
 chown "${APP_USER}:${APP_USER}" "${BASE_MARKER}"
 chmod 0640 "${BASE_MARKER}"

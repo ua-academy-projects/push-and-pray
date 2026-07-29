@@ -5,7 +5,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import cast, overload
 
-from sqlalchemy import case, func, select
+from sqlalchemy import DateTime, case, func, select, text
+from sqlalchemy import cast as sql_cast
 from sqlalchemy.orm import Session
 
 from history_service.models import (
@@ -59,9 +60,9 @@ class SnapshotChurnCount:
 
 
 @dataclass(frozen=True)
-class TurnoverSnapshotSummary:
+class TurnoverBucketSummary:
     snapshot_id: int
-    provider_generated_at: datetime
+    period_start: datetime
     turnover_percent: Decimal | None
     added_count: int | None
     removed_count: int | None
@@ -166,50 +167,103 @@ class BlacklistRepository:
         statement = select(func.count()).select_from(BlacklistSnapshot)
         return session.scalar(statement) or 0
 
-    def turnover_snapshots_between(
+    def turnover_data_range(
+        self,
+        session: Session,
+        *,
+        provider: str,
+    ) -> tuple[datetime, datetime] | None:
+        statement = select(
+            func.min(BlacklistSnapshot.provider_generated_at),
+            func.max(BlacklistSnapshot.provider_generated_at),
+        ).where(BlacklistSnapshot.provider == provider)
+        earliest, latest = session.execute(statement).one()
+        if earliest is None or latest is None:
+            return None
+        return (
+            cast(datetime, self._as_aware_utc(earliest)),
+            cast(datetime, self._as_aware_utc(latest)),
+        )
+
+    def turnover_buckets_between(
         self,
         session: Session,
         *,
         provider: str,
         from_: datetime,
         to: datetime,
-    ) -> list[TurnoverSnapshotSummary]:
-        statement = (
+        granularity: str,
+    ) -> list[TurnoverBucketSummary]:
+        period_start = self._turnover_period_expression(granularity)
+        ranked = (
             select(
-                BlacklistSnapshot.snapshot_id,
-                BlacklistSnapshot.provider_generated_at,
-                BlacklistSnapshot.turnover_percent,
-                BlacklistSnapshot.added_count,
-                BlacklistSnapshot.removed_count,
+                BlacklistSnapshot.snapshot_id.label("snapshot_id"),
+                period_start.label("period_start"),
+                BlacklistSnapshot.turnover_percent.label("turnover_percent"),
+                BlacklistSnapshot.added_count.label("added_count"),
+                BlacklistSnapshot.removed_count.label("removed_count"),
+                func.row_number()
+                .over(
+                    partition_by=period_start,
+                    order_by=(
+                        BlacklistSnapshot.provider_generated_at.desc(),
+                        BlacklistSnapshot.snapshot_id.desc(),
+                    ),
+                )
+                .label("bucket_rank"),
             )
             .where(
                 BlacklistSnapshot.provider == provider,
                 BlacklistSnapshot.provider_generated_at >= self._as_mariadb_utc(from_),
                 BlacklistSnapshot.provider_generated_at < self._as_mariadb_utc(to),
             )
-            .order_by(
-                BlacklistSnapshot.provider_generated_at.asc(),
-                BlacklistSnapshot.snapshot_id.asc(),
+            .subquery("ranked_turnover_snapshots")
+        )
+        statement = (
+            select(
+                ranked.c.snapshot_id,
+                ranked.c.period_start,
+                ranked.c.turnover_percent,
+                ranked.c.added_count,
+                ranked.c.removed_count,
             )
+            .where(ranked.c.bucket_rank == 1)
+            .order_by(ranked.c.period_start.asc())
         )
         return [
-            TurnoverSnapshotSummary(
+            TurnoverBucketSummary(
                 snapshot_id=int(snapshot_id),
-                provider_generated_at=cast(
-                    datetime, self._as_aware_utc(provider_generated_at)
-                ),
+                period_start=cast(datetime, self._as_aware_utc(period_start)),
                 turnover_percent=turnover_percent,
                 added_count=added_count,
                 removed_count=removed_count,
             )
             for (
                 snapshot_id,
-                provider_generated_at,
+                period_start,
                 turnover_percent,
                 added_count,
                 removed_count,
             ) in session.execute(statement)
         ]
+
+    @staticmethod
+    def _turnover_period_expression(granularity: str):
+        timestamp = BlacklistSnapshot.provider_generated_at
+        if granularity == "hour":
+            return sql_cast(func.date_format(timestamp, "%Y-%m-%d %H:00:00"), DateTime)
+        if granularity == "day":
+            return sql_cast(func.date(timestamp), DateTime)
+        if granularity == "week":
+            return sql_cast(
+                func.timestampadd(
+                    text("DAY"), -func.weekday(timestamp), func.date(timestamp)
+                ),
+                DateTime,
+            )
+        if granularity == "month":
+            return sql_cast(func.date_format(timestamp, "%Y-%m-01 00:00:00"), DateTime)
+        raise ValueError(f"Unsupported turnover granularity: {granularity}")
 
     def list_entries(
         self,

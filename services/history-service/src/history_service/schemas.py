@@ -528,27 +528,40 @@ class BlacklistAnalyticsQuery(BaseModel):
 
 
 class BlacklistTurnoverQuery(BaseModel):
-    """Bounded UTC range for persisted turnover summaries."""
+    """Explicit or all-available UTC range for persisted turnover summaries."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    from_: datetime = Field(alias="from")
-    to: datetime
-    interval: Literal["hour", "day", "week"]
+    from_: datetime | None = Field(default=None, alias="from")
+    to: datetime | None = None
+    period: Literal["all"] | None = None
+    interval: Literal["auto", "hour", "day", "week", "month"] = "auto"
 
     @field_validator("from_", "to")
     @classmethod
-    def validate_range_timestamp(cls, value: datetime) -> datetime:
-        return normalize_utc(value)
+    def validate_range_timestamp(cls, value: datetime | None) -> datetime | None:
+        return normalize_utc(value) if value is not None else None
 
     @model_validator(mode="after")
     def validate_range(self) -> Self:
+        if (self.from_ is None) is not (self.to is None):
+            raise ValueError("'from' and 'to' must be supplied together.")
+        if self.period == "all" and self.from_ is not None:
+            raise ValueError("'period=all' cannot be combined with 'from' and 'to'.")
+        if self.from_ is None:
+            return self
+        assert self.to is not None
         if self.to <= self.from_:
             raise ValueError("'to' must be later than 'from'.")
+        if self.interval == "auto":
+            return self
         first = self._period_start(self.from_)
         last = self._period_start(self.to - timedelta(microseconds=1))
-        seconds = {"hour": 3600, "day": 86400, "week": 604800}[self.interval]
-        point_count = int((last - first).total_seconds() // seconds) + 1
+        if self.interval == "month":
+            point_count = (last.year - first.year) * 12 + last.month - first.month + 1
+        else:
+            seconds = {"hour": 3600, "day": 86400, "week": 604800}[self.interval]
+            point_count = int((last - first).total_seconds() // seconds) + 1
         if point_count > 366:
             raise ValueError("Turnover range exceeds the 366-point limit.")
         return self
@@ -559,7 +572,9 @@ class BlacklistTurnoverQuery(BaseModel):
             return value.replace(minute=0, second=0, microsecond=0)
         if self.interval == "day":
             return day_start
-        return day_start - timedelta(days=day_start.weekday())
+        if self.interval == "week":
+            return day_start - timedelta(days=day_start.weekday())
+        return day_start.replace(day=1)
 
 
 class BlacklistTurnoverPoint(BaseModel):
@@ -580,10 +595,32 @@ class BlacklistTurnoverPoint(BaseModel):
 class BlacklistTurnoverResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    from_: datetime = Field(alias="from")
-    to: datetime
-    interval: Literal["hour", "day", "week"]
+    from_: datetime | None = Field(alias="from")
+    to: datetime | None
+    interval: Literal["hour", "day", "week", "month"]
+    requested_period: Literal["custom", "all"] = "custom"
+    effective_start: datetime | None = None
+    effective_end: datetime | None = None
+    granularity: Literal["hour", "day", "week", "month"] = "day"
+    bucket_count: StrictInt = Field(default=0, ge=0, le=366)
     points: list[BlacklistTurnoverPoint] = Field(max_length=366)
+
+    @field_validator("from_", "to", "effective_start", "effective_end")
+    @classmethod
+    def validate_metadata_timestamp(cls, value: datetime | None) -> datetime | None:
+        return normalize_utc(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_metadata(self) -> Self:
+        if "granularity" not in self.model_fields_set:
+            self.granularity = self.interval
+        if "bucket_count" not in self.model_fields_set:
+            self.bucket_count = len(self.points)
+        if self.granularity != self.interval:
+            raise ValueError("Granularity must match the response interval.")
+        if self.bucket_count != len(self.points):
+            raise ValueError("Bucket count must match the number of points.")
+        return self
 
 
 class BlacklistAnalyticsSnapshot(BaseModel):

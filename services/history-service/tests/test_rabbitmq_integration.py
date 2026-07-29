@@ -77,16 +77,20 @@ def settings() -> Settings:
     )
 
 
-def body() -> bytes:
+def body(
+    *,
+    identifier: str | None = None,
+    items: list[dict[str, Any]] | None = None,
+) -> bytes:
     now = datetime.now(UTC)
-    identifier = uuid4()
+    delivery_id = identifier or str(uuid4())
 
     return json.dumps(
         {
             "schema_version": 1,
             "message_type": "blacklist.snapshot.complete",
-            "delivery_id": str(identifier),
-            "correlation_id": str(identifier),
+            "delivery_id": delivery_id,
+            "correlation_id": delivery_id,
             "producer": "aegis-provider-service",
             "provider": "AbuseIPDB",
             "created_at": now.isoformat(),
@@ -96,7 +100,7 @@ def body() -> bytes:
                 "fetched_at": now.isoformat(),
                 "request": {"confidence_minimum": 90, "limit": 1000},
                 "rate_limit": {},
-                "items": [],
+                "items": items or [],
             },
         }
     ).encode()

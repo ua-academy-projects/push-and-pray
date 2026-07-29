@@ -18,7 +18,7 @@ from history_service.blacklist_consumer import (
     RabbitMQFailureStrategy,
 )
 from history_service.blacklist_ingestion import BlacklistIngestionService
-from history_service.models import BlacklistSnapshot
+from history_service.models import BlacklistSnapshot, BlacklistSnapshotEntry
 from history_service.service import HistoryUnavailableError
 from sqlalchemy import URL, create_engine, delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -225,7 +225,17 @@ async def test_duplicate_redelivery_persists_one_snapshot() -> None:
     config = settings()
     await declare_topology(config)
     factory, engine = database_factory()
-    payload = body()
+    payload = body(
+        items=[
+            {
+                "ip_address": "8.8.8.8",
+                "ip_version": 4,
+                "abuse_confidence_score": 99,
+                "country_code": "US",
+                "last_reported_at": None,
+            }
+        ]
+    )
     delivery_id = UUID(json.loads(payload)["delivery_id"])
     handler = BlacklistMessageHandler(
         session_factory=factory,
@@ -243,6 +253,19 @@ async def test_duplicate_redelivery_persists_one_snapshot() -> None:
                     select(func.count())
                     .select_from(BlacklistSnapshot)
                     .where(BlacklistSnapshot.delivery_id == str(delivery_id))
+                )
+                == 1
+            )
+            snapshot_id = session.scalar(
+                select(BlacklistSnapshot.snapshot_id).where(
+                    BlacklistSnapshot.delivery_id == str(delivery_id)
+                )
+            )
+            assert (
+                session.scalar(
+                    select(func.count())
+                    .select_from(BlacklistSnapshotEntry)
+                    .where(BlacklistSnapshotEntry.snapshot_id == snapshot_id)
                 )
                 == 1
             )

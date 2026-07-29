@@ -15,4 +15,4 @@ Current decisions:
 - [0002 — Use Python for the first version](0002-use-python-for-first-version.md)
 - [0003 — Use MariaDB](0003-use-mariadb.md)
 - [0004 — Use synchronous persistence](0004-use-synchronous-persistence.md)
-- [0005 — Use RabbitMQ and a Provider-side SQLite outbox for blacklist delivery](0005-use-rabbitmq-and-provider-sqlite-outbox.md)
+- [0006 — Containerize Vagrant and publish directly to RabbitMQ](0006-containerize-vagrant-and-publish-directly-to-rabbitmq.md)

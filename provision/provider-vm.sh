@@ -5,14 +5,9 @@ readonly API_KEY_FILE="/tmp/aegis-provider-api-key"
 readonly RABBITMQ_PASSWORD_FILE="/tmp/aegis-rabbitmq-provider-password"
 readonly ENVIRONMENT_DIRECTORY="/etc/aegis"
 readonly ENVIRONMENT_FILE="${ENVIRONMENT_DIRECTORY}/provider.env"
-readonly SERVICE_FILE="/etc/systemd/system/aegis-provider-api.service"
-readonly LEGACY_SERVICE_FILE="/etc/systemd/system/aegis-provider.service"
-readonly WORKER_SERVICE_FILE="/etc/systemd/system/aegis-provider-blacklist-worker.service"
-readonly SERVICE_DIRECTORY="/opt/aegis/provider-service"
-readonly VENV_DIRECTORY="${SERVICE_DIRECTORY}/.venv"
+readonly COMPOSE_FILE="/vagrant/deploy/provider-vm/compose.yaml"
 readonly PROVIDER_ADDRESS="192.168.100.12"
 readonly PROVIDER_PORT="8001"
-readonly OUTBOX_DIRECTORY="/var/lib/aegis-provider"
 readonly RABBITMQ_ADDRESS="192.168.100.14"
 
 fail() {
@@ -20,17 +15,30 @@ fail() {
   exit 1
 }
 
+progress() {
+  echo "==> Aegis Provider: $*"
+}
+
+wait_for_tcp() {
+  local host="$1"
+  local port="$2"
+  local dependency="$3"
+  local attempts=90
+  progress "waiting for ${dependency} at ${host}:${port}"
+  until timeout 2 bash -c "</dev/tcp/${host}/${port}" 2>/dev/null; do
+    attempts=$((attempts - 1))
+    (( attempts > 0 )) || fail "${dependency} did not become reachable"
+    sleep 2
+  done
+}
+
 [[ -f "${API_KEY_FILE}" ]] || \
   fail "missing Provider API-key upload; check AEGIS_PROVIDER_SECRET_FILE"
 [[ -f "${RABBITMQ_PASSWORD_FILE}" ]] || \
   fail "missing RabbitMQ password upload; check AEGIS_RABBITMQ_PROVIDER_SECRET_FILE"
+[[ -f "${COMPOSE_FILE}" ]] || fail "missing Provider Compose definition"
+command -v docker >/dev/null || fail "Docker is unavailable"
 trap 'rm -f "${API_KEY_FILE}" "${RABBITMQ_PASSWORD_FILE}"' EXIT
-[[ -x "${VENV_DIRECTORY}/bin/uvicorn" ]] || \
-  fail "Provider virtual environment is not installed"
-[[ -x "${VENV_DIRECTORY}/bin/aegis-provider-blacklist-worker" ]] || \
-  fail "Provider blacklist worker is not installed"
-[[ -d "${SERVICE_DIRECTORY}/src/provider_service" ]] || \
-  fail "Provider source is not installed"
 
 ABUSEIPDB_API_KEY="$(<"${API_KEY_FILE}")"
 RABBITMQ_PASSWORD="$(<"${RABBITMQ_PASSWORD_FILE}")"
@@ -46,12 +54,8 @@ RABBITMQ_PASSWORD="$(<"${RABBITMQ_PASSWORD_FILE}")"
   fail "RabbitMQ password contains unsupported characters"
 
 install -d -o root -g aegis -m 0750 "${ENVIRONMENT_DIRECTORY}"
-install -d -o aegis -g aegis -m 0750 "${OUTBOX_DIRECTORY}"
-
 temporary_environment="$(mktemp)"
-temporary_service="$(mktemp)"
-temporary_worker_service="$(mktemp)"
-trap 'rm -f "${temporary_environment}" "${temporary_service}" "${temporary_worker_service}" "${API_KEY_FILE}" "${RABBITMQ_PASSWORD_FILE}"' EXIT
+trap 'rm -f "${temporary_environment}" "${API_KEY_FILE}" "${RABBITMQ_PASSWORD_FILE}"' EXIT
 
 {
   printf 'ABUSEIPDB_BASE_URL=https://api.abuseipdb.com\n'
@@ -64,7 +68,6 @@ trap 'rm -f "${temporary_environment}" "${temporary_service}" "${temporary_worke
   printf 'BLACKLIST_POLLING_ENABLED=true\n'
   printf 'BLACKLIST_POLL_INTERVAL_SECONDS=21600\n'
   printf 'BLACKLIST_CONFIDENCE_MINIMUM=90\n'
-  printf 'BLACKLIST_OUTBOX_PATH=%s/blacklist-outbox.sqlite3\n' "${OUTBOX_DIRECTORY}"
   printf 'RABBITMQ_HOST=%s\n' "${RABBITMQ_ADDRESS}"
   printf 'RABBITMQ_PORT=5672\n'
   printf 'RABBITMQ_VIRTUAL_HOST=/aegis\n'
@@ -76,147 +79,59 @@ trap 'rm -f "${temporary_environment}" "${temporary_service}" "${temporary_worke
   printf 'RABBITMQ_PUBLISH_TIMEOUT_SECONDS=10\n'
   printf 'RABBITMQ_PUBLISH_RETRY_INITIAL_SECONDS=30\n'
   printf 'RABBITMQ_PUBLISH_RETRY_MAXIMUM_SECONDS=900\n'
+  printf 'RABBITMQ_PUBLISH_MAX_ATTEMPTS=5\n'
 } >"${temporary_environment}"
 
 if grep -Eq '^(MARIADB_|DATABASE_URL=|REDIS_)' "${temporary_environment}"; then
   fail "Provider environment contains a database or Redis dependency"
 fi
-
 install -o root -g aegis -m 0640 "${temporary_environment}" "${ENVIRONMENT_FILE}"
 
-wait_for_rabbitmq() {
-  local attempts=30
-  while (( attempts > 0 )); do
-    if (
-      set -a
-      # shellcheck disable=SC1090
-      source "${ENVIRONMENT_FILE}"
-      set +a
-      cd "${SERVICE_DIRECTORY}"
-      runuser --preserve-environment -u aegis -- \
-        "${VENV_DIRECTORY}/bin/python" <<'PY'
-import asyncio
-
-from provider_service.config import get_settings
-from provider_service.rabbitmq_publisher import AioPikaBlacklistPublisher
-
-async def check() -> None:
-    publisher = AioPikaBlacklistPublisher(get_settings())
-    await publisher.connect()
-    await publisher.close()
-
-asyncio.run(check())
-PY
-    ) >/dev/null 2>&1; then
-      return 0
-    fi
-    attempts=$((attempts - 1))
-    sleep 2
-  done
-  fail "Provider could not authenticate to RabbitMQ or declare its exchange"
-}
-
-wait_for_rabbitmq
-
-cat >"${temporary_service}" <<EOF
-[Unit]
-Description=Aegis Provider API
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=60s
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=aegis
-Group=aegis
-WorkingDirectory=${SERVICE_DIRECTORY}
-EnvironmentFile=${ENVIRONMENT_FILE}
-ExecStart=${VENV_DIRECTORY}/bin/uvicorn provider_service.main:app --app-dir ${SERVICE_DIRECTORY}/src --host ${PROVIDER_ADDRESS} --port ${PROVIDER_PORT} --no-access-log
-Restart=on-failure
-RestartSec=5s
-KillSignal=SIGTERM
-TimeoutStopSec=30s
-SyslogIdentifier=aegis-provider-api
-StandardOutput=journal
-StandardError=journal
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectHome=true
-ProtectSystem=strict
-
-[Install]
-WantedBy=multi-user.target
-EOF
-install -o root -g root -m 0644 "${temporary_service}" "${SERVICE_FILE}"
-
-cat >"${temporary_worker_service}" <<EOF
-[Unit]
-Description=Aegis Provider Blacklist Polling Worker
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=60s
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=aegis
-Group=aegis
-UMask=0027
-WorkingDirectory=${SERVICE_DIRECTORY}
-EnvironmentFile=${ENVIRONMENT_FILE}
-ExecStart=${VENV_DIRECTORY}/bin/aegis-provider-blacklist-worker
-Restart=on-failure
-RestartSec=5s
-KillSignal=SIGTERM
-TimeoutStopSec=45s
-SyslogIdentifier=aegis-provider-blacklist-worker
-StandardOutput=journal
-StandardError=journal
-StateDirectory=aegis-provider
-StateDirectoryMode=0750
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectHome=true
-ProtectSystem=strict
-ReadWritePaths=${OUTBOX_DIRECTORY}
-
-[Install]
-WantedBy=multi-user.target
-EOF
-install -o root -g root -m 0644 \
-  "${temporary_worker_service}" "${WORKER_SERVICE_FILE}"
-
-if command -v systemd-analyze >/dev/null 2>&1; then
-  systemd-analyze verify "${SERVICE_FILE}" "${WORKER_SERVICE_FILE}" || \
-    fail "systemd unit verification failed"
-fi
-
-systemctl disable --now aegis-provider.service 2>/dev/null || true
-rm -f "${LEGACY_SERVICE_FILE}"
+for unit in \
+  aegis-provider.service \
+  aegis-provider-api.service \
+  aegis-provider-blacklist-worker.service; do
+  systemctl disable --now "${unit}" 2>/dev/null || true
+  rm -f "/etc/systemd/system/${unit}"
+done
 systemctl daemon-reload
-systemctl enable aegis-provider-api.service
-systemctl enable aegis-provider-blacklist-worker.service
-systemctl restart aegis-provider-api.service
-systemctl restart aegis-provider-blacklist-worker.service
 
-wait_for_health() {
-  local path="$1"
-  local attempts=30
+export AEGIS_PROVIDER_ENV_FILE="${ENVIRONMENT_FILE}"
+wait_for_tcp "${RABBITMQ_ADDRESS}" 5672 RabbitMQ
+progress "building and starting Provider API and Worker containers"
+docker compose -f "${COMPOSE_FILE}" config --quiet
+docker compose -f "${COMPOSE_FILE}" up \
+  --detach --build --remove-orphans
 
+wait_for_api() {
+  local attempts=60
   while (( attempts > 0 )); do
     if curl --fail --silent --show-error --connect-timeout 2 --max-time 3 \
-      "http://${PROVIDER_ADDRESS}:${PROVIDER_PORT}${path}" >/dev/null 2>&1; then
+      "http://${PROVIDER_ADDRESS}:${PROVIDER_PORT}/health/ready" >/dev/null 2>&1; then
       return 0
     fi
     attempts=$((attempts - 1))
     sleep 2
   done
-
-  fail "Provider health check ${path} did not become ready"
+  fail "Provider API container did not become ready"
 }
 
-wait_for_health "/health/live"
-wait_for_health "/health/ready"
+wait_for_container_health() {
+  local container="$1"
+  local attempts=60
+  while (( attempts > 0 )); do
+    if docker inspect --format '{{.State.Health.Status}}' "${container}" \
+      2>/dev/null | grep -Fxq healthy; then
+      return 0
+    fi
+    attempts=$((attempts - 1))
+    sleep 2
+  done
+  fail "${container} did not become healthy"
+}
 
-echo "Provider Service is healthy at http://${PROVIDER_ADDRESS}:${PROVIDER_PORT}"
+wait_for_api
+wait_for_container_health aegis-provider-api
+wait_for_container_health aegis-provider-worker
+
+progress "API and Worker containers are healthy"

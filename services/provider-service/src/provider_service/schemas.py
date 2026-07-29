@@ -247,15 +247,6 @@ class BlacklistSnapshotMessage(BaseModel):
         return self
 
 
-class BlacklistSnapshotDelivery(BaseModel):
-    """Legacy outbox envelope retained for safe row up-conversion."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    delivery_id: UUID
-    snapshot: InternalBlacklistResponse
-
-
 class RetryMetadata(BaseModel):
     """Safe retry information included with a rate-limit error."""
 

@@ -316,23 +316,39 @@
           <p>Changes compare each snapshot with the previous snapshot using the same provider and request configuration.
             Missing data is not treated as zero.</p>
         </div>
-        <nav class="range-controls" aria-label="Turnover chart range">
-          {% for days in (7, 30, 90) %}
-          <a href="/blacklist?range_days={{ days }}"{% if range_days == days %} aria-current="page"{% endif %}>{{ days }} days</a>
-          {% endfor %}
-        </nav>
+        <form class="range-controls" method="get" action="/blacklist">
+          <label for="turnover-period">Period</label>
+          <select id="turnover-period" name="range_days" onchange="this.form.submit()">
+            {% for days in ("7", "30", "90") %}
+            <option value="{{ days }}"{% if range_days == days %} selected{% endif %}>{{ days }} days</option>
+            {% endfor %}
+            <option value="all"{% if range_days == "all" %} selected{% endif %}>All available data</option>
+          </select>
+          <button type="submit">Apply</button>
+        </form>
       </div>
 
       {% if turnover_error %}
       <p class="warning" role="status">{{ turnover_error }}</p>
       <p>The snapshot table and other analytics remain available.</p>
       {% elif turnover %}
+      <p class="turnover-range-summary" aria-live="polite">
+        {{ turnover.bucket_count }} {{ turnover.granularity }} {% if turnover.bucket_count == 1 %}bucket{% else %}buckets{% endif %},
+        {% if turnover.effective_start and turnover.effective_end %}
+        covering available data from <time datetime="{{ turnover.effective_start }}">{{
+          turnover.effective_start.strftime("%d %b %Y %H:%M UTC") }}</time>
+        to <time datetime="{{ turnover.effective_end }}">{{
+          turnover.effective_end.strftime("%d %b %Y %H:%M UTC") }}</time>.
+        {% else %}with no stored data in the requested range.{% endif %}
+      </p>
+      {% if turnover.points %}
       <div class="turnover-chart-grid">
         <figure class="chart-card" aria-labelledby="turnover-chart-heading">
           <h3 id="turnover-chart-heading">Snapshot turnover</h3>
           <figcaption>Percentage of each snapshot newly added since its comparison baseline. Gaps indicate missing data.
           </figcaption>
-          <div class="svg-chart" data-turnover-chart="line" data-points="{{ turnover_points | tojson | forceescape }}"
+          <div class="svg-chart" data-turnover-chart="line" data-granularity="{{ turnover.granularity }}"
+            data-points="{{ turnover_points | tojson | forceescape }}"
             role="img" aria-label="Line chart of snapshot turnover percentage by UTC time bucket"></div>
         </figure>
 
@@ -343,7 +359,8 @@
             <span class="legend-added">Added</span>
             <span class="legend-removed">Removed</span>
           </div>
-          <div class="svg-chart" data-turnover-chart="bars" data-points="{{ turnover_points | tojson | forceescape }}"
+          <div class="svg-chart" data-turnover-chart="bars" data-granularity="{{ turnover.granularity }}"
+            data-points="{{ turnover_points | tojson | forceescape }}"
             role="img" aria-label="Grouped bar chart of added and removed IP address counts by UTC time bucket"></div>
         </figure>
       </div>
@@ -353,7 +370,8 @@
       </noscript>
       <div class="table-wrap turnover-table">
         <table>
-          <caption>Blacklist turnover data for the selected {{ range_days }}-day range</caption>
+          <caption>Blacklist turnover data for the selected {% if range_days == "all" %}all-available{% else %}{{
+            range_days }}-day{% endif %} range, aggregated by {{ turnover.granularity }}</caption>
           <thead>
             <tr>
               <th scope="col">UTC period</th>
@@ -378,7 +396,16 @@
         </table>
       </div>
       {% else %}
-      <p>No turnover history is available for the selected range.</p>
+      <div class="analytics-empty-state" role="status">
+        <h3>No blacklist history is available</h3>
+        <p>Turnover charts will appear after History stores accepted blacklist snapshots in this period.</p>
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="analytics-empty-state" role="status">
+        <h3>No blacklist history is available</h3>
+        <p>Turnover charts will appear after the first accepted blacklist snapshots are stored.</p>
+      </div>
       {% endif %}
     </section>
 
@@ -417,10 +444,10 @@
       <p class="page-intro">Showing {{ blacklist.items|length }} of {{ blacklist.total }} entries.</p>
       <nav aria-label="Blacklist pagination">
         <span>{% if page > 1 %}<a
-            href="/blacklist?page={{ page - 1 }}{% if range_days != 30 %}&amp;range_days={{ range_days }}{% endif %}">Previous</a>{%
+            href="/blacklist?page={{ page - 1 }}{% if range_days != "30" %}&amp;range_days={{ range_days }}{% endif %}">Previous</a>{%
           endif %}</span>
         <span>{% if blacklist.offset + blacklist.limit < blacklist.total %}<a
-            href="/blacklist?page={{ page + 1 }}{% if range_days != 30 %}&amp;range_days={{ range_days }}{% endif %}">
+            href="/blacklist?page={{ page + 1 }}{% if range_days != "30" %}&amp;range_days={{ range_days }}{% endif %}">
             Next</a>{% endif %}</span>
       </nav>
     </section>

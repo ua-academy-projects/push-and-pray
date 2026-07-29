@@ -11,10 +11,9 @@ cd "${REPOSITORY_ROOT}"
 
 cleanup() {
   rm -f "${cookie_jar}"
-  vagrant ssh infra-vm -c "sudo systemctl start redis-server" >/dev/null 2>&1 || true
+  vagrant ssh infra-vm -c "sudo docker start aegis-redis" >/dev/null 2>&1 || true
   if [[ -n "${session_id}" ]]; then
-    vagrant ssh infra-vm -c \
-      "redis-cli -h 127.0.0.1 DEL 'theme:${session_id}'" >/dev/null 2>&1 || true
+    redis_guest "DEL theme:${session_id}" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -22,6 +21,12 @@ trap cleanup EXIT
 fail() {
   echo "Redis theme smoke test failed: $*" >&2
   exit 1
+}
+
+redis_guest() {
+  local command="$1"
+  vagrant ssh infra-vm -c \
+    "sudo docker exec aegis-redis sh -c 'REDISCLI_AUTH=\$(sed -n \"s/^user aegis_ui .* >\\\\([^ ]*\\\\).*/\\\\1/p\" /usr/local/etc/redis/users.acl) redis-cli --no-auth-warning --user aegis_ui --raw ${command}'"
 }
 
 curl --fail --silent --show-error --cookie-jar "${cookie_jar}" \
@@ -33,30 +38,26 @@ curl --fail --silent --show-error --cookie "${cookie_jar}" \
   --cookie-jar "${cookie_jar}" --request POST --data 'theme=light' \
   "${UI_URL}/theme" >/dev/null
 
-stored_theme="$(vagrant ssh infra-vm -c \
-  "redis-cli -h 127.0.0.1 --raw GET 'theme:${session_id}'" 2>/dev/null | tr -d '\r')"
+stored_theme="$(redis_guest "GET theme:${session_id}" 2>/dev/null | tr -d '\r')"
 [[ "${stored_theme}" == "light" ]] || fail "Redis did not contain the UI-written theme"
 
-ttl="$(vagrant ssh infra-vm -c \
-  "redis-cli -h 127.0.0.1 TTL 'theme:${session_id}'" 2>/dev/null | tr -d '[:space:]')"
+ttl="$(redis_guest "TTL theme:${session_id}" 2>/dev/null | tr -d '[:space:]')"
 [[ "${ttl}" =~ ^[0-9]+$ ]] && (( ttl > 0 )) || fail "theme key has no positive TTL"
 
 # A graceful Redis restart exercises the selected RDB persistence behavior.
-vagrant ssh infra-vm -c "sudo systemctl restart redis-server" >/dev/null
-vagrant ssh infra-vm -c \
-  "redis-cli -h 127.0.0.1 ping | grep -Fxq PONG" >/dev/null
-[[ "$(vagrant ssh infra-vm -c \
-  "redis-cli -h 127.0.0.1 --raw GET 'theme:${session_id}'" 2>/dev/null | tr -d '\r')" == "light" ]] || \
+vagrant ssh infra-vm -c "sudo docker restart aegis-redis" >/dev/null
+redis_guest PING | grep -Fxq PONG
+[[ "$(redis_guest "GET theme:${session_id}" 2>/dev/null | tr -d '\r')" == "light" ]] || \
   fail "theme did not survive a graceful Redis restart"
 
-vagrant ssh ui-vm -c "sudo systemctl restart aegis-ui.service" >/dev/null
+vagrant ssh ui-vm -c "sudo docker restart aegis-ui" >/dev/null
 response="$(curl --fail --silent --show-error --cookie "${cookie_jar}" \
   "${UI_URL}/theme")"
 [[ "${response}" == '{"theme":"light"}' ]] || fail "theme did not survive a UI restart"
 
 # Redis loss must degrade theme reads to the implemented dark default while
 # keeping UI pages and the theme endpoint available.
-vagrant ssh infra-vm -c "sudo systemctl stop redis-server" >/dev/null
+vagrant ssh infra-vm -c "sudo docker stop aegis-redis" >/dev/null
 response="$(curl --fail --silent --show-error --max-time 10 \
   --cookie "${cookie_jar}" "${UI_URL}/theme")"
 [[ "${response}" == '{"theme":"dark"}' ]] || \

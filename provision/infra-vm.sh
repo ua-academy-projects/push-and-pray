@@ -1,28 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly DATABASE_PASSWORD_FILE="/tmp/aegis-mariadb-password"
+readonly DATABASE_ROOT_PASSWORD_FILE="/tmp/aegis-mariadb-root-password"
 readonly PROVIDER_PASSWORD_FILE="/tmp/aegis-rabbitmq-provider-password"
 readonly HISTORY_PASSWORD_FILE="/tmp/aegis-rabbitmq-history-password"
 readonly ADMIN_PASSWORD_FILE="/tmp/aegis-rabbitmq-admin-password"
-readonly RABBITMQ_CONFIG="/etc/rabbitmq/rabbitmq.conf"
-readonly REDIS_CONFIG="/etc/redis/redis.conf"
-readonly VHOST="/aegis"
-readonly PROVIDER_USER="aegis_provider"
-readonly HISTORY_USER="aegis_history"
-readonly ADMIN_USER="aegis_admin"
+readonly REDIS_PASSWORD_FILE="/tmp/aegis-redis-password"
+readonly ENVIRONMENT_DIRECTORY="/etc/aegis"
+readonly ENVIRONMENT_FILE="${ENVIRONMENT_DIRECTORY}/infra.env"
+readonly DEFINITIONS_FILE="${ENVIRONMENT_DIRECTORY}/rabbitmq-definitions.json"
+readonly REDIS_ACL_FILE="${ENVIRONMENT_DIRECTORY}/redis-users.acl"
+readonly COMPOSE_FILE="/vagrant/deploy/infra-vm/compose.yaml"
 
 fail() {
   echo "Aegis infrastructure provisioning failed: $*" >&2
   exit 1
 }
 
-for secret_file in \
-  "${PROVIDER_PASSWORD_FILE}" \
-  "${HISTORY_PASSWORD_FILE}" \
-  "${ADMIN_PASSWORD_FILE}"; do
-  [[ -f "${secret_file}" ]] || fail "missing RabbitMQ credential upload: ${secret_file}"
+progress() {
+  echo "==> Aegis infrastructure: $*"
+}
+
+secret_files=(
+  "${DATABASE_PASSWORD_FILE}"
+  "${DATABASE_ROOT_PASSWORD_FILE}"
+  "${PROVIDER_PASSWORD_FILE}"
+  "${HISTORY_PASSWORD_FILE}"
+  "${ADMIN_PASSWORD_FILE}"
+  "${REDIS_PASSWORD_FILE}"
+)
+for secret_file in "${secret_files[@]}"; do
+  [[ -f "${secret_file}" ]] || fail "missing credential upload: ${secret_file}"
 done
-trap 'rm -f "${PROVIDER_PASSWORD_FILE}" "${HISTORY_PASSWORD_FILE}" "${ADMIN_PASSWORD_FILE}"' EXIT
+[[ -f "${COMPOSE_FILE}" ]] || fail "missing infrastructure Compose definition"
+
+cleanup() {
+  rm -f "${secret_files[@]}" "${temporary_environment:-}" \
+    "${temporary_definitions:-}" "${temporary_acl:-}"
+}
+trap cleanup EXIT
 
 read_secret() {
   local secret_file="$1"
@@ -35,120 +52,151 @@ read_secret() {
   printf '%s' "${value}"
 }
 
+database_password="$(read_secret "${DATABASE_PASSWORD_FILE}")"
+database_root_password="$(read_secret "${DATABASE_ROOT_PASSWORD_FILE}")"
 provider_password="$(read_secret "${PROVIDER_PASSWORD_FILE}")"
 history_password="$(read_secret "${HISTORY_PASSWORD_FILE}")"
 admin_password="$(read_secret "${ADMIN_PASSWORD_FILE}")"
+redis_password="$(read_secret "${REDIS_PASSWORD_FILE}")"
 
 export DEBIAN_FRONTEND=noninteractive
+progress "installing Docker Engine and Docker Compose plugin"
 apt-get update
-apt-get install --yes --no-install-recommends rabbitmq-server redis-server
+apt-get install --yes --no-install-recommends docker.io docker-compose-v2 jq
+systemctl enable --now docker
+docker info >/dev/null || fail "Docker daemon is unavailable"
+docker compose version >/dev/null || fail "Docker Compose plugin is unavailable"
 
-rabbitmq-plugins enable --offline rabbitmq_management
+install -d -o root -g aegis -m 0750 "${ENVIRONMENT_DIRECTORY}"
 
-temporary_config="$(mktemp)"
-trap 'rm -f "${temporary_config}" "${PROVIDER_PASSWORD_FILE}" "${HISTORY_PASSWORD_FILE}" "${ADMIN_PASSWORD_FILE}"' EXIT
-cat >"${temporary_config}" <<'EOF'
-listeners.tcp.default = 5672
-management.tcp.port = 15672
-loopback_users.guest = true
-EOF
-if ! cmp --silent "${temporary_config}" "${RABBITMQ_CONFIG}" 2>/dev/null; then
-  install -o rabbitmq -g rabbitmq -m 0640 "${temporary_config}" "${RABBITMQ_CONFIG}"
-  systemctl restart rabbitmq-server
-fi
+temporary_environment="$(mktemp)"
+{
+  printf 'MARIADB_DATABASE=aegis_history\n'
+  printf 'MARIADB_USER=aegis_history\n'
+  printf 'MARIADB_PASSWORD=%s\n' "${database_password}"
+  printf 'MARIADB_ROOT_PASSWORD=%s\n' "${database_root_password}"
+} >"${temporary_environment}"
+install -o root -g root -m 0600 "${temporary_environment}" "${ENVIRONMENT_FILE}"
 
-systemctl enable --now rabbitmq-server
-rabbitmqctl await_startup
-rabbitmq-diagnostics -q ping
-rabbitmq-diagnostics -q check_running
+temporary_acl="$(mktemp)"
+{
+  printf 'user default off\n'
+  printf 'user aegis_ui on >%s ~theme:* +get +set +del +expire +ttl +ping\n' \
+    "${redis_password}"
+} >"${temporary_acl}"
+install -o 999 -g 999 -m 0400 "${temporary_acl}" "${REDIS_ACL_FILE}"
 
-if ! rabbitmqctl -q list_vhosts name | grep -Fxq "${VHOST}"; then
-  rabbitmqctl add_vhost "${VHOST}"
-fi
+temporary_definitions="$(mktemp)"
+jq -n \
+  --arg provider_password "${provider_password}" \
+  --arg history_password "${history_password}" \
+  --arg admin_password "${admin_password}" \
+  '{
+    users: [
+      {name: "aegis_provider", password: $provider_password, tags: ""},
+      {name: "aegis_history", password: $history_password, tags: ""},
+      {name: "aegis_admin", password: $admin_password, tags: "administrator"}
+    ],
+    vhosts: [{name: "/aegis"}],
+    permissions: [
+      {
+        user: "aegis_provider", vhost: "/aegis",
+        configure: "^aegis\\.blacklist$", write: "^aegis\\.blacklist$",
+        read: "^$"
+      },
+      {
+        user: "aegis_history", vhost: "/aegis",
+        configure: "^(aegis\\.blacklist(\\.retry|\\.dead)?|aegis\\.history\\.blacklist\\.snapshots(\\.retry\\.(300|900|1800|3600)|\\.dead)?)$",
+        write: "^(aegis\\.blacklist(\\.retry|\\.dead)?|aegis\\.history\\.blacklist\\.snapshots(\\.retry\\.(300|900|1800|3600)|\\.dead)?)$",
+        read: "^(aegis\\.blacklist(\\.retry|\\.dead)?|aegis\\.history\\.blacklist\\.snapshots(\\.retry\\.(300|900|1800|3600)|\\.dead)?)$"
+      },
+      {
+        user: "aegis_admin", vhost: "/aegis",
+        configure: ".*", write: ".*", read: ".*"
+      }
+    ],
+    exchanges: [
+      {name: "aegis.blacklist", vhost: "/aegis", type: "direct", durable: true, auto_delete: false, internal: false, arguments: {}},
+      {name: "aegis.blacklist.retry", vhost: "/aegis", type: "direct", durable: true, auto_delete: false, internal: false, arguments: {}},
+      {name: "aegis.blacklist.dead", vhost: "/aegis", type: "direct", durable: true, auto_delete: false, internal: false, arguments: {}}
+    ],
+    queues: (
+      [{
+        name: "aegis.history.blacklist.snapshots", vhost: "/aegis",
+        durable: true, auto_delete: false, arguments: {}
+      }, {
+        name: "aegis.history.blacklist.snapshots.dead", vhost: "/aegis",
+        durable: true, auto_delete: false, arguments: {}
+      }] + [
+        {delay: 300}, {delay: 900}, {delay: 1800}, {delay: 3600}
+      ] | map(if has("delay") then {
+        name: ("aegis.history.blacklist.snapshots.retry." + (.delay | tostring)),
+        vhost: "/aegis", durable: true, auto_delete: false,
+        arguments: {
+          "x-message-ttl": (.delay * 1000),
+          "x-dead-letter-exchange": "aegis.blacklist",
+          "x-dead-letter-routing-key": "blacklist.snapshot.complete"
+        }
+      } else . end)
+    ),
+    bindings: (
+      [{
+        source: "aegis.blacklist",
+        vhost: "/aegis",
+        destination: "aegis.history.blacklist.snapshots",
+        destination_type: "queue",
+        routing_key: "blacklist.snapshot.complete",
+        arguments: {}
+      }, {
+        source: "aegis.blacklist.dead",
+        vhost: "/aegis",
+        destination: "aegis.history.blacklist.snapshots.dead",
+        destination_type: "queue",
+        routing_key: "blacklist.snapshot.dead",
+        arguments: {}
+      }] + [
+        {delay: 300}, {delay: 900}, {delay: 1800}, {delay: 3600}
+      ] | map(if has("delay") then {
+        source: "aegis.blacklist.retry",
+        vhost: "/aegis",
+        destination: ("aegis.history.blacklist.snapshots.retry." + (.delay | tostring)),
+        destination_type: "queue",
+        routing_key: ("blacklist.snapshot.retry." + (.delay | tostring)),
+        arguments: {}
+      } else . end)
+    )
+  }' >"${temporary_definitions}"
+install -o 999 -g 999 -m 0400 "${temporary_definitions}" "${DEFINITIONS_FILE}"
 
-ensure_user() {
-  local username="$1"
-  local password="$2"
-  if rabbitmqctl -q list_users | awk '{print $1}' | grep -Fxq "${username}"; then
-    rabbitmqctl change_password "${username}" "${password}" >/dev/null
-  else
-    rabbitmqctl add_user "${username}" "${password}" >/dev/null
-  fi
+export AEGIS_INFRA_ENV_FILE="${ENVIRONMENT_FILE}"
+export AEGIS_RABBITMQ_DEFINITIONS_FILE="${DEFINITIONS_FILE}"
+export AEGIS_REDIS_ACL_FILE="${REDIS_ACL_FILE}"
+progress "starting MariaDB, RabbitMQ, and Redis containers"
+docker compose -f "${COMPOSE_FILE}" config --quiet
+docker compose -f "${COMPOSE_FILE}" up --detach --remove-orphans
+
+wait_for_health() {
+  local container="$1"
+  local attempts=90
+  while (( attempts > 0 )); do
+    if docker inspect --format '{{.State.Health.Status}}' "${container}" \
+      2>/dev/null | grep -Fxq healthy; then
+      return 0
+    fi
+    attempts=$((attempts - 1))
+    sleep 2
+  done
+  fail "${container} did not become healthy"
 }
 
-ensure_user "${PROVIDER_USER}" "${provider_password}"
-ensure_user "${HISTORY_USER}" "${history_password}"
-ensure_user "${ADMIN_USER}" "${admin_password}"
-rabbitmqctl set_user_tags "${PROVIDER_USER}"
-rabbitmqctl set_user_tags "${HISTORY_USER}"
-rabbitmqctl set_user_tags "${ADMIN_USER}" administrator
+wait_for_health aegis-mariadb
+wait_for_health aegis-rabbitmq
+wait_for_health aegis-redis
 
-# Provider declares and publishes only the main exchange. History owns all
-# queues, bindings, retry exchanges, and dead-letter topology in this namespace.
-readonly MAIN_EXCHANGE='^aegis\.blacklist$'
-readonly HISTORY_TOPOLOGY='^(aegis\.blacklist(\.retry|\.dead)?|aegis\.history\.blacklist\.snapshots(\.retry\.(300|900|1800|3600)|\.dead)?)$'
-rabbitmqctl set_permissions -p "${VHOST}" "${PROVIDER_USER}" \
-  "${MAIN_EXCHANGE}" "${MAIN_EXCHANGE}" '^$'
-rabbitmqctl set_permissions -p "${VHOST}" "${HISTORY_USER}" \
-  "${HISTORY_TOPOLOGY}" "${HISTORY_TOPOLOGY}" "${HISTORY_TOPOLOGY}"
-rabbitmqctl set_permissions -p "${VHOST}" "${ADMIN_USER}" '.*' '.*' '.*'
+docker exec aegis-rabbitmq rabbitmqctl -q list_vhosts name | \
+  grep -Fxq /aegis || fail "RabbitMQ vhost was not initialized"
+docker exec aegis-rabbitmq rabbitmqctl -q list_queues -p /aegis name durable | \
+  awk '$1 == "aegis.history.blacklist.snapshots" && $2 == "true" {found=1}
+       END {exit !found}' || fail "durable RabbitMQ queue was not initialized"
 
-# The built-in guest account remains loopback-only and is never configured in
-# an application environment.
-rabbitmq-diagnostics -q check_port_connectivity
-rabbitmq-plugins list -e -m | grep -Fxq rabbitmq_management || \
-  fail "RabbitMQ management plugin is not enabled"
-
-temporary_redis_config="$(mktemp)"
-trap 'rm -f "${temporary_config}" "${temporary_redis_config}" "${PROVIDER_PASSWORD_FILE}" "${HISTORY_PASSWORD_FILE}" "${ADMIN_PASSWORD_FILE}"' EXIT
-cat >"${temporary_redis_config}" <<'EOF'
-# Aegis development Redis: UI-only, private, bounded, and non-authoritative.
-bind 127.0.0.1 192.168.100.14
-protected-mode yes
-port 6379
-tcp-backlog 128
-timeout 0
-tcp-keepalive 300
-supervised systemd
-daemonize no
-loglevel notice
-logfile ""
-databases 1
-
-# Theme state is disposable, but periodic RDB snapshots make ordinary VM and
-# service restarts less surprising without AOF write amplification.
-save 900 1
-save 300 10
-stop-writes-on-bgsave-error no
-rdbcompression yes
-dbfilename dump.rdb
-dir /var/lib/redis
-appendonly no
-
-maxmemory 128mb
-maxmemory-policy allkeys-lru
-
-# The UI needs only GET, SET, EXPIRE, DEL, and PING. These administrative or
-# bulk-destructive commands are unavailable over the development endpoint.
-rename-command FLUSHALL ""
-rename-command FLUSHDB ""
-rename-command CONFIG ""
-rename-command DEBUG ""
-rename-command SHUTDOWN ""
-EOF
-if ! cmp --silent "${temporary_redis_config}" "${REDIS_CONFIG}" 2>/dev/null; then
-  install -o redis -g redis -m 0640 "${temporary_redis_config}" "${REDIS_CONFIG}"
-  systemctl restart redis-server
-fi
-systemctl enable --now redis-server
-
-redis_attempts=30
-until redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -Fxq PONG; do
-  redis_attempts=$((redis_attempts - 1))
-  (( redis_attempts > 0 )) || fail "Redis did not become ready"
-  sleep 2
-done
-
-echo "RabbitMQ is ready on 192.168.100.14:5672 (vhost ${VHOST})"
-echo "Management UI is forwarded to http://127.0.0.1:15672"
-echo "Redis is ready for ui-vm only on 192.168.100.14:6379"
+progress "MariaDB, RabbitMQ, and Redis containers are healthy on 192.168.100.14"

@@ -1,4 +1,4 @@
-"""Deterministic scheduling policy for polling and outbox delivery."""
+"""Deterministic scheduling policy for polling and publication retry."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -10,7 +10,7 @@ def aware_utc(value: datetime) -> datetime:
 
 
 class PollingPolicy:
-    """Calculate independent bounded polling and delivery retry times."""
+    """Calculate bounded polling and direct-publication retry delays."""
 
     temporary_delays = (300, 900, 1800, 3600)
 
@@ -58,11 +58,10 @@ class PollingPolicy:
         index = min(max(attempt, 1), len(self.temporary_delays)) - 1
         return current + timedelta(seconds=self.temporary_delays[index])
 
-    def after_publish_failure(self, now: datetime, *, attempt: int) -> datetime:
-        current = aware_utc(now)
+    def publish_delay_for_attempt(self, attempt: int) -> int:
+        """Return bounded exponential delay after a failed attempt."""
         exponent = min(max(attempt, 1) - 1, 30)
-        delay = min(
+        return min(
             self.publish_initial_seconds * (2**exponent),
             self.publish_maximum_seconds,
         )
-        return current + timedelta(seconds=delay)

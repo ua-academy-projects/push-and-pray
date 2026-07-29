@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -6,17 +7,18 @@ from uuid import UUID
 import pytest
 from provider_service.blacklist_worker import (
     BlacklistPollingWorker,
+    BlacklistPublicationExhaustedError,
     singleton_worker_lock,
 )
 from provider_service.exceptions import (
     RateLimitExceededError,
     UpstreamTimeoutError,
 )
-from provider_service.outbox import BlacklistOutbox
 from provider_service.polling_policy import PollingPolicy
 from provider_service.rabbitmq_publisher import (
     BlacklistPublishingConnectionError,
-    BlacklistPublishingRejectedError,
+    BlacklistPublishingSerializationError,
+    BlacklistPublishingUnroutableError,
 )
 from provider_service.schemas import BlacklistProviderResult, RateLimitMetadata
 
@@ -53,6 +55,7 @@ class FakePublisher:
         self.outcomes = outcomes or [object()]
         self.messages = []
         self.connect_calls = 0
+        self.close_calls = 0
 
     async def connect(self) -> None:
         self.connect_calls += 1
@@ -63,6 +66,17 @@ class FakePublisher:
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
+    async def close(self) -> None:
+        self.close_calls += 1
+
+
+class SleepRecorder:
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def __call__(self, delay: float) -> None:
+        self.delays.append(delay)
 
 
 def result(
@@ -86,43 +100,39 @@ def policy() -> PollingPolicy:
 
 
 def worker(
-    path: Path,
     provider: FakeProvider,
     publisher: FakePublisher,
     clock: Clock,
-) -> tuple[BlacklistPollingWorker, BlacklistOutbox]:
-    outbox = BlacklistOutbox(path)
-    return (
-        BlacklistPollingWorker(
-            provider=provider,
-            publisher=publisher,
-            outbox=outbox,
-            policy=policy(),
-            clock=clock,
-            delivery_id_factory=lambda: DELIVERY_ID,
-        ),
-        outbox,
+    *,
+    publish_max_attempts: int = 5,
+    sleep: SleepRecorder | None = None,
+) -> BlacklistPollingWorker:
+    return BlacklistPollingWorker(
+        provider=provider,
+        publisher=publisher,
+        policy=policy(),
+        publish_max_attempts=publish_max_attempts,
+        clock=clock,
+        delivery_id_factory=lambda: DELIVERY_ID,
+        sleep=sleep,
+        jitter=lambda _delay: 0,
     )
 
 
 def test_singleton_lock_rejects_second_worker(tmp_path: Path) -> None:
-    outbox_path = tmp_path / "outbox.sqlite3"
+    lock_path = tmp_path / "worker.lock"
 
-    with singleton_worker_lock(outbox_path):
+    with singleton_worker_lock(lock_path):
         with pytest.raises(RuntimeError, match="already running"):
-            with singleton_worker_lock(outbox_path):
+            with singleton_worker_lock(lock_path):
                 pass
 
 
 @pytest.mark.anyio
-async def test_scheduled_polling_waits_until_persisted_due_time(
-    tmp_path: Path,
-) -> None:
+async def test_scheduled_polling_waits_until_in_memory_due_time() -> None:
     clock = Clock()
     provider = FakeProvider([result(), result()])
-    current, outbox = worker(
-        tmp_path / "outbox.sqlite3", provider, FakePublisher(), clock
-    )
+    current = worker(provider, FakePublisher([object(), object()]), clock)
 
     await current.tick()
     await current.tick()
@@ -131,39 +141,35 @@ async def test_scheduled_polling_waits_until_persisted_due_time(
     clock.now += timedelta(hours=6)
     await current.tick()
     assert provider.calls == 2
-    outbox.close()
 
 
 @pytest.mark.anyio
-async def test_429_honors_retry_after_and_reset(tmp_path: Path) -> None:
+async def test_429_honors_retry_after_and_reset() -> None:
     clock = Clock()
     reset_at = NOW + timedelta(hours=2)
-    provider = FakeProvider(
-        [
-            RateLimitExceededError(
-                retry_after_seconds=3600,
-                reset_at=reset_at,
-            )
-        ]
-    )
-    current, outbox = worker(
-        tmp_path / "outbox.sqlite3", provider, FakePublisher(), clock
+    current = worker(
+        FakeProvider(
+            [
+                RateLimitExceededError(
+                    retry_after_seconds=3600,
+                    reset_at=reset_at,
+                )
+            ]
+        ),
+        FakePublisher(),
+        clock,
     )
 
     await current.tick()
 
-    assert outbox.get_next_poll_at() == reset_at
-    assert outbox.pending_count() == 0
-    outbox.close()
+    assert current.next_poll_at == reset_at
+    assert current.poll_failure_attempts == 1
 
 
 @pytest.mark.anyio
-async def test_upstream_timeout_uses_poll_retry_without_outbox_entry(
-    tmp_path: Path,
-) -> None:
+async def test_upstream_timeout_uses_bounded_poll_retry_schedule() -> None:
     clock = Clock()
-    current, outbox = worker(
-        tmp_path / "outbox.sqlite3",
+    current = worker(
         FakeProvider([UpstreamTimeoutError()]),
         FakePublisher(),
         clock,
@@ -171,90 +177,84 @@ async def test_upstream_timeout_uses_poll_retry_without_outbox_entry(
 
     await current.tick()
 
-    assert outbox.get_next_poll_at() == NOW + timedelta(minutes=5)
-    assert outbox.pending_count() == 0
-    outbox.close()
+    assert current.next_poll_at == NOW + timedelta(minutes=5)
+    assert current.poll_failure_attempts == 1
 
 
 @pytest.mark.anyio
-async def test_publish_failure_preserves_message_then_restart_recovers(
-    tmp_path: Path,
-) -> None:
+async def test_transient_publish_failure_reconnects_with_same_message_id() -> None:
     clock = Clock()
+    sleep = SleepRecorder()
     publisher = FakePublisher([BlacklistPublishingConnectionError("failed"), object()])
-    current, outbox = worker(
-        tmp_path / "outbox.sqlite3", FakeProvider([result()]), publisher, clock
-    )
+    current = worker(FakeProvider([result()]), publisher, clock, sleep=sleep)
 
     await current.tick()
-    assert outbox.pending_count() == 1
-    assert outbox.get_next_poll_at() == NOW + timedelta(hours=6)
-    assert outbox.next_due_at() == NOW + timedelta(seconds=30)
-    first_message = publisher.messages[0]
 
-    outbox.close()
-    clock.now += timedelta(seconds=30)
-    restarted, recovered_outbox = worker(
-        tmp_path / "outbox.sqlite3", FakeProvider([result()]), publisher, clock
-    )
-    await restarted.tick()
-
-    assert recovered_outbox.pending_count() == 0
+    assert publisher.connect_calls == 2
+    assert publisher.close_calls == 1
+    assert sleep.delays == [30]
     assert len(publisher.messages) == 2
-    assert publisher.messages[1] == first_message
-    assert publisher.messages[1].delivery_id == DELIVERY_ID
-    recovered_outbox.close()
+    assert publisher.messages[0] is publisher.messages[1]
+    assert publisher.messages[0].delivery_id == DELIVERY_ID
+    assert publisher.messages[0].correlation_id == DELIVERY_ID
+    assert current.next_poll_at == NOW + timedelta(hours=6)
 
 
 @pytest.mark.anyio
-async def test_rejected_confirmation_retains_and_reschedules_message(
-    tmp_path: Path,
+async def test_publish_retry_is_bounded_and_uses_exponential_backoff(
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     clock = Clock()
-    publisher = FakePublisher([BlacklistPublishingRejectedError("rejected")])
-    current, outbox = worker(
-        tmp_path / "outbox.sqlite3", FakeProvider([result()]), publisher, clock
-    )
-
-    await current.tick()
-
-    assert outbox.pending_count() == 1
-    assert outbox.next_due_at() == NOW + timedelta(seconds=30)
-    assert publisher.messages[0].schema_version == 1
-    outbox.close()
-
-
-@pytest.mark.anyio
-async def test_poll_schedule_remains_independent_of_publish_retry(
-    tmp_path: Path,
-) -> None:
-    clock = Clock()
-    provider = FakeProvider([result(), result()])
+    sleep = SleepRecorder()
     publisher = FakePublisher(
-        [BlacklistPublishingConnectionError("failed"), object(), object()]
+        [BlacklistPublishingConnectionError("failed") for _ in range(4)]
     )
-    current, outbox = worker(tmp_path / "outbox.sqlite3", provider, publisher, clock)
+    current = worker(
+        FakeProvider([result()]),
+        publisher,
+        clock,
+        publish_max_attempts=4,
+        sleep=sleep,
+    )
 
-    await current.tick()
-    clock.now += timedelta(seconds=30)
-    await current.tick()
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.raises(BlacklistPublicationExhaustedError),
+    ):
+        await current.tick()
 
-    assert provider.calls == 1
-    assert outbox.get_next_poll_at() == NOW + timedelta(hours=6)
-    assert len(publisher.messages) == 2
-    outbox.close()
+    assert publisher.connect_calls == 4
+    assert publisher.close_calls == 4
+    assert sleep.delays == [30, 60, 120]
+    assert {message.delivery_id for message in publisher.messages} == {DELIVERY_ID}
+    assert "provider_blacklist_publish_failed" in caplog.text
+    assert current.next_poll_at is None
 
 
 @pytest.mark.anyio
-async def test_worker_stops_while_waiting_for_future_schedule(tmp_path: Path) -> None:
-    clock = Clock()
-    current, outbox = worker(
-        tmp_path / "outbox.sqlite3",
-        FakeProvider([result()]),
-        FakePublisher(),
-        clock,
-    )
-    outbox.set_poll_state(next_poll_at=NOW + timedelta(hours=6), failure_attempts=0)
+@pytest.mark.parametrize(
+    "failure",
+    [
+        BlacklistPublishingSerializationError("invalid"),
+        BlacklistPublishingUnroutableError("unroutable"),
+    ],
+)
+async def test_permanent_publish_failure_is_not_retried(failure: Exception) -> None:
+    publisher = FakePublisher([failure])
+    current = worker(FakeProvider([result()]), publisher, Clock())
+
+    with pytest.raises(type(failure)):
+        await current.tick()
+
+    assert publisher.connect_calls == 1
+    assert publisher.close_calls == 0
+    assert len(publisher.messages) == 1
+
+
+@pytest.mark.anyio
+async def test_worker_stops_while_waiting_for_future_schedule() -> None:
+    current = worker(FakeProvider([result()]), FakePublisher(), Clock())
+    current.next_poll_at = NOW + timedelta(hours=6)
     stop_event = asyncio.Event()
 
     task = asyncio.create_task(current.run(stop_event))
@@ -262,10 +262,24 @@ async def test_worker_stops_while_waiting_for_future_schedule(tmp_path: Path) ->
     stop_event.set()
     await task
 
-    outbox.close()
+
+@pytest.mark.anyio
+async def test_worker_stops_during_publication_retry_delay() -> None:
+    publisher = FakePublisher([BlacklistPublishingConnectionError("failed")])
+    current = worker(FakeProvider([result()]), publisher, Clock())
+    stop_event = asyncio.Event()
+
+    task = asyncio.create_task(current.run(stop_event))
+    while publisher.close_calls == 0:
+        await asyncio.sleep(0)
+    stop_event.set()
+    await task
+
+    assert publisher.connect_calls == 1
+    assert len(publisher.messages) == 1
 
 
-def test_worker_has_no_history_http_delivery_dependency() -> None:
+def test_worker_has_no_history_http_or_local_database_dependency() -> None:
     import provider_service.blacklist_worker as worker_module
 
     source = Path(worker_module.__file__).read_text()

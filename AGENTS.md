@@ -24,8 +24,7 @@ Browser -> UI -> History -> Provider -> AbuseIPDB
 Manual lookups remain synchronous.
 ### Blacklist synchronization
 ```text
-Provider Worker -> AbuseIPDB -> SQLite Outbox
-                -> RabbitMQ -> History Consumer -> MariaDB
+Provider Worker -> AbuseIPDB -> RabbitMQ -> History Consumer -> MariaDB
 ```
 Blacklist delivery is asynchronous. Provider must not deliver snapshots to
 History through REST.
@@ -75,8 +74,7 @@ Responsibilities:
 - rate-limit metadata extraction;
 - provider error mapping;
 - periodic blacklist polling;
-- SQLite outbox persistence;
-- RabbitMQ publishing.
+- direct RabbitMQ publishing with publisher confirms.
 Restrictions:
 - no UI communication;
 - no MariaDB or Redis access;
@@ -113,7 +111,7 @@ Do not use RabbitMQ for browser requests, UI sessions, manual lookup responses,
 or database access.
 ## 7. Approved Stack
 Python 3, FastAPI, HTTPX, Pydantic v2, SQLAlchemy 2.x, Alembic, MariaDB,
-Redis, RabbitMQ, SQLite for Provider outbox, Jinja2, pytest, Ruff,
+Redis, RabbitMQ, Jinja2, pytest, Ruff,
 mypy/Pyright, and standard `pip`/`venv`.
 Do not add infrastructure, frameworks, dependency managers, or shared packages
 without approval.
@@ -160,13 +158,11 @@ ordinary tests, and support clean shutdown.
 Successful flow:
 1. fetch and normalize the blacklist;
 2. create a stable delivery ID;
-3. commit the message to SQLite outbox;
-4. publish to RabbitMQ;
-5. receive publisher confirmation;
-6. mark or remove the outbox record;
-7. validate in History Consumer;
-8. persist transactionally in MariaDB;
-9. ACK only after commit.
+3. publish the complete message directly to RabbitMQ;
+4. receive publisher confirmation;
+5. validate in History Consumer;
+6. persist transactionally in MariaDB;
+7. ACK only after commit.
 Failures must not replace or delete the latest successful snapshot.
 ## 12. Message Contract
 Blacklist messages use an explicit versioned schema containing at least:
@@ -187,7 +183,8 @@ Extract when available:
 - `Retry-After`.
 Use the configured interval after success, wait until reset when quota is empty,
 honor `Retry-After`, use bounded retries, avoid continuous retries, add jitter,
-retain outbox data, and do not retry permanent validation failures indefinitely.
+preserve one stable delivery ID across publication retries, and do not retry
+permanent validation failures indefinitely.
 ## 14. Session Management
 Every new browser session receives a random anonymous session ID.
 The cookie stores only the ID. Redis stores validated UI preferences.
@@ -223,14 +220,14 @@ Dependencies:
 - History API: MariaDB;
 - History Consumer: MariaDB and RabbitMQ;
 - Provider API: valid configuration;
-- Provider Worker: outbox, RabbitMQ, and AbuseIPDB configuration.
+- Provider Worker: RabbitMQ and AbuseIPDB configuration.
 ## 17. Testing
 All changes require relevant unit, endpoint, database, contract, and integration
 tests. Default tests mock AbuseIPDB. Ordinary unit tests must not require live
 Redis, RabbitMQ, or MariaDB unless marked as integration tests.
 Blacklist tests cover success, complete persistence, duplicate delivery,
 IPv4/IPv6, malformed data, timeout, HTTP 429, zero quota, bounded retry,
-rollback, shutdown, outbox recovery, publish failure, confirmation, consumer
+rollback, shutdown, bounded publish retry, confirmation, consumer
 restart, DB failure, ACK after commit, malformed messages, and retention of the
 latest successful snapshot.
 Session tests cover cookie creation, defaults, persistence, refresh restoration,

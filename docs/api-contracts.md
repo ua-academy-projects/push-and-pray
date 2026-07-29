@@ -1,9 +1,10 @@
 # Aegis contracts
 
-This document describes the implemented HTTP, RabbitMQ, and Redis boundaries.
-It separates browser-facing UI routes, the History application API, the
-internal Provider API, asynchronous snapshot messages, and UI-internal Redis
-keys.
+This document describes the HTTP, RabbitMQ, and Redis boundaries. It separates
+browser-facing UI routes, the History application API, the internal Provider
+API, asynchronous snapshot messages, and UI-internal Redis keys. The direct
+Provider Worker publication path is the target contract for the next deployment
+phase; application code still requires a later implementation change.
 
 Unless stated otherwise:
 
@@ -19,7 +20,6 @@ Unless stated otherwise:
 Browser -> UI Service -> History Service -> Provider Service -> AbuseIPDB
 
 Provider blacklist worker
-  -> SQLite outbox
   -> RabbitMQ
   -> History blacklist consumer
   -> MariaDB
@@ -397,19 +397,35 @@ With no snapshot:
 #### Turnover
 
 ```http
-GET /api/v1/blacklist/analytics/turnover?from=2026-07-22T00:00:00Z&to=2026-07-23T00:00:00Z&interval=hour
+GET /api/v1/blacklist/analytics/turnover?from=2026-07-22T00:00:00Z&to=2026-07-23T00:00:00Z&interval=auto
 ```
 
-- `from` and `to` are required aware timestamps;
+- `from` and `to` are optional but must be supplied together as aware
+  timestamps;
+- omitting the range, or sending `period=all`, selects all available stored
+  snapshot history;
 - `to` must be later than `from`;
-- `interval` is `hour`, `day`, or `week`;
+- `interval` is `auto`, `hour`, `day`, `week`, or `month`;
+- automatic granularity is hourly through 48 hours, daily through 31 days,
+  weekly through 180 days, and monthly beyond 180 days;
 - at most 366 interval points may be requested.
+
+All timestamps and bucket boundaries are UTC. Weeks begin Monday at
+`00:00:00Z`; months begin on their first calendar day at `00:00:00Z`.
+MariaDB selects the latest snapshot in each bucket with deterministic
+timestamp and snapshot-ID ordering. Missing buckets remain present with null
+metrics because absence of a snapshot is not evidence of zero turnover.
 
 ```json
 {
   "from": "2026-07-22T00:00:00Z",
   "to": "2026-07-23T00:00:00Z",
   "interval": "hour",
+  "requested_period": "custom",
+  "effective_start": "2026-07-22T03:15:00Z",
+  "effective_end": "2026-07-22T22:10:00Z",
+  "granularity": "hour",
+  "bucket_count": 24,
   "points": [
     {
       "period_start": "2026-07-22T00:00:00Z",
@@ -724,9 +740,10 @@ failures. Unknown JSON fields are rejected.
 
 ### Delivery identity and duplicates
 
-- Provider assigns a stable UUID `delivery_id` before committing the message to
-  SQLite.
-- The outbox retains that message until RabbitMQ positively confirms publish.
+- Provider assigns a stable UUID `delivery_id` before its first publication
+  attempt and retains that identity for retries of the same in-memory message.
+- Provider publishes with persistent delivery, mandatory routing, and publisher
+  confirms. RabbitMQ is the first durable handoff after positive confirmation.
 - History persists `delivery_id` under a unique constraint.
 - First delivery commits the snapshot and all entries in one MariaDB
   transaction.
@@ -740,8 +757,10 @@ failures. Unknown JSON fields are rejected.
 - A different `delivery_id` for the same `provider` and
   `provider_generated_at` is a terminal snapshot conflict.
 
-Delivery is at least once. An accepted duplicate is therefore a successful,
-expected outcome.
+After RabbitMQ confirms publication, consumer delivery is at least once. An
+accepted duplicate is therefore a successful, expected outcome. Before that
+confirmation, loss of the Provider Worker container or VM can lose its
+in-memory fetched message.
 
 ### Acknowledgement and failures
 

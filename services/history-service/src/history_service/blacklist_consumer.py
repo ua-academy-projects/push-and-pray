@@ -41,6 +41,18 @@ DEAD_LETTER_ROUTING_KEY = "blacklist.snapshot.dead"
 logger = logging.getLogger(__name__)
 
 
+def message_context(message: AbstractIncomingMessage | Message) -> dict[str, object]:
+    """Return bounded message metadata safe for structured logs."""
+    headers = getattr(message, "headers", None) or {}
+    return {
+        "delivery_id": getattr(message, "message_id", None),
+        "correlation_id": getattr(message, "correlation_id", None),
+        "message_type": getattr(message, "type", None),
+        "retry_attempt": headers.get(RETRY_ATTEMPT_HEADER, 0),
+        "redelivered": getattr(message, "redelivered", False),
+    }
+
+
 class RetryableBlacklistProcessingError(Exception):
     """Explicitly retryable internal processing failure."""
 
@@ -101,18 +113,56 @@ class RabbitMQFailureStrategy:
         return self._policy.delays
 
     async def permanent(self, message: AbstractIncomingMessage) -> None:
-        if await self._publish_dead_letter(message):
+        confirmed = await self._publish_dead_letter(message)
+        if confirmed:
             await message.ack()
+            logger.warning(
+                "history_blacklist_message_dead_lettered",
+                extra=message_context(message),
+            )
+        else:
+            logger.error(
+                "history_blacklist_dead_letter_handoff_failed",
+                extra=message_context(message),
+            )
 
     async def temporary(self, message: AbstractIncomingMessage) -> None:
         attempt = BlacklistMessageHandler.retry_attempt(message)
         delay = self._policy.delay_for_attempt(attempt)
         if delay is None:
-            if await self._publish_dead_letter(message):
+            confirmed = await self._publish_dead_letter(message)
+            if confirmed:
                 await message.ack()
+                logger.warning(
+                    "history_blacklist_message_retry_exhausted",
+                    extra=message_context(message),
+                )
+            else:
+                logger.error(
+                    "history_blacklist_dead_letter_handoff_failed",
+                    extra=message_context(message),
+                )
             return
-        if await self._publish_retry(message, attempt=attempt + 1, delay=delay):
+        confirmed = await self._publish_retry(message, attempt=attempt + 1, delay=delay)
+        if confirmed:
             await message.ack()
+            logger.warning(
+                "history_blacklist_message_retry_scheduled",
+                extra={
+                    **message_context(message),
+                    "next_retry_attempt": attempt + 1,
+                    "retry_delay_seconds": delay,
+                },
+            )
+        else:
+            logger.error(
+                "history_blacklist_retry_handoff_failed",
+                extra={
+                    **message_context(message),
+                    "next_retry_attempt": attempt + 1,
+                    "retry_delay_seconds": delay,
+                },
+            )
 
     async def _publish_retry(
         self,
@@ -161,8 +211,25 @@ class RabbitMQFailureStrategy:
                     timeout=self._settings.rabbitmq_publish_timeout_seconds,
                 )
         except Exception:
+            logger.exception(
+                "history_blacklist_failure_handoff_publish_failed",
+                extra={
+                    **message_context(message),
+                    "routing_key": routing_key,
+                },
+            )
             return False
-        return isinstance(confirmation, Basic.Ack)
+        confirmed = isinstance(confirmation, Basic.Ack)
+        if not confirmed:
+            logger.error(
+                "history_blacklist_failure_handoff_not_confirmed",
+                extra={
+                    **message_context(message),
+                    "routing_key": routing_key,
+                    "confirmation_type": type(confirmation).__name__,
+                },
+            )
+        return confirmed
 
     @staticmethod
     def _copy_message(
@@ -210,15 +277,10 @@ class BlacklistMessageHandler:
     async def handle(self, message: AbstractIncomingMessage) -> None:
         try:
             envelope = self._validate_message(message)
-        except (ValueError, ValidationError, UnicodeDecodeError):
+        except ValueError, ValidationError, UnicodeDecodeError:
             logger.exception(
-                "history_blacklist_message_validation_failed delivery_id=%s "
-                "correlation_id=%s message_type=%s retry_attempt=%s",
-                message.message_id,
-                message.correlation_id,
-                message.type,
-                message.headers.get(RETRY_ATTEMPT_HEADER, 0),
-                extra=self._safe_message_context(message),
+                "history_blacklist_message_validation_failed",
+                extra=message_context(message),
             )
             await self._failure_strategy.permanent(message)
             return
@@ -235,42 +297,40 @@ class BlacklistMessageHandler:
             RetryableBlacklistProcessingError,
         ):
             logger.exception(
-                "history_blacklist_message_temporary_failure delivery_id=%s",
-                message.message_id,
-                extra=self._safe_message_context(message),
+                "history_blacklist_message_temporary_failure",
+                extra=message_context(message),
             )
             await self._failure_strategy.temporary(message)
             return
         except ApplicationError:
             logger.exception(
-                "history_blacklist_message_permanent_failure delivery_id=%s",
-                message.message_id,
-                extra=self._safe_message_context(message),
+                "history_blacklist_message_permanent_failure",
+                extra=message_context(message),
             )
             await self._failure_strategy.permanent(message)
             return
         except Exception:
             logger.exception(
-                "history_blacklist_message_unexpected_failure delivery_id=%s",
-                message.message_id,
-                extra=self._safe_message_context(message),
+                "history_blacklist_message_unexpected_failure",
+                extra=message_context(message),
             )
             await self._failure_strategy.permanent(message)
             return
         logger.info(
-            "history_blacklist_message_committed delivery_id=%s duplicate=%s",
-            message.message_id,
-            getattr(result, "created", None) is False,
+            "history_blacklist_message_committed",
             extra={
-                **self._safe_message_context(message),
+                **message_context(message),
                 "duplicate": getattr(result, "created", None) is False,
+                "snapshot_id": getattr(
+                    getattr(result, "snapshot", None), "snapshot_id", None
+                ),
             },
         )
         await message.ack()
         logger.info(
             "history_blacklist_message_acked delivery_id=%s",
             message.message_id,
-            extra=self._safe_message_context(message),
+            extra=message_context(message),
         )
 
     def _ingest(self, delivery: BlacklistSnapshotDelivery) -> object:
@@ -284,14 +344,10 @@ class BlacklistMessageHandler:
     def _validate_message(
         message: AbstractIncomingMessage,
     ) -> BlacklistSnapshotMessage:
-        if (
-            message.content_type is not None
-            and message.content_type != "application/json"
-        ):
+        if message.content_type != "application/json":
             raise ValueError("Unexpected content type.")
-        if (
-            message.content_encoding is not None
-            and message.content_encoding.lower() != "utf-8"
+        if message.content_encoding is None or (
+            message.content_encoding.lower() != "utf-8"
         ):
             raise ValueError("Unexpected content encoding.")
         if message.delivery_mode != DeliveryMode.PERSISTENT:
@@ -299,48 +355,40 @@ class BlacklistMessageHandler:
         BlacklistMessageHandler.retry_attempt(message)
 
         envelope = BlacklistSnapshotMessage.model_validate_json(message.body)
-        BlacklistMessageHandler._match_uuid(
+        BlacklistMessageHandler._require_matching_uuid(
             message.message_id, envelope.delivery_id, "message_id"
         )
-        BlacklistMessageHandler._match_uuid(
+        BlacklistMessageHandler._require_matching_uuid(
             message.correlation_id, envelope.correlation_id, "correlation_id"
         )
-        BlacklistMessageHandler._match_text(message.type, envelope.message_type, "type")
-        BlacklistMessageHandler._match_text(message.app_id, envelope.producer, "app_id")
-        if message.timestamp is not None:
-            if not isinstance(message.timestamp, datetime):
-                raise ValueError("Invalid AMQP timestamp.")
-            timestamp = message.timestamp
-            if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-                raise ValueError("AMQP timestamp must be timezone-aware.")
-            if timestamp.replace(microsecond=0) != envelope.created_at.replace(
-                microsecond=0
-            ):
-                raise ValueError("AMQP timestamp does not match the message.")
+        BlacklistMessageHandler._require_matching_text(
+            message.type, envelope.message_type, "type"
+        )
+        BlacklistMessageHandler._require_matching_text(
+            message.app_id, envelope.producer, "app_id"
+        )
+        if not isinstance(message.timestamp, datetime):
+            raise ValueError("AMQP timestamp is required.")
+        timestamp = message.timestamp
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError("AMQP timestamp must be timezone-aware.")
+        if timestamp.replace(microsecond=0) != envelope.created_at.replace(
+            microsecond=0
+        ):
+            raise ValueError("AMQP timestamp does not match the message.")
         return envelope
 
     @staticmethod
-    def _safe_message_context(
-        message: AbstractIncomingMessage,
-    ) -> dict[str, object]:
-        return {
-            "delivery_id": message.message_id,
-            "correlation_id": message.correlation_id,
-            "message_type": message.type,
-            "retry_attempt": message.headers.get(RETRY_ATTEMPT_HEADER, 0),
-        }
-
-    @staticmethod
     def retry_attempt(message: AbstractIncomingMessage) -> int:
-        value = message.headers.get(RETRY_ATTEMPT_HEADER, 0)
+        value = (message.headers or {}).get(RETRY_ATTEMPT_HEADER, 0)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError("Invalid retry attempt metadata.")
         return value
 
     @staticmethod
-    def _match_uuid(value: str | None, expected: UUID, field: str) -> None:
+    def _require_matching_uuid(value: str | None, expected: UUID, field: str) -> None:
         if value is None:
-            return
+            raise ValueError(f"AMQP {field} is required.")
         try:
             parsed = UUID(value)
         except ValueError:
@@ -349,8 +397,10 @@ class BlacklistMessageHandler:
             raise ValueError(f"AMQP {field} does not match the message.")
 
     @staticmethod
-    def _match_text(value: str | None, expected: str, field: str) -> None:
-        if value is not None and value != expected:
+    def _require_matching_text(value: str | None, expected: str, field: str) -> None:
+        if value is None:
+            raise ValueError(f"AMQP {field} is required.")
+        if value != expected:
             raise ValueError(f"AMQP {field} does not match the message.")
 
 
@@ -375,16 +425,7 @@ class HistoryBlacklistConsumer:
     async def run(self, stop_event: asyncio.Event) -> None:
         connection: AbstractRobustConnection | None = None
         logger.info(
-            "history_blacklist_consumer_starting rabbitmq_host=%s "
-            "rabbitmq_port=%s rabbitmq_virtual_host=%s rabbitmq_exchange=%s "
-            "rabbitmq_queue=%s rabbitmq_routing_key=%s prefetch_count=%s",
-            self._settings.rabbitmq_host,
-            self._settings.rabbitmq_port,
-            self._settings.rabbitmq_virtual_host,
-            self._settings.rabbitmq_exchange_name,
-            self._settings.rabbitmq_queue_name,
-            self._settings.rabbitmq_routing_key,
-            self._settings.rabbitmq_prefetch_count,
+            "history_blacklist_consumer_starting",
             extra={
                 "rabbitmq_host": self._settings.rabbitmq_host,
                 "rabbitmq_port": self._settings.rabbitmq_port,
@@ -477,16 +518,28 @@ class HistoryBlacklistConsumer:
                     dead_letter_exchange=dead_letter_exchange,
                 )
                 consumer_tag = await queue.consume(self._on_message, no_ack=False)
-                logger.info("history_blacklist_consumer_registered")
+                logger.info(
+                    "history_blacklist_consumer_registered",
+                    extra={
+                        "rabbitmq_queue": self._settings.rabbitmq_queue_name,
+                        "consumer_tag": consumer_tag,
+                    },
+                )
 
             await stop_event.wait()
-            logger.info("history_blacklist_consumer_shutdown_requested")
+            logger.info(
+                "history_blacklist_consumer_shutdown_requested",
+                extra={"rabbitmq_queue": self._settings.rabbitmq_queue_name},
+            )
             await queue.cancel(consumer_tag)
             await self._finish_inflight()
         finally:
             if connection is not None and not connection.is_closed:
                 await connection.close()
-            logger.info("history_blacklist_consumer_stopped")
+            logger.info(
+                "history_blacklist_consumer_stopped",
+                extra={"rabbitmq_queue": self._settings.rabbitmq_queue_name},
+            )
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
         task = cast(asyncio.Task[object] | None, asyncio.current_task())

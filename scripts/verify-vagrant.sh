@@ -13,7 +13,7 @@ live_worker_stopped=false
 restore_provider_worker() {
   if [[ "${live_worker_stopped}" == true && "${provider_was_active}" == true ]]; then
     timeout 30 vagrant ssh provider-vm -c \
-      "sudo systemctl start aegis-provider-blacklist-worker.service" \
+      "sudo docker start aegis-provider-worker" \
       >/dev/null 2>&1 || true
   fi
 }
@@ -100,31 +100,29 @@ unit_is_active() {
     "sudo systemctl is-active --quiet '${unit}'"
 }
 
-unit_runs_as_aegis() {
+container_is_healthy() {
   local vm="$1"
-  local unit="$2"
-  local owner
-  owner="$(timeout 30 vagrant ssh "${vm}" -c \
-    "pid=\$(sudo systemctl show --property MainPID --value '${unit}'); test \"\${pid}\" -gt 0; ps -o user= -p \"\${pid}\"" \
-    2>/dev/null | tr -d '[:space:]')"
-  [[ "${owner}" == "aegis" ]]
-}
-
-no_root_application_process() {
-  local vm="$1"
-  local entry_point="$2"
+  local container="$2"
   timeout 30 vagrant ssh "${vm}" -c \
-    "ps -eo user=,args= | awk '\$1 == \"root\" && index(\$0, \"${entry_point}\") { found=1 } END { exit found }'"
+    "test \"\$(sudo docker inspect --format '{{.State.Running}}:{{.State.Health.Status}}' '${container}')\" = true:healthy"
 }
 
-provider_outbox_is_private() {
-  timeout 30 vagrant ssh provider-vm -c \
-    "test \"\$(stat -c '%U:%G:%a' /var/lib/aegis-provider)\" = 'aegis:aegis:750' && sudo -u aegis test -r /var/lib/aegis-provider && sudo -u aegis test -w /var/lib/aegis-provider"
+container_runs_as_non_root() {
+  local vm="$1"
+  local container="$2"
+  timeout 30 vagrant ssh "${vm}" -c \
+    "test \"\$(sudo docker inspect --format '{{.Config.User}}' '${container}')\" = 10001:10001"
+}
+
+no_host_application_process() {
+  local vm="$1"
+  timeout 30 vagrant ssh "${vm}" -c \
+    "! ps -eo args= | grep -E '[u]vicorn (ui_service|history_service|provider_service)|[a]egis-(history-blacklist-consumer|provider-blacklist-worker)'"
 }
 
 history_schema_is_current() {
   timeout 30 vagrant ssh history-vm -c \
-    "sudo -u aegis bash -c 'set -a; source /etc/aegis/history.env; cd /opt/aegis/history-service; .venv/bin/alembic -c alembic.ini current --check-heads'"
+    "sudo docker exec aegis-history-api alembic -c /app/alembic.ini current --check-heads"
 }
 
 environment_excludes_mariadb() {
@@ -134,23 +132,9 @@ environment_excludes_mariadb() {
     "sudo test -r '${environment_file}' && ! sudo grep -Eq '^(MARIADB_|DATABASE_URL=)' '${environment_file}'"
 }
 
-console_scripts_resolve() {
-  timeout 30 vagrant ssh history-vm -c \
-    "test -x /opt/aegis/history-service/.venv/bin/aegis-history-blacklist-consumer" &&
-    timeout 30 vagrant ssh provider-vm -c \
-      "test -x /opt/aegis/provider-service/.venv/bin/aegis-provider-blacklist-worker" &&
-    timeout 30 vagrant ssh ui-vm -c \
-      "test -x /opt/aegis/ui-service/.venv/bin/uvicorn" &&
-    timeout 30 vagrant ssh history-vm -c \
-      "test -x /opt/aegis/history-service/.venv/bin/uvicorn" &&
-    timeout 30 vagrant ssh provider-vm -c \
-      "test -x /opt/aegis/provider-service/.venv/bin/uvicorn"
-}
-
 focused_offline_tests() {
   timeout 120 .venv/bin/pytest -q \
     services/provider-service/tests/test_blacklist_worker.py \
-    services/provider-service/tests/test_outbox.py \
     services/provider-service/tests/test_rabbitmq_publisher.py \
     services/history-service/tests/test_blacklist_consumer.py \
     services/ui-service/tests/test_theme.py
@@ -158,24 +142,25 @@ focused_offline_tests() {
 
 rabbitmq_is_ready() {
   timeout 30 vagrant ssh infra-vm -c \
-    "sudo rabbitmq-diagnostics -q ping && sudo rabbitmq-diagnostics -q check_running"
+    "sudo docker exec aegis-rabbitmq rabbitmq-diagnostics -q ping &&
+     sudo docker exec aegis-rabbitmq rabbitmq-diagnostics -q check_running"
 }
 
 rabbitmq_topology_exists() {
   timeout 30 vagrant ssh infra-vm -c \
-    "sudo rabbitmqctl -q list_exchanges -p /aegis name | grep -Fxq aegis.blacklist &&
-     sudo rabbitmqctl -q list_queues -p /aegis name | grep -Fxq aegis.history.blacklist.snapshots &&
-     sudo rabbitmqctl -q list_queues -p /aegis name | grep -Fxq aegis.history.blacklist.snapshots.retry.300 &&
-     sudo rabbitmqctl -q list_queues -p /aegis name | grep -Fxq aegis.history.blacklist.snapshots.dead"
+    "sudo docker exec aegis-rabbitmq rabbitmqctl -q list_exchanges -p /aegis name | grep -Fxq aegis.blacklist &&
+     sudo docker exec aegis-rabbitmq rabbitmqctl -q list_queues -p /aegis name | grep -Fxq aegis.history.blacklist.snapshots &&
+     sudo docker exec aegis-rabbitmq rabbitmqctl -q list_queues -p /aegis name | grep -Fxq aegis.history.blacklist.snapshots.retry.300 &&
+     sudo docker exec aegis-rabbitmq rabbitmqctl -q list_queues -p /aegis name | grep -Fxq aegis.history.blacklist.snapshots.dead"
 }
 
 rabbitmq_consumer_registered() {
   timeout 30 vagrant ssh infra-vm -c \
-    "sudo rabbitmqctl -q list_queues -p /aegis name consumers |
+    "sudo docker exec aegis-rabbitmq rabbitmqctl -q list_queues -p /aegis name consumers |
      awk '\$1 == \"aegis.history.blacklist.snapshots\" && \$2 >= 1 { found=1 } END { exit !found }'"
 }
 
-for vm in infra-vm db-vm provider-vm history-vm ui-vm; do
+for vm in infra-vm provider-vm history-vm ui-vm; do
   check "${vm} is running" vm_is_running "${vm}"
 done
 
@@ -183,7 +168,6 @@ for target in \
   "ui-vm:192.168.100.10" \
   "history-vm:192.168.100.11" \
   "provider-vm:192.168.100.12" \
-  "db-vm:192.168.100.13" \
   "infra-vm:192.168.100.14"; do
   vm="${target%%:*}"
   address="${target#*:}"
@@ -209,27 +193,25 @@ check "UI blacklist page from host" curl --fail --silent --show-error --connect-
 check "History blacklist status" guest_http_ok ui-vm \
   http://192.168.100.11:8002/api/v1/blacklist/status
 
-check "MariaDB systemd unit is active" unit_is_active db-vm mariadb.service
-check "RabbitMQ systemd unit is active" unit_is_active infra-vm rabbitmq-server.service
+check "MariaDB container is healthy" container_is_healthy infra-vm aegis-mariadb
+check "RabbitMQ container is healthy" container_is_healthy infra-vm aegis-rabbitmq
 check "RabbitMQ diagnostics report ready" rabbitmq_is_ready
-check "RabbitMQ management UI is reachable through host loopback" \
+check "RabbitMQ management UI is reachable on the private network" \
   curl --fail --silent --show-error --connect-timeout 3 --max-time 10 \
-  http://127.0.0.1:15672/
-check "Redis systemd unit is active" unit_is_active infra-vm redis-server.service
-check "Redis responds to local PING" timeout 30 vagrant ssh infra-vm -c \
-  "redis-cli -h 127.0.0.1 ping | grep -Fxq PONG"
-check "Provider systemd unit is active" unit_is_active provider-vm \
-  aegis-provider-api.service
-check "Provider blacklist worker is active" unit_is_active provider-vm \
-  aegis-provider-blacklist-worker.service
-check "History systemd unit is active" unit_is_active history-vm \
-  aegis-history-api.service
-check "History blacklist consumer is active" unit_is_active history-vm \
-  aegis-history-blacklist-consumer.service
+  http://192.168.100.14:15672/
+check "Redis container is healthy" container_is_healthy infra-vm aegis-redis
+check "Provider API container is healthy" container_is_healthy provider-vm \
+  aegis-provider-api
+check "Provider Worker container is healthy" container_is_healthy provider-vm \
+  aegis-provider-worker
+check "History API container is healthy" container_is_healthy history-vm \
+  aegis-history-api
+check "History Consumer container is healthy" container_is_healthy history-vm \
+  aegis-history-consumer
 check "RabbitMQ main, retry, and DLQ topology exists" rabbitmq_topology_exists
 check "History consumer is registered on the main queue" \
   rabbitmq_consumer_registered
-check "UI systemd unit is active" unit_is_active ui-vm aegis-ui.service
+check "UI container is healthy" container_is_healthy ui-vm aegis-ui
 check "UI theme persists and Redis failure falls back safely" \
   scripts/verify-redis-theme-vagrant.sh
 
@@ -246,36 +228,35 @@ check "Provider environment has no MariaDB dependency" \
 check "UI environment has no MariaDB dependency" \
   environment_excludes_mariadb ui-vm /etc/aegis/ui.env
 
-check "Provider process runs as aegis" unit_runs_as_aegis provider-vm \
-  aegis-provider-api.service
-check "Provider blacklist worker runs as aegis" unit_runs_as_aegis provider-vm \
-  aegis-provider-blacklist-worker.service
-check "Provider outbox directory is private and writable" \
-  provider_outbox_is_private
-check "Application console scripts resolve in service virtual environments" \
-  console_scripts_resolve
-check "History process runs as aegis" unit_runs_as_aegis history-vm \
-  aegis-history-api.service
-check "History blacklist consumer runs as aegis" unit_runs_as_aegis history-vm \
-  aegis-history-blacklist-consumer.service
-check "UI process runs as aegis" unit_runs_as_aegis ui-vm aegis-ui.service
-check "No Provider application process runs as root" \
-  no_root_application_process provider-vm provider_service.main:app
-check "No History application process runs as root" \
-  no_root_application_process history-vm history_service.main:app
-check "No UI application process runs as root" \
-  no_root_application_process ui-vm ui_service.main:app
+for target in \
+  "provider-vm:aegis-provider-api" \
+  "provider-vm:aegis-provider-worker" \
+  "history-vm:aegis-history-api" \
+  "history-vm:aegis-history-consumer" \
+  "ui-vm:aegis-ui"; do
+  vm="${target%%:*}"
+  container="${target#*:}"
+  check "${container} runs as a non-root image user" \
+    container_runs_as_non_root "${vm}" "${container}"
+done
+check "No Provider application process runs on the VM host" \
+  no_host_application_process provider-vm
+check "No History application process runs on the VM host" \
+  no_host_application_process history-vm
+check "No UI application process runs on the VM host" \
+  no_host_application_process ui-vm
 
 check "Focused offline unit and contract tests" focused_offline_tests
 
 if [[ "${live_abuseipdb}" == true ]]; then
   live_result=""
   delivery_id=""
-  if unit_is_active provider-vm aegis-provider-blacklist-worker.service; then
+  if timeout 30 vagrant ssh provider-vm -c \
+    "test \"\$(sudo docker inspect --format '{{.State.Running}}' aegis-provider-worker)\" = true"; then
     provider_was_active=true
   fi
   if timeout 30 vagrant ssh provider-vm -c \
-    "sudo systemctl stop aegis-provider-blacklist-worker.service" >/dev/null 2>&1; then
+    "sudo docker stop aegis-provider-worker" >/dev/null 2>&1; then
     live_worker_stopped=true
   else
     fail "Could not stop Provider worker for single-request live mode"
@@ -283,12 +264,12 @@ if [[ "${live_abuseipdb}" == true ]]; then
 
   if [[ "${live_worker_stopped}" == true ]]; then
     live_result="$(timeout 180 vagrant ssh provider-vm -c \
-      "sudo -u aegis bash -c 'set -a; source /etc/aegis/provider.env; cd /opt/aegis/provider-service; exec .venv/bin/python /vagrant/scripts/live-blacklist-smoke.py'" \
+      "sudo docker compose -f /vagrant/deploy/provider-vm/compose.yaml run --rm --no-deps --volume /vagrant/scripts:/smoke:ro provider-api python /smoke/live-blacklist-smoke.py" \
       2>/dev/null | tr -d '\r' | tail -n 1)" || true
   fi
   if [[ "${provider_was_active}" == true ]]; then
     timeout 30 vagrant ssh provider-vm -c \
-      "sudo systemctl start aegis-provider-blacklist-worker.service" >/dev/null 2>&1 || \
+      "sudo docker start aegis-provider-worker" >/dev/null 2>&1 || \
       fail "Could not restart Provider worker after live mode"
     live_worker_stopped=false
   fi
@@ -298,7 +279,7 @@ if [[ "${live_abuseipdb}" == true ]]; then
     remaining="$(jq -r '.rate_limit_remaining // \"unavailable\"' <<<"${live_result}")"
     printf 'INFO  AbuseIPDB remaining rate limit: %s\n' "${remaining}"
   else
-    fail "Live blacklist request/outbox/publisher-confirm step failed"
+    fail "Live blacklist request/direct publisher-confirm step failed"
   fi
 
   if [[ -n "${delivery_id}" ]]; then
@@ -306,12 +287,12 @@ if [[ "${live_abuseipdb}" == true ]]; then
     acked=false
     for _attempt in {1..30}; do
       if timeout 30 vagrant ssh history-vm -c \
-        "sudo -u aegis bash -c 'set -a; source /etc/aegis/history.env; cd /opt/aegis/history-service; exec .venv/bin/python /vagrant/scripts/check-history-delivery.py \"${delivery_id}\"'" \
+        "sudo docker compose -f /vagrant/deploy/history-vm/compose.yaml run --rm --no-deps --volume /vagrant/scripts:/smoke:ro history-api python /smoke/check-history-delivery.py \"${delivery_id}\"" \
         >/dev/null 2>&1; then
         persisted=true
       fi
       if timeout 30 vagrant ssh history-vm -c \
-        "sudo journalctl -u aegis-history-blacklist-consumer.service --since '-5 minutes' --no-pager | grep -F 'history_blacklist_message_acked delivery_id=${delivery_id}'" \
+        "sudo docker logs aegis-history-consumer --since 5m 2>&1 | grep -F 'history_blacklist_message_acked delivery_id=${delivery_id}'" \
         >/dev/null 2>&1; then
         acked=true
       fi

@@ -1,0 +1,68 @@
+name: aegis-history-vm
+
+x-history-common: &history-common
+  build:
+    context: ../../services/history-service
+    dockerfile: Dockerfile
+  image: ${AEGIS_HISTORY_IMAGE:-aegis/history-service:local}
+  env_file:
+    - ${AEGIS_HISTORY_ENV_FILE:-/etc/aegis/history.env}
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=32m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  stop_grace_period: 45s
+
+services:
+  history-api:
+    <<: *history-common
+    container_name: aegis-history-api
+    command:
+      - uvicorn
+      - history_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+    ports:
+      - "192.168.100.11:8002:8002"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8002/health/live', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  history-consumer:
+    <<: *history-common
+    container_name: aegis-history-consumer
+    command:
+      - aegis-history-blacklist-consumer
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, pathlib;
+          current = os.getpid();
+          needle = b'aegis-history-blacklist-consumer';
+          assert any(needle in path.read_bytes()
+          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
+          if path.parts[-2] != str(current))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

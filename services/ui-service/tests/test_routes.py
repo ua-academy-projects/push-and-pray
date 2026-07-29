@@ -197,7 +197,7 @@ async def test_blacklist_page_displays_ready_snapshot_with_ipv4_and_ipv6(
         "request_id": request_id,
     }
     assert application_client.blacklist_turnover_request is not None
-    assert application_client.blacklist_turnover_request["interval"] == "day"
+    assert application_client.blacklist_turnover_request["interval"] == "auto"
 
 
 @pytest.mark.anyio
@@ -382,12 +382,16 @@ async def test_blacklist_dashboard_is_server_rendered_and_accessible(
         '<h3 id="address-change-chart-heading">Added and removed IP addresses</h3>'
         in response.text
     )
-    assert 'aria-label="Turnover chart range"' in response.text
-    assert 'aria-current="page">30 days</a>' in response.text
+    assert '<label for="turnover-period">Period</label>' in response.text
+    assert '<option value="30" selected>30 days</option>' in response.text
+    assert '<option value="all">All available data</option>' in response.text
     assert "Blacklist turnover data for the selected 30-day range" in response.text
+    assert "1 day bucket" in response.text
+    assert "22 Jul 2026 00:00 UTC" in response.text
     assert "50.0%" in response.text
     assert 'data-turnover-chart="line"' in response.text
     assert 'data-turnover-chart="bars"' in response.text
+    assert 'data-granularity="day"' in response.text
     assert "Retained entries" in response.text
     assert "Confidence threshold" in response.text
     assert "Unknown" in response.text
@@ -438,11 +442,27 @@ async def test_turnover_range_controls_request_supported_bounded_range(
     response = await client.get("/blacklist?range_days=90")
 
     assert response.status_code == 200
-    assert 'aria-current="page">90 days</a>' in response.text
+    assert '<option value="90" selected>90 days</option>' in response.text
     request = application_client.blacklist_turnover_request
     assert request is not None
-    assert request["interval"] == "day"
+    assert request["interval"] == "auto"
     assert (request["to"] - request["from"]).days == 90
+
+
+@pytest.mark.anyio
+async def test_turnover_all_data_control_requests_automatic_history(
+    client: AsyncClient, application_client: FakeApplicationClient
+) -> None:
+    response = await client.get("/blacklist?range_days=all")
+
+    assert response.status_code == 200
+    assert '<option value="all" selected>All available data</option>' in response.text
+    request = application_client.blacklist_turnover_request
+    assert request is not None
+    assert request["from"] is None
+    assert request["to"] is None
+    assert request["period"] == "all"
+    assert request["interval"] == "auto"
 
 
 @pytest.mark.anyio
@@ -450,6 +470,29 @@ async def test_invalid_turnover_range_is_rejected(client: AsyncClient) -> None:
     response = await client.get("/blacklist?range_days=14")
 
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_turnover_empty_history_has_useful_state_without_empty_svg(
+    client: AsyncClient, application_client: FakeApplicationClient
+) -> None:
+    application_client.blacklist_turnover_result = (
+        application_client.blacklist_turnover_result.model_copy(
+            update={
+                "effective_start": None,
+                "effective_end": None,
+                "bucket_count": 0,
+                "points": [],
+            }
+        )
+    )
+
+    response = await client.get("/blacklist?range_days=all")
+
+    assert response.status_code == 200
+    assert "No blacklist history is available" in response.text
+    assert "after History stores accepted blacklist snapshots" in response.text
+    assert 'data-turnover-chart="line"' not in response.text
 
 
 @pytest.mark.anyio
@@ -502,3 +545,6 @@ async def test_blacklist_dashboard_css_is_local_and_responsive(
     assert ".chart-grid" in stylesheet.text
     assert ".turnover-chart-grid" in stylesheet.text
     assert ".turnover-line" in stylesheet.text
+    assert ".chart-tick-label" in stylesheet.text
+    assert ".chart-hit-target" in stylesheet.text
+    assert "var(--panel-raised)" in stylesheet.text

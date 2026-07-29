@@ -146,6 +146,9 @@ class FakeApplicationClient:
                 "from": datetime(2026, 6, 23, tzinfo=UTC),
                 "to": datetime(2026, 7, 23, tzinfo=UTC),
                 "interval": "day",
+                "requested_period": "custom",
+                "effective_start": datetime(2026, 7, 22, tzinfo=UTC),
+                "effective_end": datetime(2026, 7, 22, 12, tzinfo=UTC),
                 "points": [
                     BlacklistTurnoverPoint(
                         period_start=datetime(2026, 7, 22, tzinfo=UTC),
@@ -223,14 +226,16 @@ class FakeApplicationClient:
     async def blacklist_turnover(
         self,
         *,
-        from_: datetime,
-        to: datetime,
-        interval: str,
+        from_: datetime | None = None,
+        to: datetime | None = None,
+        period: str | None = None,
+        interval: str = "auto",
         request_id: str,
     ) -> BlacklistTurnover:
         self.blacklist_turnover_request = {
             "from": from_,
             "to": to,
+            "period": period,
             "interval": interval,
             "request_id": request_id,
         }

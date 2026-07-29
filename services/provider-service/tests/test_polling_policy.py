@@ -23,7 +23,5 @@ def test_rate_limit_uses_all_valid_not_before_constraints() -> None:
 
 def test_poll_and_publish_failures_use_independent_progressions() -> None:
     assert policy().after_poll_failure(NOW, attempt=2) == NOW + timedelta(minutes=15)
-    assert policy().after_publish_failure(NOW, attempt=2) == NOW + timedelta(seconds=60)
-    assert policy().after_publish_failure(NOW, attempt=20) == NOW + timedelta(
-        seconds=900
-    )
+    assert policy().publish_delay_for_attempt(2) == 60
+    assert policy().publish_delay_for_attempt(20) == 900

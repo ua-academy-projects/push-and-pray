@@ -8,6 +8,15 @@ PROVIDER_SECRET_FILE = File.expand_path(
 DATABASE_SECRET_FILE = File.expand_path(
   ENV.fetch("AEGIS_DATABASE_SECRET_FILE", "~/.config/aegis/mariadb-password"),
 )
+DATABASE_ROOT_SECRET_FILE = File.expand_path(
+  ENV.fetch(
+    "AEGIS_DATABASE_ROOT_SECRET_FILE",
+    "~/.config/aegis/mariadb-root-password",
+  ),
+)
+REDIS_SECRET_FILE = File.expand_path(
+  ENV.fetch("AEGIS_REDIS_SECRET_FILE", "~/.config/aegis/redis-ui-password"),
+)
 RABBITMQ_PROVIDER_SECRET_FILE = File.expand_path(
   ENV.fetch(
     "AEGIS_RABBITMQ_PROVIDER_SECRET_FILE",
@@ -34,13 +43,6 @@ VMS = {
     memory: 2048,
     infrastructure: true,
     firewall_role: "infra",
-  },
-  "db-vm" => {
-    ip: "192.168.100.13",
-    cpus: 1,
-    memory: 1024,
-    database: true,
-    firewall_role: "db",
   },
   "provider-vm" => {
     ip: "192.168.100.12",
@@ -73,26 +75,30 @@ VMS = {
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.box = UBUNTU_BOX
+  # VirtualBox shared folders work from native Windows paths and expose the
+  # checkout at the same guest path used by every Compose build context.
+  config.vm.synced_folder ".",
+    "/vagrant",
+    type: "virtualbox",
+    mount_options: ["dmode=775", "fmode=664"]
+  config.vm.post_up_message = <<~MESSAGE
+    AEGIS is running on four VirtualBox VMs.
+    UI: http://192.168.100.10:8000
+    RabbitMQ management: http://192.168.100.14:15672
+    Use 'vagrant status' and 'vagrant ssh <vm>' from PowerShell for diagnostics.
+  MESSAGE
 
   VMS.each do |name, settings|
     config.vm.define name do |machine|
       machine.vm.hostname = name
       machine.vm.network "private_network", ip: settings.fetch(:ip)
 
-      if settings[:infrastructure]
-        # Management is host-loopback only; AMQP remains on the private network.
-        machine.vm.network "forwarded_port",
-          guest: 15_672,
-          host: 15_672,
-          host_ip: "127.0.0.1",
-          auto_correct: false
-      end
-
       # VirtualBox-specific resource settings are intentionally kept together.
       machine.vm.provider "virtualbox" do |virtualbox|
         virtualbox.name = "aegis-#{name}"
         virtualbox.cpus = settings.fetch(:cpus)
         virtualbox.memory = settings.fetch(:memory)
+        virtualbox.gui = false
       end
 
       machine.vm.provision "shell", privileged: false, inline: <<~SHELL
@@ -101,7 +107,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       SHELL
 
       # Common OS tooling and directories must exist before a service-specific
-      # virtual environment is installed or any systemd unit is started.
+      # application image is built or any application container is started.
       machine.vm.provision "shell", path: "provision/base-vm.sh"
 
       if settings.key?(:service)
@@ -132,9 +138,12 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       if settings[:infrastructure]
         {
+          DATABASE_SECRET_FILE => "/tmp/aegis-mariadb-password",
+          DATABASE_ROOT_SECRET_FILE => "/tmp/aegis-mariadb-root-password",
           RABBITMQ_PROVIDER_SECRET_FILE => "/tmp/aegis-rabbitmq-provider-password",
           RABBITMQ_HISTORY_SECRET_FILE => "/tmp/aegis-rabbitmq-history-password",
           RABBITMQ_ADMIN_SECRET_FILE => "/tmp/aegis-rabbitmq-admin-password",
+          REDIS_SECRET_FILE => "/tmp/aegis-redis-password",
         }.each do |source, destination|
           machine.vm.provision "file", source: source, destination: destination
         end
@@ -142,18 +151,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       end
 
       if settings[:deploy_ui]
-        machine.vm.provision "shell", path: "provision/ui-vm.sh"
-        machine.trigger.after [:up, :provision] do |trigger|
-          trigger.name = "Verify Aegis UI from the host"
-          trigger.run = { inline: "bash provision/verify-ui-host.sh" }
-        end
-      end
-
-      if settings[:database]
         machine.vm.provision "file",
-          source: DATABASE_SECRET_FILE,
-          destination: "/tmp/aegis-mariadb-password"
-        machine.vm.provision "shell", path: "provision/db-vm.sh"
+          source: REDIS_SECRET_FILE,
+          destination: "/tmp/aegis-redis-password"
+        machine.vm.provision "shell", path: "provision/ui-vm.sh"
       end
 
       machine.vm.provision "shell",

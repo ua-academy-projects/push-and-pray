@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import Mock
 
+import history_service.blacklist_consumer as consumer_module
 import pytest
 from aio_pika import DeliveryMode, ExchangeType
 from aio_pika.abc import (
@@ -64,6 +65,7 @@ class FakeMessage:
         self.type = "blacklist.snapshot.complete"
         self.app_id = "aegis-provider-service"
         self.timestamp = NOW
+        self.redelivered = False
         self.headers: dict[str, Any] = {}
         self.ack_calls = 0
         self.reject_calls: list[bool] = []
@@ -207,7 +209,14 @@ async def test_invalid_json_or_contract_is_rejected(payload: bytes) -> None:
         ("timestamp", datetime(2026, 7, 23, 9, 1, tzinfo=UTC)),
         ("delivery_mode", DeliveryMode.NOT_PERSISTENT),
         ("content_type", "text/plain"),
+        ("content_type", None),
         ("content_encoding", "utf-16"),
+        ("content_encoding", None),
+        ("message_id", None),
+        ("correlation_id", None),
+        ("type", None),
+        ("app_id", None),
+        ("timestamp", None),
     ],
 )
 async def test_amqp_body_metadata_mismatch_is_rejected(
@@ -380,7 +389,38 @@ async def test_failed_retry_or_dead_letter_publish_does_not_ack_original() -> No
 
 
 @pytest.mark.anyio
-async def test_duplicate_delivery_after_retry_persists_once() -> None:
+async def test_failed_retry_handoff_logs_structured_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    strategy, _, _ = retry_strategy(retry_outcome=Basic.Nack(delivery_tag=1))
+    message = FakeMessage(redelivered=True)
+    failure_log = Mock()
+    monkeypatch.setattr(consumer_module.logger, "error", failure_log)
+
+    await strategy.temporary(cast(AbstractIncomingMessage, message))
+
+    target = next(
+        call
+        for call in failure_log.call_args_list
+        if call.args[0] == "history_blacklist_retry_handoff_failed"
+    )
+    (event,) = target.args
+    context = target.kwargs["extra"]
+    assert event == "history_blacklist_retry_handoff_failed"
+    assert context["delivery_id"] == DELIVERY_ID
+    assert context["correlation_id"] == CORRELATION_ID
+    assert context["message_type"] == "blacklist.snapshot.complete"
+    assert context["retry_attempt"] == 0
+    assert context["redelivered"] is True
+    assert context["next_retry_attempt"] == 1
+    assert context["retry_delay_seconds"] == 300
+    assert message.ack_calls == 0
+
+
+@pytest.mark.anyio
+async def test_duplicate_delivery_after_retry_persists_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     persisted: set[str] = set()
     service = Mock()
 
@@ -392,6 +432,8 @@ async def test_duplicate_delivery_after_retry_persists_once() -> None:
     service.ingest.side_effect = ingest
     first = FakeMessage()
     retried = FakeMessage(headers={RETRY_ATTEMPT_HEADER: 1})
+    info_log = Mock()
+    monkeypatch.setattr(consumer_module.logger, "info", info_log)
 
     await handler(service, FakeSession()).handle(cast(AbstractIncomingMessage, first))
     await handler(service, FakeSession()).handle(cast(AbstractIncomingMessage, retried))
@@ -400,6 +442,13 @@ async def test_duplicate_delivery_after_retry_persists_once() -> None:
     assert service.ingest.call_count == 2
     assert first.ack_calls == 1
     assert retried.ack_calls == 1
+    committed = [
+        call
+        for call in info_log.call_args_list
+        if call.args[0] == "history_blacklist_message_committed"
+    ]
+    assert [call.kwargs["extra"]["duplicate"] for call in committed] == [False, True]
+    assert all(call.kwargs["extra"]["delivery_id"] == DELIVERY_ID for call in committed)
 
 
 def settings(**overrides: Any) -> Settings:
@@ -478,8 +527,10 @@ class FakeConnection:
 class FakeConnector:
     def __init__(self, connection: FakeConnection) -> None:
         self.connection = connection
+        self.calls: list[dict[str, Any]] = []
 
     async def __call__(self, **kwargs):
+        self.calls.append(kwargs)
         return cast(AbstractRobustConnection, self.connection)
 
 
@@ -489,16 +540,27 @@ async def test_consumer_declares_topology_prefetch_and_manual_ack() -> None:
     channel = FakeChannel(queue)
     connection = FakeConnection(channel)
     service = Mock()
+    connector = FakeConnector(connection)
     consumer = HistoryBlacklistConsumer(
         settings(),
         handler(service, FakeSession()),
-        connector=FakeConnector(connection),
+        connector=connector,
     )
     stop_event = asyncio.Event()
     stop_event.set()
 
     await consumer.run(stop_event)
 
+    assert connector.calls == [
+        {
+            "host": "127.0.0.1",
+            "port": 5672,
+            "login": "guest",
+            "password": "guest",
+            "virtualhost": "/",
+            "timeout": 10.0,
+        }
+    ]
     assert connection.channel_calls == [
         {"publisher_confirms": True, "on_return_raises": True}
     ]

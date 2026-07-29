@@ -1,0 +1,377 @@
+name: aegis-local
+
+x-application-runtime: &application-runtime
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=32m
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - aegis-private
+
+x-history-environment: &history-environment
+  MARIADB_HOST: mariadb
+  MARIADB_PORT: ${MARIADB_PORT:-3306}
+  MARIADB_DATABASE: ${MARIADB_DATABASE}
+  MARIADB_USER: ${MARIADB_USER}
+  MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+  PROVIDER_SERVICE_URL: http://provider-api:8001
+  PROVIDER_CONNECT_TIMEOUT_SECONDS: ${PROVIDER_CONNECT_TIMEOUT_SECONDS:-5}
+  PROVIDER_READ_TIMEOUT_SECONDS: ${PROVIDER_READ_TIMEOUT_SECONDS:-10}
+  PROVIDER_WRITE_TIMEOUT_SECONDS: ${PROVIDER_WRITE_TIMEOUT_SECONDS:-5}
+  PROVIDER_POOL_TIMEOUT_SECONDS: ${PROVIDER_POOL_TIMEOUT_SECONDS:-5}
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+  RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VIRTUAL_HOST}
+  RABBITMQ_USERNAME: ${HISTORY_RABBITMQ_USERNAME}
+  RABBITMQ_PASSWORD: ${HISTORY_RABBITMQ_PASSWORD}
+  RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME}
+  RABBITMQ_QUEUE_NAME: ${RABBITMQ_QUEUE_NAME}
+  RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY}
+  RABBITMQ_RETRY_EXCHANGE_NAME: ${RABBITMQ_RETRY_EXCHANGE_NAME}
+  RABBITMQ_DEAD_LETTER_EXCHANGE_NAME: ${RABBITMQ_DEAD_LETTER_EXCHANGE_NAME}
+  RABBITMQ_DEAD_LETTER_QUEUE_NAME: ${RABBITMQ_DEAD_LETTER_QUEUE_NAME}
+  RABBITMQ_PREFETCH_COUNT: ${RABBITMQ_PREFETCH_COUNT:-1}
+  RABBITMQ_CONNECTION_TIMEOUT_SECONDS: ${RABBITMQ_CONNECTION_TIMEOUT_SECONDS:-10}
+  RABBITMQ_PUBLISH_TIMEOUT_SECONDS: ${RABBITMQ_PUBLISH_TIMEOUT_SECONDS:-10}
+  RABBITMQ_SHUTDOWN_TIMEOUT_SECONDS: ${RABBITMQ_SHUTDOWN_TIMEOUT_SECONDS:-30}
+  BLACKLIST_STALE_AFTER_SECONDS: ${BLACKLIST_STALE_AFTER_SECONDS:-43200}
+
+x-provider-environment: &provider-environment
+  ABUSEIPDB_BASE_URL: ${ABUSEIPDB_BASE_URL}
+  ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY}
+  ABUSEIPDB_CONNECT_TIMEOUT_SECONDS: ${ABUSEIPDB_CONNECT_TIMEOUT_SECONDS:-5}
+  ABUSEIPDB_READ_TIMEOUT_SECONDS: ${ABUSEIPDB_READ_TIMEOUT_SECONDS:-10}
+  ABUSEIPDB_WRITE_TIMEOUT_SECONDS: ${ABUSEIPDB_WRITE_TIMEOUT_SECONDS:-5}
+  ABUSEIPDB_POOL_TIMEOUT_SECONDS: ${ABUSEIPDB_POOL_TIMEOUT_SECONDS:-5}
+  ABUSEIPDB_OPERATION_TIMEOUT_SECONDS: ${ABUSEIPDB_OPERATION_TIMEOUT_SECONDS:-20}
+  BLACKLIST_POLLING_ENABLED: ${BLACKLIST_POLLING_ENABLED:-true}
+  BLACKLIST_POLL_INTERVAL_SECONDS: ${BLACKLIST_POLL_INTERVAL_SECONDS:-21600}
+  BLACKLIST_CONFIDENCE_MINIMUM: ${BLACKLIST_CONFIDENCE_MINIMUM:-90}
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+  RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VIRTUAL_HOST}
+  RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+  RABBITMQ_EXCHANGE_NAME: ${RABBITMQ_EXCHANGE_NAME}
+  RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY}
+  RABBITMQ_CONNECTION_TIMEOUT_SECONDS: ${RABBITMQ_CONNECTION_TIMEOUT_SECONDS:-10}
+  RABBITMQ_PUBLISH_TIMEOUT_SECONDS: ${RABBITMQ_PUBLISH_TIMEOUT_SECONDS:-10}
+  RABBITMQ_PUBLISH_RETRY_INITIAL_SECONDS: ${RABBITMQ_PUBLISH_RETRY_INITIAL_SECONDS:-30}
+  RABBITMQ_PUBLISH_RETRY_MAXIMUM_SECONDS: ${RABBITMQ_PUBLISH_RETRY_MAXIMUM_SECONDS:-900}
+  RABBITMQ_PUBLISH_MAX_ATTEMPTS: ${RABBITMQ_PUBLISH_MAX_ATTEMPTS:-5}
+
+services:
+  mariadb:
+    image: mariadb:11.8
+    container_name: aegis-mariadb
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_USER_HOST: ${MARIADB_USER_HOST:-%}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-name-resolve
+    volumes:
+      - mariadb-data:/var/lib/mysql
+      - ../infra-vm/mariadb-init.sh:/docker-entrypoint-initdb.d/10-aegis-history-user.sh:ro
+    restart: unless-stopped
+    networks:
+      - aegis-private
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mariadb-admin ping --silent --host=127.0.0.1
+          --user="$${MARIADB_USER}" --password="$${MARIADB_PASSWORD}"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: aegis-rabbitmq
+    hostname: aegis-rabbitmq
+    ports:
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq-definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ../infra-vm/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    restart: unless-stopped
+    networks:
+      - aegis-private
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - -q
+        - ping
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-bookworm
+    container_name: aegis-redis
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis-data:/data
+      - ../infra-vm/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./redis-users.acl:/usr/local/etc/redis/users.acl:ro
+    restart: unless-stopped
+    networks:
+      - aegis-private
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - --no-auth-warning
+        - --user
+        - aegis_ui
+        - --pass
+        - local-ui-redis-password
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  history-migrate:
+    build:
+      context: ../../services/history-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_HISTORY_IMAGE:-aegis/history-service:local}
+    container_name: aegis-history-migrate
+    command:
+      - alembic
+      - -c
+      - /app/alembic.ini
+      - upgrade
+      - head
+    environment:
+      <<: *history-environment
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    init: true
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aegis-private
+
+  provider-api:
+    <<: *application-runtime
+    build:
+      context: ../../services/provider-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_PROVIDER_IMAGE:-aegis/provider-service:local}
+    container_name: aegis-provider-api
+    command:
+      - uvicorn
+      - provider_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    environment:
+      <<: *provider-environment
+      BLACKLIST_POLLING_ENABLED: "false"
+    ports:
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8001/health/live', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  provider-worker:
+    <<: *application-runtime
+    build:
+      context: ../../services/provider-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_PROVIDER_IMAGE:-aegis/provider-service:local}
+    container_name: aegis-provider-worker
+    command:
+      - aegis-provider-blacklist-worker
+    environment:
+      <<: *provider-environment
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, pathlib;
+          current = os.getpid();
+          needle = b'aegis-provider-blacklist-worker';
+          assert any(needle in path.read_bytes()
+          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
+          if path.parts[-2] != str(current))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  history-api:
+    <<: *application-runtime
+    build:
+      context: ../../services/history-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_HISTORY_IMAGE:-aegis/history-service:local}
+    container_name: aegis-history-api
+    command:
+      - uvicorn
+      - history_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+    environment:
+      <<: *history-environment
+    ports:
+      - "127.0.0.1:8002:8002"
+    depends_on:
+      history-migrate:
+        condition: service_completed_successfully
+      provider-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8002/health/live', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  history-consumer:
+    <<: *application-runtime
+    build:
+      context: ../../services/history-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_HISTORY_IMAGE:-aegis/history-service:local}
+    container_name: aegis-history-consumer
+    command:
+      - aegis-history-blacklist-consumer
+    environment:
+      <<: *history-environment
+    depends_on:
+      history-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, pathlib;
+          current = os.getpid();
+          needle = b'aegis-history-blacklist-consumer';
+          assert any(needle in path.read_bytes()
+          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
+          if path.parts[-2] != str(current))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  ui:
+    <<: *application-runtime
+    build:
+      context: ../../services/ui-service
+      dockerfile: Dockerfile
+    image: ${AEGIS_UI_IMAGE:-aegis/ui-service:local}
+    container_name: aegis-ui
+    command:
+      - uvicorn
+      - ui_service.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      HISTORY_SERVICE_URL: http://history-api:8002
+      HISTORY_CONNECT_TIMEOUT_SECONDS: ${HISTORY_CONNECT_TIMEOUT_SECONDS:-3}
+      HISTORY_READ_TIMEOUT_SECONDS: ${HISTORY_READ_TIMEOUT_SECONDS:-5}
+      HISTORY_WRITE_TIMEOUT_SECONDS: ${HISTORY_WRITE_TIMEOUT_SECONDS:-5}
+      HISTORY_POOL_TIMEOUT_SECONDS: ${HISTORY_POOL_TIMEOUT_SECONDS:-3}
+      HISTORY_OPERATION_TIMEOUT_SECONDS: ${HISTORY_OPERATION_TIMEOUT_SECONDS:-10}
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_USERNAME: ${REDIS_USERNAME}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_CONNECTION_TIMEOUT_SECONDS: ${REDIS_CONNECTION_TIMEOUT_SECONDS:-3}
+      REDIS_THEME_PREFIX: ${REDIS_THEME_PREFIX:-theme}
+      REDIS_THEME_TTL_SECONDS: ${REDIS_THEME_TTL_SECONDS:-2592000}
+      UI_SESSION_COOKIE_NAME: ${UI_SESSION_COOKIE_NAME:-theme_session}
+      UI_SESSION_COOKIE_SECURE: ${UI_SESSION_COOKIE_SECURE:-false}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      history-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8000/health/live', timeout=2).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  aegis-private:
+    name: aegis-local-private
+    driver: bridge
+
+volumes:
+  mariadb-data:
+    name: aegis-local-mariadb-data
+  rabbitmq-data:
+    name: aegis-local-rabbitmq-data
+  redis-data:
+    name: aegis-local-redis-data

@@ -1,0 +1,12 @@
+* text=auto
+
+# Guest-executed and container-mounted files must retain Unix line endings
+# even when the repository is checked out with Git for Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+Vagrantfile text eol=lf
+*.conf text eol=lf
+*.yaml text eol=lf
+
+# Keep native Windows helpers conventional for Windows PowerShell 5.1.
+*.ps1 text eol=crlf

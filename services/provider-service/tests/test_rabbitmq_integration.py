@@ -6,8 +6,7 @@ TEST_RABBITMQ_VHOST are optional. Every test uses UUID-scoped topology.
 """
 
 import os
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import aio_pika
@@ -15,7 +14,6 @@ import pytest
 from aio_pika import ExchangeType
 from provider_service.blacklist_worker import BlacklistPollingWorker
 from provider_service.config import Settings
-from provider_service.outbox import BlacklistOutbox
 from provider_service.polling_policy import PollingPolicy
 from provider_service.rabbitmq_publisher import (
     AioPikaBlacklistPublisher,
@@ -63,13 +61,13 @@ def names() -> tuple[str, str, str]:
     )
 
 
-def settings(exchange: str, routing_key: str, *, port: int | None = None) -> Settings:
+def settings(exchange: str, routing_key: str) -> Settings:
     config = broker_config()
     return Settings(
         _env_file=None,
         abuseipdb_api_key="integration-test",
         rabbitmq_host=str(config["host"]),
-        rabbitmq_port=port or int(config["port"]),
+        rabbitmq_port=int(config["port"]),
         rabbitmq_virtual_host=str(config["virtualhost"]),
         rabbitmq_username=str(config["login"]),
         rabbitmq_password=str(config["password"]),
@@ -171,31 +169,9 @@ class Clock:
         return self.now
 
 
-async def test_outbox_retains_during_outage_and_publishes_after_recovery(
-    tmp_path: Path,
-) -> None:
+async def test_worker_publishes_fetched_snapshot_directly() -> None:
     exchange_name, queue_name, routing_key = names()
     clock = Clock()
-    outbox_path = tmp_path / "outbox.sqlite3"
-    unavailable = AioPikaBlacklistPublisher(
-        settings(exchange_name, routing_key, port=1)
-    )
-    outbox = BlacklistOutbox(outbox_path)
-    failed_worker = BlacklistPollingWorker(
-        provider=Provider(),
-        publisher=unavailable,
-        outbox=outbox,
-        policy=PollingPolicy(
-            interval_seconds=21600,
-            publish_initial_seconds=1,
-            publish_maximum_seconds=2,
-        ),
-        clock=clock,
-    )
-    await failed_worker.tick()
-    assert outbox.pending_count() == 1
-    outbox.close()
-
     connection = await aio_pika.connect_robust(**broker_config())
     channel = await connection.channel()
     exchange = await channel.declare_exchange(
@@ -205,24 +181,20 @@ async def test_outbox_retains_during_outage_and_publishes_after_recovery(
     await queue.bind(exchange, routing_key)
     await connection.close()
 
-    clock.now += timedelta(seconds=1)
     publisher = AioPikaBlacklistPublisher(settings(exchange_name, routing_key))
-    await publisher.connect()
-    recovered = BlacklistOutbox(outbox_path)
-    restarted = BlacklistPollingWorker(
+    worker = BlacklistPollingWorker(
         provider=Provider(),
         publisher=publisher,
-        outbox=recovered,
         policy=PollingPolicy(
             interval_seconds=21600,
             publish_initial_seconds=1,
             publish_maximum_seconds=2,
         ),
+        publish_max_attempts=2,
         clock=clock,
     )
     try:
-        await restarted.tick()
-        assert recovered.pending_count() == 0
+        await worker.tick()
         connection = await aio_pika.connect_robust(**broker_config())
         channel = await connection.channel()
         queue = await channel.declare_queue(queue_name, passive=True)
@@ -231,6 +203,5 @@ async def test_outbox_retains_during_outage_and_publishes_after_recovery(
         await incoming.ack()
         await connection.close()
     finally:
-        recovered.close()
         await publisher.close()
         await cleanup(exchange_name, queue_name)

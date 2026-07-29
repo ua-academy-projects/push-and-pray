@@ -340,17 +340,36 @@ class BlacklistTurnover(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    from_: datetime = Field(alias="from")
-    to: datetime
-    interval: Literal["hour", "day", "week"]
+    from_: datetime | None = Field(alias="from")
+    to: datetime | None
+    interval: Literal["hour", "day", "week", "month"]
+    requested_period: Literal["custom", "all"] = "custom"
+    effective_start: datetime | None = None
+    effective_end: datetime | None = None
+    granularity: Literal["hour", "day", "week", "month"] = "day"
+    bucket_count: StrictInt = Field(default=0, ge=0, le=366)
     points: list[BlacklistTurnoverPoint] = Field(max_length=366)
 
-    @field_validator("from_", "to")
+    @field_validator("from_", "to", "effective_start", "effective_end")
     @classmethod
-    def validate_range_timestamp(cls, value: datetime) -> datetime:
+    def validate_range_timestamp(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Timestamps must include a timezone.")
         return value
+
+    @model_validator(mode="after")
+    def validate_metadata(self) -> Self:
+        if "granularity" not in self.model_fields_set:
+            self.granularity = self.interval
+        if "bucket_count" not in self.model_fields_set:
+            self.bucket_count = len(self.points)
+        if self.granularity != self.interval:
+            raise ValueError("Granularity must match the response interval.")
+        if self.bucket_count != len(self.points):
+            raise ValueError("Bucket count must match the number of points.")
+        return self
 
 
 class ReadinessResponse(BaseModel):

@@ -1,0 +1,2 @@
+user default off
+user aegis_ui on >local-ui-redis-password ~theme:* +get +set +del +expire +ttl +ping
