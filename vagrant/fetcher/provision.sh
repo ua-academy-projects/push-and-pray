@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Provisions the fetcher-service VM: Python 3.12, the service's venv, a .env
-# pointed at the backend-service VM, and a systemd unit to run it.
+# Provisions the fetcher-service VM: installs Docker Engine + the Compose plugin,
+# writes a .env pointed at the backend-service VM, and runs
+# `docker compose up -d --build` against fetcher-service/docker-compose.yml (a
+# single container -- see fetcher-service/Dockerfile for why it's deliberately
+# not scaled to more than one worker process).
 #
-# Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile),
-# each with its own fixed IP - this guest reaches backend-service directly
-# at its bridged IP, no NAT/slirp gateway needed. The Fetcher never touches
-# PostgreSQL directly (see docs/architecture.md). It does now talk to RabbitMQ, on the
-# postgres VM (see vagrant/postgres/provision.sh) -- publishing sync results there instead
-# of calling the Backend over HTTP.
+# Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile), each
+# with its own fixed IP - this guest reaches backend-service directly at its
+# bridged IP, no NAT/slirp gateway needed. The Fetcher never touches PostgreSQL
+# directly (see docs/architecture.md). It does talk to RabbitMQ, on the postgres
+# VM (see vagrant/postgres/provision.sh) -- publishing sync results there instead
+# of calling the Backend over HTTP. The container uses network_mode: host, so it
+# binds to this VM's own bridged IP the same way the old systemd process did.
 set -euo pipefail
 
 APP_DIR="/app"
@@ -18,14 +22,25 @@ RABBITMQ_PASS="skyivano"
 
 export DEBIAN_FRONTEND=noninteractive
 
-echo ">>> Installing Python 3.12"
-apt-get update -y
-apt-get install -y software-properties-common curl
-add-apt-repository -y ppa:deadsnakes/ppa
-apt-get update -y
-apt-get install -y python3.12 python3.12-venv python3.12-dev
+if ! command -v docker >/dev/null 2>&1; then
+  echo ">>> Installing Docker Engine + Compose plugin"
+  apt-get update -y
+  apt-get install -y ca-certificates curl gnupg
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  ARCH="$(dpkg --print-architecture)"
+  CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+  echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
+    > /etc/apt/sources.list.d/docker.list
+  apt-get update -y
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  systemctl enable --now docker
+  usermod -aG docker vagrant
+fi
 
 echo ">>> Waiting for backend-service (${BACKEND_IP}:8000) to respond"
+apt-get install -y curl
 for i in $(seq 1 30); do
   if curl -fsS -o /dev/null "http://${BACKEND_IP}:8000/docs"; then
     echo "    backend-service is up"
@@ -46,37 +61,14 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-echo ">>> Setting up fetcher-service"
+echo ">>> Writing ${APP_DIR}/.env"
 cd "${APP_DIR}"
-python3.12 -m venv .venv
-./.venv/bin/pip install --upgrade pip
-./.venv/bin/pip install -r requirements.txt
 [ -f .env ] || cp .env.example .env
 sed -i "s#^BACKEND_INTERNAL_BASE_URL=.*#BACKEND_INTERNAL_BASE_URL=http://${BACKEND_IP}:8000#" .env
 sed -i "s#^RABBITMQ_URL=.*#RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@${RABBITMQ_IP}:5672/#" .env
 
-echo ">>> Installing systemd unit"
-cat > /etc/systemd/system/fetcher-service.service <<'EOF'
-[Unit]
-Description=SkyIvano Weather Fetcher Service
-After=network.target
-
-[Service]
-Type=simple
-User=vagrant
-WorkingDirectory=/app
-EnvironmentFile=/app/.env
-ExecStart=/app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8002
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-chown -R vagrant:vagrant "${APP_DIR}/.venv"
-systemctl daemon-reload
-systemctl enable --now fetcher-service
+echo ">>> Starting fetcher-service"
+docker compose up -d --build
 
 echo ">>> Provisioning complete"
 echo "    Fetcher Service reachable at 192.168.0.222:8002 on the LAN"

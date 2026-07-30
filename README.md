@@ -1,6 +1,6 @@
 # SkyIvano
 
-A small multi-service weather dashboard for **Ivano-Frankivsk, Ukraine**, built as a DevOps Academy assignment. It demonstrates clean service boundaries, scheduled background synchronization, and relational persistence — without Docker, Kubernetes, CI/CD, or cloud deployment (that's future work, see [docs/architecture.md](docs/architecture.md)).
+A small multi-service weather dashboard for **Ivano-Frankivsk, Ukraine**, built as a DevOps Academy assignment. It demonstrates clean service boundaries, scheduled background synchronization, relational persistence, and a Dockerized multi-VM deployment — without Kubernetes, CI/CD, or cloud deployment (that's future work, see [docs/architecture.md](docs/architecture.md) §14).
 
 Weather data comes from the free [Open-Meteo](https://open-meteo.com/) API (no key/auth required).
 
@@ -43,7 +43,7 @@ The UI never calls Open-Meteo or the Fetcher directly, and never triggers a *sch
 
 Prerequisites: Python 3 (3.12 recommended; 3.14 also verified working with the `psycopg` v3 driver — see `docs/troubleshooting.md`), Node.js (LTS), a local PostgreSQL instance, a local Redis instance, and a local RabbitMQ instance.
 
-PostgreSQL, Redis, and RabbitMQ can each be a native install or run in a plain Docker container purely as a local dev convenience — this does **not** make the project "use Docker": the four application services still run natively, and there is no Dockerfile/Compose file for them (see `docs/architecture.md` §14 for actual future containerization plans). The commands below use the container approach; swap in `createdb`/a native Redis or RabbitMQ install if you prefer.
+PostgreSQL, Redis, and RabbitMQ can each be a native install or run in a plain, throwaway Docker container purely as a local dev convenience for this **native** workflow — the four application services below still run directly with `venv`/`npm`, unrelated to the project's own `Dockerfile`s/`docker-compose.yml`s (one per service, plus `infra/postgres/`), which containerize everything for the Vagrant multi-VM deployment instead — see "Running with Vagrant" below and `docs/architecture.md` §18. The commands below use the throwaway-container approach; swap in `createdb`/a native Redis or RabbitMQ install if you prefer.
 
 ```bash
 docker run -d --name skyivano-postgres \
@@ -103,24 +103,26 @@ Then open the UI (default `http://localhost:5173`).
 
 ## Running with Vagrant
 
-An alternative to the native setup  above: [`Vagrantfile`](Vagrantfile) brings up all four components (`postgres`, `backend`, `fetcher`, `ui`) as separate VMs under the QEMU provider (`vagrant-qemu` plugin — required on Apple Silicon, since VirtualBox's arm64 support isn't reliable). Every VM is bridged onto the same home-network LAN as the host Mac (and reachable from other devices on it, e.g. a phone), each with a fixed IP:
+An alternative to the native setup above: [`Vagrantfile`](Vagrantfile) brings up all four components (`postgres`, `backend`, `fetcher`, `ui`) as separate VMs under the QEMU provider (`vagrant-qemu` plugin — required on Apple Silicon, since VirtualBox's arm64 support isn't reliable). Every VM is bridged onto the same home-network LAN as the host Mac (and reachable from other devices on it, e.g. a phone), each with a fixed IP. Each VM's provisioning script installs Docker Engine + the Compose plugin and runs `docker compose up -d --build` against that component's own `docker-compose.yml` — see `docs/architecture.md` §18 for the full containerization writeup.
 
-| VM | LAN IP | Port |
-|---|---|---|
-| postgres | 192.168.0.220 | 5432 (Postgres), 6379 (Redis), 5672 (RabbitMQ), 15672 (RabbitMQ management UI) |
-| backend | 192.168.0.221 | 8000 (API service; the RabbitMQ-consuming worker is a second process on this same VM, no port of its own) |
-| fetcher | 192.168.0.222 | 8002 |
-| ui | 192.168.0.223 | 5173 |
+| VM | LAN IP | Port | Containers (`docker compose ps`) |
+|---|---|---|---|
+| postgres | 192.168.0.220 | 5432 (Postgres), 6379 (Redis), 5672 (RabbitMQ), 15672 (RabbitMQ management UI) | `postgres`, `redis`, `rabbitmq` (`infra/postgres/docker-compose.yml`) |
+| backend | 192.168.0.221 | 8000 (API service) | `migrate` (one-shot, runs first), `api`, `worker` (the RabbitMQ consumer — no port of its own) (`backend-service/docker-compose.yml`) |
+| fetcher | 192.168.0.222 | 8002 | `fetcher` (`fetcher-service/docker-compose.yml`) |
+| ui | 192.168.0.223 | 5173 | `ui` — nginx serving the production Vite build (`ui-service/docker-compose.yml`) |
 
-**RabbitMQ management UI**: `http://192.168.0.220:15672`, logged in as `skyivano`/`skyivano` (created by `vagrant/postgres/provision.sh` — the default `guest`/`guest` login only works from `localhost` on the broker's own host, which this isn't). Shows both queues (`weather.sync`, `weather.sync_failure`), their message rates and consumer counts, and the two dead-letter queues (`weather.sync.dead`, `weather.sync_failure.dead`) a poison message ends up on — see `docs/architecture.md` §17.
+Every container uses `network_mode: host`, so it binds directly to its VM's bridged IP above — no port-mapping/NAT layer sits between a container and the LAN. Useful commands from inside a VM (`vagrant ssh <name>`, then `cd /app`): `docker compose ps`, `docker compose logs -f <service>`, `docker compose restart <service>`.
 
-**Pausing/resuming the Backend Worker (consumer)**, e.g. to inspect a message in the management UI's "Get messages" panel before it gets consumed and acked: the worker uses a robust RabbitMQ connection that auto-reconnects, so there's no reliable way to pause it from the management UI itself (force-closing its connection there just triggers an immediate reconnect) — stop/start the actual process instead:
+**RabbitMQ management UI**: `http://192.168.0.220:15672`, logged in as `skyivano`/`skyivano` (created via `RABBITMQ_DEFAULT_USER`/`RABBITMQ_DEFAULT_PASS` in `infra/postgres/docker-compose.yml` — the default `guest`/`guest` login only works from `localhost` on the broker's own host, which this isn't). Shows both queues (`weather.sync`, `weather.sync_failure`), their message rates and consumer counts, and the two dead-letter queues (`weather.sync.dead`, `weather.sync_failure.dead`) a poison message ends up on — see `docs/architecture.md` §17.
+
+**Pausing/resuming the Backend Worker (consumer)**, e.g. to inspect a message in the management UI's "Get messages" panel before it gets consumed and acked: the worker uses a robust RabbitMQ connection that auto-reconnects, so there's no reliable way to pause it from the management UI itself (force-closing its connection there just triggers an immediate reconnect) — stop/start its container instead:
 
 ```bash
-sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant ssh backend -c "sudo systemctl stop backend-worker"
+sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant ssh backend -c "cd /app && docker compose stop worker"
 # ...trigger a sync, inspect the message via the management UI (Queues -> weather.sync -> Get messages,
 # ack mode "Nack message requeue true" so it isn't lost)...
-sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant ssh backend -c "sudo systemctl start backend-worker"
+sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant ssh backend -c "cd /app && docker compose start worker"
 ```
 
 Bridged networking (`vmnet_bridged`) needs root, and a separate macOS Objective-C runtime quirk (`+[NSNumber initialize] ... fork()`) crashes QEMU on some machines unless one extra environment variable is set. Always bring the environment up with:
@@ -156,5 +158,5 @@ Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `s
 - Single hardcoded location (Ivano-Frankivsk) — no location picker.
 - The Fetcher's internal endpoints (`/internal/*`) have no authentication, nor does RabbitMQ (default `guest`/`guest` locally) — see security notes in [docs/architecture.md](docs/architecture.md). The Backend itself no longer exposes any `/internal/*` HTTP endpoint at all — synced data arrives over RabbitMQ instead.
 - "Refresh now" confirms the request was queued, not that it's been persisted — the dashboard shows the actual result a moment later, on its next poll.
-- No containerization, orchestration, or CI/CD yet.
+- No orchestration (Kubernetes) or CI/CD yet — the four services plus Postgres/Redis/RabbitMQ are containerized via Docker Compose, one Compose project per Vagrant VM (see "Running with Vagrant" above, `docs/architecture.md` §18), but there's no cluster orchestrator or automated build/deploy pipeline.
 - No system light/dark theme toggle — a deliberate choice, since the background already carries its own weather/day-night theming; see `docs/architecture.md` §15.

@@ -1,0 +1,11 @@
+node_modules
+dist
+.venv
+.git
+.gitignore
+.DS_Store
+tests
+*.tsbuildinfo
+.env
+.env.example
+README.md

@@ -1,94 +1,92 @@
-<mxfile host="app.diagrams.net" agent="claude-code" version="24.7.17">
+<mxfile host="app.diagrams.net" agent="claude-code">
   <diagram name="SkyIvano Architecture" id="skyivano-arch">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1821" dy="1061" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <!-- External: Open-Meteo -->
-        <mxCell id="openmeteo" value="Open-Meteo API&#10;(external)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1000" y="40" width="200" height="60" as="geometry" />
+        <mxCell id="openmeteo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" value="Open-Meteo API&#xa;(external)" vertex="1">
+          <mxGeometry height="60" width="200" x="1000" y="40" as="geometry" />
         </mxCell>
-
-        <!-- fetcher VM group -->
-        <mxCell id="fetcherVM" value="fetcher VM — 192.168.0.222" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="950" y="160" width="300" height="180" as="geometry" />
+        <mxCell id="fetcherVM" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" value="fetcher VM — 192.168.0.222 (Docker Compose)" vertex="1">
+          <mxGeometry height="180" width="300" x="950" y="160" as="geometry" />
         </mxCell>
-        <mxCell id="fetcher" value="Weather Fetcher Service&#10;(FastAPI, :8002)&#10;includes in-process APScheduler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="980" y="220" width="240" height="70" as="geometry" />
+        <mxCell id="fetcher" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Weather Fetcher Service&#xa;(FastAPI, :8002)&#xa;includes in-process APScheduler" vertex="1">
+          <mxGeometry height="70" width="240" x="980" y="220" as="geometry" />
         </mxCell>
-        <mxCell id="schedulerNote" value="scheduler triggers run_fetch_sync() on interval + startup&#10;(same function as a manual /internal/fetch call)" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry x="980" y="295" width="240" height="35" as="geometry" />
+        <mxCell id="browser" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" value="Browser" vertex="1">
+          <mxGeometry height="60" width="180" x="40" y="560" as="geometry" />
         </mxCell>
-
-        <!-- Browser (outside all VMs, on the host LAN) -->
-        <mxCell id="browser" value="Browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="40" y="560" width="180" height="60" as="geometry" />
+        <mxCell id="uiVM" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" value="ui VM — 192.168.0.223 (Docker Compose)" vertex="1">
+          <mxGeometry height="140" width="260" x="280" y="520" as="geometry" />
         </mxCell>
-
-        <!-- ui VM group -->
-        <mxCell id="uiVM" value="ui VM — 192.168.0.223" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="280" y="520" width="260" height="140" as="geometry" />
+        <mxCell id="ui" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="UI Service&#xa;(React, :5173)" vertex="1">
+          <mxGeometry height="60" width="200" x="310" y="570" as="geometry" />
         </mxCell>
-        <mxCell id="ui" value="UI Service&#10;(React, :5173)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="310" y="570" width="200" height="60" as="geometry" />
+        <mxCell id="backendVM" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" value="backend VM — 192.168.0.221 (Docker Compose)" vertex="1">
+          <mxGeometry height="210" width="300" x="600" y="520" as="geometry" />
         </mxCell>
-
-        <!-- backend VM group -->
-        <mxCell id="backendVM" value="backend VM — 192.168.0.221" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="600" y="520" width="300" height="210" as="geometry" />
+        <mxCell id="backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" value="Backend Service&#xa;(FastAPI, :8000)" vertex="1">
+          <mxGeometry height="55" width="240" x="630" y="545" as="geometry" />
         </mxCell>
-        <mxCell id="backend" value="Backend Service&#10;(FastAPI, :8000)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="630" y="545" width="240" height="55" as="geometry" />
+        <mxCell id="backendWorker" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" value="Backend Worker Process&#xa;(RabbitMQ consumer)" vertex="1">
+          <mxGeometry height="55" width="240" x="630" y="615" as="geometry" />
         </mxCell>
-        <mxCell id="backendWorker" value="Backend Worker Process&#10;(RabbitMQ consumer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="630" y="615" width="240" height="55" as="geometry" />
+        <mxCell id="migrate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;dashed=1;" value="migrate (one-shot container)&#xa;alembic upgrade head" vertex="1">
+          <mxGeometry height="35" width="240" x="630" y="680" as="geometry" />
         </mxCell>
-        <mxCell id="workerNote" value="consumes weather.sync / weather.sync_failure;&#10;calls same persistence_service as the API;&#10;acks only after DB commit" style="text;html=1;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry x="600" y="672" width="300" height="45" as="geometry" />
+        <mxCell id="postgresVM" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" value="postgres VM — 192.168.0.220 (Docker Compose: Postgres + RabbitMQ + Redis)" vertex="1">
+          <mxGeometry height="180" width="600" x="550" y="740" as="geometry" />
         </mxCell>
-
-        <!-- postgres VM group (data/infra: Postgres + RabbitMQ + Redis) -->
-        <mxCell id="postgresVM" value="postgres VM — 192.168.0.220 (data / infra: Postgres + RabbitMQ + Redis)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;fontSize=12;fontStyle=1;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="550" y="740" width="600" height="180" as="geometry" />
+        <mxCell id="postgres" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#cfe2ff;strokeColor=#4a86e8;fontSize=11;" value="PostgreSQL&#xa;:5432&#xa;(weather/business data)" vertex="1">
+          <mxGeometry height="90" width="160" x="580" y="800" as="geometry" />
         </mxCell>
-        <mxCell id="postgres" value="PostgreSQL&#10;:5432&#10;(weather/business data)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#cfe2ff;strokeColor=#4a86e8;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="580" y="800" width="160" height="90" as="geometry" />
+        <mxCell id="rabbitmq" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" value="RabbitMQ&#xa;:5672&#xa;(weather.sync / weather.sync_failure)" vertex="1">
+          <mxGeometry height="90" width="160" x="760" y="800" as="geometry" />
         </mxCell>
-        <mxCell id="rabbitmq" value="RabbitMQ&#10;:5672&#10;(weather.sync / weather.sync_failure)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="760" y="800" width="160" height="90" as="geometry" />
+        <mxCell id="redis" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f4cccc;strokeColor=#cc0000;fontSize=11;" value="Redis&#xa;:6379&#xa;(UI session state only)" vertex="1">
+          <mxGeometry height="90" width="160" x="940" y="800" as="geometry" />
         </mxCell>
-        <mxCell id="redis" value="Redis&#10;:6379&#10;(UI session state only)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f4cccc;strokeColor=#cc0000;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="940" y="800" width="160" height="90" as="geometry" />
+        <mxCell id="e2" edge="1" parent="1" source="fetcher" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" target="openmeteo" value="">
+          <mxGeometry relative="1" y="20" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
-
-        <!-- Edges -->
-        <mxCell id="e2" value="GET /v1/forecast?past_days=..&amp;forecast_days=.." style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="fetcher" target="openmeteo">
+        <mxCell id="e3" edge="1" parent="1" source="fetcher" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;dashed=1;" target="rabbitmq" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="publish weather.sync / weather.sync_failure (async)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;dashed=1;" edge="1" parent="1" source="fetcher" target="rabbitmq">
+        <mxCell id="e9" edge="1" parent="1" source="rabbitmq" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;dashed=1;" target="backendWorker" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="backendWorker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" target="postgres" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" target="postgres" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e9" value="consume (async)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;dashed=1;" edge="1" parent="1" source="rabbitmq" target="backendWorker">
+        <mxCell id="e5" edge="1" parent="1" source="backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" target="redis" value="">
+          <mxGeometry relative="1" x="0.0013" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" target="ui" value="http://192.168.0.223:5173">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e10" value="SQLAlchemy upsert" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="backendWorker" target="postgres">
+        <mxCell id="e7" edge="1" parent="1" source="ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" target="backend" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="SQLAlchemy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="backend" target="postgres">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e8" edge="1" parent="1" source="backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;dashed=1;" target="fetcher" value="">
+          <mxGeometry relative="1" x="-0.001" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e5" value="GET/SET session:*, sliding TTL" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="backend" target="redis">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e6" value="http://192.168.0.223:5173" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="browser" target="ui">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e7" value="GET/PUT /api/session*, GET /api/weather*, POST /api/sync/trigger" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="ui" target="backend">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e8" value="POST /internal/fetch (manual refresh only, still HTTP)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;dashed=1;" edge="1" parent="1" source="backend" target="fetcher">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e11" edge="1" parent="1" source="migrate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;dashed=1;strokeColor=#666666;" target="postgres" value="runs once, before api/worker">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>

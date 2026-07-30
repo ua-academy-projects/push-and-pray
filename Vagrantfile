@@ -17,6 +17,7 @@ NODES = {
     ssh_port:  50110,
     memory:    "1G", # bumped from 512M -- this VM now also runs Redis (UI session storage) and RabbitMQ (Fetcher->Backend async queue)
     smp:       "1",
+    sync:      "infra/postgres",
     provision: "vagrant/postgres/provision.sh",
   },
   backend: {

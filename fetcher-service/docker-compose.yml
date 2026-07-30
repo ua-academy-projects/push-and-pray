@@ -1,0 +1,22 @@
+# Fetcher VM: a single container -- see Dockerfile for why this is deliberately
+# not scaled to multiple worker processes. network_mode: host so it's reachable
+# at this VM's existing bridged LAN IP (see ../Vagrantfile).
+services:
+  fetcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: skyivano/fetcher-service:${IMAGE_TAG:-latest}
+    env_file: .env
+    network_mode: host
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
