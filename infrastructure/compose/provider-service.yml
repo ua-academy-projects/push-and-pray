@@ -4,14 +4,19 @@ services:
   provider-service:
     build: ../../provider-service
     restart: unless-stopped
+
     environment:
       APP_HOST: "0.0.0.0"
       APP_PORT: "5002"
       FLASK_DEBUG: "false"
+
       EXTERNAL_WEATHER_URL: "https://api.open-meteo.com/v1/forecast"
-      RABBITMQ_URL: "amqp://weather_user:weather_password@192.168.56.13:5672/"
+
+      RABBITMQ_URL: "amqp://weather_user:weather_password@${DATABASE_IP}:5672/"
+
     ports:
       - "5002:5002"
+
     healthcheck:
       test:
         - CMD
@@ -19,7 +24,10 @@ services:
         - -c
         - >-
           import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:5002/health', timeout=3)
+          urllib.request.urlopen(
+          'http://127.0.0.1:5002/health',
+          timeout=3
+          )
       interval: 5s
       timeout: 5s
       retries: 10

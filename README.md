@@ -7,32 +7,43 @@
 ## 🏛 Архітектура
 
 ```text
-Browser <=======> UI Service Container <=======> Backend Service Container <=======> PostgreSQL Container (weather_history)
-(MacBook /             || (192.168.56.10:5000)          ^ (192.168.56.11:5001)           ^ (192.168.56.13:5432)
- LAN IP)               \/                               || (Consumes)                    |
-                 Redis Container                 RabbitMQ Container <====================+
-               (192.168.56.13:6379)            (192.168.56.13:5672/15672)                ^
-                                                                                          || (Publishes)
-                                                                                  Provider Service Container
-                                                                                    (192.168.56.12:5002) <===> Open-Meteo API
+Browser
+   │
+   ▼
+ui-service.local:5000 ───────────────► backend-service.local:5001
+   │                                      │
+   │                                      ├──► PostgreSQL
+   ▼                                      │     database.local:5432
+Redis                                     │
+database.local:6379                       ◄── RabbitMQ
+                                               database.local:5672
+                                                    ▲
+                                                    │ publish
+Open-Meteo API ◄────► provider-service.local:5002 ──┘
 ```
 
-- **`ui-service VM`** (`192.168.56.10`, контейнер `ui-service` порт `5000`):
+- **`ui-service VM`** (`ui-service.local`, контейнер `ui-service`, порт `5000`):
   - Віддає HTML/CSS/JS інтерфейс.
-  - Управляє сесіями користувачів через Redis (`192.168.56.13:6379`).
-  - Проксіює всі погодні запити `/api/*` виключно до Backend Service (`192.168.56.11:5001`).
+  - Управляє сесіями користувачів через Redis на `database.local:6379`.
+  - Проксіює погодні запити `/api/*` до Backend Service на `backend-service.local:5001`.
 
-- **`backend-service VM`** (`192.168.56.11`, контейнер `backend-service` порт `5001`):
-  - Асинхронно споживає (consume) погодні повідомлення з RabbitMQ та зберігає їх у PostgreSQL.
+- **`backend-service VM`** (`backend-service.local`, контейнер `backend-service`, порт `5001`):
+  - Асинхронно споживає погодні повідомлення з RabbitMQ на `database.local:5672`.
+  - Зберігає погодні дані в PostgreSQL на `database.local:5432`.
   - Надає API: `/api/weather`, `/api/forecast`, `/api/history?hours=24|168`.
 
-- **`provider-service VM`** (`192.168.56.12`, контейнер `provider-service` порт `5002`):
-  - Періодично опитує Open-Meteo API та публікує (publish) оновлення погодних даних у RabbitMQ (`192.168.56.13:5672`).
+- **`provider-service VM`** (`provider-service.local`, контейнер `provider-service`, порт `5002`):
+  - Періодично опитує Open-Meteo API.
+  - Публікує оновлення погодних даних у RabbitMQ на `database.local:5672`.
 
-- **`database VM`** (`192.168.56.13`, Docker Compose):
+- **`database VM`** (`database.local`, Docker Compose):
   - **`PostgreSQL 16`** (`5432`): Зберігає погодинні точки в єдиній таблиці `weather_hourly_points`.
   - **`Redis 7`** (`6379`): Зберігає сесії користувачів UI з увімкненим збереженням `appendonly yes`.
   - **`RabbitMQ 3`** (`5672`, Web UI `15672`): Брокер асинхронних повідомлень.
+
+Кожен Compose-проєкт працює на окремій VM. Контейнерні сервіси
+слухають `0.0.0.0`, а їхні порти публікуються на bridged-інтерфейсі VM
+без прив’язки до конкретної DHCP-адреси.
 
 ---
 
@@ -88,14 +99,26 @@ weather-app/
 залишаються в його каталозі. Усі операційні конфігурації згруповані в
 `infrastructure/`: кожна VM запускає лише власний Compose-проєкт.
 Кореневий `Vagrantfile` завантажує основну конфігурацію з
-`infrastructure/vagrant/Vagrantfile`, тому команди Vagrant і наявний стан
-`.vagrant` залишаються сумісними.
+`infrastructure/vagrant/Vagrantfile`, тому всі команди Vagrant потрібно
+виконувати з кореня проєкту.
+Після зміни мережевої конфігурації раніше створені VM потрібно видалити
+командою `vagrant destroy -f` і створити заново.
+
+Provisioning-скрипти встановлюють Docker, Docker Compose, Avahi та
+`libnss-mdns`, відкривають потрібні порти UFW (якщо firewall активний),
+визначають актуальні IPv4-адреси залежних VM через їхні `.local`-імена
+і передають ці адреси в Compose через змінні середовища. DHCP-адреси у
+Compose-файлах не хардкодяться.
 
 ---
 
 ## 🚀 Розгортання через Vagrant (VMware Fusion / Desktop)
 
 Всередині кожної VM відповідна частина проєкту запускається в ізольованому Docker-контейнері через Docker Compose.
+
+Перед запуском VMware `vmnet0` повинен бути підключений мостом до
+фізичного інтерфейсу локальної мережі. Роутер має надавати IPv4-адреси
+через DHCP, а всі чотири VM мають бути в одній LAN.
 
 ### Запуск та перевірка статусу ВМ
 
@@ -108,6 +131,20 @@ vagrant status
 
 # Валідація Vagrantfile
 vagrant validate
+```
+
+VM оголошені в порядку залежностей: `database`, `provider-service`,
+`backend-service`, `ui-service`. Provisioning запускається під час
+кожного `vagrant up`; залежні VM очікують, доки потрібні `.local`-імена
+почнуть резолвитися.
+
+За потреби VM можна запускати окремо в тому самому порядку:
+
+```bash
+vagrant up database
+vagrant up provider-service
+vagrant up backend-service
+vagrant up ui-service
 ```
 
 ### Перевірка статусу контейнерів на кожній ВМ
@@ -137,19 +174,39 @@ vagrant ssh ui-service -c "docker compose -f /vagrant/infrastructure/compose/ui-
 
 ---
 
-## 🌐 Мережа та IP-адреси
+## 🌐 Мережа, DHCP та mDNS
 
-Усі 4 ВМ мають по два мережевих інтерфейси:
-1. **Приватна мережа (`192.168.56.x`)**: Для стабільного міжсервісного зв’язку контейнерів.
-2. **Bridged мережа (`public_network`)**: Для отримання IP-адреси від DHCP роутера та доступу з MacBook і пристроїв локальної мережі.
+Кожна VM має один VMware-адаптер `ethernet0`:
 
-### Команди перегляду всіх IP-адрес ВМ:
+- режим підключення — `bridged` через `vmnet0`;
+- IPv4-адреса призначається DHCP-сервером локального роутера;
+- NAT, private/host-only network і forwarded ports не використовуються;
+- Vagrant SSH та provisioning працюють через bridged DHCP-адресу;
+- додаткові VMware-адаптери вимкнені.
+
+Стабільні мережеві імена публікуються через Avahi/mDNS:
+
+| VM       | mDNS hostname            | Контейнери та опубліковані порти                                        |
+| -------- | ------------------------ | ----------------------------------------------------------------------- |
+| UI       | `ui-service.local`       | UI `5000`                                                               |
+| Backend  | `backend-service.local`  | Backend API `5001`                                                      |
+| Provider | `provider-service.local` | Provider API `5002`                                                     |
+| Database | `database.local`         | PostgreSQL `5432`, Redis `6379`, RabbitMQ `5672`, Management UI `15672` |
+
+Provisioning резолвить ці імена в актуальні LAN IPv4-адреси, ігноруючи
+loopback та link-local адреси, після чого передає їх у відповідні
+Compose-проєкти як `BACKEND_IP`, `PROVIDER_IP` і `DATABASE_IP`.
+
+### Перегляд LAN IPv4-адрес VM
+
+Команди нижче показують глобальні IPv4-адреси без `docker0` і Docker
+bridge-інтерфейсів:
 
 ```bash
-vagrant ssh ui-service -c "ip -4 -br addr"
-vagrant ssh backend-service -c "ip -4 -br addr"
-vagrant ssh provider-service -c "ip -4 -br addr"
-vagrant ssh database -c "ip -4 -br addr"
+vagrant ssh ui-service -c "ip -4 -o addr show scope global | awk '\$2 !~ /^(docker0|br-)/ {print \$2, \$4}'"
+vagrant ssh backend-service -c "ip -4 -o addr show scope global | awk '\$2 !~ /^(docker0|br-)/ {print \$2, \$4}'"
+vagrant ssh provider-service -c "ip -4 -o addr show scope global | awk '\$2 !~ /^(docker0|br-)/ {print \$2, \$4}'"
+vagrant ssh database -c "ip -4 -o addr show scope global | awk '\$2 !~ /^(docker0|br-)/ {print \$2, \$4}'"
 ```
 
 ---
@@ -157,15 +214,20 @@ vagrant ssh database -c "ip -4 -br addr"
 ## 💻 Доступ до Web UI та RabbitMQ Management
 
 ### Доступ до UI:
-- **З MacBook (Port Forwarding)**: [http://localhost:8080](http://localhost:8080)
-- **З MacBook / Локальної мережі (Bridged IP)**: `http://<BRIDGED_IP_UI>:5000`
-- **Приватний IP UI VM**: `http://192.168.56.10:5000`
+
+- **Через mDNS:** [http://ui-service.local:5000](http://ui-service.local:5000)
+- **Через поточну DHCP-адресу:** `http://<UI_DHCP_IP>:5000`
 
 ### Доступ до RabbitMQ Management UI:
-- **З MacBook / Локальної мережі (Bridged IP)**: `http://<BRIDGED_IP_DATABASE>:15672`
-- **Приватний IP Database VM**: `http://192.168.56.13:15672`
+
+- **Через mDNS:** [http://database.local:15672](http://database.local:15672)
+- **Через поточну DHCP-адресу:** `http://<DATABASE_DHCP_IP>:15672`
+
+Доступ через `localhost:8080` відсутній, оскільки port forwarding більше
+не налаштований.
 
 **Авторизація RabbitMQ:**
+
 - **Користувач:** `weather_user`
 - **Пароль:** `weather_password`
 
@@ -185,6 +247,7 @@ Compose-проєкт бази даних і надалі має ім’я `datab
 Переміщення YAML-файлу не створює новий volume і не видаляє наявні дані.
 
 Приклад перевірки записів у консолі psql:
+
 ```sql
 SELECT weather_at, temperature, data_kind, fetched_at FROM weather_hourly_points ORDER BY weather_at DESC LIMIT 10;
 ```
