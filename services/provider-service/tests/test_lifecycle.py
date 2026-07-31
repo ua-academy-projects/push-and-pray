@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 from provider_service.config import Settings
@@ -49,3 +51,35 @@ async def test_lifespan_reuses_one_client_and_closes_it(
         assert abuseipdb_client.is_closed is False
 
     assert abuseipdb_client.is_closed is True
+
+
+@pytest.mark.anyio
+async def test_lifespan_stops_enabled_scheduler_and_closes_publisher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured = settings().model_copy(update={"blacklist_polling_enabled": True})
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    class Publisher:
+        is_connected = True
+
+        async def close(self) -> None:
+            stopped.set()
+
+    async def run_worker(_: Settings, stop_event: asyncio.Event, **__: object) -> None:
+        started.set()
+        await stop_event.wait()
+
+    monkeypatch.setattr("provider_service.main.get_settings", lambda: configured)
+    monkeypatch.setattr(
+        "provider_service.main.AioPikaBlacklistPublisher", lambda _: Publisher()
+    )
+    monkeypatch.setattr("provider_service.main.run_worker", run_worker)
+
+    async with lifespan(app):
+        await started.wait()
+        assert app.state.blacklist_scheduler_task.done() is False
+
+    assert stopped.is_set()
+    assert app.state.blacklist_scheduler_task.done() is True

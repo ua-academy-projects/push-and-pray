@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from provider_service.config import Settings, get_settings
 from provider_service.exceptions import ApplicationError
 from provider_service.provider import AbuseIPDBProvider, get_reputation_provider
 from provider_service.schemas import (
@@ -110,14 +109,27 @@ async def liveness() -> dict[str, str]:
     return {"status": "ok", "blacklist_polling_owner": "provider"}
 
 
-@router.get("/health/ready", tags=["health"])
-async def readiness() -> dict[str, str | bool]:
-    """Confirm that Provider initialized with its required configuration."""
-    settings: Settings = get_settings()
+@router.get("/health/ready", tags=["health"], response_model=None)
+async def readiness(request: Request) -> dict[str, str | bool] | JSONResponse:
+    """Confirm that the configured scheduler remains operational."""
+    enabled = bool(getattr(request.app.state, "blacklist_scheduler_enabled", False))
+    task = getattr(request.app.state, "blacklist_scheduler_task", None)
+    publisher = getattr(request.app.state, "blacklist_publisher", None)
+    if enabled and (
+        task is None or task.done() or publisher is None or not publisher.is_connected
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "not ready",
+                "blacklist_polling_owner": "provider",
+                "blacklist_polling_enabled": enabled,
+            },
+        )
     return {
         "status": "ready",
         "blacklist_polling_owner": "provider",
-        "blacklist_polling_enabled": settings.blacklist_polling_enabled,
+        "blacklist_polling_enabled": enabled,
     }
 
 

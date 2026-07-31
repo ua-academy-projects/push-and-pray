@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 from history_service.config import Settings
@@ -60,3 +62,27 @@ async def test_history_lifespan_never_creates_blacklist_scheduler() -> None:
 
     async with application.router.lifespan_context(application):
         assert not hasattr(application.state, "blacklist_scheduler_task")
+
+
+@pytest.mark.anyio
+async def test_history_lifespan_stops_enabled_consumer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured = settings().model_copy(update={"blacklist_consumer_enabled": True})
+    started = asyncio.Event()
+
+    class Consumer:
+        is_ready = True
+
+        async def run(self, stop_event: asyncio.Event) -> None:
+            started.set()
+            await stop_event.wait()
+
+    monkeypatch.setattr("history_service.main.create_consumer", lambda _: Consumer())
+    application = create_app(settings=configured)
+
+    async with application.router.lifespan_context(application):
+        await started.wait()
+        assert application.state.blacklist_consumer_task.done() is False
+
+    assert application.state.blacklist_consumer_task.done() is True

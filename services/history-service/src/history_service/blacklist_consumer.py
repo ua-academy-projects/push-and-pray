@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import signal
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,7 +24,7 @@ from history_service.blacklist_ingestion import (
     BlacklistIngestionService,
     get_blacklist_ingestion_service,
 )
-from history_service.config import Settings, get_settings
+from history_service.config import Settings
 from history_service.database import get_session_factory
 from history_service.exceptions import ApplicationError
 from history_service.schemas import (
@@ -421,6 +420,16 @@ class HistoryBlacklistConsumer:
         self._failure_strategy = failure_strategy or RabbitMQFailureStrategy(settings)
         self._handler.set_failure_strategy(self._failure_strategy)
         self._inflight: set[asyncio.Task[object]] = set()
+        self.ready = asyncio.Event()
+        self._connection: AbstractRobustConnection | None = None
+
+    @property
+    def is_ready(self) -> bool:
+        return (
+            self.ready.is_set()
+            and self._connection is not None
+            and not self._connection.is_closed
+        )
 
     async def run(self, stop_event: asyncio.Event) -> None:
         connection: AbstractRobustConnection | None = None
@@ -448,6 +457,7 @@ class HistoryBlacklistConsumer:
                     virtualhost=self._settings.rabbitmq_virtual_host,
                     timeout=self._settings.rabbitmq_connection_timeout_seconds,
                 )
+                self._connection = connection
                 channel = await connection.channel(
                     publisher_confirms=True,
                     on_return_raises=True,
@@ -518,6 +528,7 @@ class HistoryBlacklistConsumer:
                     dead_letter_exchange=dead_letter_exchange,
                 )
                 consumer_tag = await queue.consume(self._on_message, no_ack=False)
+                self.ready.set()
                 logger.info(
                     "history_blacklist_consumer_registered",
                     extra={
@@ -534,6 +545,8 @@ class HistoryBlacklistConsumer:
             await queue.cancel(consumer_tag)
             await self._finish_inflight()
         finally:
+            self.ready.clear()
+            self._connection = None
             if connection is not None and not connection.is_closed:
                 await connection.close()
             logger.info(
@@ -565,26 +578,14 @@ class HistoryBlacklistConsumer:
 
 
 async def run_consumer(settings: Settings, stop_event: asyncio.Event) -> None:
+    await create_consumer(settings).run(stop_event)
+
+
+def create_consumer(settings: Settings) -> HistoryBlacklistConsumer:
+    """Build the consumer with History-owned persistence dependencies."""
     factory = cast(sessionmaker[Session], get_session_factory())
     handler = BlacklistMessageHandler(
         session_factory=factory,
         ingestion_service=get_blacklist_ingestion_service(),
     )
-    await HistoryBlacklistConsumer(settings, handler).run(stop_event)
-
-
-def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        force=True,
-    )
-
-    async def serve() -> None:
-        stop_event = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        for signal_number in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(signal_number, stop_event.set)
-        await run_consumer(get_settings(), stop_event)
-
-    asyncio.run(serve())
+    return HistoryBlacklistConsumer(settings, handler)

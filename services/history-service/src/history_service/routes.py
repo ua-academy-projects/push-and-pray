@@ -27,6 +27,8 @@ from history_service.schemas import (
     BlacklistEntryPageQuery,
     BlacklistEntryQuery,
     BlacklistPage,
+    BlacklistRequestSeriesQuery,
+    BlacklistRequestSeriesResponse,
     BlacklistSnapshotList,
     BlacklistSnapshotListQuery,
     BlacklistStatusResponse,
@@ -122,7 +124,7 @@ def readiness(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
 ) -> dict[str, str] | JSONResponse:
-    """Confirm that the service can execute a minimal database query."""
+    """Confirm database access and the configured RabbitMQ consumer."""
     try:
         session.execute(text("SELECT 1"))
     except SQLAlchemyError as error:
@@ -132,6 +134,21 @@ def readiness(
             error,
             request_id=request_id_from(request),
         )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "not ready"},
+        )
+    consumer_enabled = bool(
+        getattr(request.app.state, "blacklist_consumer_enabled", False)
+    )
+    consumer = getattr(request.app.state, "blacklist_consumer", None)
+    consumer_task = getattr(request.app.state, "blacklist_consumer_task", None)
+    if consumer_enabled and (
+        consumer is None
+        or consumer_task is None
+        or consumer_task.done()
+        or not consumer.is_ready
+    ):
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "not ready"},
@@ -253,6 +270,21 @@ def get_blacklist_turnover(
 ) -> BlacklistTurnoverResponse:
     """Return bounded persisted turnover summaries without entry-set queries."""
     return service.turnover(session, query)
+
+
+@router.get(
+    "/api/v1/blacklist/analytics/requests",
+    response_model=BlacklistRequestSeriesResponse,
+    responses={503: {"model": ErrorResponse}},
+    tags=["blacklist"],
+)
+def get_blacklist_request_series(
+    query: Annotated[BlacklistRequestSeriesQuery, Query()],
+    session: Annotated[Session, Depends(get_session)],
+    service: Annotated[BlacklistReadService, Depends(get_blacklist_read_service)],
+) -> BlacklistRequestSeriesResponse:
+    """Return the latest successful snapshot requests chronologically."""
+    return service.request_series(session, query)
 
 
 @router.get(

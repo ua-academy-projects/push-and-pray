@@ -72,6 +72,11 @@ class AioPikaBlacklistPublisher:
         self._channel: AbstractChannel | None = None
         self._exchange: AbstractExchange | None = None
 
+    @property
+    def is_connected(self) -> bool:
+        """Report whether the owned RabbitMQ connection is currently open."""
+        return self._connection is not None and not self._connection.is_closed
+
     async def connect(self) -> None:
         """Connect and declare the durable direct exchange."""
         if self._connection is not None:

@@ -14,21 +14,20 @@ Aegis has three independently configured logical application services:
 - **History Service** provides the application API, orchestrates manual
   lookups, exclusively owns MariaDB data, and consumes blacklist messages from
   RabbitMQ.
-- **Provider Service** adapts AbuseIPDB. Its standalone worker polls for
-  blacklist snapshots and publishes complete messages directly to RabbitMQ.
+- **Provider Service** adapts AbuseIPDB. A controlled FastAPI lifespan task
+  polls for blacklist snapshots and publishes complete messages to RabbitMQ.
 
-The target Vagrant deployment uses four VMs and eight separate containers:
+The target Vagrant deployment uses four VMs and six containers:
 
 | VM | Containers |
 | --- | --- |
 | `ui-vm` | UI Service |
-| `history-vm` | History API; History Consumer |
-| `provider-vm` | Provider API; Provider Worker |
+| `history-vm` | History Service |
+| `provider-vm` | Provider Service |
 | `infra-vm` | MariaDB; RabbitMQ with management plugin; Redis |
 
-Every application runtime executes inside a container. API and background
-runtimes remain separate containers belonging to their logical services.
-Application VMs are not merged.
+Each application service executes in one container. Provider owns its scheduler
+task and History owns its RabbitMQ consumer task inside their FastAPI lifecycles.
 
 ```mermaid
 flowchart LR
@@ -38,10 +37,8 @@ flowchart LR
     HAPI --> PAPI[Provider API container<br/>provider-vm]
     PAPI --> AbuseIPDB
     HAPI --> MariaDB[(MariaDB container<br/>infra-vm)]
-    PWorker[Provider Worker container<br/>provider-vm] --> AbuseIPDB
-    PWorker --> RabbitMQ[(RabbitMQ container<br/>infra-vm)]
-    RabbitMQ --> HConsumer[History Consumer container<br/>history-vm]
-    HConsumer --> MariaDB
+    PAPI --> RabbitMQ[(RabbitMQ container<br/>infra-vm)]
+    RabbitMQ --> HAPI
 ```
 
 Provider never accesses MariaDB. UI talks only to History for application data.
@@ -60,8 +57,8 @@ Browser -> UI -> History API -> Provider API -> AbuseIPDB
 Blacklist synchronization is asynchronous:
 
 ```text
-Provider Worker -> AbuseIPDB -> RabbitMQ
-RabbitMQ -> History Consumer -> History ingestion logic -> MariaDB
+Provider lifecycle scheduler -> AbuseIPDB -> RabbitMQ
+RabbitMQ -> History lifecycle consumer -> History ingestion logic -> MariaDB
 ```
 
 UI preference persistence is isolated:
@@ -93,18 +90,10 @@ There is no shared application package.
 
 ## Runtime processes
 
-The five application runtimes are:
-
-- UI Service;
-- History API;
-- History Consumer;
-- Provider API;
-- Provider Worker.
-
-The target deployment runs each in its designated container. History API and
-History Consumer may use the same History image but never the same container.
-Provider API and Provider Worker follow the same rule. Exactly one Provider
-Worker runs on `provider-vm`.
+The three application containers are UI, History, and Provider. Uvicorn runs
+one application process per History and Provider container so each lifecycle
+owns exactly one consumer or scheduler task. Shutdown signals stop the task and
+close its RabbitMQ connection before the application exits.
 
 ## Configuration ownership
 
@@ -202,7 +191,7 @@ AbuseIPDB.
 - There is no authentication or user management.
 - Provider retrieves at most 1000 entries per blacklist snapshot.
 - Redis stores only anonymous UI preferences.
-- Before RabbitMQ confirms direct publication, a Provider Worker or VM failure
+- Before RabbitMQ confirms direct publication, a Provider process or VM failure
   can lose the in-memory fetched snapshot.
 - Kubernetes, cloud deployment, TLS termination, and a public reverse proxy are
   outside this Vagrant design.

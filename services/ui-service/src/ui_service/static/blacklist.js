@@ -245,6 +245,43 @@
         renderBarChart(container, points, granularity);
       }
     });
+    scope.querySelectorAll("[data-request-chart]").forEach(function (container) {
+      let points;
+      try {
+        points = JSON.parse(container.dataset.points || "[]");
+      } catch (_error) {
+        return;
+      }
+      const svg = chartFrame(container);
+      const maximum = Math.max(1, ...points.map(function (point) { return Number(point.new_ips); }));
+      const groupWidth = 648 / Math.max(points.length, 1);
+      points.forEach(function (point, index) {
+        const height = Number(point.new_ips) / maximum * 190;
+        const bar = svgElement("rect", {
+          x: 52 + groupWidth * index + groupWidth * 0.2,
+          y: 220 - height,
+          width: groupWidth * 0.6,
+          height: height,
+          class: "bar-added"
+        });
+        appendTitle(bar, [
+          point.created_at,
+          "Request: " + point.request_id,
+          "Total IPs: " + point.total_ips,
+          "New IPs: " + point.new_ips
+        ].join("\n"));
+        svg.appendChild(bar);
+      });
+      const yLabel = svgElement("text", {
+        x: 14, y: 125, class: "chart-axis-label",
+        transform: "rotate(-90 14 125)"
+      });
+      yLabel.textContent = "New IP addresses";
+      svg.appendChild(yLabel);
+      const xLabel = svgElement("text", { x: 376, y: 270, class: "chart-axis-label" });
+      xLabel.textContent = "Successful snapshot requests (chronological)";
+      svg.appendChild(xLabel);
+    });
   }
 
   function snapshotChanged(currentSnapshotId, latestSnapshotId) {

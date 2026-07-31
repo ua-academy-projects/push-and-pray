@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from pathlib import Path
 from time import monotonic
 from typing import Annotated
@@ -23,6 +23,7 @@ from ui_service.schemas import (
     BlacklistAnalytics,
     BlacklistPage,
     BlacklistPollStatus,
+    BlacklistRequestSeries,
     BlacklistStatus,
     BlacklistTurnover,
     CheckResult,
@@ -58,6 +59,19 @@ class TurnoverRange(StrEnum):
     thirty_days = "30"
     ninety_days = "90"
     all = "all"
+
+
+class GraphMode(StrEnum):
+    time = "time"
+    requests = "requests"
+
+
+class RequestLimit(IntEnum):
+    five = 5
+    ten = 10
+    twenty = 20
+    fifty = 50
+    hundred = 100
 
 
 def request_id_for(request: Request) -> str:
@@ -222,12 +236,15 @@ async def blacklist(
     settings: Annotated[Settings, Depends(get_theme_settings)],
     page: Annotated[int, Query(ge=1)] = 1,
     range_days: TurnoverRange = TurnoverRange.thirty_days,
+    graph_mode: GraphMode = GraphMode.time,
+    request_limit: RequestLimit = RequestLimit.ten,
 ) -> HTMLResponse:
     request_id = request_id_for(request)
     status_result: BlacklistStatus | None = None
     blacklist_page: BlacklistPage | None = None
     analytics: BlacklistAnalytics | None = None
     turnover: BlacklistTurnover | None = None
+    request_series: BlacklistRequestSeries | None = None
     error: str | None = None
     analytics_error: str | None = None
     turnover_error: str | None = None
@@ -254,7 +271,12 @@ async def blacklist(
         except ApplicationClientError:
             analytics_error = "Snapshot analytics are temporarily unavailable."
         try:
-            if range_days is TurnoverRange.all:
+            if graph_mode is GraphMode.requests:
+                request_series = await application_client.blacklist_request_series(
+                    limit=int(request_limit),
+                    request_id=request_id,
+                )
+            elif range_days is TurnoverRange.all:
                 turnover = await application_client.blacklist_turnover(
                     period="all",
                     interval="auto",
@@ -289,11 +311,19 @@ async def blacklist(
                 if turnover is not None
                 else []
             ),
+            "request_series": request_series,
+            "request_points": (
+                request_series.model_dump(mode="json")["points"]
+                if request_series is not None
+                else []
+            ),
             "error": error,
             "analytics_error": analytics_error,
             "turnover_error": turnover_error,
             "page": page,
             "range_days": range_days,
+            "graph_mode": graph_mode,
+            "request_limit": request_limit,
         },
     )
 

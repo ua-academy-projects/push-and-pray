@@ -22,6 +22,8 @@ services:
   provider-api:
     <<: *provider-common
     container_name: aegis-provider-api
+    environment:
+      BLACKLIST_POLLING_ENABLED: "true"
     command:
       - uvicorn
       - provider_service.main:app
@@ -40,28 +42,6 @@ services:
           import urllib.request;
           urllib.request.urlopen(
           'http://127.0.0.1:8001/health/live', timeout=2).read()
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  provider-worker:
-    <<: *provider-common
-    container_name: aegis-provider-worker
-    command:
-      - aegis-provider-blacklist-worker
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import os, pathlib;
-          current = os.getpid();
-          needle = b'aegis-provider-blacklist-worker';
-          assert any(needle in path.read_bytes()
-          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
-          if path.parts[-2] != str(current))
       interval: 30s
       timeout: 5s
       retries: 3

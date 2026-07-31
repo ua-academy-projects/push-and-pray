@@ -20,6 +20,7 @@ from history_service.models import (
 from history_service.schemas import (
     BlacklistAnalyticsQuery,
     BlacklistEntryQuery,
+    BlacklistRequestSeriesQuery,
     BlacklistSnapshotListQuery,
     BlacklistTurnoverQuery,
 )
@@ -39,6 +40,33 @@ def snapshot(*, snapshot_id: int = 42, age_hours: int = 1) -> BlacklistSnapshot:
         confidence_minimum=90,
         requested_limit=1000,
         returned_count=2,
+    )
+
+
+def test_request_series_returns_latest_successes_chronologically() -> None:
+    repository = Mock(spec=BlacklistRepository)
+    older = snapshot(snapshot_id=41, age_hours=2)
+    older.delivery_id = "6f5aa064-43e8-4dbb-a544-d60b68af5cbd"
+    older.added_count = None
+    newer = snapshot(snapshot_id=42, age_hours=1)
+    newer.delivery_id = "43fbfc40-98a7-421d-aed8-c221d07997c2"
+    newer.added_count = 1
+    repository.latest_request_snapshots.return_value = [newer, older]
+
+    result = BlacklistReadService(repository).request_series(
+        Mock(spec=Session), BlacklistRequestSeriesQuery(limit=5)
+    )
+
+    assert [str(point.request_id) for point in result.points] == [
+        older.delivery_id,
+        newer.delivery_id,
+    ]
+    assert [(point.total_ips, point.new_ips) for point in result.points] == [
+        (2, 2),
+        (2, 1),
+    ]
+    repository.latest_request_snapshots.assert_called_once_with(
+        ANY, provider="AbuseIPDB", limit=5
     )
 
 

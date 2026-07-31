@@ -14,6 +14,8 @@ from history_service.schemas import (
     BlacklistIpVersionCount,
     BlacklistLastError,
     BlacklistPage,
+    BlacklistRequestPoint,
+    BlacklistRequestSeriesResponse,
     BlacklistScoreBucket,
     BlacklistSnapshotChurn,
     BlacklistSnapshotList,
@@ -297,6 +299,48 @@ async def test_blacklist_turnover_all_mode_returns_adaptive_metadata(
     query = service.turnover.call_args.args[1]
     assert query.period == "all"
     assert query.interval == "auto"
+
+
+@pytest.mark.anyio
+async def test_blacklist_request_series_endpoint_preserves_chronological_points(
+    client: AsyncClient, override_dependency: Any
+) -> None:
+    service = Mock()
+    service.request_series.return_value = BlacklistRequestSeriesResponse(
+        limit=5,
+        points=[
+            BlacklistRequestPoint(
+                request_id=REQUEST_ID,
+                created_at=NOW,
+                total_ips=1000,
+                new_ips=37,
+            )
+        ],
+    )
+    override_dependency(get_blacklist_read_service, service)
+
+    response = await client.get("/api/v1/blacklist/analytics/requests?limit=5")
+
+    assert response.status_code == 200
+    assert response.json()["points"] == [
+        {
+            "request_id": REQUEST_ID,
+            "created_at": "2026-07-22T12:00:00Z",
+            "total_ips": 1000,
+            "new_ips": 37,
+        }
+    ]
+    query = service.request_series.call_args.args[1]
+    assert query.limit == 5
+
+
+@pytest.mark.anyio
+async def test_blacklist_request_series_rejects_unsupported_limit(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/api/v1/blacklist/analytics/requests?limit=25")
+
+    assert response.status_code == 422
 
 
 @pytest.mark.anyio

@@ -4,7 +4,6 @@ import asyncio
 import fcntl
 import logging
 import random
-import signal
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
@@ -12,9 +11,8 @@ from pathlib import Path
 from typing import IO, Protocol
 from uuid import UUID, uuid4
 
-from provider_service.config import Settings, get_settings
+from provider_service.config import Settings
 from provider_service.exceptions import ApplicationError, RateLimitExceededError
-from provider_service.main import create_abuseipdb_http_client
 from provider_service.polling_policy import PollingPolicy
 from provider_service.provider import AbuseIPDBProvider
 from provider_service.rabbitmq_publisher import (
@@ -306,7 +304,13 @@ class BlacklistPollingWorker:
         )
 
 
-async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
+async def run_worker(
+    settings: Settings,
+    stop_event: asyncio.Event,
+    *,
+    provider: ReputationProvider | None = None,
+    publisher: PublisherGateway | None = None,
+) -> None:
     logger.info(
         "provider_blacklist_worker_starting",
         extra={
@@ -325,17 +329,20 @@ async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
         return
     with singleton_worker_lock():
         logger.info("provider_blacklist_singleton_lock_acquired")
-        abuseipdb_client = create_abuseipdb_http_client(settings)
-        publisher = AioPikaBlacklistPublisher(settings)
+        owned_client = None
+        if provider is None:
+            from provider_service.main import create_abuseipdb_http_client
+
+            owned_client = create_abuseipdb_http_client(settings)
+            provider = AbuseIPDBProvider(
+                owned_client,
+                operation_timeout_seconds=settings.abuseipdb_operation_timeout_seconds,
+            )
+        active_publisher = publisher or AioPikaBlacklistPublisher(settings)
         try:
             worker = BlacklistPollingWorker(
-                provider=AbuseIPDBProvider(
-                    abuseipdb_client,
-                    operation_timeout_seconds=(
-                        settings.abuseipdb_operation_timeout_seconds
-                    ),
-                ),
-                publisher=publisher,
+                provider=provider,
+                publisher=active_publisher,
                 policy=PollingPolicy(
                     interval_seconds=settings.blacklist_poll_interval_seconds,
                     publish_initial_seconds=(
@@ -351,26 +358,7 @@ async def run_worker(settings: Settings, stop_event: asyncio.Event) -> None:
             await worker.run(stop_event)
         finally:
             logger.info("provider_blacklist_worker_shutting_down")
-            await abuseipdb_client.aclose()
-            await publisher.close()
+            if owned_client is not None:
+                await owned_client.aclose()
+            await active_publisher.close()
             logger.info("provider_blacklist_worker_stopped")
-
-
-def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        force=True,
-    )
-
-    settings = get_settings()
-    stop_event = asyncio.Event()
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    for signal_number in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(signal_number, stop_event.set)
-    try:
-        loop.run_until_complete(run_worker(settings, stop_event))
-    finally:
-        loop.close()

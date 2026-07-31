@@ -3,8 +3,7 @@
 This document describes the HTTP, RabbitMQ, and Redis boundaries. It separates
 browser-facing UI routes, the History application API, the internal Provider
 API, asynchronous snapshot messages, and UI-internal Redis keys. The direct
-Provider Worker publication path is the target contract for the next deployment
-phase; application code still requires a later implementation change.
+Provider's lifespan scheduler is the RabbitMQ publication owner.
 
 Unless stated otherwise:
 
@@ -19,9 +18,9 @@ Unless stated otherwise:
 ```text
 Browser -> UI Service -> History Service -> Provider Service -> AbuseIPDB
 
-Provider blacklist worker
+Provider lifespan scheduler
   -> RabbitMQ
-  -> History blacklist consumer
+  -> History lifespan consumer
   -> MariaDB
 
 Browser cookie -> UI Service -> Redis
@@ -39,7 +38,7 @@ API.
 | --- | --- | --- | --- |
 | `GET` | `/` | — | Server-rendered lookup page and recent history |
 | `POST` | `/` | Form fields `ip_address`, `max_age_days` | Server-rendered result or safe error |
-| `GET` | `/blacklist` | `page` (default `1`, minimum `1`), `range_days` (`7`, `30`, or `90`; default `30`) | Persisted blacklist page and analytics |
+| `GET` | `/blacklist` | `page`; `graph_mode` (`time` or `requests`); `range_days`; `request_limit` (`5`, `10`, `20`, `50`, `100`) | Persisted blacklist page and analytics |
 | `GET` | `/blacklist/status` | — | Minimal same-origin polling JSON |
 | `GET` | `/theme` | Optional anonymous session cookie | Current theme JSON |
 | `POST` | `/theme` | Form field `theme` | `303` redirect after a valid submission |
@@ -275,6 +274,7 @@ message, or triggers synchronization.
 | `GET` | `/api/v1/blacklist/snapshots/{snapshot_id}` | `limit`, `offset` |
 | `GET` | `/api/v1/blacklist/analytics` | `pair_limit` |
 | `GET` | `/api/v1/blacklist/analytics/turnover` | `from`, `to`, `interval` |
+| `GET` | `/api/v1/blacklist/analytics/requests` | `limit` (`5`, `10`, `20`, `50`, or `100`; default `10`) |
 
 #### Status
 
@@ -440,6 +440,26 @@ metrics because absence of a snapshot is not evidence of zero turnover.
 
 Point metrics and `snapshot_id` may be `null`.
 
+#### Request-count series
+
+`GET /api/v1/blacklist/analytics/requests?limit=20` returns the requested
+number of latest successfully persisted delivered snapshots, ordered from
+oldest to newest for charting. One point represents one request; `new_ips` is
+the number added relative to its persisted baseline (or all IPs for the first
+available baseline).
+
+```json
+{
+  "limit": 20,
+  "points": [{
+    "request_id": "018f6a42-44c2-7f57-8c78-6dcb40b3912a",
+    "created_at": "2026-07-22T12:00:02Z",
+    "total_ips": 1000,
+    "new_ips": 37
+  }]
+}
+```
+
 ### History health
 
 ```http
@@ -450,7 +470,8 @@ GET /health/live
 {"status": "ok"}
 ```
 
-`GET /health/ready` runs a minimal MariaDB query and returns:
+`GET /health/ready` runs a minimal MariaDB query and verifies that the
+configured RabbitMQ consumer task is registered and running. It returns:
 
 ```json
 {"status": "ready"}
@@ -607,8 +628,8 @@ GET /health/ready
 }
 ```
 
-These endpoints do not call AbuseIPDB. They describe Provider API configuration,
-not Provider blacklist worker liveness.
+These endpoints do not call AbuseIPDB. Readiness returns `503` when the enabled
+scheduler task has terminated; liveness only confirms the HTTP process.
 
 ## RabbitMQ blacklist snapshot contract
 
@@ -759,7 +780,7 @@ failures. Unknown JSON fields are rejected.
 
 After RabbitMQ confirms publication, consumer delivery is at least once. An
 accepted duplicate is therefore a successful, expected outcome. Before that
-confirmation, loss of the Provider Worker container or VM can lose its
+confirmation, loss of the Provider process or VM can lose its
 in-memory fetched message.
 
 ### Acknowledgement and failures

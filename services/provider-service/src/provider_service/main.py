@@ -1,5 +1,6 @@
 """FastAPI application for the Aegis provider service."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -9,9 +10,11 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.types import ExceptionHandler
 
+from provider_service.blacklist_worker import run_worker
 from provider_service.config import Settings, get_settings
 from provider_service.exceptions import ApplicationError
 from provider_service.provider import AbuseIPDBProvider
+from provider_service.rabbitmq_publisher import AioPikaBlacklistPublisher
 from provider_service.routes import (
     application_exception_handler,
     request_id_middleware,
@@ -42,16 +45,37 @@ def create_abuseipdb_http_client(settings: Settings) -> httpx.AsyncClient:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    """Open and close the reusable AbuseIPDB client exactly once."""
+    """Own HTTP, RabbitMQ, and the controlled blacklist scheduler task."""
     settings = get_settings()
     abuseipdb_client = create_abuseipdb_http_client(settings)
-    application.state.reputation_provider = AbuseIPDBProvider(
+    provider = AbuseIPDBProvider(
         abuseipdb_client,
         operation_timeout_seconds=settings.abuseipdb_operation_timeout_seconds,
     )
+    publisher = AioPikaBlacklistPublisher(settings)
+    stop_event = asyncio.Event()
+    application.state.reputation_provider = provider
+    application.state.blacklist_publisher = publisher
+    application.state.blacklist_scheduler_enabled = settings.blacklist_polling_enabled
+    scheduler_task: asyncio.Task[None] | None = None
+    if settings.blacklist_polling_enabled:
+        scheduler_task = asyncio.create_task(
+            run_worker(
+                settings,
+                stop_event,
+                provider=provider,
+                publisher=publisher,
+            ),
+            name="provider-blacklist-scheduler",
+        )
+    application.state.blacklist_scheduler_task = scheduler_task
     try:
         yield
     finally:
+        stop_event.set()
+        if scheduler_task is not None:
+            await asyncio.gather(scheduler_task, return_exceptions=True)
+        await publisher.close()
         await abuseipdb_client.aclose()
 
 

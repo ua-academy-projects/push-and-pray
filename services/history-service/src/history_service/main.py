@@ -1,5 +1,6 @@
 """FastAPI application for the Aegis history service."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
@@ -9,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.types import ExceptionHandler
 
+from history_service.blacklist_consumer import create_consumer
 from history_service.config import Settings, get_settings
 from history_service.exceptions import ApplicationError
 from history_service.provider_client import ProviderClient
@@ -43,12 +45,27 @@ async def managed_lifespan(
     application: FastAPI,
     settings: Settings,
 ) -> AsyncIterator[None]:
-    """Own only the Provider client used for manual reputation lookups."""
+    """Own the Provider client and controlled RabbitMQ consumer task."""
     http_client = create_provider_http_client(settings)
     application.state.provider_client = ProviderClient(http_client)
+    application.state.blacklist_consumer_enabled = settings.blacklist_consumer_enabled
+    consumer = None
+    consumer_task: asyncio.Task[None] | None = None
+    stop_event = asyncio.Event()
+    if settings.blacklist_consumer_enabled:
+        consumer = create_consumer(settings)
+        consumer_task = asyncio.create_task(
+            consumer.run(stop_event),
+            name="history-blacklist-consumer",
+        )
+    application.state.blacklist_consumer = consumer
+    application.state.blacklist_consumer_task = consumer_task
     try:
         yield
     finally:
+        stop_event.set()
+        if consumer_task is not None:
+            await asyncio.gather(consumer_task, return_exceptions=True)
         http_client.close()
 
 

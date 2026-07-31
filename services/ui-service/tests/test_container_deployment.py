@@ -24,11 +24,6 @@ STACKS = {
                 ["uvicorn", "history_service.main:app"],
                 True,
             ),
-            "history-consumer": (
-                "aegis-history-consumer",
-                ["aegis-history-blacklist-consumer"],
-                False,
-            ),
         },
     },
     "provider-vm": {
@@ -38,11 +33,6 @@ STACKS = {
                 "aegis-provider-api",
                 ["uvicorn", "provider_service.main:app"],
                 True,
-            ),
-            "provider-worker": (
-                "aegis-provider-worker",
-                ["aegis-provider-blacklist-worker"],
-                False,
             ),
         },
     },
@@ -227,9 +217,7 @@ def test_local_compose_preserves_service_boundaries_and_private_dependencies(
         "redis",
         "history-migrate",
         "history-api",
-        "history-consumer",
         "provider-api",
-        "provider-worker",
         "ui",
     }
     assert set(config["volumes"]) == {
@@ -245,8 +233,14 @@ def test_local_compose_preserves_service_boundaries_and_private_dependencies(
     assert services["history-api"]["environment"]["PROVIDER_SERVICE_URL"] == (
         "http://provider-api:8001"
     )
-    assert services["history-consumer"]["environment"]["RABBITMQ_HOST"] == "rabbitmq"
-    assert services["provider-worker"]["environment"]["RABBITMQ_HOST"] == "rabbitmq"
+    assert services["history-api"]["environment"]["RABBITMQ_HOST"] == "rabbitmq"
+    assert services["history-api"]["environment"]["BLACKLIST_CONSUMER_ENABLED"] == (
+        "true"
+    )
+    assert services["provider-api"]["environment"]["RABBITMQ_HOST"] == "rabbitmq"
+    assert services["provider-api"]["environment"]["BLACKLIST_POLLING_ENABLED"] == (
+        "true"
+    )
     assert services["ui"]["environment"]["HISTORY_SERVICE_URL"] == (
         "http://history-api:8002"
     )
@@ -267,9 +261,11 @@ def test_local_compose_preserves_service_boundaries_and_private_dependencies(
     assert services["history-api"]["depends_on"]["history-migrate"]["condition"] == (
         "service_completed_successfully"
     )
-    assert (
-        services["history-consumer"]["depends_on"]["history-migrate"]["condition"]
-        == "service_completed_successfully"
+    assert services["history-api"]["depends_on"]["rabbitmq"]["condition"] == (
+        "service_healthy"
+    )
+    assert services["provider-api"]["depends_on"]["rabbitmq"]["condition"] == (
+        "service_healthy"
     )
 
 

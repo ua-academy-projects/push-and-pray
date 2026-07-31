@@ -312,11 +312,24 @@
     <section aria-labelledby="turnover-analytics-heading">
       <div class="turnover-heading-row">
         <div>
-          <h2 id="turnover-analytics-heading">Blacklist turnover over time</h2>
+          <h2 id="turnover-analytics-heading">Blacklist snapshot changes</h2>
           <p>Changes compare each snapshot with the previous snapshot using the same provider and request configuration.
             Missing data is not treated as zero.</p>
         </div>
         <form class="range-controls" method="get" action="/blacklist">
+          <label for="graph-mode">Режим</label>
+          <select id="graph-mode" name="graph_mode" onchange="this.form.submit()">
+            <option value="time"{% if graph_mode == "time" %} selected{% endif %}>За часом</option>
+            <option value="requests"{% if graph_mode == "requests" %} selected{% endif %}>За кількістю запитів</option>
+          </select>
+          {% if graph_mode == "requests" %}
+          <label for="request-limit">Snapshots</label>
+          <select id="request-limit" name="request_limit" onchange="this.form.submit()">
+            {% for count in (5, 10, 20, 50, 100) %}
+            <option value="{{ count }}"{% if request_limit == count %} selected{% endif %}>{{ count }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
           <label for="turnover-period">Period</label>
           <select id="turnover-period" name="range_days" onchange="this.form.submit()">
             {% for days in ("7", "30", "90") %}
@@ -324,10 +337,37 @@
             {% endfor %}
             <option value="all"{% if range_days == "all" %} selected{% endif %}>All available data</option>
           </select>
+          {% endif %}
           <button type="submit">Apply</button>
         </form>
       </div>
 
+      {% if graph_mode == "requests" %}
+      {% if turnover_error %}
+      <p class="warning" role="status">{{ turnover_error }}</p>
+      {% elif request_series and request_series.points %}
+      <figure class="chart-card" aria-labelledby="request-chart-heading">
+        <h3 id="request-chart-heading">New IPs per successful snapshot request</h3>
+        <figcaption>The latest {{ request_series.limit }} successful snapshots, displayed chronologically.</figcaption>
+        <div class="svg-chart" data-request-chart data-points="{{ request_points | tojson | forceescape }}"
+          role="img" aria-label="Bar chart of new IP addresses in each successful snapshot request"></div>
+      </figure>
+      <div class="table-wrap turnover-table">
+        <table>
+          <caption>Successful snapshot requests in chronological order</caption>
+          <thead><tr><th>Request ID</th><th>Created at</th><th>Total IPs</th><th>New IPs</th></tr></thead>
+          <tbody>
+            {% for point in request_series.points %}
+            <tr><td>{{ point.request_id }}</td><td><time datetime="{{ point.created_at }}">{{ point.created_at }}</time></td>
+              <td>{{ point.total_ips }}</td><td>{{ point.new_ips }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p>No successful snapshot requests are available.</p>
+      {% endif %}
+      {% else %}
       {% if turnover_error %}
       <p class="warning" role="status">{{ turnover_error }}</p>
       <p>The snapshot table and other analytics remain available.</p>
@@ -406,6 +446,7 @@
         <h3>No blacklist history is available</h3>
         <p>Turnover charts will appear after the first accepted blacklist snapshots are stored.</p>
       </div>
+      {% endif %}
       {% endif %}
     </section>
 

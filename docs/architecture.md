@@ -12,9 +12,8 @@ The logical service boundaries already exist, but the repository's current
 Vagrant provisioning must still be migrated to the container deployment
 described here.
 
-The target favors explicit ownership, independently deployable runtime
-processes, asynchronous blacklist delivery, and infrastructure isolated on a
-dedicated VM.
+The target favors explicit ownership, one container per application service,
+asynchronous blacklist delivery, and infrastructure isolated on a dedicated VM.
 
 ## Logical services and runtime containers
 
@@ -25,15 +24,12 @@ process belonging to a logical service.
 | Logical service | Runtime container | Purpose |
 | --- | --- | --- |
 | UI Service | UI Service | Renders pages, handles browser requests, calls History, and manages anonymous UI state |
-| History Service | History API | Exposes `/api/v1/*`, orchestrates manual lookups, and reads and writes MariaDB |
-| History Service | History Consumer | Consumes blacklist messages and invokes History application-layer ingestion |
-| Provider Service | Provider API | Exposes `/internal/v1/*` and adapts individual AbuseIPDB requests |
-| Provider Service | Provider Worker | Polls AbuseIPDB and publishes complete blacklist messages directly to RabbitMQ |
+| History Service | History Service | Exposes `/api/v1/*`; its lifespan consumer ingests RabbitMQ messages |
+| Provider Service | Provider Service | Exposes `/internal/v1/*`; its lifespan scheduler polls and publishes |
 
-The API and background runtime of a logical service may use the same container
-image and service code, but they have separate container lifecycles and
-commands. Running Provider API does not start polling. Running History API does
-not start RabbitMQ consumption.
+Provider and History start their controlled background tasks in FastAPI
+lifespan. The tasks share the service container lifecycle, stop cooperatively,
+and close RabbitMQ resources during shutdown.
 
 No application runtime executes directly on a VM host. Application services are
 not combined into a single container.
@@ -45,8 +41,8 @@ The target Vagrant environment contains exactly four VMs:
 | VM | Containers |
 | --- | --- |
 | `ui-vm` | UI Service |
-| `history-vm` | History API; History Consumer |
-| `provider-vm` | Provider API; Provider Worker |
+| `history-vm` | History Service |
+| `provider-vm` | Provider Service |
 | `infra-vm` | MariaDB; RabbitMQ with management plugin; Redis |
 
 ```mermaid
@@ -58,13 +54,11 @@ flowchart LR
     end
 
     subgraph HistoryVM[history-vm]
-        HAPI[History API container]
-        HConsumer[History Consumer container]
+        HAPI[History Service container<br/>API + consumer task]
     end
 
     subgraph ProviderVM[provider-vm]
-        PAPI[Provider API container]
-        PWorker[Provider Worker container]
+        PAPI[Provider Service container<br/>API + scheduler task]
     end
 
     subgraph InfraVM[infra-vm]
@@ -81,10 +75,9 @@ flowchart LR
     HAPI -->|manual lookup HTTP| PAPI
     PAPI -->|HTTPS| AbuseIPDB
     HAPI -->|owned business data| MariaDB
-    PWorker -->|scheduled HTTPS poll| AbuseIPDB
-    PWorker -->|persistent AMQP message| RabbitMQ
-    RabbitMQ -->|delivery| HConsumer
-    HConsumer -->|History ingestion logic| MariaDB
+    PAPI -->|scheduled HTTPS poll| AbuseIPDB
+    PAPI -->|persistent AMQP message| RabbitMQ
+    RabbitMQ -->|delivery| HAPI
 ```
 
 The application VMs remain separate security and failure boundaries. The three
@@ -128,7 +121,7 @@ Responsibilities:
 - expose lookup history, blacklist snapshots, status, and analytics;
 - own SQLAlchemy models, repositories, Alembic migrations, and transactions;
 - validate RabbitMQ messages at the History boundary;
-- invoke application-layer ingestion from the History Consumer;
+- invoke application-layer ingestion from the lifecycle consumer;
 - persist each blacklist snapshot and its entries transactionally;
 - deduplicate snapshot delivery by `delivery_id`.
 
@@ -138,7 +131,7 @@ Restrictions:
 - does not expose ORM models across service boundaries;
 - does not accept blacklist snapshots from Provider through HTTP;
 - does not put SQL in HTTP handlers or RabbitMQ callbacks;
-- runs History API and History Consumer in separate containers on `history-vm`.
+- runs API and consumer task in one History container on `history-vm`.
 
 MariaDB's physical container is on `infra-vm`. Physical placement does not
 change logical ownership: only History runtimes receive MariaDB credentials or
@@ -156,7 +149,7 @@ Responsibilities:
 - validate and normalize upstream data;
 - map provider failures into safe service errors;
 - extract rate-limit and `Retry-After` metadata;
-- own periodic polling in the standalone Provider Worker;
+- own periodic polling in a controlled FastAPI lifespan task;
 - create the complete versioned blacklist message;
 - publish it directly to RabbitMQ using persistent delivery, mandatory routing,
   and publisher confirms.
@@ -167,7 +160,7 @@ Restrictions:
 - does not access MariaDB or Redis;
 - does not deliver blacklist snapshots to History through HTTP;
 - does not consume blacklist messages;
-- runs Provider API and Provider Worker in separate containers on `provider-vm`.
+- runs API and scheduler task in one Provider container on `provider-vm`.
 
 ## Synchronous flows
 
@@ -306,8 +299,8 @@ confirmation.
 Without Provider-side durable staging:
 
 - a failure before RabbitMQ confirms publication can lose the fetched snapshot
-  if the Provider Worker container or VM also loses its in-memory message;
-- worker restart can lose in-memory publication retry state;
+  if the Provider process or VM also loses its in-memory message;
+- Provider process restart can lose in-memory publication retry state;
 - once RabbitMQ confirms publication, broker durability, consumer
   acknowledgements, retry queues, and History idempotency provide at-least-once
   processing;
@@ -348,17 +341,14 @@ Container placement does not transfer logical data ownership to `infra-vm`.
 
 ## Container lifecycle and health
 
-Each runtime has an independent container name, command, restart policy, log
-stream, and health or supervision check.
+Each logical application service has an independent container name, command,
+restart policy, log stream, and health check.
 
 - UI Service readiness checks History and Redis.
-- History API readiness checks MariaDB.
-- History Consumer supervision checks its process plus MariaDB and RabbitMQ
-  connectivity.
-- Provider API readiness validates local configuration without consuming
-  AbuseIPDB quota.
-- Provider Worker supervision checks its process and RabbitMQ/configuration
-  dependencies without performing an extra quota-consuming request.
+- History readiness checks MariaDB, RabbitMQ, and the consumer task.
+- Provider readiness checks RabbitMQ and the scheduler task without performing
+  an extra quota-consuming AbuseIPDB request.
+- A completed background task makes readiness return HTTP `503`.
 - MariaDB, RabbitMQ, and Redis have container-native health checks.
 
 Application logs go to container stdout and stderr. VM hosts supervise container
@@ -369,7 +359,7 @@ stacks; they do not execute application Python processes.
 The target design does not:
 
 - merge application VMs;
-- combine separate application runtimes into one container;
+- create separate worker or consumer containers;
 - move MariaDB ownership away from History;
 - use Redis for business data or message delivery;
 - replace RabbitMQ with direct HTTP snapshot delivery;

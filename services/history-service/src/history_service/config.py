@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     mariadb_database: str
     mariadb_user: str
     mariadb_password: SecretStr
+    blacklist_consumer_enabled: bool = False
     rabbitmq_host: str = Field(default="127.0.0.1", min_length=1)
     rabbitmq_port: int = Field(default=5672, ge=1, le=65535)
     rabbitmq_virtual_host: str = Field(default="/", min_length=1)

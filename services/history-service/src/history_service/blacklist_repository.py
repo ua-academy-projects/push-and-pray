@@ -167,6 +167,24 @@ class BlacklistRepository:
         statement = select(func.count()).select_from(BlacklistSnapshot)
         return session.scalar(statement) or 0
 
+    def latest_request_snapshots(
+        self, session: Session, *, provider: str, limit: int
+    ) -> list[BlacklistSnapshot]:
+        """Return recent delivered snapshots, newest first."""
+        statement = (
+            select(BlacklistSnapshot)
+            .where(
+                BlacklistSnapshot.provider == provider,
+                BlacklistSnapshot.delivery_id.is_not(None),
+            )
+            .order_by(
+                BlacklistSnapshot.provider_generated_at.desc(),
+                BlacklistSnapshot.snapshot_id.desc(),
+            )
+            .limit(limit)
+        )
+        return list(session.scalars(statement))
+
     def turnover_data_range(
         self,
         session: Session,

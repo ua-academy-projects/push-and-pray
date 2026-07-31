@@ -12,6 +12,7 @@ from ui_service.schemas import (
     ApplicationErrorResponse,
     BlacklistAnalytics,
     BlacklistPage,
+    BlacklistRequestSeries,
     BlacklistStatus,
     BlacklistTurnover,
     CheckResult,
@@ -125,6 +126,19 @@ class ApplicationClient:
         )
         return self._validated_response(
             response, BlacklistTurnover, request_id=request_id
+        )
+
+    async def blacklist_request_series(
+        self, *, limit: int, request_id: str
+    ) -> BlacklistRequestSeries:
+        response = await self._request(
+            "GET",
+            "/api/v1/blacklist/analytics/requests",
+            request_id=request_id,
+            params={"limit": limit},
+        )
+        return self._validated_response(
+            response, BlacklistRequestSeries, request_id=request_id
         )
 
     async def ready(self, *, request_id: str) -> None:

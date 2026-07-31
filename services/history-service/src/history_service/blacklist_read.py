@@ -24,6 +24,9 @@ from history_service.schemas import (
     BlacklistIpVersionCount,
     BlacklistLastError,
     BlacklistPage,
+    BlacklistRequestPoint,
+    BlacklistRequestSeriesQuery,
+    BlacklistRequestSeriesResponse,
     BlacklistScoreBucket,
     BlacklistSnapshotChurn,
     BlacklistSnapshotList,
@@ -302,6 +305,34 @@ class BlacklistReadService:
                 "bucket_count": len(points),
                 "points": points,
             }
+        )
+
+    def request_series(
+        self, session: Session, query: BlacklistRequestSeriesQuery
+    ) -> BlacklistRequestSeriesResponse:
+        """Return the latest successful delivered snapshots chronologically."""
+        try:
+            records = self.repository.latest_request_snapshots(
+                session, provider="AbuseIPDB", limit=query.limit
+            )
+        except SQLAlchemyError as error:
+            raise HistoryUnavailableError from error
+        return BlacklistRequestSeriesResponse(
+            limit=query.limit,
+            points=[
+                BlacklistRequestPoint(
+                    request_id=record.delivery_id,
+                    created_at=self._utc(record.provider_generated_at),
+                    total_ips=record.returned_count,
+                    new_ips=(
+                        record.added_count
+                        if record.added_count is not None
+                        else record.returned_count
+                    ),
+                )
+                for record in reversed(records)
+                if record.delivery_id is not None
+            ],
         )
 
     @staticmethod

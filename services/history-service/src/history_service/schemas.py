@@ -623,6 +623,44 @@ class BlacklistTurnoverResponse(BaseModel):
         return self
 
 
+class BlacklistRequestSeriesQuery(BaseModel):
+    """Allowed sizes for request-count based snapshot charts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: Literal[5, 10, 20, 50, 100] = 10
+
+    @field_validator("limit", mode="before")
+    @classmethod
+    def parse_limit(cls, value: object) -> object:
+        if isinstance(value, str) and value.isdecimal():
+            return int(value)
+        return value
+
+
+class BlacklistRequestPoint(BaseModel):
+    """One successful delivered snapshot in chronological order."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    created_at: datetime
+    total_ips: StrictInt = Field(ge=0, le=1000)
+    new_ips: StrictInt = Field(ge=0, le=1000)
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, value: datetime) -> datetime:
+        return normalize_utc(value)
+
+
+class BlacklistRequestSeriesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    limit: Literal[5, 10, 20, 50, 100]
+    points: list[BlacklistRequestPoint] = Field(max_length=100)
+
+
 class BlacklistAnalyticsSnapshot(BaseModel):
     """Latest accepted snapshot represented in the analytics response."""
 

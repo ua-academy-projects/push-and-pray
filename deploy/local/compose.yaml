@@ -193,34 +193,9 @@ services:
       - "8001"
     environment:
       <<: *provider-environment
-      BLACKLIST_POLLING_ENABLED: "false"
+      BLACKLIST_POLLING_ENABLED: "true"
     ports:
       - "127.0.0.1:8001:8001"
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen(
-          'http://127.0.0.1:8001/health/live', timeout=2).read()
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  provider-worker:
-    <<: *application-runtime
-    build:
-      context: ../../services/provider-service
-      dockerfile: Dockerfile
-    image: ${AEGIS_PROVIDER_IMAGE:-aegis/provider-service:local}
-    container_name: aegis-provider-worker
-    command:
-      - aegis-provider-blacklist-worker
-    environment:
-      <<: *provider-environment
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -230,12 +205,9 @@ services:
         - python
         - -c
         - >-
-          import os, pathlib;
-          current = os.getpid();
-          needle = b'aegis-provider-blacklist-worker';
-          assert any(needle in path.read_bytes()
-          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
-          if path.parts[-2] != str(current))
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8001/health/live', timeout=2).read()
       interval: 30s
       timeout: 5s
       retries: 3
@@ -257,12 +229,15 @@ services:
       - "8002"
     environment:
       <<: *history-environment
+      BLACKLIST_CONSUMER_ENABLED: "true"
     ports:
       - "127.0.0.1:8002:8002"
     depends_on:
       history-migrate:
         condition: service_completed_successfully
       provider-api:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test:
@@ -273,39 +248,6 @@ services:
           import urllib.request;
           urllib.request.urlopen(
           'http://127.0.0.1:8002/health/live', timeout=2).read()
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  history-consumer:
-    <<: *application-runtime
-    build:
-      context: ../../services/history-service
-      dockerfile: Dockerfile
-    image: ${AEGIS_HISTORY_IMAGE:-aegis/history-service:local}
-    container_name: aegis-history-consumer
-    command:
-      - aegis-history-blacklist-consumer
-    environment:
-      <<: *history-environment
-    depends_on:
-      history-migrate:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import os, pathlib;
-          current = os.getpid();
-          needle = b'aegis-history-blacklist-consumer';
-          assert any(needle in path.read_bytes()
-          for path in pathlib.Path('/proc').glob('[0-9]*/cmdline')
-          if path.parts[-2] != str(current))
       interval: 30s
       timeout: 5s
       retries: 3

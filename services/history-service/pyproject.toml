@@ -18,9 +18,6 @@ dependencies = [
   "uvicorn[standard]",
 ]
 
-[project.scripts]
-aegis-history-blacklist-consumer = "history_service.blacklist_consumer:main"
-
 [project.optional-dependencies]
 dev = [
   "httpx2",
