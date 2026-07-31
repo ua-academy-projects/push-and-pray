@@ -206,18 +206,25 @@
   background-color: var(--panel-raised);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
-  color: var(--ink);
+  color: var(--text);
   color-scheme: dark;
   cursor: pointer;
   font-family: var(--mono);
   font-size: 0.78rem;
   min-height: 2rem;
   padding: 0.35rem 2rem 0.35rem 0.65rem;
+  -webkit-text-fill-color: var(--text);
 }
 
 .range-controls select option {
-  background-color: #111a22;
-  color: #f2f7fa;
+  background-color: var(--panel-raised);
+  color: var(--text);
+}
+
+.range-controls select:disabled {
+  color: var(--text-dim);
+  opacity: 1;
+  -webkit-text-fill-color: var(--text-dim);
 }
 
 .range-controls select:focus {
@@ -253,7 +260,7 @@
 }
 
 .turnover-range-summary time {
-  color: var(--ink);
+  color: var(--text);
   font-family: var(--mono);
 }
 
@@ -316,7 +323,7 @@
 }
 
 .analytics-empty-state h3 {
-  color: var(--ink);
+  color: var(--text);
   margin-top: 0;
 }
 
@@ -352,19 +359,22 @@
 .request-point:hover,
 .request-point:focus {
   cursor: pointer;
-  fill: var(--ink);
+  fill: var(--accent-strong);
   outline: none;
-  stroke: var(--accent);
+  stroke: var(--text);
   stroke-width: 3;
 }
 
 .request-value-label {
-  fill: var(--ink);
+  fill: var(--text);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+  paint-order: stroke;
   pointer-events: none;
+  stroke: var(--panel-raised);
+  stroke-width: 3px;
   text-anchor: middle;
 }
 
