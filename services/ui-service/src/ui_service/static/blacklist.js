@@ -247,39 +247,133 @@
     });
     scope.querySelectorAll("[data-request-chart]").forEach(function (container) {
       let points;
+
       try {
         points = JSON.parse(container.dataset.points || "[]");
       } catch (_error) {
         return;
       }
+
+      if (!Array.isArray(points) || points.length === 0) {
+        return;
+      }
+
       const svg = chartFrame(container);
-      const maximum = Math.max(1, ...points.map(function (point) { return Number(point.new_ips); }));
-      const groupWidth = 648 / Math.max(points.length, 1);
-      points.forEach(function (point, index) {
-        const height = Number(point.new_ips) / maximum * 190;
-        const bar = svgElement("rect", {
-          x: 52 + groupWidth * index + groupWidth * 0.2,
-          y: 220 - height,
-          width: groupWidth * 0.6,
-          height: height,
-          class: "bar-added"
-        });
-        appendTitle(bar, [
-          point.created_at,
-          "Request: " + point.request_id,
-          "Total IPs: " + point.total_ips,
-          "New IPs: " + point.new_ips
-        ].join("\n"));
-        svg.appendChild(bar);
+
+      const values = points.map(function (point) {
+        return Math.max(0, Number(point.new_ips) || 0);
       });
+
+      const maximum = Math.max(1, ...values);
+
+      /*
+       * Залишаємо невеликий відступ зверху і знизу.
+       * 190 — доступна висота області графіка.
+       */
+      function requestPointY(value) {
+        return 220 - (value / maximum) * 180;
+      }
+
+      const coordinates = points.map(function (point, index) {
+        return {
+          x: pointX(index, points.length),
+          y: requestPointY(Math.max(0, Number(point.new_ips) || 0)),
+          point: point,
+          index: index
+        };
+      });
+
+      /*
+       * Лінія, яка з'єднує всі точки.
+       */
+      if (coordinates.length > 1) {
+        svg.appendChild(svgElement("polyline", {
+          points: coordinates.map(function (item) {
+            return item.x + "," + item.y;
+          }).join(" "),
+          class: "request-line",
+          fill: "none"
+        }));
+      }
+
+      /*
+       * Точки, числові значення та tooltip.
+       */
+      coordinates.forEach(function (item) {
+        const requestNumber = item.index + 1;
+
+        const pointElement = svgElement("circle", {
+          cx: item.x,
+          cy: item.y,
+          r: 4,
+          class: "request-point",
+          tabindex: "0"
+        });
+
+        appendTitle(pointElement, [
+          "Request #" + requestNumber,
+          "Created at: " + item.point.created_at,
+          "Request ID: " + item.point.request_id,
+          "Total IPs: " + item.point.total_ips,
+          "New IPs: " + item.point.new_ips
+        ].join("\n"));
+
+        svg.appendChild(pointElement);
+
+        /*
+         * Число над точкою.
+         */
+        const valueLabel = svgElement("text", {
+          x: item.x,
+          y: Math.max(14, item.y - 10),
+          class: "request-value-label",
+          "text-anchor": "middle"
+        });
+
+        valueLabel.textContent = String(item.point.new_ips);
+        svg.appendChild(valueLabel);
+
+        /*
+         * Позначка #1, #2, #3... по осі X.
+         */
+        const tick = svgElement("line", {
+          x1: item.x,
+          y1: 220,
+          x2: item.x,
+          y2: 225,
+          class: "chart-tick"
+        });
+
+        svg.appendChild(tick);
+
+        const requestLabel = svgElement("text", {
+          x: item.x,
+          y: 239,
+          class: "chart-tick-label",
+          "text-anchor": "middle"
+        });
+
+        requestLabel.textContent = "#" + requestNumber;
+        svg.appendChild(requestLabel);
+      });
+
       const yLabel = svgElement("text", {
-        x: 14, y: 125, class: "chart-axis-label",
+        x: 14,
+        y: 125,
+        class: "chart-axis-label",
         transform: "rotate(-90 14 125)"
       });
+
       yLabel.textContent = "New IP addresses";
       svg.appendChild(yLabel);
-      const xLabel = svgElement("text", { x: 376, y: 270, class: "chart-axis-label" });
-      xLabel.textContent = "Successful snapshot requests (chronological)";
+
+      const xLabel = svgElement("text", {
+        x: 376,
+        y: 270,
+        class: "chart-axis-label"
+      });
+
+      xLabel.textContent = "Successful snapshot requests";
       svg.appendChild(xLabel);
     });
   }

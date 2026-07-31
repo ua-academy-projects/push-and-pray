@@ -202,24 +202,50 @@
   font-weight: 700;
 }
 
-.range-controls select,
-.range-controls button {
-  background: var(--panel-raised);
+.range-controls select {
+  background-color: var(--panel-raised);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
   color: var(--ink);
+  color-scheme: dark;
+  cursor: pointer;
   font-family: var(--mono);
   font-size: 0.78rem;
-  padding: 0.35rem 0.65rem;
+  min-height: 2rem;
+  padding: 0.35rem 2rem 0.35rem 0.65rem;
+}
+
+.range-controls select option {
+  background-color: #111a22;
+  color: #f2f7fa;
+}
+
+.range-controls select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  outline: none;
 }
 
 .range-controls button {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: #04211d;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+}
+
+/* .range-controls button {
   background: var(--accent);
   border-color: var(--accent);
   color: #04211d;
   cursor: pointer;
   font-weight: 700;
-}
+} */
 
 .turnover-range-summary {
   color: var(--text-dim);
@@ -294,9 +320,52 @@
   margin-top: 0;
 }
 
-.turnover-line {
+.turnover-line,
+.request-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.turnover-point,
+.request-point,
+.bar-added {
+  fill: var(--accent);
+}
+
+/* .request-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+} */
+
+.request-point {
+  /* fill: var(--accent); */
+  stroke: var(--panel-raised);
+  stroke-width: 2;
+}
+
+.request-point:hover,
+.request-point:focus {
+  cursor: pointer;
+  fill: var(--ink);
+  outline: none;
   stroke: var(--accent);
   stroke-width: 3;
+}
+
+.request-value-label {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
 }
 
 .turnover-point,
@@ -361,4 +430,14 @@
   .bar-list meter {
     grid-column: 1 / -1;
   }
+}
+
+.chart-grid-line {
+  stroke: var(--hairline);
+  stroke-dasharray: 3 5;
+  stroke-width: 1;
+}
+
+.request-point:focus {
+  filter: drop-shadow(0 0 4px var(--accent));
 }

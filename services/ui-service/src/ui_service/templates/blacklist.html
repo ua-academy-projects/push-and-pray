@@ -350,7 +350,7 @@
         <h3 id="request-chart-heading">New IPs per successful snapshot request</h3>
         <figcaption>The latest {{ request_series.limit }} successful snapshots, displayed chronologically.</figcaption>
         <div class="svg-chart" data-request-chart data-points="{{ request_points | tojson | forceescape }}"
-          role="img" aria-label="Bar chart of new IP addresses in each successful snapshot request"></div>
+          role="img" aria-label="Line chart of new IP addresses in each successful snapshot request"></div>
       </figure>
       <div class="table-wrap turnover-table">
         <table>
@@ -499,9 +499,11 @@
   <script>
     (function () {
       var indicator = document.getElementById("blacklist-state-indicator");
-      var snapshotId = Number(indicator.dataset.latestSnapshotId) || null;
+      var rawSnapshotId = indicator.dataset.latestSnapshotId;
+      var snapshotId = rawSnapshotId === "" ? null : Number(rawSnapshotId);
+
       window.BlacklistPolling.start({
-        currentSnapshotId: {{ status.latest_snapshot_id if status.latest_snapshot_id is not none else "null" }},
+        currentSnapshotId: snapshotId,
         statusUrl: "/blacklist/status",
         indicator: indicator
       });
