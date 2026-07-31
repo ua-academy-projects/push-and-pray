@@ -6,6 +6,10 @@ services:
     container_name: academy-ui
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     environment:
       BACKEND_SERVICE_URL: ${BACKEND_SERVICE_URL}
       REDIS_HOST: ${REDIS_HOST}

@@ -6,6 +6,10 @@ services:
     container_name: academy-proxy
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     environment:
       RABBITMQ_URL: ${RABBITMQ_URL}
       PORT: 5001

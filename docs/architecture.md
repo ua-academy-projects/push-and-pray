@@ -11,6 +11,7 @@
 | **RabbitMQ** | AMQP 5672 | Durable queue `weather_events` для асинхронного передавання подій. |
 | **Backend / History Service** | HTTP 5002, AMQP consumer, SQL client | Read API для історії та погодинного прогнозу; споживає `weather_events` і записує їх у PostgreSQL. |
 | **PostgreSQL** | SQL 5432 | Постійно зберігає історію погоди та погодинний прогноз. |
+| **Central Log Server** | HTTP 19532 | Приймає systemd journals з усіх application/infrastructure VM і зберігає їх у `/var/log/journal/remote`. |
 
 ## Розміщення у Vagrant
 
@@ -21,7 +22,7 @@ Docker-контейнері всередині відповідної VM. Provis
 - **Public LAN** `192.168.1.0/27` — доступ інших пристроїв локальної мережі,
   зокрема до UI на `192.168.1.19:5000`.
 - **Private libvirt** `192.168.56.0/24` — керування з хоста; SSH aliases
-  `db`, `backend`, `proxy`, `poller`, `ui` використовують саме ці адреси.
+  `db`, `backend`, `proxy`, `poller`, `ui`, `logs` використовують саме ці адреси.
   Це обходить обмеження macvtap, через яке host не може напряму підключатися
   до VM через public adapter.
 
@@ -34,11 +35,30 @@ Docker-контейнері всередині відповідної VM. Provis
 | `db` | `academy-postgres` | `5432:5432` |
 | `db` | `academy-redis` | `6379:6379` |
 | `db` | `academy-rabbitmq` | `5672:5672`, `15672:15672` |
+| `logs` | `systemd-journal-remote` | `19532` у private network |
 
 Контейнери використовують Docker host network усередині своєї VM. Це прибирає
 зайвий nested NAT між bridged VM і Docker та дозволяє звертатися до сервісів за
 статичними IP VM із `Vagrantfile`. Дані infrastructure containers зберігаються
 у named Docker volumes.
+
+## Централізовані журнали
+
+1. Docker-контейнери використовують logging driver `journald`, тому їх
+   stdout/stderr потрапляє в systemd journal відповідної VM.
+2. На `db`, `backend`, `proxy`, `poller` та `ui` працює
+   `systemd-journal-upload`. Він надсилає записи на
+   `http://192.168.56.15:19532`, зберігає cursor успішно переданого запису та
+   автоматично перепідключається після тимчасової недоступності сервера.
+3. На VM `logs` socket-activated `systemd-journal-remote` приймає потоки й
+   зберігає окремий journal-файл для кожної VM-джерела у
+   `/var/log/journal/remote`. Записи зберігають поле `_HOSTNAME`, тому їх можна
+   фільтрувати за іменем VM незалежно від назви фізичного файла.
+4. Централізовані записи читаються через `journalctl --directory=... --merge`;
+   доступ до VM виконується alias-командою `ssh logs`.
+
+Транспорт журналів поки HTTP і доступний лише у private libvirt network.
+Mutual TLS із власним CA заплановано окремим етапом.
 
 ## Потоки даних
 

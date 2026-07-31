@@ -6,6 +6,10 @@ services:
     container_name: academy-backend
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     environment:
       DB_HOST: ${DB_HOST}
       DB_PORT: 5432

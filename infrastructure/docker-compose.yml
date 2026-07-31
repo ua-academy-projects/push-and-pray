@@ -4,6 +4,10 @@ services:
     container_name: academy-postgres
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -21,6 +25,10 @@ services:
     container_name: academy-redis
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     command: ["redis-server", "--appendonly", "yes", "--protected-mode", "no"]
     volumes:
       - academy-redis-data:/data
@@ -35,6 +43,10 @@ services:
     container_name: academy-rabbitmq
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     environment:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: admin

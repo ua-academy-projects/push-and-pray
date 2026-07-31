@@ -50,6 +50,7 @@ SSH_IPS = {
   "proxy"             => ENV['SSH_PROXY_IP'] || "192.168.56.12",
   "poller"            => ENV['SSH_POLLER_IP'] || "192.168.56.13",
   "ui"                => ENV['SSH_UI_IP'] || "192.168.56.14",
+  "logs"              => ENV['SSH_LOGS_IP'] || "192.168.56.15",
 }
 
 SSH_CONFIG_PATH = File.expand_path(ENV['SSH_CONFIG_PATH'] || "~/.ssh/config")
@@ -81,6 +82,14 @@ end
 write_ssh_config(SSH_CONFIG_PATH, SSH_IPS, VM_SSH_USER)
 
 VMS = {
+
+  "logs" => {
+    hostname:       "logs",
+    provision:      "./provision/log-server.sh",
+    public_network: false,
+    docker:         false,
+    env: {},
+  },
 
   "db" => {
     hostname:      "db",
@@ -154,11 +163,13 @@ Vagrant.configure("2") do |config|
         ip: SSH_IPS[name],
         netmask: "255.255.255.0"
 
-      node.vm.network "public_network",
-        dev: BRIDGE_DEVICE,
-        mode: "bridge",
-        ip: LAN_IPS[name],
-        netmask: NETMASK
+      unless opts[:public_network] == false
+        node.vm.network "public_network",
+          dev: BRIDGE_DEVICE,
+          mode: "bridge",
+          ip: LAN_IPS[name],
+          netmask: NETMASK
+      end
 
       Array(opts[:forwarded_ports]).each do |fp|
         node.vm.network "forwarded_port", **fp
@@ -179,9 +190,19 @@ Vagrant.configure("2") do |config|
         path: opts[:provision],
         env: opts[:env]
 
-      node.vm.provision "shell",
-        path: "./provision/docker-user.sh",
-        env: { "VM_SSH_USER" => VM_SSH_USER }
+      unless opts[:docker] == false
+        node.vm.provision "shell",
+          path: "./provision/docker-user.sh",
+          env: { "VM_SSH_USER" => VM_SSH_USER }
+      end
+
+      unless name == "logs"
+        node.vm.provision "shell",
+          path: "./provision/log-client.sh",
+          env: {
+            "LOG_SERVER_URL" => "http://#{SSH_IPS['logs']}:19532",
+          }
+      end
 
     end
   end

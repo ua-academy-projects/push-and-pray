@@ -50,6 +50,7 @@ Docker і Docker Compose, після чого запускають локаль�
 | `proxy` | `academy-proxy` |
 | `poller` | `academy-poller` |
 | `ui` | `academy-ui` |
+| `logs` | systemd-journal-remote (без Docker) |
 
 Compose-файли знаходяться в `infrastructure/`, `backend/`, `proxy/`,
 `poller-service/` та `ui-service/`.
@@ -64,7 +65,7 @@ ssh ui
 Під час `vagrant up` Vagrant створює користувача `user` на кожній VM, додає
 `~/.ssh/vagrant-ssh.pub` до його `authorized_keys` і оновлює лише блок
 `academy-vagrant` у локальному `~/.ssh/config`. Aliases `db`, `backend`,
-`proxy`, `poller` та `ui` використовують приватну libvirt-мережу
+`proxy`, `poller`, `ui` та `logs` використовують приватну libvirt-мережу
 `192.168.56.0/24`, тому працюють навіть коли public adapter використовує
 macvtap. Користувач має
 passwordless `sudo` і входить до групи `docker`; після provisioning треба
@@ -84,6 +85,42 @@ vagrant provision
 
 Docker volumes на VM `db` зберігають PostgreSQL, Redis і RabbitMQ data після
 перезапуску або перестворення контейнерів.
+
+## Централізовані логи
+
+VM `logs` (`192.168.56.15`) приймає systemd journals від `db`, `backend`,
+`proxy`, `poller` та `ui` через HTTP на порту `19532`. Docker-контейнери
+використовують logging driver `journald`, тому їх stdout/stderr також потрапляє
+до центрального журналу. TLS буде додано окремим етапом.
+
+Для наявного Vagrant-оточення застосуйте зміни:
+
+```bash
+vagrant up logs
+vagrant rsync
+vagrant provision
+```
+
+Перевірка receiver і uploader:
+
+```bash
+ssh logs 'sudo systemctl status systemd-journal-remote.socket --no-pager'
+ssh backend 'systemctl status systemd-journal-upload.service --no-pager'
+```
+
+Переглянути всі remote logs:
+
+```bash
+ssh logs
+sudo journalctl --directory=/var/log/journal/remote --merge --follow
+```
+
+Лише Backend VM або конкретний контейнер:
+
+```bash
+sudo journalctl --directory=/var/log/journal/remote --merge _HOSTNAME=backend-service
+sudo journalctl --directory=/var/log/journal/remote --merge CONTAINER_NAME=academy-backend
+```
 
 ## Локальний запуск
 
