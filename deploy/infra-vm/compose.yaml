@@ -53,7 +53,7 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:8.2-alpine
+    image: redis:7.4
     container_name: aegis-redis
     command:
       - redis-server
