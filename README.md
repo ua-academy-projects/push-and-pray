@@ -56,8 +56,30 @@ Compose-файли знаходяться в `infrastructure/`, `backend/`, `pro
 
 ```bash
 vagrant up
-vagrant ssh backend -c "sudo docker ps"
-vagrant ssh db -c "sudo docker ps"
+ssh db
+ssh backend
+ssh ui
+```
+
+Під час `vagrant up` Vagrant створює користувача `user` на кожній VM, додає
+`~/.ssh/vagrant-ssh.pub` до його `authorized_keys` і оновлює лише блок
+`academy-vagrant` у локальному `~/.ssh/config`. Aliases `db`, `backend`,
+`proxy`, `poller` та `ui` використовують приватну libvirt-мережу
+`192.168.56.0/24`, тому працюють навіть коли public adapter використовує
+macvtap. Користувач має
+passwordless `sudo` і входить до групи `docker`; після provisioning треба
+відкрити новий SSH-сеанс, щоб запускати `docker` без `sudo`.
+
+Public adapter залишається у LAN `192.168.1.0/27`: UI доступний з інших
+пристроїв у мережі за адресою `http://192.168.1.19:5000`.
+
+Щоб використати інше ім’я або public key, перед `vagrant up` задайте
+`VM_SSH_USER` чи `VM_SSH_PUBLIC_KEY_PATH`.
+
+Для уже створених VM застосуйте новий користувацький provisioning командою:
+
+```bash
+vagrant provision
 ```
 
 Docker volumes на VM `db` зберігають PostgreSQL, Redis і RabbitMQ data після
