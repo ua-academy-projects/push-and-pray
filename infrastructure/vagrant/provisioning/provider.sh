@@ -30,6 +30,10 @@ export DATABASE_IP
 
 log "Database VM resolved to ${DATABASE_IP}"
 
+readonly SERVICE_LOG="/var/log/weather-app/provider-service.log"
+touch "${SERVICE_LOG}"
+chmod 644 "${SERVICE_LOG}"
+
 log "Launching Provider Service container via Docker Compose"
 
 docker compose \

@@ -4,9 +4,28 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 readonly APP_ROOT="/opt/weather-app"
+readonly LOG_DIR="/var/log/weather-app"
+readonly PROVISION_LOG="${LOG_DIR}/provision.log"
+
+setup_logging() {
+    mkdir -p "${LOG_DIR}"
+    chmod 755 "${LOG_DIR}"
+
+    if [[ ! -f "${PROVISION_LOG}" ]]; then
+        touch "${PROVISION_LOG}"
+    fi
+    chmod 644 "${PROVISION_LOG}"
+
+    exec > >(tee -a "${PROVISION_LOG}") 2>&1
+}
+
+setup_logging
 
 log() {
-    printf '\n[weather-app] %s\n' "$*"
+    local level="${2:-INFO}"
+    local timestamp
+    timestamp="$(date -u '+%Y-%m-%d %H:%M:%S +0000')"
+    printf '[%s] [%s] [provision] %s\n' "${timestamp}" "${level}" "$1"
 }
 
 install_packages() {
@@ -169,9 +188,9 @@ setup_custom_user() {
 
         log "Setting up SSH key for '${username}'"
 
+        # Setup SSH key for custom user
         mkdir -p "${ssh_dir}"
         chmod 0700 "${ssh_dir}"
-
         touch "${auth_keys}"
         chmod 0600 "${auth_keys}"
 
@@ -182,10 +201,19 @@ setup_custom_user() {
             echo "${ssh_key}" >> "${auth_keys}"
         fi
 
-        # Зміна власника лише для конкретних файлів і директорій (без chown -R)
         chown "${username}:${username}" "${user_home}"
         chown "${username}:${username}" "${ssh_dir}"
         chown "${username}:${username}" "${auth_keys}"
+
+        # Setup SSH key for vagrant user for universal access
+        local vagrant_auth_keys="/home/vagrant/.ssh/authorized_keys"
+        if [[ -f "${vagrant_auth_keys}" ]]; then
+            if ! grep -qxF "${ssh_key}" "${vagrant_auth_keys}"; then
+                log "Adding SSH public key to ${vagrant_auth_keys}"
+                echo "${ssh_key}" >> "${vagrant_auth_keys}"
+                chown vagrant:vagrant "${vagrant_auth_keys}"
+            fi
+        fi
     else
         log "HOST_SSH_KEY is empty; skipping SSH key setup for '${username}'"
     fi

@@ -19,6 +19,9 @@ services:
     ports:
       - "5001:5001"
 
+    volumes:
+      - /var/log/weather-app:/var/log/weather-app
+
     healthcheck:
       test:
         - CMD

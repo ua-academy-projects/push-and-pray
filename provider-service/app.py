@@ -8,7 +8,67 @@ import pika
 import requests
 from flask import Flask, jsonify, request
 
+import atexit
+import logging
+from logging.handlers import RotatingFileHandler
+import sys
+
 app = Flask(__name__)
+
+def setup_logging():
+    log_formatter = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] [provider-service] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S %z",
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(log_formatter)
+    root_logger.addHandler(stream_handler)
+
+    log_dir = "/var/log/weather-app"
+    log_path = os.path.join(log_dir, "provider-service.log")
+
+    try:
+        os.makedirs(log_dir, mode=0o755, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(log_formatter)
+        root_logger.addHandler(file_handler)
+        if os.path.exists(log_path):
+            try:
+                os.chmod(log_path, 0o644)
+            except OSError:
+                pass
+    except Exception as err:
+        sys.stderr.write(f"Warning: Could not configure file logging at {log_path}: {err}\n")
+
+    app.logger.setLevel(logging.INFO)
+    app.logger.info("provider-service starting up")
+
+    def _shutdown():
+        for h in list(logging.getLogger().handlers):
+            if getattr(getattr(h, "stream", None), "closed", False):
+                return
+        try:
+            app.logger.info("provider-service shutting down")
+        except Exception:
+            pass
+
+    atexit.register(_shutdown)
+
+setup_logging()
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(error):
+    app.logger.error("Unexpected exception in provider-service: %s", error, exc_info=True)
+    return jsonify({"error": "Internal server error"}), 500
 
 EXTERNAL_WEATHER_URL = os.getenv(
     "EXTERNAL_WEATHER_URL",
