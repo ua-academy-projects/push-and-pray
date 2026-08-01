@@ -38,12 +38,36 @@ Vagrant.configure("2") do |config|
     }
   ]
 
+  host_user = ENV['USER'] || ENV['LOGNAME'] || `id -un`.strip
+
+  ssh_key_paths = [
+    File.expand_path("~/.ssh/id_ed25519.pub"),
+    File.expand_path("~/.ssh/id_rsa.pub"),
+    File.expand_path("~/.ssh/id_ecdsa.pub")
+  ]
+
+  host_ssh_key = ""
+  ssh_key_paths.each do |key_path|
+    if File.exist?(key_path)
+      key_content = File.read(key_path).strip
+      unless key_content.empty?
+        host_ssh_key = key_content
+        break
+      end
+    end
+  end
+
+  if host_ssh_key.empty?
+    abort "No SSH public key found. Expected one of:\n~/.ssh/id_ed25519.pub\n~/.ssh/id_rsa.pub\n~/.ssh/id_ecdsa.pub"
+  end
+
   machines.each do |machine|
     config.vm.define machine[:name] do |vm|
       vm.vm.hostname = machine[:name]
 
       vm.vm.provider "vmware_desktop" do |vmware|
-        # Vagrant використовує bridged LAN IP для SSH
+        vmware.allowlist_verified = :disable_warning
+        # Vagrant uses the bridged LAN IP for SSH
         vmware.ssh_info_public = true
         vmware.enable_vmrun_ip_lookup = true
 
@@ -51,14 +75,12 @@ Vagrant.configure("2") do |config|
         vmware.vmx["memsize"] = "1024"
         vmware.vmx["numvcpus"] = "1"
 
-        # Єдиний мережевий адаптер VM
         vmware.vmx["ethernet0.present"] = "TRUE"
         vmware.vmx["ethernet0.connectionType"] = "bridged"
         vmware.vmx["ethernet0.vnet"] = "vmnet0"
         vmware.vmx["ethernet0.startConnected"] = "TRUE"
         vmware.vmx["ethernet0.pcislotnumber"] = "160"
 
-        # Додаткових адаптерів немає
         vmware.vmx["ethernet1.present"] = "FALSE"
         vmware.vmx["ethernet2.present"] = "FALSE"
         vmware.vmx["ethernet3.present"] = "FALSE"
@@ -67,6 +89,10 @@ Vagrant.configure("2") do |config|
       vm.vm.provision machine[:name],
         type: "shell",
         path: machine[:script],
+        env: {
+          "HOST_USER" => host_user,
+          "HOST_SSH_KEY" => host_ssh_key
+        },
         run: "always"
     end
   end

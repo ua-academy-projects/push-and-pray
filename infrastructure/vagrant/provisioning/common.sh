@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-
+#!/bin/bash
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -66,7 +65,9 @@ install_docker() {
 
     systemctl enable --now docker
 
-    usermod -aG docker vagrant || true
+    if getent group docker >/dev/null 2>&1; then
+        usermod -aG docker vagrant
+    fi
 }
 
 configure_local_name_resolution() {
@@ -122,6 +123,74 @@ resolve_vm_ipv4() {
     return 1
 }
 
+setup_custom_user() {
+    local username="${HOST_USER:-}"
+    local ssh_key="${HOST_SSH_KEY:-}"
+
+    if [[ -z "${username}" ]]; then
+        log "HOST_USER is not set; skipping custom user setup"
+        return 0
+    fi
+
+    if [[ "${username}" == "vagrant" || "${username}" == "root" ]]; then
+        log "Custom user matches default user '${username}'; skipping creation"
+        return 0
+    fi
+
+    log "Configuring custom Linux user: ${username}"
+
+    # 1. Створення користувача через adduser (якщо не існує)
+    if id "${username}" >/dev/null 2>&1; then
+        log "User '${username}' already exists"
+    else
+        log "Creating user '${username}'"
+        adduser --disabled-password --gecos "" "${username}"
+    fi
+
+    # 2. Перевірка наявності та додавання до груп sudo і docker
+    if getent group sudo >/dev/null 2>&1; then
+        usermod -aG sudo "${username}"
+    fi
+
+    if getent group docker >/dev/null 2>&1; then
+        usermod -aG docker "${username}"
+    fi
+
+    # 3. Налаштування SSH директорії та ключа
+    if [[ -n "${ssh_key}" ]]; then
+        local user_home
+        user_home="$(getent passwd "${username}" | cut -d: -f6)"
+        if [[ -z "${user_home}" ]]; then
+            user_home="/home/${username}"
+        fi
+
+        local ssh_dir="${user_home}/.ssh"
+        local auth_keys="${ssh_dir}/authorized_keys"
+
+        log "Setting up SSH key for '${username}'"
+
+        mkdir -p "${ssh_dir}"
+        chmod 0700 "${ssh_dir}"
+
+        touch "${auth_keys}"
+        chmod 0600 "${auth_keys}"
+
+        if grep -qxF "${ssh_key}" "${auth_keys}"; then
+            log "SSH public key already present in ${auth_keys}"
+        else
+            log "Adding SSH public key to ${auth_keys}"
+            echo "${ssh_key}" >> "${auth_keys}"
+        fi
+
+        # Зміна власника лише для конкретних файлів і директорій (без chown -R)
+        chown "${username}:${username}" "${user_home}"
+        chown "${username}:${username}" "${ssh_dir}"
+        chown "${username}:${username}" "${auth_keys}"
+    else
+        log "HOST_SSH_KEY is empty; skipping SSH key setup for '${username}'"
+    fi
+}
+
 configure_common_system() {
     log "Updating package metadata"
 
@@ -137,4 +206,5 @@ configure_common_system() {
 
     configure_local_name_resolution
     install_docker
+    setup_custom_user
 }

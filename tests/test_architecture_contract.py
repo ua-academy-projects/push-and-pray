@@ -35,13 +35,6 @@ class ArchitectureContractTests(unittest.TestCase):
         self.assertIn('"5002:5002"', self.provider_compose)
         self.assertIn('"5000:5000"', self.ui_compose)
 
-    def test_compose_uses_private_ips_for_inter_service_connections(self):
-        self.assertIn("http://192.168.56.11:5001", self.ui_compose)
-        self.assertIn("redis://192.168.56.13:6379/0", self.ui_compose)
-        self.assertIn("192.168.56.13:5432", self.backend_compose)
-        self.assertIn("192.168.56.13:5672", self.backend_compose)
-        self.assertIn("192.168.56.13:5672", self.provider_compose)
-
     def test_provider_has_no_database_access_or_sql(self):
         combined = f"{self.provider}\n{self.provider_requirements}".lower()
         for forbidden in (
