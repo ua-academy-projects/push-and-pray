@@ -45,43 +45,6 @@
   color: var(--text-primary);
 }
 
-.refreshButton {
-  margin-left: auto;
-  appearance: none;
-  border: 0;
-  background: var(--accent-gradient);
-  color: #fff;
-  font-size: 0.8rem;
-  font-weight: 700;
-  padding: 9px 16px;
-  border-radius: 999px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 4px 14px rgba(42, 120, 214, 0.35);
-}
-
-.refreshButton:disabled {
-  opacity: 0.75;
-  cursor: progress;
-}
-
-.spinner {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.55);
-  border-top-color: #fff;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .accordion {
   max-height: 0;
   overflow: hidden;

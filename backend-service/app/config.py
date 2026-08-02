@@ -24,9 +24,10 @@ class Settings(BaseSettings):
     weather_data_max_age_minutes: int = 90
 
     # --- RabbitMQ (async consumption of completed/failed syncs from the Fetcher) ---
-    # Consumed by app/worker.py (a separate process from the API), not by the FastAPI app
-    # itself -- see app/broker/consumer.py. The queue/exchange names must match the Fetcher's
-    # RabbitMQPublisher exactly, since whichever side connects first declares them.
+    # Consumed by a background task inside the FastAPI process itself -- see
+    # app/broker/consumer.py and the lifespan in app/main.py. The queue/exchange names must
+    # match the Fetcher's RabbitMQPublisher exactly, since whichever side connects first
+    # declares them.
     rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     rabbitmq_sync_queue: str = "weather.sync"
     rabbitmq_sync_failure_queue: str = "weather.sync_failure"

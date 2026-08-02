@@ -1,28 +1,12 @@
-# Backend Service VM: the API process and its separate RabbitMQ-consumer Worker
-# process (see docs/architecture.md §17, decision 27) -- two containers running the
-# same image, plus a one-shot migration container that both wait on. All three
-# use network_mode: host so they're reachable at this VM's existing bridged LAN IP
-# (see ../Vagrantfile), exactly like the old systemd deployment.
-#
-# Only `api` declares `build:` -- `docker compose up --build` builds every service
-# that has a build section before starting any container, so by the time `migrate`
-# and `worker` (image-only, no build section) are created, `api`'s build has already
-# produced and tagged the image they both reference. Giving all three their own
-# identical `build:` block would make compose build the same Dockerfile three times
-# in parallel, racing to tag the same image name for no benefit.
+# Backend Service VM: a single container running the FastAPI API. Its RabbitMQ consumer
+# (app/broker/consumer.py) runs as a background task inside that same process via the
+# lifespan in app/main.py, rather than as a separate container -- see docs/architecture.md
+# §17, decision 27 for the history of why these were ever split. Uses network_mode: host so
+# it's reachable at this VM's existing bridged LAN IP (see ../Vagrantfile), exactly like the
+# old systemd deployment. Schema setup is not a separate step either -- the process creates
+# any missing tables itself on startup (app.database.session.init_db), so there's no
+# migration container to wait on either.
 services:
-  migrate:
-    image: skyivano/backend-service:${IMAGE_TAG:-latest}
-    env_file: .env
-    network_mode: host
-    command: ["alembic", "upgrade", "head"]
-    restart: "no"
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   api:
     build:
       context: .
@@ -31,39 +15,11 @@ services:
     env_file: .env
     network_mode: host
     restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     deploy:
       resources:
         limits:
           cpus: "1.0"
           memory: 512M
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  worker:
-    image: skyivano/backend-service:${IMAGE_TAG:-latest}
-    env_file: .env
-    network_mode: host
-    command: ["python", "-m", "app.worker"]
-    restart: unless-stopped
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    # Not an HTTP process -- the image's HEALTHCHECK (a GET against the API's
-    # /api/health) doesn't apply here. Liveness for a crashed consumer loop is
-    # covered by `restart: unless-stopped` instead.
-    healthcheck:
-      disable: true
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
     logging:
       driver: json-file
       options:

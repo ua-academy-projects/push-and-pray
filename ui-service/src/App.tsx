@@ -15,7 +15,7 @@ import { useWeather } from "./hooks/useWeather";
 import { getWeatherInfo } from "./utils/weatherCode";
 
 export default function App() {
-  const { data, status, reload } = useWeather();
+  const { data, status } = useWeather();
   const session = useSessionState();
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -99,7 +99,7 @@ export default function App() {
         <CurrentWeatherCard current={data.current} today={today} />
         <WeatherMetrics current={data.current} />
 
-        <StatusStrip onSyncSuccess={reload} />
+        <StatusStrip />
 
         <HourlyTimeline hourly={data.hourly} />
         <ForecastSection />

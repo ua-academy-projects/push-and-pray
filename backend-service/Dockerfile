@@ -24,8 +24,6 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /opt/venv /opt/venv
-COPY alembic.ini ./
-COPY alembic ./alembic
 COPY app ./app
 
 RUN chown -R app:app /app
@@ -36,12 +34,13 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
 
-# Overridden per-service in docker-compose.yml (worker runs `python -m app.worker`,
-# migrate runs `alembic upgrade head`) -- this default is the API process.
+# API and RabbitMQ consumer both run in this one process -- see the lifespan in app/main.py.
+# Pinned to a single gunicorn worker: each worker process would start its own independent
+# consumer task, so >1 worker would mean multiple concurrent consumers on the same queues.
 CMD ["gunicorn", "app.main:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "2", \
+     "--workers", "1", \
      "--timeout", "30", \
      "--graceful-timeout", "30", \
      "--access-logfile", "-", \

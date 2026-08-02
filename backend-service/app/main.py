@@ -1,23 +1,60 @@
+import asyncio
+import contextlib
 import logging
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import health, public_weather, session, sync_trigger
+from app.broker.consumer import consume_forever
 from app.config import get_settings
+from app.database.session import init_db
 from app.exceptions import PersistenceError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+init_db()
 
-# As of the RabbitMQ refactor, this app exposes no /internal/* HTTP endpoints at all -- the
-# Fetcher's sync results arrive over RabbitMQ instead, consumed by the separate worker process
-# in app/worker.py (app/broker/consumer.py), not by this FastAPI app. The one remaining
-# exception to "Backend never calls Fetcher," POST /api/sync/trigger, is itself public
-# (UI-facing), not internal. This app's lifespan has no startup/shutdown work of its own.
-app = FastAPI(title="SkyIvano Backend Service")
+
+def _on_consumer_done(task: asyncio.Task) -> None:
+    """The RabbitMQ consumer runs alongside the API in this same process (see lifespan below).
+    If it dies (lost connection, unhandled error), the API half would otherwise keep serving
+    HTTP traffic looking healthy while sync data silently stops flowing -- exit the process
+    instead so gunicorn respawns this worker, the same fail-fast behavior a separate
+    `restart: unless-stopped` worker container used to give us."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.critical("RabbitMQ consumer crashed -- exiting process to be restarted", exc_info=exc)
+        os._exit(1)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    consumer_task = asyncio.create_task(consume_forever())
+    consumer_task.add_done_callback(_on_consumer_done)
+    try:
+        yield
+    finally:
+        consumer_task.remove_done_callback(_on_consumer_done)
+        consumer_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await consumer_task
+
+
+# The RabbitMQ consumer (app/broker/consumer.py) runs as a background task in this same
+# process via the lifespan above, rather than as a separate worker process/container -- one
+# process, one event loop, handling both the public HTTP API and the Fetcher's async sync
+# results. This app exposes no /internal/* HTTP endpoints -- sync results only ever arrive
+# over RabbitMQ. The one exception to "Backend never calls Fetcher," POST /api/sync/trigger,
+# is itself public (UI-facing), not internal.
+app = FastAPI(title="SkyIvano Backend Service", lifespan=lifespan)
 
 settings = get_settings()
 app.add_middleware(

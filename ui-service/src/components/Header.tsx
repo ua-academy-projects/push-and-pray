@@ -1,7 +1,7 @@
 import styles from "./Header.module.css";
 
-/** Branding only -- sync status, last-synced time, and the refresh control now live in
- * StatusStrip, which sits directly below the Hero. */
+/** Branding only -- sync status and last-synced time now live in StatusStrip, which sits
+ * directly below the Hero. */
 export function Header() {
   return (
     <header className={styles.header}>

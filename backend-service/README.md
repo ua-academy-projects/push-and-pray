@@ -11,10 +11,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # set DATABASE_URL for your local PostgreSQL instance
-alembic upgrade head
 ```
 
-Requires a running PostgreSQL instance — see the root [README.md](../README.md) for local setup. No other service needs to be running first.
+Requires a running PostgreSQL instance — see the root [README.md](../README.md) for local setup. No other service needs to be running first. Tables are created automatically on startup (`app.database.session.init_db`) — no separate migration step.
 
 ## Run
 

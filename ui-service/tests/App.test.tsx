@@ -10,7 +10,6 @@ import {
   buildSessionResponse,
   buildSyncLogEntries,
   buildSyncStatusResponse,
-  buildSyncTriggerResult,
   buildWeatherResponse,
 } from "./fixtures";
 
@@ -29,7 +28,6 @@ function installFetchRouter(overrides: Partial<Record<string, unknown>> = {}) {
     // matches this more specific path.
     { match: (url) => url.includes("/api/session/state"), body: overrides.sessionPatch ?? buildSessionResponse() },
     { match: (url) => url.includes("/api/session"), body: overrides.session ?? buildSessionResponse() },
-    { match: (url) => url.includes("/api/sync/trigger"), body: overrides.syncTrigger ?? buildSyncTriggerResult() },
     { match: (url) => url.includes("/api/weather/forecast"), body: overrides.forecast ?? buildForecastResponse() },
     { match: (url) => url.includes("/api/weather/statistics/all"), body: overrides.statisticsAll ?? buildPeriodStatistics() },
     { match: (url) => url.includes("/api/weather/statistics"), body: overrides.statistics ?? buildPeriodStatistics() },
@@ -189,25 +187,5 @@ describe("App", () => {
       expect(url).not.toContain("open-meteo");
       expect(url.startsWith("http://localhost:8000")).toBe(true);
     }
-  });
-
-  it("runs a manual refresh through POST /api/sync/trigger, and re-pulls weather data on success", async () => {
-    const { calledUrls, fetchMock } = installFetchRouter();
-
-    render(<App />);
-    await waitFor(() => expect(screen.getByLabelText("Current weather")).toBeInTheDocument());
-    const weatherCallsBefore = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/weather")).length;
-
-    const refreshButton = await screen.findByRole("button", { name: /refresh weather data now/i });
-    refreshButton.click();
-
-    await waitFor(() => expect(calledUrls.some((url) => url.includes("/api/sync/trigger"))).toBe(true));
-    await waitFor(() => expect(refreshButton).not.toBeDisabled());
-
-    const weatherCallsAfter = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/weather")).length;
-    expect(weatherCallsAfter).toBeGreaterThan(weatherCallsBefore);
-
-    const triggerCalls = calledUrls.filter((url) => url.includes("/sync/trigger"));
-    expect(triggerCalls).toHaveLength(1);
   });
 });

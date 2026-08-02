@@ -3,7 +3,7 @@ import type { ChartData } from "../src/types/chart";
 import type { ForecastResponse } from "../src/types/forecast";
 import type { SessionResponse } from "../src/types/session";
 import type { DailyRecordsResponse, PeriodStatistics } from "../src/types/statistics";
-import type { SyncLogEntry, SyncStatusResponse, SyncTriggerResult } from "../src/types/sync";
+import type { SyncLogEntry, SyncStatusResponse } from "../src/types/sync";
 import type { WeatherResponse } from "../src/types/weather";
 
 export function buildWeatherResponse(overrides: Partial<WeatherResponse> = {}): WeatherResponse {
@@ -230,17 +230,6 @@ export function buildSyncLogEntries(overrides: Partial<SyncLogEntry>[] = []): Sy
     ];
   }
   return overrides.map((override, index) => ({ ...base, id: index + 1, ...override }));
-}
-
-export function buildSyncTriggerResult(overrides: Partial<SyncTriggerResult> = {}): SyncTriggerResult {
-  return {
-    status: "success",
-    message: "Synchronized",
-    daily_records: 1,
-    forecast_records: 10,
-    hourly_records: 24,
-    ...overrides,
-  };
 }
 
 export function buildSessionResponse(overrides: Partial<SessionResponse> = {}): SessionResponse {

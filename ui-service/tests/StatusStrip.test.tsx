@@ -1,18 +1,17 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StatusStrip } from "../src/components/StatusStrip";
-import { buildSyncLogEntries, buildSyncStatusResponse, buildSyncTriggerResult } from "./fixtures";
+import { buildSyncLogEntries, buildSyncStatusResponse } from "./fixtures";
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body };
 }
 
-function installFetchRouter(overrides: { syncStatus?: unknown; syncHistory?: unknown; syncTrigger?: unknown } = {}) {
+function installFetchRouter(overrides: { syncStatus?: unknown; syncHistory?: unknown } = {}) {
   const calledUrls: string[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     calledUrls.push(url);
-    if (url.includes("/api/sync/trigger")) return jsonResponse(overrides.syncTrigger ?? buildSyncTriggerResult());
     if (url.includes("/api/sync/history")) return jsonResponse(overrides.syncHistory ?? buildSyncLogEntries());
     if (url.includes("/api/sync-status")) return jsonResponse(overrides.syncStatus ?? buildSyncStatusResponse());
     throw new Error(`Unrouted fetch in test: ${url}`);
@@ -63,28 +62,5 @@ describe("StatusStrip", () => {
 
     toggle.click();
     await waitFor(() => expect(toggle).toHaveAttribute("aria-expanded", "false"));
-  });
-
-  it("runs the refresh control through a loading -> done cycle via POST /api/sync/trigger", async () => {
-    const { calledUrls } = installFetchRouter();
-    render(<StatusStrip />);
-
-    const refreshButton = await screen.findByRole("button", { name: /refresh weather data now/i });
-    refreshButton.click();
-
-    await waitFor(() => expect(calledUrls.filter((url) => url.includes("/sync/trigger"))).toHaveLength(1));
-    await waitFor(() => expect(refreshButton).not.toBeDisabled());
-    expect(screen.getByText(/refresh now/i)).toBeInTheDocument();
-  });
-
-  it("calls onSyncSuccess after a manual refresh settles", async () => {
-    installFetchRouter();
-    const onSyncSuccess = vi.fn();
-    render(<StatusStrip onSyncSuccess={onSyncSuccess} />);
-
-    const refreshButton = await screen.findByRole("button", { name: /refresh weather data now/i });
-    refreshButton.click();
-
-    await waitFor(() => expect(onSyncSuccess).toHaveBeenCalled());
   });
 });

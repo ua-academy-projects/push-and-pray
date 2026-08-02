@@ -30,13 +30,3 @@ export interface SyncLogEntry {
   error_message: string | null;
   created_at: string;
 }
-
-/** Response of POST /api/sync/trigger -- relays the Fetcher's result, never a stack trace or
- * raw Open-Meteo data. */
-export interface SyncTriggerResult {
-  status: "success" | "failed" | "skipped";
-  message: string | null;
-  daily_records: number | null;
-  forecast_records: number | null;
-  hourly_records: number | null;
-}

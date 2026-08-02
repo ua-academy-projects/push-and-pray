@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Provisions the backend-service VM: installs Docker Engine + the Compose plugin,
 # writes a .env pointed at the postgres VM, and runs `docker compose up -d --build`
-# against backend-service/docker-compose.yml (a one-shot `migrate` container, then
-# the `api` and `worker` containers -- see docs/architecture.md §17, decision 27).
+# against backend-service/docker-compose.yml (a single `api` container -- its RabbitMQ
+# consumer runs as a background task in that same process, see app/main.py's lifespan;
+# see docs/architecture.md §17, decision 27 for history). It creates any missing tables
+# itself on startup (app.database.session.init_db) -- no migration step.
 #
 # Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile), each
 # with its own fixed IP - this guest reaches postgres (and Redis/RabbitMQ, on the
@@ -87,9 +89,8 @@ sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://:${REDIS_PASS}@${REDIS_IP}:6379/0#" .e
 sed -i "s#^RABBITMQ_URL=.*#RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@${RABBITMQ_IP}:5672/#" .env
 sed -i "s#^BACKEND_CORS_ORIGINS=.*#BACKEND_CORS_ORIGINS=http://${UI_IP}:5173#" .env
 
-echo ">>> Starting backend-service (migrate, then api + worker)"
+echo ">>> Starting backend-service (api)"
 docker compose up -d --build
 
 echo ">>> Provisioning complete"
-echo "    Backend Service (api container) reachable at 192.168.0.221:8000 on the LAN"
-echo "    Backend Worker (RabbitMQ consumer, worker container) running alongside it"
+echo "    Backend Service (api container, API + RabbitMQ consumer) reachable at 192.168.0.221:8000 on the LAN"

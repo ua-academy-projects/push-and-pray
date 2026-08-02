@@ -25,7 +25,7 @@ Four independently runnable services, each with a single responsibility, plus Po
 | Service | Responsibility |
 |---|---|
 | **ui-service** | React/TypeScript dashboard. Talks only to the Backend's public API. |
-| **backend-service** | FastAPI. Owns PostgreSQL directly — the public API, plus (in a separate worker process, `app/worker.py`) consuming synced weather data from RabbitMQ and persisting it. Never calls Open-Meteo; never calls the Fetcher except to proxy one manual-refresh action. |
+| **backend-service** | FastAPI. Owns PostgreSQL directly — the public API, plus (as a background task in the same process) consuming synced weather data from RabbitMQ and persisting it. Never calls Open-Meteo; never calls the Fetcher except to proxy one manual-refresh action. |
 | **fetcher-service** | FastAPI. The only service that calls Open-Meteo. Runs the sync scheduler independently of user traffic, normalizes the response, and publishes it to RabbitMQ for the Backend to consume. Never touches PostgreSQL, never calls the Backend to push data. |
 
 The UI never calls Open-Meteo or the Fetcher directly, and never triggers a *scheduled* sync — it only ever reads data the Backend has already persisted, plus one explicit "Refresh now" action that still routes through the Backend. Full rules and diagrams: [docs/architecture.md](docs/architecture.md).
@@ -33,7 +33,7 @@ The UI never calls Open-Meteo or the Fetcher directly, and never triggers a *sch
 ## Technology stack
 
 - **UI**: React, TypeScript, Vite, CSS Modules, Recharts, Vitest + React Testing Library
-- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, SQLAlchemy 2, Alembic, PostgreSQL, aio-pika, pytest
+- **Backend**: Python 3.12, FastAPI, Pydantic, httpx, SQLAlchemy 2, PostgreSQL, aio-pika, pytest
 - **Fetcher**: Python 3.12, FastAPI, Pydantic, httpx, APScheduler, aio-pika, pytest
 - **Database**: PostgreSQL (no SQLite anywhere — including tests), owned exclusively by the Backend
 - **Session storage**: Redis, owned exclusively by the Backend — UI preferences only, never business data
@@ -62,26 +62,18 @@ The default `guest`/`guest` credentials work fine for local dev (unlike over the
 2. Copy each service's `.env.example` to `.env` and adjust if needed.
 3. Set up and run each service (see commands below).
 
-Detailed setup, migrations, and environment variables: [docs/architecture.md](docs/architecture.md) and each service's own README.
+Detailed setup and environment variables: [docs/architecture.md](docs/architecture.md) and each service's own README.
 
 ## Running the services
 
-Order doesn't strictly matter — `backend-service` serves stored data even with the Fetcher stopped (stale but not broken), and `fetcher-service` logs a failed publish locally if RabbitMQ is unreachable rather than crashing. For a fresh database, start the Backend first so its migrations run before the Backend Worker/Fetcher start consuming/publishing.
+Order doesn't strictly matter — `backend-service` serves stored data even with the Fetcher stopped (stale but not broken), and `fetcher-service` logs a failed publish locally if RabbitMQ is unreachable rather than crashing.
 
-**Backend Service** (the public API):
+**Backend Service** (the public API; also consumes synced weather data from RabbitMQ in the background and persists it — see `app/main.py`'s lifespan):
 ```bash
 cd backend-service
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-alembic upgrade head
 uvicorn app.main:app --reload --port 8000
-```
-
-**Backend Worker** (a separate process, same venv as above — consumes synced weather data from RabbitMQ and persists it; nothing shows up in the API above until this is also running):
-```bash
-cd backend-service
-source .venv/bin/activate
-python -m app.worker
 ```
 
 **Weather Fetcher Service**:
@@ -129,6 +121,8 @@ Bridged networking (`vmnet_bridged`) needs root, and a separate macOS Objective-
 
 ```bash
 sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant up
+sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES vagrant halt
+
 ```
 
 Use that same `sudo env OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` prefix for every other lifecycle command too (`reload`, `halt`, `destroy`, `status`, `ssh <name>`) — mixing sudo and non-sudo runs leaves root-owned files behind that break the non-sudo commands.

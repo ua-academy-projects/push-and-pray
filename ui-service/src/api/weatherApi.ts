@@ -2,7 +2,7 @@ import type { ChartData } from "../types/chart";
 import type { ForecastResponse } from "../types/forecast";
 import type { SessionResponse, UIStatePatch } from "../types/session";
 import type { DailyRecord, DailyRecordsResponse, DailyStatistics, PeriodStatistics } from "../types/statistics";
-import type { SyncLogEntry, SyncStatusResponse, SyncTriggerResult } from "../types/sync";
+import type { SyncLogEntry, SyncStatusResponse } from "../types/sync";
 import type { WeatherResponse } from "../types/weather";
 
 // The only backend URL the UI knows about -- no Open-Meteo URL, no Fetcher Service URL,
@@ -70,17 +70,6 @@ export function getSyncStatus(): Promise<SyncStatusResponse> {
 
 export function getSyncHistory(limit = 20): Promise<SyncLogEntry[]> {
   return getJSON<SyncLogEntry[]>(`/api/sync/history${toQuery({ limit })}`);
-}
-
-/** The one path by which a user action can cause a synchronization -- proxied through the
- * Backend to the Fetcher (see docs/architecture.md §7). Never calls the Fetcher or Open-Meteo
- * directly. */
-export async function postSyncTrigger(): Promise<SyncTriggerResult> {
-  const response = await fetch(`${BASE_URL}/api/sync/trigger`, { method: "POST" });
-  if (!response.ok) {
-    throw new Error(`Request to /api/sync/trigger failed with status ${response.status}`);
-  }
-  return (await response.json()) as SyncTriggerResult;
 }
 
 /** Ensures a session exists for this browser and returns its stored UI preferences (selected
