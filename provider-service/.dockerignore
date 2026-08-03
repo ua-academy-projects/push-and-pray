@@ -1,10 +1,40 @@
-.venv
-venv
-__pycache__
-*.pyc
-*.pyo
-.env
+# Version Control & IDE
 .git
 .gitignore
+.vagrant
+.vscode
+.idea
+
+# Python Caches & Bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Testing & Coverage
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation & Configs
+README.md
+*.md
+.env*
+
+# Logs & Temporary Files
+*.log
+/var/log/
+
+# Docker Files
 Dockerfile*
 docker-compose*.yml
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+*~
+*.swp
