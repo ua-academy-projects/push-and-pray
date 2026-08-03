@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -Eeuo pipefail
 
 log() {
@@ -58,6 +57,7 @@ apt-get install -y \
     iputils-ping \
     jq \
     net-tools \
+    python3 \
     rsync \
     traceroute
 

@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     rabbitmq_dead_letter_queue: str = (
         "airaware.measurements.dead-letter"
     )
+    rabbitmq_consumer_enabled: bool = True
+    rabbitmq_retry_delay_seconds: float = 5.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

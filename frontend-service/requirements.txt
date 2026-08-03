@@ -23,3 +23,4 @@ redis==8.0.1
 typing-inspection==0.4.2
 typing_extensions==4.16.0
 Werkzeug==3.1.8
+gunicorn==26.0.0

@@ -219,3 +219,6 @@ __marimo__/
 
 # Vagrant local machine state
 .vagrant/
+
+# Local Docker Compose environment files
+deploy/*/.env
