@@ -84,7 +84,7 @@ function valueOrDash(value) {
 
 function formatDate(value) {
     if (!value) {
-        return "Невідомий час";
+        return "Unknown time";
     }
 
     const date = new Date(value);
@@ -94,7 +94,7 @@ function formatDate(value) {
     }
 
     return date.toLocaleString(
-        "uk-UA",
+        "en-US",
         {
             dateStyle: "short",
             timeStyle: "short",
@@ -115,7 +115,7 @@ function formatChartTime(
     }
 
     const parts = new Intl.DateTimeFormat(
-        "uk-UA",
+        "en-US",
         {
             timeZone: WEATHER_TIME_ZONE,
             day: includeDate
@@ -144,8 +144,8 @@ function formatChartTime(
     }
 
     return (
-        `${partValue("day")}.` +
-        `${partValue("month")} ${time}`
+        `${partValue("month")}/` +
+        `${partValue("day")} ${time}`
     );
 }
 
@@ -187,12 +187,12 @@ function renderWeather(data) {
         <div class="weather-summary">
             <div>
                 <span class="weather-overline">
-                    Поточні умови
+                    Current Conditions
                 </span>
 
                 <div class="weather-location">
                     ${valueOrDash(
-                        location.name || "Надвірна"
+                        location.name || "Nadvirna"
                     )}
 
                     ${
@@ -205,7 +205,7 @@ function renderWeather(data) {
                 </div>
 
                 <p class="weather-updated">
-                    Дані за ${formatDate(
+                    Data from ${formatDate(
                         measurementTime
                     )}
                 </p>
@@ -226,7 +226,7 @@ function renderWeather(data) {
 
         <div class="weather-details">
             <div class="detail-item">
-                <span>Вологість</span>
+                <span>Humidity</span>
 
                 <strong>
                     ${valueOrDash(
@@ -240,7 +240,7 @@ function renderWeather(data) {
             </div>
 
             <div class="detail-item">
-                <span>Швидкість вітру</span>
+                <span>Wind Speed</span>
 
                 <strong>
                     ${valueOrDash(
@@ -254,7 +254,7 @@ function renderWeather(data) {
             </div>
 
             <div class="detail-item">
-                <span>Час вимірювання</span>
+                <span>Measurement Time</span>
 
                 <strong>
                     ${formatDate(
@@ -499,7 +499,7 @@ function renderChart(
         containerEl.hidden = true;
         emptyEl.hidden = false;
         emptyEl.textContent =
-            "Недостатньо даних для графіка.";
+            "Not enough data for chart.";
         return;
     }
 
@@ -871,7 +871,7 @@ function renderChart(
     );
 
     xTitle.textContent =
-        `Час (${WEATHER_TIME_ZONE})`;
+        `Time (${WEATHER_TIME_ZONE})`;
 
     const yTitleX = 28;
 
@@ -887,7 +887,7 @@ function renderChart(
     );
 
     yTitle.textContent =
-        `Температура (${temperatureUnit})`;
+        `Temperature (${temperatureUnit})`;
 
     svgElement.appendChild(xTitle);
     svgElement.appendChild(yTitle);
@@ -1016,7 +1016,7 @@ async function loadWeather(showLoading = false) {
     if (showLoading) {
         weatherResult.classList.add("empty-state");
         weatherResult.textContent =
-            "Завантаження останніх даних...";
+            "Loading latest data...";
     }
 
     try {
@@ -1031,7 +1031,7 @@ async function loadWeather(showLoading = false) {
             weatherResult.classList.add("empty-state");
             weatherResult.textContent =
                 data.error ||
-                "Не вдалося завантажити погоду.";
+                "Failed to load weather data.";
             return;
         }
 
@@ -1040,7 +1040,7 @@ async function loadWeather(showLoading = false) {
     } catch {
         weatherResult.classList.add("empty-state");
         weatherResult.textContent =
-            "Не вдалося зв'язатися із сервером.";
+            "Could not connect to server.";
     }
 }
 
@@ -1083,9 +1083,9 @@ async function loadForecast(showLoading = false) {
 
     if (showLoading) {
         showForecastMessage(
-            "Завантаження збереженого прогнозу...",
+            "Loading saved forecast...",
             false,
-            "Наступні 24 години · " +
+            "Next 24 hours · " +
             WEATHER_TIME_ZONE
         );
     }
@@ -1107,13 +1107,13 @@ async function loadForecast(showLoading = false) {
 
             showForecastMessage(
                 data.error ||
-                "Не вдалося завантажити прогноз.",
+                "Failed to load forecast.",
                 !isWaiting,
                 isWaiting
-                    ? "Прогноз готується у фоні"
+                    ? "Forecast generating in background"
                     : (
-                        "Прогноз тимчасово " +
-                        "недоступний"
+                        "Forecast temporarily " +
+                        "unavailable"
                     )
             );
 
@@ -1127,9 +1127,9 @@ async function loadForecast(showLoading = false) {
 
         if (points.length === 0) {
             showForecastMessage(
-                "У базі ще немає даних прогнозу.",
+                "No forecast data in database yet.",
                 false,
-                "Прогноз готується у фоні"
+                "Forecast generating in background"
             );
 
             return;
@@ -1151,7 +1151,7 @@ async function loadForecast(showLoading = false) {
 
         const updateLabel =
             data.last_success_at
-                ? ` · оновлено ${
+                ? ` · updated ${
                     formatDate(
                         data.last_success_at
                     )
@@ -1160,18 +1160,18 @@ async function loadForecast(showLoading = false) {
 
         const freshnessLabel =
             data.stale
-                ? "Попередній прогноз"
-                : "Наступні 24 години";
+                ? "Previous forecast"
+                : "Next 24 hours";
 
         forecastStatus.textContent =
             `${freshnessLabel} · ` +
-            `${points.length} погодинних значень · ` +
+            `${points.length} hourly values · ` +
             `${temperatureUnit}${updateLabel}`;
 
         forecastTemperatureChart.setAttribute(
             "aria-label",
-            "Погодинний прогноз температури " +
-            "у Надвірній на наступні 24 години"
+            "Hourly temperature forecast " +
+            "for Nadvirna for the next 24 hours"
         );
 
     } catch (error) {
@@ -1180,10 +1180,10 @@ async function loadForecast(showLoading = false) {
         }
 
         showForecastMessage(
-            "Не вдалося прочитати прогноз із " +
-            "сервера.",
+            "Failed to read forecast from " +
+            "server.",
             true,
-            "Прогноз тимчасово недоступний"
+            "Forecast temporarily unavailable"
         );
 
     } finally {
@@ -1267,7 +1267,7 @@ function renderHistoryTable(data) {
     if (points.length === 0) {
         historyResult.classList.add("empty-state");
         historyResult.textContent =
-            "У базі даних ще немає вимірювань.";
+            "No measurements in database yet.";
         return;
     }
 
@@ -1284,7 +1284,7 @@ function renderHistoryTable(data) {
                     class="history-cell history-time"
                     role="cell"
                 >
-                    <strong>Надвірна</strong>
+                    <strong>Nadvirna</strong>
                     <span>${formatDate(point.time)}</span>
                 </div>
 
@@ -1293,7 +1293,7 @@ function renderHistoryTable(data) {
                     role="cell"
                 >
                     <span class="history-mobile-label">
-                        Температура
+                        Temperature
                     </span>
                     <strong>
                         ${valueOrDash(
@@ -1312,7 +1312,7 @@ function renderHistoryTable(data) {
                     role="cell"
                 >
                     <span class="history-mobile-label">
-                        Вологість
+                        Humidity
                     </span>
                     <strong>
                         ${valueOrDash(point.humidity)}
@@ -1330,7 +1330,7 @@ function renderHistoryTable(data) {
                     role="cell"
                 >
                     <span class="history-mobile-label">
-                        Вітер
+                        Wind
                     </span>
                     <strong>
                         ${valueOrDash(point.wind)}
@@ -1347,7 +1347,7 @@ function renderHistoryTable(data) {
                     class="history-cell history-status"
                     role="cell"
                 >
-                    <span class="status">Збережено</span>
+                    <span class="status">Saved</span>
                 </div>
             </div>
         `)
@@ -1361,7 +1361,7 @@ function renderHistoryTable(data) {
                 type="button"
                 class="load-more-btn"
             >
-                Показати ще 10 вимірювань (залишилось ${remainingCount})
+                Show 10 more measurements (${remainingCount} remaining)
             </button>
         </div>
         `
@@ -1371,14 +1371,14 @@ function renderHistoryTable(data) {
         <div
             class="history-table"
             role="table"
-            aria-label="Історія погодних вимірювань"
+            aria-label="Weather measurement history"
         >
             <div class="history-table-header" role="row">
-                <span role="columnheader">Місце і час</span>
-                <span role="columnheader">Температура</span>
-                <span role="columnheader">Вологість</span>
-                <span role="columnheader">Вітер</span>
-                <span role="columnheader">Статус</span>
+                <span role="columnheader">Location & Time</span>
+                <span role="columnheader">Temperature</span>
+                <span role="columnheader">Humidity</span>
+                <span role="columnheader">Wind</span>
+                <span role="columnheader">Status</span>
             </div>
 
             <div
@@ -1444,12 +1444,12 @@ async function loadHistoryChart(
 
     const rangeLabel =
         hours === 168
-            ? "Останні 7 днів"
-            : "Останні 24 години";
+            ? "Past 7 days"
+            : "Past 24 hours";
 
     if (showLoading) {
         showHistoryMessage(
-            "Завантаження даних...",
+            "Loading data...",
             false,
             `${rangeLabel} · ${WEATHER_TIME_ZONE}`
         );
@@ -1457,7 +1457,7 @@ async function loadHistoryChart(
         if (historyResult) {
             historyResult.classList.add("empty-state");
             historyResult.textContent =
-                "Завантаження історії...";
+                "Loading history...";
         }
     }
 
@@ -1475,16 +1475,16 @@ async function loadHistoryChart(
         if (!response.ok) {
             showHistoryMessage(
                 data.error ||
-                "Не вдалося завантажити історію.",
+                "Failed to load history.",
                 true,
-                "Помилка завантаження"
+                "Loading error"
             );
 
             if (historyResult) {
                 historyResult.classList.add("empty-state");
                 historyResult.textContent =
                     data.error ||
-                    "Не вдалося завантажити дані.";
+                    "Failed to load data.";
             }
 
             return;
@@ -1498,9 +1498,9 @@ async function loadHistoryChart(
         // Render chart
         if (points.length === 0) {
             showHistoryMessage(
-                "Немає даних за обраний період.",
+                "No data for selected period.",
                 false,
-                `${rangeLabel} · немає даних`
+                `${rangeLabel} · no data`
             );
         } else {
             historyChartEmpty.classList.remove(
@@ -1519,13 +1519,13 @@ async function loadHistoryChart(
 
             historyStatus.textContent =
                 `${rangeLabel} · ` +
-                `${points.length} погодинних значень · ` +
+                `${points.length} hourly values · ` +
                 `${temperatureUnit}`;
 
             historyTemperatureChart.setAttribute(
                 "aria-label",
-                `Графік температури за ${rangeLabel.toLowerCase()} ` +
-                "у Надвірній"
+                `Temperature chart for ${rangeLabel.toLowerCase()} ` +
+                "in Nadvirna"
             );
         }
 
@@ -1538,9 +1538,9 @@ async function loadHistoryChart(
         }
 
         showHistoryMessage(
-            "Не вдалося прочитати дані із сервера.",
+            "Failed to read data from server.",
             true,
-            "Помилка завантаження"
+            "Loading error"
         );
 
     } finally {

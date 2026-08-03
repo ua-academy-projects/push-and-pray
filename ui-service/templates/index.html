@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
 
@@ -8,7 +8,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Погода — Надвірна</title>
+    <title>Weather — Nadvirna</title>
 
     <link
         rel="stylesheet"
@@ -21,23 +21,22 @@
         <header class="page-header">
             <div>
                 <p class="eyebrow">
-                    Локальний моніторинг
+                    Local Monitoring
                 </p>
 
-                <h1>Погода в Надвірній</h1>
+                <h1>Weather in Nadvirna</h1>
 
                 <p class="page-description">
-                    Актуальні показники та історія
-                    спостережень
+                    Current metrics and observation history
                 </p>
             </div>
 
             <div
                 class="refresh-status"
-                aria-label="Дані оновлюються щогодини"
+                aria-label="Data updated hourly"
             >
                 <span aria-hidden="true"></span>
-                Оновлення щогодини
+                Updated hourly
             </div>
         </header>
 
@@ -47,9 +46,9 @@
         >
             <div class="section-header">
                 <div>
-                    <p class="section-kicker">Зараз</p>
+                    <p class="section-kicker">Now</p>
                     <h2 id="current-weather-title">
-                        Останні дані
+                        Latest Data
                     </h2>
                 </div>
             </div>
@@ -58,7 +57,7 @@
                 id="weather-result"
                 class="weather-result empty-state"
             >
-                Завантаження погоди...
+                Loading weather...
             </div>
         </section>
 
@@ -72,11 +71,11 @@
             <div class="section-header">
                 <div>
                     <p class="section-kicker">
-                        Прогноз
+                        Forecast
                     </p>
 
                     <h2 id="forecast-chart-title">
-                        Прогноз температури
+                        Temperature Forecast
                     </h2>
                 </div>
             </div>
@@ -87,14 +86,14 @@
                 role="status"
                 aria-live="polite"
             >
-                Наступні 24 години · Europe/Kyiv
+                Next 24 hours · Europe/Kyiv
             </p>
 
             <div
                 id="forecast-chart-empty"
                 class="empty-state"
             >
-                Завантаження прогнозу...
+                Loading forecast...
             </div>
 
             <div
@@ -107,7 +106,7 @@
                     class="temperature-chart"
                     viewBox="0 0 800 360"
                     role="img"
-                    aria-label="Графік прогнозу температури у Надвірній"
+                    aria-label="Temperature forecast chart for Nadvirna"
                 ></svg>
             </div>
         </section>
@@ -122,18 +121,18 @@
             <div class="section-header">
                 <div>
                     <p class="section-kicker">
-                        Історія
+                        History
                     </p>
 
                     <h2 id="history-chart-title">
-                        Температура за минулий час
+                        Past Temperature
                     </h2>
                 </div>
 
                 <div
                     class="toggle-group"
                     role="group"
-                    aria-label="Діапазон історії"
+                    aria-label="History range"
                 >
                     <button
                         id="history-toggle-24"
@@ -142,7 +141,7 @@
                         aria-pressed="true"
                         data-hours="24"
                     >
-                        24 години
+                        24 Hours
                     </button>
 
                     <button
@@ -152,7 +151,7 @@
                         aria-pressed="false"
                         data-hours="168"
                     >
-                        7 днів
+                        7 Days
                     </button>
                 </div>
             </div>
@@ -163,14 +162,14 @@
                 role="status"
                 aria-live="polite"
             >
-                Останні 24 години · Europe/Kyiv
+                Past 24 hours · Europe/Kyiv
             </p>
 
             <div
                 id="history-chart-empty"
                 class="empty-state"
             >
-                Завантаження історії...
+                Loading history...
             </div>
 
             <div
@@ -183,7 +182,7 @@
                     class="temperature-chart"
                     viewBox="0 0 800 360"
                     role="img"
-                    aria-label="Графік історії температури у Надвірній"
+                    aria-label="Temperature history chart for Nadvirna"
                 ></svg>
             </div>
         </section>
@@ -196,11 +195,11 @@
             <div class="section-header">
                 <div>
                     <p class="section-kicker">
-                        Архів
+                        Archive
                     </p>
 
                     <h2 id="measurements-title">
-                        Історія вимірювань
+                        Measurement History
                     </h2>
                 </div>
             </div>
@@ -209,7 +208,7 @@
                 id="history-result"
                 class="history-result empty-state"
             >
-                Завантаження історії...
+                Loading history...
             </div>
         </section>
     </main>
