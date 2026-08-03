@@ -1,4 +1,9 @@
 .env
+.env.vagrant
+.env.vagrant.local
+.vagrant/
+.vagrant-data/
+infra/vagrant/generated/
 .env.*
 !.env.example
 **/api-key

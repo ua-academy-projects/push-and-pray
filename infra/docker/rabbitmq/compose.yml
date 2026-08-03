@@ -1,0 +1,41 @@
+name: rateboard-messaging
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    env_file:
+      - /etc/rateboard/rabbitmq.env
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  redis:
+    image: redis:7-alpine
+    env_file:
+      - /etc/rateboard/rabbitmq.env
+    command:
+      - /bin/sh
+      - -ec
+      - 'exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"'
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+
+volumes:
+  rabbitmq_data:
+  redis_data:

@@ -8,11 +8,12 @@
   <script>
     (() => { const saved = localStorage.getItem('rateboard-theme'); const theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); document.documentElement.dataset.theme = theme; })();
   </script>
-  <link rel="stylesheet" href="css/styles.css?v=7">
+  <link rel="stylesheet" href="css/styles.css?v=9">
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
-  <script type="module" src="js/app.js?v=15"></script>
+  <script src="js/runtime-config.js"></script>
+  <script type="module" src="js/app.js?v=20"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Перейти до вмісту</a>

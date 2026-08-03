@@ -1,0 +1,1 @@
+"""Rateboard api-fetcher package."""

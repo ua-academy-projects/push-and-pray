@@ -1,86 +1,51 @@
-# Шпаргалка для захисту Rateboard
+# Rateboard defense guide
 
-## Що сказати насамперед
+## Short explanation
 
-Почніть з обмежень завдання, а не з візуальних можливостей:
+> Rateboard uses five Vagrant VMs with a separate Docker Compose project on
+> each VM. API Fetcher only calls providers and publishes normalized events to
+> RabbitMQ. History Service consumes those events, owns PostgreSQL, and serves
+> all UI reads.
 
-> Rateboard — це трисервісний застосунок для поточних та історичних курсів криптовалют і фіатних валют. Головною метою було створити чіткі межі відповідальності: браузер спілкується тільки з Python Backend, Backend інтегрує зовнішні API та координує потік даних, а Go API Fetcher є єдиним компонентом із доступом до PostgreSQL.
+## Why the boundaries matter
 
-Потім поясніть, чому систему поділено саме так:
+1. UI has no provider, queue, or database credentials.
+2. API Fetcher can change provider-specific code without changing UI or schema.
+3. RabbitMQ separates provider availability from database writes.
+4. History Service is the single database owner.
+5. PostgreSQL remains the durable source of current and historical observations.
 
-1. **UI відповідає лише за представлення.** HTML, CSS і vanilla JavaScript зберігають перше завдання простим та роблять мережеві межі очевидними.
-2. **Python Backend є центром координації.** FastAPI та `httpx` зручні для валідації, асинхронних запитів до провайдерів, нормалізації й документації OpenAPI.
-3. **Go API Fetcher володіє збереженням.** Це створює справжню межу компільованого сервісу й не дозволяє UI або Backend залежати від структури БД.
-4. **PostgreSQL зберігає нормалізовані спостереження.** `NUMERIC` зберігає фінансову точність, `TIMESTAMPTZ` усуває неоднозначність часу, а унікальний ключ робить повторні запити ідемпотентними.
-5. **Два публічні джерела мають різну семантику.** CoinGecko надає часто змінювані криптовалютні дані, а Frankfurter — денні довідкові фіатні курси. Rateboard опитує обидва джерела кожні п’ять хвилин, тому фіатне значення може повторюватися у багатьох знімках.
+## Main flow
 
-Після архітектури продемонструйте один потік даних:
+```text
+Provider -> API Fetcher -> RabbitMQ -> History Service -> PostgreSQL
+Browser  -> UI ----------------------> History Service -> PostgreSQL
+```
 
-> Колектор кожні п’ять хвилин викликає CoinGecko та Frankfurter і зберігає нормалізовані знімки через API Fetcher. Коли користувач натискає «Оновити», UI просить Backend повернути останні збережені дані. Backend читає їх через API Fetcher із PostgreSQL і не викликає жодного публічного провайдера.
+RabbitMQ is not queried for charts. It only transports commands and observation
+events.
 
-Завершіть головне пояснення надійністю та чесним описом обмежень:
+## Typical questions
 
-> Запити до провайдерів мають тайм-аути й обмежену кількість повторів, секрети зберігаються в `.env`, сервіси типово слухають localhost, а колектор працює на точних п’ятихвилинних межах. Вкладка «Історія» читає збережені PostgreSQL-знімки та дозволяє незалежно обирати період і крок агрегації.
+1. **Why does UI not call API Fetcher?** API Fetcher is a collector/producer,
+   while History Service owns the stable read contract.
+2. **When is a message saved?** Publisher confirmation means queued. It is saved
+   only after History Service commits it and ACKs the delivery.
+3. **What happens on duplicate delivery?** PostgreSQL uniqueness and
+   `ON CONFLICT DO NOTHING` make processing idempotent.
+4. **How does startup backfill work?** History Service checks the latest
+   timestamp per instrument and publishes bounded fetch commands.
+5. **What happens with a new database?** Migrations run, then every missing
+   instrument receives an initial command for at most 365 days.
+6. **How is the database preserved?** Its Docker volume binds to an ext4
+   filesystem on a host-side qcow2 disk under `.vagrant-data/database`.
+7. **Why are there five Compose files?** Docker networks do not span independent
+   VM daemons; each VM owns its workload and cross-VM traffic uses the LAN.
+8. **Why is systemd still present for Docker?** It manages the Docker daemon,
+   not Rateboard application services.
 
-## Рекомендований короткий план презентації
+## Verification wording
 
-1. Проблема та мета завдання.
-2. Межі сервісів і зони відповідальності.
-3. Повний потік збору, читання та збереження даних.
-4. Вибір технологій і компроміси.
-5. Модель даних, точність та ідемпотентність.
-6. Користувацькі можливості й поведінка під час роботи.
-7. Поточна відповідність завданню, відоме обмеження та наступний крок.
-
-## 50 імовірних питань і коротких відповідей
-
-1. **Чому ви обрали панель валютних курсів?**  Курси природно потребують зовнішніх API, нормалізації, часових міток, збереження й історичних представлень, тому охоплюють усі потрібні межі сервісів.
-2. **Які три сервіси є в системі?**  Статичний UI, Python FastAPI Backend/Proxy і Go API Fetcher.
-3. **Чому PostgreSQL не є четвертим сервісом?**  Це реляційна залежність для збереження; завдання вимагає три прикладні сервіси плюс базу даних.
-4. **Чому UI може викликати тільки Backend?**  Backend централізує валідацію і провайдерну логіку, приховує секрети та внутрішню топологію.
-5. **Чому Backend не звертається до PostgreSQL напряму?**  Базою володіє History; прямий доступ зв’язав би два сервіси з однією SQL-схемою.
-6. **Чому Python для Backend?**  FastAPI, Pydantic і async `httpx` дають стислу валідацію, orchestration, паралельний I/O та OpenAPI.
-7. **Чому Go для History?**  Це компільований сервіс із малим runtime, явною конкурентністю і зрілим PostgreSQL-драйвером.
-8. **Чому vanilla JavaScript замість React?**  Перше завдання ставить зрозумілу взаємодію сервісів вище за складність frontend framework.
-9. **Чому PostgreSQL замість MariaDB?**  PostgreSQL має сильні числові й часові типи, constraints, JSON та зручний `date_bin`.
-10. **Які публічні API використовуються?**  CoinGecko для криптовалют і Frankfurter для довідкових фіатних курсів.
-11. **Навіщо два провайдери?**  Вони покривають різні домени й демонструють нормалізацію різних контрактів.
-12. **Яка канонічна модель Backend?**  Нормалізований `Rate`: instrument ID, тип, base/quote, ціна, зміни, market data, timestamps і persistence status.
-13. **Чому decimal-значення в JSON є рядками?**  Щоб уникнути втрати точності між Python, Go, JavaScript і PostgreSQL.
-14. **Чому PostgreSQL `NUMERIC`?**  Фінансові значення потребують детермінованої десяткової точності.
-15. **Чому UTC і `TIMESTAMPTZ`?**  UTC усуває неоднозначність між сервісами, а браузер форматує час локально.
-16. **Що таке instrument ID?**  Стабільний типізований ID, наприклад `crypto:bitcoin:usd` або `fiat:USD:UAH`.
-17. **Чому CoinGecko ID, а не symbol?**  Символи не глобально унікальні, а provider ID стабільніші.
-18. **Що відбувається після натискання «Оновити»?**  Backend отримує останні збережені рядки через API Fetcher. CoinGecko і Frankfurter кнопкою не викликаються.
-19. **Чи всі читання зберігаються?**  Ні. Колектор, backfill і окремий програмний provider-refresh зберігають результати; звичайні Overview/cached reads — ні. UI-кнопка «Оновити» лише перечитує БД.
-20. **Чи повністю це відповідає формулюванню завдання?**  Не повністю: окремої таблиці сирих запитів у UI немає, хоча збережена історія вже відображається графіками. Це чесно зазначено в compliance-документі.
-21. **Як працює ідемпотентність?**  PostgreSQL унікально обмежує source, instrument, provider timestamp і sample time; повтор того самого знімка використовує `ON CONFLICT DO NOTHING`.
-22. **Чому ідемпотентність важлива?**  Retry, restart і повторний backfill не повинні створювати дублікати.
-23. **Що означає `requested_at`?**  Момент, коли Rateboard запитав або обробив спостереження.
-24. **Що означає `source_timestamp`?**  Час, призначений значенню зовнішнім провайдером.
-25. **Навіщо зберігати обидва timestamps?**  Вони показують час значення у джерелі та час його отримання нашою системою.
-26. **Як часто працює колектор?**  Типово кожні 300 секунд на межах `:00`, `:05`, `:10` тощо.
-27. **Навіщо вирівнювати по межах годинника?**  Це створює передбачувані точки й усуває drift від часу запуску або тривалості циклу.
-28. **Що буде, якщо один інструмент не завантажиться?**  Помилка журналюється, а цикл продовжує інші інструменти.
-29. **Чи можна гарантувати п’ятихвилинні фіатні дані?**  Можна гарантувати знімок кожні п’ять хвилин, поки працює колектор. Не можна гарантувати нове значення: Frankfurter оновлює довідковий курс раз на день.
-30. **Чи може CoinGecko дати п’ятихвилинну історію за весь рік?**  Не на використаному API-плані; довгі проміжки стають погодинними або денними.
-31. **Звідки беруться дані графіків?**  Backend запитує series у API Fetcher, а API Fetcher читає тільки PostgreSQL.
-32. **Чим відрізняються період і крок?**  Період задає вікно часу, крок — PostgreSQL-бакети. Один день із кроком 30 хвилин дає до 48 точок.
-33. **Чого зараз немає в UI?**  Окремої таблиці сирих PostgreSQL-запитів із фільтром і пагінацією.
-34. **Як додати її без порушення меж?**  UI викликає Backend `/api/v1/requests/history`, а Backend проксіює History.
-35. **Як реалізована пагінація?**  Cursor pagination використовує останній `requested_at` попередньої сторінки.
-36. **Як захищено History?**  Внутрішні endpoint вимагають bearer token, відомий лише Backend.
-37. **Де зберігаються секрети?**  У локальному `.env`, виключеному з Git і Codex; у frontend секретів немає.
-38. **Як налаштовано CORS?**  Backend дозволяє лише визначений `UI_ORIGIN`.
-39. **Які retry реалізовані?**  Provider GET повторює timeout, network error, `429` і `5xx` до двох разів із backoff та jitter.
-40. **Що станеться, якщо History недоступний під час натискання «Оновити»?**  Backend поверне `503`, UI покаже помилку й збереже останні коректні картки. `persistence_status: failed` стосується окремого provider-refresh endpoint, а не UI-кнопки.
-41. **Що таке liveness і readiness?**  Liveness перевіряє процес, readiness — здатність виконувати роль, включно з History/PostgreSQL dependencies.
-42. **Навіщо in-memory cache?**  Він зменшує навантаження на провайдерів і ризик rate limit.
-43. **Яке обмеження кешу?**  Він належить одному Backend-процесу, зникає після restart і не спільний між replicas.
-44. **Як обчислюється зміна капіталізації?**  Backend порівнює поточний market cap з історичним CoinGecko baseline за обраний період.
-45. **Чому площа treemap залежить від капіталізації?**  Площа показує відносний розмір, а колір — напрям зміни.
-46. **Як забезпечено accessibility?**  Семантичні controls, клавіатура, focus styles, не лише колірні індикатори, responsive layout і контраст тем.
-47. **Що робить `start-all.sh`?**  Завантажує конфігурацію, перевіряє PostgreSQL, застосовує міграції, запускає сервіси, перевіряє health і керує shutdown/logs.
-48. **Які автоматичні тести є?**  Python покриває parsing/cache/serialization/scheduler, UI — normalization/theme/formatting, Go наразі має compilation checks без окремих unit tests.
-49. **Чому немає Docker і Kubernetes?**  Завдання ще не ставить їх у фокус; сервіси залишено незалежно запускними для майбутньої контейнеризації.
-50. **Що покращити наступним?**  Додати таблицю запитів, Go repository/API tests, mocked integration tests, durable retry, а згодом CI і контейнеризацію.
+Passing unit tests, shell syntax, and `Vagrantfile` parsing are static evidence.
+Runtime proof requires five running VMs, healthy Compose containers, queue
+inspection, database ranges, and an observation visible through History API.

@@ -1,0 +1,16 @@
+name: rateboard-history
+
+services:
+  history-service:
+    build:
+      context: ../../../backend-service
+    env_file:
+      - /etc/rateboard/backend-service.env
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 18

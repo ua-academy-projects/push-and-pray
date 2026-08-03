@@ -1,0 +1,146 @@
+<mxfile host="app.diagrams.net" modified="2026-07-29T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="rateboard-services-containers" name="Services and Containers">
+    <mxGraphModel dx="1800" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="Rateboard — Vagrant VMs, Docker Compose services and communication" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#17211b;" vertex="1" parent="1">
+          <mxGeometry x="350" y="20" width="1500" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lan" value="Bridged local network (vmnet_bridged / en0)&#xa;VMs communicate by LAN IP or /etc/hosts hostname" style="swimlane;html=1;rounded=1;startSize=48;horizontal=1;fillColor=#f7faf8;swimlaneFillColor=#e2f5e9;strokeColor=#168a4b;strokeWidth=2;fontSize=16;fontStyle=1;fontColor=#17211b;" vertex="1" parent="1">
+          <mxGeometry x="250" y="140" width="1710" height="1060" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="browser" value="Browser&#xa;Rateboard user" style="shape=mxgraph.basic.user;html=1;whiteSpace=wrap;fillColor=#ffffff;strokeColor=#455a64;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="250" width="160" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="providers" value="External providers&#xa;&#xa;CoinGecko API&#xa;Frankfurter API" style="shape=cloud;html=1;whiteSpace=wrap;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="590" width="170" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mac_host" value="macOS host / project files&#xa;/Users/.../baryga" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="900" width="170" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ui_vm" value="VM 1 — ui&#xa;192.168.0.221 · rates-ui" style="swimlane;html=1;rounded=1;startSize=58;fillColor=#dae8fc;swimlaneFillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="230" width="300" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="ui_compose" value="Docker Compose&#xa;rateboard-ui" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="330" y="320" width="240" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="ui_container" value="ui container&#xa;Nginx + static HTML/CSS/JS&#xa;ports 80 / 443&#xa;TLS termination and /api/v1 proxy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaf2ff;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="330" y="395" width="240" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="history_vm" value="VM 2 — backend-service&#xa;192.168.0.223 · rates-backend-service" style="swimlane;html=1;rounded=1;startSize=58;fillColor=#d5e8d4;swimlaneFillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="230" width="350" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="history_compose" value="Docker Compose&#xa;rateboard-history" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="795" y="320" width="280" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="history_container" value="history-service container&#xa;Go History API + MQ consumer&#xa;port 8081&#xa;&#xa;Reads history · stores observations&#xa;detects missing intervals" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f5e8;strokeColor=#82b366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="795" y="395" width="280" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="database_vm" value="VM 3 — database&#xa;192.168.0.224 · rates-db" style="swimlane;html=1;rounded=1;startSize=58;fillColor=#d5e8d4;swimlaneFillColor=#d5e8d4;strokeColor=#4f8f4f;strokeWidth=2;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="230" width="350" height="410" as="geometry"/>
+        </mxCell>
+        <mxCell id="database_compose" value="Docker Compose&#xa;rateboard-database" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#4f8f4f;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="320" width="280" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="postgres_container" value="postgres container&#xa;PostgreSQL 16 · port 5432&#xa;Only History Service has DB access" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#e9f5e8;strokeColor=#4f8f4f;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="395" width="170" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="migrate_container" value="migrate container&#xa;temporary tools profile&#xa;applies SQL migrations" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#4f8f4f;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="395" width="95" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="bind_volume" value="Bind-backed Docker volume&#xa;/srv/rateboard-data/postgresql&#xa;→ /var/lib/postgresql/data" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="520" width="280" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api_vm" value="VM 4 — api-fetcher&#xa;192.168.0.222 · rates-api-fetcher" style="swimlane;html=1;rounded=1;startSize=58;fillColor=#dae8fc;swimlaneFillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="700" width="350" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="api_compose" value="Docker Compose&#xa;rateboard-api-fetcher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="335" y="790" width="280" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="api_container" value="api-fetcher container&#xa;Python FastAPI collector · port 8000&#xa;&#xa;Fetches and normalizes provider data&#xa;No PostgreSQL credentials" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eaf2ff;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="335" y="865" width="280" height="105" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="mq_vm" value="VM 5 — rabbitmq&#xa;192.168.0.225 · rates-rabbitmq" style="swimlane;html=1;rounded=1;startSize=58;fillColor=#ffe6cc;swimlaneFillColor=#ffe6cc;strokeColor=#d79b00;strokeWidth=2;fontSize=15;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="700" width="420" height="400" as="geometry"/>
+        </mxCell>
+        <mxCell id="mq_compose" value="Docker Compose&#xa;rateboard-messaging" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="790" width="340" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="rabbit_container" value="rabbitmq container&#xa;RabbitMQ 4 Management&#xa;AMQP 5672 · UI 15672&#xa;&#xa;rates.events → rates.observations&#xa;rates.commands → rates.fetch.commands" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d79b00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="800" y="870" width="210" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="redis_container" value="redis container&#xa;Redis 7 · port 6379&#xa;AOF volume&#xa;&#xa;Infrastructure container;&#xa;not a rates database" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1025" y="870" width="115" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="mq_volume" value="Docker volumes&#xa;rabbitmq_data · redis_data" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#fff2cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="840" y="1030" width="260" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="host_qcow" value="Persistent host qcow2&#xa;.vagrant-data/database/postgresql.qcow2&#xa;survives VM halt/up and reprovision" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="930" width="280" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="shared_folder" value="Vagrant rsync shared source&#xa;host project → /vagrant&#xa;Dockerfiles, Compose files, migrations" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="1070" width="280" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="note" value="Important boundaries&#xa;• UI never calls API Fetcher, providers, RabbitMQ or PostgreSQL&#xa;• API Fetcher only collects data and publishes to MQ&#xa;• History Service is the only PostgreSQL owner&#xa;• Each VM has its own isolated Compose network; cross-VM traffic uses bridged LAN" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#ffffff;strokeColor=#666666;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1660" y="740" width="260" height="250" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="browser_ui" value="HTTPS 443&#xa;page + /api/v1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#455a64;fontSize=12;" edge="1" parent="1" source="browser" target="ui_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="ui_history" value="HTTP GET /api/v1/*&#xa;LAN :8081" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#168a4b;fontSize=12;" edge="1" parent="1" source="ui_container" target="history_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="history_db" value="PostgreSQL protocol&#xa;LAN :5432" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#4f8f4f;fontSize=12;" edge="1" parent="1" source="history_container" target="postgres_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="migration_db" value="SQL migrations" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;strokeColor=#4f8f4f;fontSize=11;" edge="1" parent="1" source="migrate_container" target="postgres_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="postgres_volume" value="Docker bind mount" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d6b656;fontSize=11;" edge="1" parent="1" source="postgres_container" target="bind_volume">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="qcow_mount" value="virtio disk → ext4 mount" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d6b656;strokeWidth=2;fontSize=11;" edge="1" parent="1" source="host_qcow" target="bind_volume">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="providers_api" value="HTTPS provider requests&#xa;current + historical data" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=12;" edge="1" parent="1" source="providers" target="api_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="api_events" value="Publish observations&#xa;rates.events&#xa;LAN AMQP :5672" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#d79b00;fontSize=12;" edge="1" parent="1" source="api_container" target="rabbit_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="rabbit_history_events" value="Consume observations&#xa;ACK after DB insert" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#d79b00;fontSize=12;" edge="1" parent="1" source="rabbit_container" target="history_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="history_commands" value="Publish missing-data commands&#xa;rates.commands" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;dashed=1;strokeColor=#9673a6;fontSize=12;" edge="1" parent="1" source="history_container" target="rabbit_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="rabbit_api_commands" value="Consume backfill commands&#xa;fetch only missing intervals" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeWidth=2;dashed=1;strokeColor=#9673a6;fontSize=12;" edge="1" parent="1" source="rabbit_container" target="api_container">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="rabbit_volume_edge" value="persistent data" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;fontSize=11;" edge="1" parent="1" source="rabbit_container" target="mq_volume">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="redis_volume_edge" value="AOF" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;fontSize=11;" edge="1" parent="1" source="redis_container" target="mq_volume">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="host_shared" value="rsync /vagrant" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;dashed=1;strokeColor=#666666;fontSize=11;" edge="1" parent="1" source="mac_host" target="shared_folder">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

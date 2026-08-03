@@ -1,0 +1,22 @@
+name: rateboard-ui
+
+services:
+  ui:
+    build:
+      context: ../../../ui-service
+    env_file:
+      - /etc/rateboard/ui.env
+    environment:
+      NGINX_ENVSUBST_FILTER: "^(UI_PUBLIC_HOST|HISTORY_SERVICE_URL)$"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/rateboard/tls:/etc/rateboard/tls:ro
+      - /etc/rateboard/runtime-config.js:/usr/share/nginx/html/js/runtime-config.js:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-q", "-O", "-", "https://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 12

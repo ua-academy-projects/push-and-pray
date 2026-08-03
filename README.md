@@ -1,188 +1,284 @@
 # Rateboard
 
-[Українська версія](README.uk.md)
-
-Rateboard is a three-service cryptocurrency and fiat dashboard built for DevOps Academy Assignment 1.
+Rateboard displays current and historical cryptocurrency and fiat rates through
+a five-VM Vagrant/QEMU deployment.
 
 ```text
-Browser -> UI (HTML/CSS/JS) -> Backend (Python/FastAPI) -> CoinGecko / Frankfurter
-                                    |
-                                    +-> RabbitMQ -> History (Go) -> PostgreSQL
-                                    +-> History HTTP (reads and write fallback)
+Providers -> API Fetcher -> RabbitMQ -> History Service -> PostgreSQL
+Browser   -> UI/Nginx ----------------> History Service -> PostgreSQL
 ```
 
-The browser obtains all application data only from Backend; it additionally loads pinned Chart.js assets from jsDelivr. Backend owns public-provider access and orchestration. History is the only service that accesses PostgreSQL.
+API Fetcher only retrieves and normalizes provider data. History Service
+consumes RabbitMQ observations, owns PostgreSQL, and serves every UI read.
 
-## Current features
+## Repository
 
-- Bitcoin/USD headline with a full-width 7-day sparkline, top-10 cryptocurrency list with one-hour/day changes and compact 7-day sparklines, and 10 fiat pairs against UAH.
-- Multiple removable full-width comparison cards stacked vertically; every crypto card includes a 7-day sparkline and refresh preserves the card layout.
-- CoinGecko one-hour and one-day changes (`—` where a provider does not supply them).
-- All displayed rates rounded to two decimal places; service/database precision remains unchanged.
-- Searchable checkbox selection of up to five instruments per chart.
-- Separate capitalization tab with proportional CoinGecko treemaps; green/red/gray encodes market-cap growth, decline, or negligible change.
-- Multiple independent capitalization maps for `1h`, `4h`, `1d`, `7d`, `30d`, and `1y` periods.
-- Capitalization-tile typography scales with each rectangle; symbol and capitalization remain visible in tiny tiles while the percentage change is hidden first.
-- Separate dynamic chart cards backed by PostgreSQL, with independent data periods (`1d`, `7d`, `30d`, `90d`, `1y`) and aggregation steps (`5m`, `30m`, `1h`, `4h`, `1d`). Existing charts refresh automatically on five-minute wall-clock boundaries while the page is visible.
-- Clean chart lines with proximity-based exact timestamp/value tooltips, plus per-chart pan/zoom/reset, refresh-all, and clear-all.
-- Structured print/PDF report containing generation time to the second, all current overview cards, every capitalization map, every graph (or unavailable-data messages), and Rateboard footer.
-- Persistent accessible light/dark theme.
-- Five-minute background collector while Backend is running.
-- Idempotent PostgreSQL persistence and manual annual backfill.
+```text
+api-fetcher/                 Python provider collector and MQ producer
+backend-service/             Go History API, MQ consumer, PostgreSQL owner
+ui-service/                  Static UI and Nginx image
+infra/docker/                One Compose project per VM
+infra/vagrant/provision/     Docker bootstrap and per-role deploy scripts
+backend-service/migrations/  PostgreSQL migrations
+scripts/                     Deploy, verify, stop, and manual backfill helpers
+```
 
-## Prerequisites
+## Five-VM layout
 
-- Python 3.12+
-- Go 1.23+
-- PostgreSQL 16+
-- RabbitMQ 4+
-- `psql`, `pg_isready`, and `curl`
-- A browser and internet access for providers and pinned Chart.js CDN assets
+| VM | Default LAN address | Workload |
+|---|---:|---|
+| `ui` | `192.168.0.221` | UI/Nginx container |
+| `api-fetcher` | `192.168.0.222` | FastAPI collector container |
+| `backend-service` | `192.168.0.223` | Go History Service container |
+| `database` | `192.168.0.224` | PostgreSQL container |
+| `rabbitmq` | `192.168.0.225` | RabbitMQ and Redis containers |
 
-On macOS/Homebrew, `start-all.sh` can start installed PostgreSQL 16 and RabbitMQ services. On other systems both must already be running when RabbitMQ is enabled.
+Choose unused addresses in the real LAN and reserve them before booting.
 
-## First-time setup
+Every VM has its own Docker daemon, Compose project, network, logs, and
+lifecycle. Cross-VM connections use bridged LAN names:
 
-Create local configuration. `.env` is excluded by both Git and Codex ignore rules:
+```text
+rates-ui
+rates-api-fetcher
+rates-backend-service
+rates-db
+rates-rabbitmq
+```
 
-```sh
+## Prerequisites on macOS
+
+Install QEMU, Vagrant, and the QEMU provider:
+
+```bash
+brew install qemu
+brew install --cask vagrant
+vagrant plugin install vagrant-qemu
+```
+
+The bridged `vmnet` lifecycle requires `sudo`.
+
+## Configuration
+
+Create the main environment file:
+
+```bash
 cp .env.example .env
 ```
 
-Set a unique `API_FETCHER_TOKEN`. `COINGECKO_API_KEY` is optional for keyless access but recommended for rate limits. Never commit `.env` or API-key files.
+Create the ignored Vagrant-local file:
 
-Create the database and role if they do not already exist. The exact administrative command depends on your PostgreSQL installation; the default application URL expects database/user/password `rates`:
-
-```text
-postgres://rates:rates@127.0.0.1:5432/rates?sslmode=disable
+```bash
+cp infra/vagrant/.env.vagrant.example .env.vagrant.local
 ```
 
-Then either use automatic start or run each service manually.
+Set:
 
-## Start everything
+- five unused LAN IP addresses;
+- the actual macOS network interface, normally `en0`;
+- API Fetcher internal token;
+- PostgreSQL password;
+- RabbitMQ username, password, and vhost;
+- Redis password;
+- optional CoinGecko key.
 
-```sh
-./scripts/start-all.sh
+Do not commit `.env`, `.env.vagrant.local`, or generated files.
+
+## Deploy
+
+The deployment order is:
+
+```text
+PostgreSQL -> RabbitMQ/Redis -> History Service -> API Fetcher -> UI
+```
+
+Run:
+
+```bash
+sudo ./scripts/deploy-vagrant-compose.sh
 ```
 
 The script:
 
-1. loads `.env`, validates all service/orchestration settings, and checks required commands;
-2. checks PostgreSQL and RabbitMQ and starts their Homebrew services when available;
-3. applies all History migrations (`001_init.sql`, `002_sampling.sql`, and `003_backfill_timestamps.sql`);
-4. downloads Go modules and starts History;
-5. creates/installs the Python virtualenv when missing and starts Backend;
-6. starts the static UI server;
-7. optionally runs annual backfill when `BACKFILL_YEAR_ON_START=1`;
-8. writes logs to `.run/` and stops UI, Backend, and History on Ctrl+C.
+1. starts all five VMs in dependency order;
+2. synchronizes source files;
+3. installs Docker Engine and the Compose plugin;
+4. starts the independent Compose project on each VM;
+5. applies idempotent PostgreSQL migrations;
+6. checks Compose and HTTP health.
 
-Startup probes, graceful-shutdown retries, their intervals, and the optional Homebrew PostgreSQL binary directory are configured through the `SERVICE_*` and `POSTGRES_BIN_DIR` values documented in `.env.example`; `start-all.sh` does not provide hidden configuration defaults.
+Direct equivalent:
 
-PostgreSQL and RabbitMQ are infrastructure dependencies and are not stopped by the script.
-
-To stop any Rateboard listeners and free ports `3000`, `8000`, and `8081`:
-
-```sh
-./scripts/stop-all.sh
+```bash
+sudo vagrant up database rabbitmq backend-service api-fetcher ui --provider=qemu
+sudo vagrant rsync
+sudo vagrant provision database
+sudo vagrant provision rabbitmq
+sudo vagrant provision backend-service
+sudo vagrant provision api-fetcher
+sudo vagrant provision ui
 ```
 
 Open:
 
-- UI: `http://127.0.0.1:3000`
-- Backend Swagger: `http://127.0.0.1:8000/docs`
-- Backend health: `http://127.0.0.1:8000/health/live`
-
-## Manual start
-
-Apply the migration and start History:
-
-```sh
-set -a
-source .env
-set +a
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/001_init.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/002_sampling.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f api-fetcher/migrations/003_backfill_timestamps.sql
-cd api-fetcher
-go mod download
-go run ./cmd/server
+```text
+https://<RATEBOARD_UI_IP>/
+https://rateboard.test/
 ```
 
-In another terminal, start Backend:
+Use `scripts/update-local-hosts.sh` to reconcile `rateboard.test` with
+`.env.vagrant.local`.
 
-```sh
-set -a
-source .env
-set +a
-cd backend-service
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev]'
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+## Verify
+
+```bash
+sudo ./scripts/check-vm-deployment.sh
 ```
 
-In a third terminal, start UI:
+Inspect an individual project:
 
-```sh
-cd ui-service/public
-python3 -m http.server 3000 --bind 127.0.0.1
+```bash
+sudo vagrant ssh api-fetcher -c \
+  'sudo docker compose -f /vagrant/infra/docker/api-fetcher/compose.yml ps'
+
+sudo vagrant ssh backend-service -c \
+  'sudo docker compose -f /vagrant/infra/docker/backend-service/compose.yml logs --tail=100'
+
+sudo vagrant ssh rabbitmq -c \
+  'sudo docker compose -f /vagrant/infra/docker/rabbitmq/compose.yml ps'
 ```
 
-Start order: PostgreSQL → RabbitMQ → History → Backend → UI.
+Health endpoints:
 
-RabbitMQ carries durable observation writes from Backend to API Fetcher. The durable direct exchange is `rates.events`, the main queue is `rates.observations`, and failed redeliveries go to `rates.observations.dlq`. API Fetcher acknowledges a message only after PostgreSQL accepts the insert. If publishing fails, Backend falls back to the authenticated API Fetcher HTTP write endpoint.
-
-## Automatic collection
-
-Backend owns the scheduler. It aligns collection to absolute clock boundaries. With the default interval, cycles begin at `:00`, `:05`, `:10`, `:15`, and so on, regardless of when Backend was started:
-
-```env
-COLLECTOR_ENABLED=true
-COLLECTOR_INTERVAL_SECONDS=300
+```text
+http://<RATEBOARD_API_FETCHER_IP>:8000/health/ready
+http://<RATEBOARD_BACKEND_SERVICE_IP>:8081/health/ready
 ```
 
-Each cycle fetches all 20 configured instruments with fresh provider requests and sends successful observations to API Fetcher. Failures are isolated per instrument and logged without stopping the cycle. Values below 60 seconds are clamped to 60.
+API Fetcher readiness requires its RabbitMQ publisher and command consumer.
+History readiness requires PostgreSQL and its observation consumer.
 
-Every cycle is stored with its aligned `requested_at` sample time. Frankfurter can keep the same daily `source_timestamp` and value, but PostgreSQL still records each five-minute observation; this represents when Rateboard sampled the source, not a fabricated provider update.
+## Stop without deleting data
 
-## Annual backfill
+```bash
+sudo ./scripts/stop-vagrant-compose.sh
+sudo vagrant halt
+```
 
-With PostgreSQL, History, and Backend running:
+The stop script intentionally uses `docker compose down` without `-v`.
 
-```sh
+Never use this during normal operation:
+
+```bash
+docker compose down -v
+```
+
+## PostgreSQL persistence
+
+Database files follow this path:
+
+```text
+host .vagrant-data/database/postgresql.qcow2
+  -> database VM ext4 /srv/rateboard-data/postgresql
+  -> Docker volume postgresql_data
+  -> container /var/lib/postgresql/data
+```
+
+The source tree remains an `rsync` synced folder. PostgreSQL data is separate.
+The installed `vagrant-qemu` supports extra disks, while `vagrant validate`
+reports NFS as unusable on the target Mac. The database therefore uses a
+host-side qcow2 disk rather than placing live PostgreSQL files on NFS/SMB.
+
+The normal lifecycle preserves database state across:
+
+- PostgreSQL container restart;
+- Compose down/up without `-v`;
+- Vagrant halt/up;
+- repeated provision;
+- image rebuild.
+
+The disk file is outside `.vagrant`, so it is designed to survive
+`vagrant destroy`. Do not claim that destructive scenario as runtime-verified
+unless it was explicitly authorized and executed.
+
+## Initial and incremental backfill
+
+On History Service startup:
+
+1. PostgreSQL is queried for the latest `source_timestamp` per instrument.
+2. A missing instrument receives a backfill command for at most 365 days.
+3. An existing instrument receives a command from its own latest timestamp.
+4. Commands are published to `rates.commands`.
+5. API Fetcher consumes commands and publishes observations to `rates.events`.
+6. History Service inserts observations and ACKs after the database operation.
+
+Repeated deliveries are safe because PostgreSQL insertion is idempotent.
+
+Manual full-year collection:
+
+```bash
 ./scripts/backfill-year.sh
 ```
 
-Override dates when needed:
+The script calls API Fetcher’s authenticated internal endpoint. API Fetcher
+still writes only RabbitMQ; it does not bypass History Service or PostgreSQL
+ownership.
 
-```sh
-BACKFILL_FROM=2025-01-01 BACKFILL_TO=2025-12-31 ./scripts/backfill-year.sh
+## RabbitMQ topology
+
+```text
+rates.commands
+  -> rates.fetch.commands
+  -> rates.fetch.commands.dlq
+
+rates.events
+  -> rates.observations
+  -> rates.observations.dlq
 ```
 
-The script requests 10 configured cryptocurrencies in USD and 10 fiat pairs against UAH. Re-running is safe: backfill uses the point timestamp as `requested_at`, and uniqueness is enforced on `(source, instrument_id, source_timestamp, requested_at)`.
+Messages and queues are durable. API Fetcher uses publisher confirms. History
+Service ACKs an observation only after an idempotent PostgreSQL insert.
 
-Provider granularity is not uniformly five minutes:
+There is no direct API Fetcher -> History HTTP write fallback.
 
-- CoinGecko: one-day requests use automatic ~5-minute data; 2–90 days are hourly; over 90 days are daily.
-- CoinGecko forced `5m` history is limited by provider plan and cannot supply a full year.
-- Frankfurter publishes daily reference rates only.
+## UI API
 
-Backfill retains the providers' native historical granularity; only new collector samples are guaranteed every five minutes while the services are running.
+UI calls only History Service through same-origin Nginx:
 
-## Tests
-
-```sh
-cd backend-service && .venv/bin/pytest -q
-cd api-fetcher && go test ./...
-node --test ui-service/tests/*.test.js
-bash -n scripts/start-all.sh scripts/backfill-year.sh
+```text
+GET /api/v1/instruments
+GET /api/v1/overview
+GET /api/v1/rates/current
+GET /api/v1/rates/stored-current
+GET /api/v1/rates/history
+GET /api/v1/market-map
 ```
 
-Current automated coverage focuses on Python models/parsing/cache utilities and frontend formatting/theme utilities. Go packages compile through `go test`, but currently contain no dedicated test files. See `docs/architecture.md` and `docs/api.md` for implementation details.
+Anonymous presentation state is stored in browser `localStorage`. Redis is not
+used for rate data.
 
-## Assignment status and defense materials
+## Static verification
 
-The core three-service architecture, relational persistence, current-data retrieval, refresh, and stored-series charts are implemented. The History tab reads PostgreSQL observations through Backend and supports selectable aggregation steps. Normal Overview reads are intentionally not persisted; explicit refreshes, the five-minute collector, and backfill are persisted.
+```bash
+python3 -m compileall -q api-fetcher/app
+api-fetcher/.venv/bin/pytest -q
 
-- `docs/assignment-compliance.md` maps every Assignment 1 requirement to the current implementation.
-- `docs/defense-guide.md` contains the recommended defense narrative and 50 likely technical questions with concise answers.
+cd backend-service
+GOCACHE=/private/tmp/rateboard-go-cache go test ./...
+cd ..
+
+npm --prefix ui-service test
+ruby -c Vagrantfile
+bash -n infra/vagrant/provision/*.sh scripts/*.sh
+git diff --check
+```
+
+Static checks do not prove that QEMU, NFS, bridged networking, containers, or
+external providers work at runtime. Use the five-VM verification script on the
+target Mac for that proof.
+
+## More documentation
+
+- [Architecture](docs/architecture.md)
+- [API](docs/api.md)
+- [Compliance matrix](docs/assignment-compliance.md)
