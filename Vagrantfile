@@ -111,6 +111,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         echo "Assigned addresses: $(hostname -I)"
       SHELL
 
+      machine.vm.provision "file",
+        source: File.expand_path("~/.ssh/devops_train.pub"),
+        destination: "/tmp/devops_train.pub"
+
       # Common OS tooling and directories must exist before a service-specific
       # application image is built or any application container is started.
       machine.vm.provision "shell", path: "provision/base-vm.sh"

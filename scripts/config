@@ -1,0 +1,27 @@
+Host infra-vm
+    HostName 192.168.100.14
+    User lord
+    IdentityFile ~/.ssh/devops_train
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host provider-vm
+    HostName 192.168.100.12
+    User lord
+    IdentityFile ~/.ssh/devops_train
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host history-vm
+    HostName 192.168.100.11
+    User lord
+    IdentityFile ~/.ssh/devops_train
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+Host ui-vm
+    HostName 192.168.100.10
+    User lord
+    IdentityFile ~/.ssh/devops_train
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
