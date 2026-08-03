@@ -4,22 +4,6 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 readonly APP_ROOT="/opt/weather-app"
-readonly LOG_DIR="/var/log/weather-app"
-readonly PROVISION_LOG="${LOG_DIR}/provision.log"
-
-setup_logging() {
-    mkdir -p "${LOG_DIR}"
-    chmod 755 "${LOG_DIR}"
-
-    if [[ ! -f "${PROVISION_LOG}" ]]; then
-        touch "${PROVISION_LOG}"
-    fi
-    chmod 644 "${PROVISION_LOG}"
-
-    exec > >(tee -a "${PROVISION_LOG}") 2>&1
-}
-
-setup_logging
 
 log() {
     local level="${2:-INFO}"

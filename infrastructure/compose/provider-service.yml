@@ -4,6 +4,8 @@ services:
   provider-service:
     build: ../../provider-service
     restart: unless-stopped
+    logging:
+      driver: journald
 
     environment:
       APP_HOST: "0.0.0.0"
@@ -16,9 +18,6 @@ services:
 
     ports:
       - "5002:5002"
-
-    volumes:
-      - /var/log/weather-app:/var/log/weather-app
 
     healthcheck:
       test:

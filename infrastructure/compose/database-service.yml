@@ -4,6 +4,8 @@ services:
   database:
     image: postgres:16
     restart: unless-stopped
+    logging:
+      driver: journald
     environment:
       POSTGRES_DB: weather_history
       POSTGRES_USER: weather_user
@@ -23,6 +25,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging:
+      driver: journald
     command: redis-server --appendonly yes
     ports:
       - "6379:6379"
@@ -40,6 +44,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     restart: unless-stopped
+    logging:
+      driver: journald
     environment:
       RABBITMQ_DEFAULT_USER: weather_user
       RABBITMQ_DEFAULT_PASS: weather_password

@@ -4,6 +4,8 @@ services:
   backend-service:
     build: ../../backend-service
     restart: unless-stopped
+    logging:
+      driver: journald
 
     environment:
       APP_HOST: "0.0.0.0"
@@ -18,9 +20,6 @@ services:
 
     ports:
       - "5001:5001"
-
-    volumes:
-      - /var/log/weather-app:/var/log/weather-app
 
     healthcheck:
       test:

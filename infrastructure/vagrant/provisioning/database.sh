@@ -25,20 +25,12 @@ if command -v ufw >/dev/null 2>&1 \
     ufw allow 15672/tcp || true
 fi
 
-readonly SERVICE_LOG="/var/log/weather-app/database.log"
-touch "${SERVICE_LOG}"
-chmod 644 "${SERVICE_LOG}"
-
 log "Launching Database containers via Docker Compose"
 
 docker compose \
     --file /vagrant/infrastructure/compose/database-service.yml \
     up -d --build
 
-timestamp="$(date -u '+%Y-%m-%d %H:%M:%S +0000')"
-{
-    printf '[%s] [INFO] [database] Database containers launched successfully.\n' "${timestamp}"
-    docker compose --file /vagrant/infrastructure/compose/database-service.yml ps
-} >> "${SERVICE_LOG}" 2>&1
+log "Database containers launched successfully"
 
 log "Database VM provisioning completed"

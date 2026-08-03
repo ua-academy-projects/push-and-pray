@@ -163,13 +163,47 @@ vagrant ssh backend-service -c "docker compose -f /vagrant/infrastructure/compos
 vagrant ssh ui-service -c "docker compose -f /vagrant/infrastructure/compose/ui-service.yml ps"
 ```
 
-### View Container Logs
+### View Container Logs (journald, Docker Compose, Docker)
+
+All service and container logs are routed through Docker's `journald` logging driver into systemd's `journald` on each VM.
+
+#### 1. Via `journalctl` (Systemd Journal)
+
+Query logs directly from systemd `journald` on any VM:
 
 ```bash
+# Follow live logs for backend container via journalctl
+vagrant ssh backend-service -c "sudo journalctl CONTAINER_NAME=backend-service-backend-service-1 -f"
+
+# View last 100 log entries for provider service via journalctl
+vagrant ssh provider-service -c "sudo journalctl CONTAINER_NAME=provider-service-provider-service-1 -n 100"
+
+# View logs for database container on database VM via journalctl
+vagrant ssh database -c "sudo journalctl CONTAINER_NAME=database-service-database-1 -n 50"
+```
+
+#### 2. Via `docker compose logs`
+
+```bash
+# Database VM (PostgreSQL, Redis, RabbitMQ)
 vagrant ssh database -c "docker compose -f /vagrant/infrastructure/compose/database-service.yml logs --tail=100"
+
+# Provider VM
 vagrant ssh provider-service -c "docker compose -f /vagrant/infrastructure/compose/provider-service.yml logs --tail=100"
+
+# Backend VM
 vagrant ssh backend-service -c "docker compose -f /vagrant/infrastructure/compose/backend-service.yml logs --tail=100"
+
+# UI VM
 vagrant ssh ui-service -c "docker compose -f /vagrant/infrastructure/compose/ui-service.yml logs --tail=100"
+```
+
+#### 3. Via `docker logs`
+
+```bash
+# View logs directly via docker logs using container name or ID
+vagrant ssh backend-service -c "docker logs --tail=100 backend-service-backend-service-1"
+vagrant ssh ui-service -c "docker logs -f ui-service-ui-service-1"
 ```
 
 ---

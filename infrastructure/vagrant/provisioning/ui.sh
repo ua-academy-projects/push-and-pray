@@ -31,10 +31,6 @@ export DATABASE_IP
 log "Backend VM resolved to ${BACKEND_IP}"
 log "Database VM resolved to ${DATABASE_IP}"
 
-readonly SERVICE_LOG="/var/log/weather-app/ui-service.log"
-touch "${SERVICE_LOG}"
-chmod 644 "${SERVICE_LOG}"
-
 log "Launching UI Service container via Docker Compose"
 
 docker compose \
