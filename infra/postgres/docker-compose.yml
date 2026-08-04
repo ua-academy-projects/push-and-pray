@@ -1,13 +1,17 @@
 # The project's one "data/infra" node (see docs/architecture.md §16/§17): Postgres,
 # Redis (UI session state), and RabbitMQ (Fetcher->Backend queue), each in its own
-# container. All three use network_mode: host so they bind directly to this VM's
-# bridged LAN interface (see ../../Vagrantfile) -- the backend/fetcher VMs reach them
-# at this VM's existing IP, exactly as the old bare-metal deployment did.
+# container. All three share the infra-net bridge network and publish their ports to
+# this VM's bridged LAN interface (see ../../Vagrantfile) -- the backend/fetcher VMs
+# still reach them at this VM's existing IP, exactly as with host networking, just via
+# explicit port mappings instead of sharing the host's network stack.
 services:
   postgres:
     image: postgres:16.4-alpine
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - infra-net
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -43,7 +47,10 @@ services:
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - infra-net
+    ports:
+      - "6379:6379"
     command:
       - redis-server
       - --port
@@ -76,7 +83,11 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - infra-net
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
@@ -98,6 +109,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  infra-net:
 
 volumes:
   postgres-data:

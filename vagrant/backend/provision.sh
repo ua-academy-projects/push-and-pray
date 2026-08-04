@@ -47,6 +47,16 @@ if ! command -v docker >/dev/null 2>&1; then
   usermod -aG docker vagrant
 fi
 
+echo ">>> Creating sky user (docker group member)"
+if ! id -u sky >/dev/null 2>&1; then
+  useradd -m -s /bin/bash sky
+  install -d -m 700 -o sky -g sky /home/sky/.ssh
+  echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzfD7LC8tdDbnpi5ozVF3Jsws3GNL0DXkF8bljj4avI sky@vagrant-vms" > /home/sky/.ssh/authorized_keys
+  chmod 600 /home/sky/.ssh/authorized_keys
+  chown sky:sky /home/sky/.ssh/authorized_keys
+fi
+usermod -aG docker sky
+
 echo ">>> Waiting for postgres (${POSTGRES_IP}:5432) to accept connections"
 apt-get install -y postgresql-client
 for i in $(seq 1 30); do

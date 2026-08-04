@@ -1,11 +1,11 @@
 # Backend Service VM: a single container running the FastAPI API. Its RabbitMQ consumer
 # (app/broker/consumer.py) runs as a background task inside that same process via the
 # lifespan in app/main.py, rather than as a separate container -- see docs/architecture.md
-# §17, decision 27 for the history of why these were ever split. Uses network_mode: host so
-# it's reachable at this VM's existing bridged LAN IP (see ../Vagrantfile), exactly like the
-# old systemd deployment. Schema setup is not a separate step either -- the process creates
-# any missing tables itself on startup (app.database.session.init_db), so there's no
-# migration container to wait on either.
+# §17, decision 27 for the history of why these were ever split. Runs on its own bridge
+# network with its port published to this VM's bridged LAN IP (see ../Vagrantfile), so
+# it stays reachable from other VMs the same way host networking was. Schema setup is
+# not a separate step either -- the process creates any missing tables itself on startup
+# (app.database.session.init_db), so there's no migration container to wait on either.
 services:
   api:
     build:
@@ -13,7 +13,10 @@ services:
       dockerfile: Dockerfile
     image: skyivano/backend-service:${IMAGE_TAG:-latest}
     env_file: .env
-    network_mode: host
+    networks:
+      - backend-net
+    ports:
+      - "8000:8000"
     restart: unless-stopped
     deploy:
       resources:
@@ -25,3 +28,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  backend-net:

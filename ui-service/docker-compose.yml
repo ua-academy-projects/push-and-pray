@@ -1,5 +1,7 @@
-# UI VM: a single nginx container serving the production Vite build. network_mode:
-# host so it's reachable at this VM's existing bridged LAN IP (see ../Vagrantfile).
+# UI VM: a single nginx container serving the production Vite build. Runs on its own
+# bridge network with its port published to this VM's bridged LAN IP (see
+# ../Vagrantfile), so it stays reachable from other VMs the same way host networking
+# was, just via an explicit port mapping instead of sharing the host's network stack.
 # VITE_BACKEND_BASE_URL is read from this directory's .env (docker compose loads it
 # automatically for ${...} substitution) and passed in as a build arg -- it must be
 # set before `docker compose build`, not just before `up`, since it's baked into the
@@ -12,7 +14,10 @@ services:
       args:
         VITE_BACKEND_BASE_URL: ${VITE_BACKEND_BASE_URL}
     image: skyivano/ui-service:${IMAGE_TAG:-latest}
-    network_mode: host
+    networks:
+      - ui-net
+    ports:
+      - "5173:5173"
     restart: unless-stopped
     deploy:
       resources:
@@ -24,5 +29,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "5173:5173"
+
+networks:
+  ui-net:
