@@ -20,10 +20,16 @@ BACKEND_IP="192.168.0.221"
 
 export DEBIAN_FRONTEND=noninteractive
 
+# Ubuntu's unattended-upgrades runs automatically shortly after boot and holds the
+# dpkg lock while it does; without -o DPkg::Lock::Timeout, apt-get fails immediately
+# instead of waiting for it, making provisioning fail intermittently depending on how
+# the timing lands. 300s comfortably outlasts a typical unattended-upgrades run.
+APT="apt-get -o DPkg::Lock::Timeout=300"
+
 if ! command -v docker >/dev/null 2>&1; then
   echo ">>> Installing Docker Engine + Compose plugin"
-  apt-get update -y
-  apt-get install -y ca-certificates curl gnupg
+  $APT update -y
+  $APT install -y ca-certificates curl gnupg
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
@@ -31,8 +37,8 @@ if ! command -v docker >/dev/null 2>&1; then
   CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
   echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
     > /etc/apt/sources.list.d/docker.list
-  apt-get update -y
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  $APT update -y
+  $APT install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
   systemctl enable --now docker
   usermod -aG docker vagrant
 fi
@@ -48,7 +54,7 @@ fi
 usermod -aG docker sky
 
 echo ">>> Waiting for backend-service (${BACKEND_IP}:8000) to respond"
-apt-get install -y curl
+$APT install -y curl
 for i in $(seq 1 30); do
   if curl -fsS -o /dev/null "http://${BACKEND_IP}:8000/docs"; then
     echo "    backend-service is up"
