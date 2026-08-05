@@ -101,21 +101,21 @@ MACHINES = {
   "backend" => {
     hostname: "airaware-backend",
     ip_suffix: 211,
-    memory: 1024,
+    memory: 640,
     cpus: 1,
     primary: false
   },
   "fetcher" => {
     hostname: "airaware-fetcher",
     ip_suffix: 212,
-    memory: 768,
+    memory: 640,
     cpus: 1,
     primary: false
   },
   "frontend" => {
     hostname: "airaware-frontend",
     ip_suffix: 210,
-    memory: 768,
+    memory: 640,
     cpus: 1,
     primary: true
   }
