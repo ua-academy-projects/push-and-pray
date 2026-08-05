@@ -6,7 +6,7 @@ require "uri"
 # the child immediately execs the isolated QEMU process.
 ENV["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] ||= "YES" if RUBY_PLATFORM.include?("darwin")
 # macOS vmnet-bridged QEMU guests are started reliably one at a time. Vagrant
-# otherwise batches all five machines and can make each daemonized QEMU process
+# otherwise batches all six machines and can make each daemonized QEMU process
 # exit with no useful stderr.
 ENV["VAGRANT_NO_PARALLEL"] ||= "1"
 
@@ -52,6 +52,7 @@ NETWORK_MODE = env("RATEBOARD_NETWORK_MODE", "vmnet_bridged")
 abort "RATEBOARD_NETWORK_MODE must be vmnet_bridged" unless NETWORK_MODE == "vmnet_bridged"
 
 MACHINES = {
+  "logs"            => { ip: env("RATEBOARD_LOGS_IP", "192.168.0.226"), ssh_port: 50_226, memory: "2G" },
   "database"        => { ip: env("RATEBOARD_DATABASE_IP", "192.168.0.224"), ssh_port: 50_224 },
   "rabbitmq"        => { ip: env("RATEBOARD_RABBITMQ_IP", "192.168.0.225"), ssh_port: 50_225 },
   "backend-service" => { ip: env("RATEBOARD_BACKEND_SERVICE_IP", "192.168.0.223"), ssh_port: 50_223 },
@@ -86,22 +87,39 @@ if RABBITMQ_VHOST.empty?
   RABBITMQ_VHOST = "/" if RABBITMQ_VHOST.empty?
 end
 REDIS_PASSWORD = optional_env("RATEBOARD_REDIS_PASSWORD")
+SSH_USERNAME = env("RATEBOARD_SSH_USERNAME", "admin")
+SSH_PUBLIC_KEY_FILES = env("RATEBOARD_SSH_PUBLIC_KEY_FILES").split(",").map(&:strip).reject(&:empty?).freeze
+SSH_IDENTITY_FILE = env("RATEBOARD_SSH_IDENTITY_FILE")
+LOGS_INGEST_USER = env("RATEBOARD_LOGS_INGEST_USER", "rateboard_alloy")
+LOGS_INGEST_PASSWORD = env("RATEBOARD_LOGS_INGEST_PASSWORD")
+GRAFANA_ADMIN_USER = env("GRAFANA_ADMIN_USER", "admin")
+GRAFANA_ADMIN_PASSWORD = env("GRAFANA_ADMIN_PASSWORD")
+LOGS_RETENTION = env("RATEBOARD_LOGS_RETENTION", "336h")
 
 abort "DATABASE_URL must contain a password" if DB_PASSWORD.empty?
 abort "RABBITMQ_URL must contain a username and password" if
   RABBITMQ_USER.empty? || RABBITMQ_PASSWORD.empty?
 abort "Add RATEBOARD_REDIS_PASSWORD to .env.vagrant.local" if REDIS_PASSWORD.empty?
 abort "RATEBOARD_REDIS_PASSWORD must not contain line breaks" if REDIS_PASSWORD.match?(/[\r\n]/)
+abort "RATEBOARD_SSH_USERNAME must be a valid Linux username" unless SSH_USERNAME.match?(/\A[a-z_][a-z0-9_-]{0,31}\z/)
+abort "RATEBOARD_SSH_IDENTITY_FILE must be an absolute path" unless SSH_IDENTITY_FILE.start_with?("/")
+abort "RATEBOARD_LOGS_RETENTION must be expressed in hours, for example 336h" unless LOGS_RETENTION.match?(/\A[1-9][0-9]*h\z/)
 
 SAFE_SECRET = /\A[A-Za-z0-9._~-]+\z/
 {
   "INTERNAL_API_TOKEN" => INTERNAL_TOKEN,
   "DATABASE_URL password" => DB_PASSWORD,
   "RABBITMQ user" => RABBITMQ_USER,
-  "RABBITMQ_URL password" => RABBITMQ_PASSWORD
+  "RABBITMQ_URL password" => RABBITMQ_PASSWORD,
+  "RATEBOARD_LOGS_INGEST_USER" => LOGS_INGEST_USER,
+  "RATEBOARD_LOGS_INGEST_PASSWORD" => LOGS_INGEST_PASSWORD,
+  "GRAFANA_ADMIN_USER" => GRAFANA_ADMIN_USER,
+  "GRAFANA_ADMIN_PASSWORD" => GRAFANA_ADMIN_PASSWORD
 }.each do |name, value|
   abort "#{name} contains unsupported characters" unless SAFE_SECRET.match?(value)
 end
+abort "Replace RATEBOARD_LOGS_INGEST_PASSWORD in .env.vagrant.local" if LOGS_INGEST_PASSWORD.start_with?("replace-with-")
+abort "Replace GRAFANA_ADMIN_PASSWORD in .env.vagrant.local" if GRAFANA_ADMIN_PASSWORD.start_with?("replace-with-")
 
 DATABASE_URI.host = "rates-db"
 DATABASE_URI.port ||= 5432
@@ -110,6 +128,19 @@ RABBITMQ_PASSWORD_ESCAPED = URI.encode_www_form_component(RABBITMQ_PASSWORD)
 RABBITMQ_VHOST_PATH = RABBITMQ_VHOST == "/" ? "/" : "/#{URI.encode_www_form_component(RABBITMQ_VHOST)}"
 
 FileUtils.mkdir_p(GENERATED_DIR)
+AUTHORIZED_KEYS_PATH = File.join(GENERATED_DIR, "authorized_keys")
+authorized_keys = SSH_PUBLIC_KEY_FILES.flat_map do |path|
+  expanded_path = File.expand_path(path)
+  abort "SSH public key must use an absolute path: #{path}" unless expanded_path == path
+  abort "SSH public key was not found: #{path}" unless File.file?(path)
+  abort "Invalid SSH public key: #{path}" unless system("ssh-keygen", "-l", "-f", path, out: File::NULL, err: File::NULL)
+
+  File.readlines(path, chomp: true).map(&:strip).reject(&:empty?)
+end.uniq
+abort "RATEBOARD_SSH_PUBLIC_KEY_FILES did not contain a public key" if authorized_keys.empty?
+File.write(AUTHORIZED_KEYS_PATH, authorized_keys.join("\n") + "\n")
+File.chmod(0o600, AUTHORIZED_KEYS_PATH)
+
 DATABASE_STORAGE_DIR = File.expand_path(".vagrant-data/database", __dir__)
 DATABASE_DISK_PATH = File.join(DATABASE_STORAGE_DIR, "postgresql.qcow2")
 DATABASE_DISK_SIZE = env("RATEBOARD_DATABASE_DISK_SIZE", "20G")
@@ -119,6 +150,26 @@ unless File.file?(DATABASE_DISK_PATH)
     "qemu-img", "create", "-q", "-f", "qcow2", DATABASE_DISK_PATH, DATABASE_DISK_SIZE
   )
   File.chmod(0o600, DATABASE_DISK_PATH)
+end
+
+LOGS_STORAGE_DIR = File.expand_path(".vagrant-data/logs", __dir__)
+LOGS_DISK_PATH = File.join(LOGS_STORAGE_DIR, "loki.qcow2")
+LOGS_DISK_SIZE = env("RATEBOARD_LOGS_DISK_SIZE", "10G")
+FileUtils.mkdir_p(LOGS_STORAGE_DIR)
+unless File.file?(LOGS_DISK_PATH)
+  abort "qemu-img is required to create #{LOGS_DISK_PATH}" unless system(
+    "qemu-img", "create", "-q", "-f", "qcow2", LOGS_DISK_PATH, LOGS_DISK_SIZE
+  )
+  File.chmod(0o600, LOGS_DISK_PATH)
+end
+
+LOGS_TLS_DIR = File.join(GENERATED_DIR, "logs-tls")
+unless system(
+  "bash", "scripts/generate-logs-tls.sh",
+  MACHINES.fetch("logs")[:ip], LOGS_TLS_DIR,
+  out: File::NULL
+)
+  abort "Failed to generate the Rateboard logs TLS certificate"
 end
 
 File.write("#{GENERATED_DIR}/ui.env", <<~ENV)
@@ -179,6 +230,30 @@ File.write("#{GENERATED_DIR}/rabbitmq.env", <<~ENV)
   REDIS_PASSWORD=#{REDIS_PASSWORD}
 ENV
 
+File.write("#{GENERATED_DIR}/logs.env", <<~ENV)
+  LOGS_PUBLIC_HOST=rates-logs
+  LOGS_PUBLIC_IP=#{MACHINES.fetch("logs")[:ip]}
+  RATEBOARD_LOGS_RETENTION=#{LOGS_RETENTION}
+  RATEBOARD_LOGS_INGEST_USER=#{LOGS_INGEST_USER}
+  RATEBOARD_LOGS_INGEST_PASSWORD=#{LOGS_INGEST_PASSWORD}
+  GRAFANA_ADMIN_USER=#{GRAFANA_ADMIN_USER}
+  GRAFANA_ADMIN_PASSWORD=#{GRAFANA_ADMIN_PASSWORD}
+  GF_SERVER_DOMAIN=rates-logs
+  GF_SERVER_ROOT_URL=https://rates-logs/
+ENV
+
+MACHINES.each do |name, machine|
+  File.write("#{GENERATED_DIR}/#{name}-alloy.env", <<~ENV)
+    RATEBOARD_VM_NAME=rates-#{name}
+    RATEBOARD_VM_ROLE=#{name}
+    RATEBOARD_ENVIRONMENT=vagrant
+    RATEBOARD_LOGS_IP=#{MACHINES.fetch("logs")[:ip]}
+    LOKI_PUSH_URL=https://rates-logs/loki/api/v1/push
+    LOKI_INGEST_USER=#{LOGS_INGEST_USER}
+    LOKI_INGEST_PASSWORD=#{LOGS_INGEST_PASSWORD}
+  ENV
+end
+
 Dir.glob("#{GENERATED_DIR}/*.env").each { |file| File.chmod(0o600, file) }
 
 HOSTS = <<~HOSTS
@@ -187,13 +262,17 @@ HOSTS = <<~HOSTS
   #{MACHINES.fetch("backend-service")[:ip]} rates-backend-service
   #{MACHINES.fetch("database")[:ip]} rates-db
   #{MACHINES.fetch("rabbitmq")[:ip]} rates-rabbitmq
+  #{MACHINES.fetch("logs")[:ip]} rates-logs
 HOSTS
 
 Vagrant.configure("2") do |config|
   config.vm.box = BOX
 
   config.vm.synced_folder ".", "/vagrant", type: "rsync",
-    rsync__exclude: [".git/", ".vagrant/", ".env", "api-fetcher/.venv/"]
+    rsync__exclude: [
+      ".git/", ".vagrant/", ".vagrant-data/", ".env*",
+      "infra/vagrant/generated/", "api-fetcher/.venv/"
+    ]
 
   MACHINES.each do |name, machine|
     config.vm.define name do |vm|
@@ -204,7 +283,7 @@ Vagrant.configure("2") do |config|
       vm.vm.network "private_network", ip: machine[:ip]
 
       vm.vm.provider "qemu" do |qemu|
-        qemu.memory = "512M"
+        qemu.memory = machine.fetch(:memory, "512M")
         qemu.smp = "2"
 
         qemu.ssh_port = machine[:ssh_port]
@@ -231,12 +310,40 @@ Vagrant.configure("2") do |config|
             "-device",
             "virtio-blk-pci,drive=rateboard_pgdata,serial=rateboard-pgdata"
           ]
+        elsif name == "logs"
+          qemu.extra_qemu_args = [
+            "-drive",
+            "if=none,id=rateboard_logsdata,format=qcow2,file=#{LOGS_DISK_PATH}",
+            "-device",
+            "virtio-blk-pci,drive=rateboard_logsdata,serial=rateboard-logsdata"
+          ]
         end
+      end
+
+      vm.vm.provision "file",
+        source: AUTHORIZED_KEYS_PATH,
+        destination: "/tmp/rateboard-authorized-keys"
+
+      vm.vm.provision "file",
+        source: "#{GENERATED_DIR}/#{name}-alloy.env",
+        destination: "/tmp/rateboard-alloy.env"
+
+      vm.vm.provision "file",
+        source: "#{LOGS_TLS_DIR}/ca.crt",
+        destination: "/tmp/rateboard-logs-ca.crt"
+
+      if name == "logs"
+        vm.vm.provision "file",
+          source: "#{LOGS_TLS_DIR}/server.crt",
+          destination: "/tmp/rateboard-logs-server.crt"
+        vm.vm.provision "file",
+          source: "#{LOGS_TLS_DIR}/server.key",
+          destination: "/tmp/rateboard-logs-server.key"
       end
 
       vm.vm.provision "shell",
         path: "infra/vagrant/provision/common.sh",
-        args: [HOSTS.gsub("\n", "\\n")]
+        args: [HOSTS.gsub("\n", "\\n"), SSH_USERNAME]
 
       vm.vm.provision "file",
         source: "#{GENERATED_DIR}/#{name}.env",

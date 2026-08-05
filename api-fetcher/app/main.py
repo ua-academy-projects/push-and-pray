@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -21,8 +22,28 @@ from .models import BackfillRequest, RefreshRequest
 from .services import RateService
 
 settings = get_settings()
-logging.basicConfig(level=settings.log_level, format="%(message)s")
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "level": record.levelname.lower(),
+            "service": "api-fetcher",
+            "message": record.getMessage(),
+        }
+        payload.update(getattr(record, "rateboard_fields", {}))
+        return json.dumps(payload, separators=(",", ":"), default=str)
+
+
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+logging.basicConfig(level=settings.log_level, handlers=[handler], force=True)
 logger = logging.getLogger("rateboard")
+
+
+def log_event(level: int, event: str, message: str, **fields) -> None:
+    logger.log(level, message, extra={"rateboard_fields": {"event": event, **fields}})
 
 
 def seconds_until_boundary(now: float, interval: int) -> float:
@@ -57,9 +78,13 @@ async def run_backfill(app: FastAPI, payload: dict) -> dict:
     request_id = str(payload.get("request_id") or uuid.uuid4())
     rates = await app.state.rates.backfill(instrument_id, start, end)
     queued = await publish_rates(app, rates, request_id)
-    logger.info(
-        '{"service":"api-fetcher","event":"backfill_queued","request_id":"%s","instrument_id":"%s","queued":%d}',
-        request_id, instrument_id, queued,
+    log_event(
+        logging.INFO,
+        "backfill_queued",
+        "Backfill observations queued",
+        request_id=request_id,
+        instrument_id=instrument_id,
+        queued=queued,
     )
     return {"instrument_id": instrument_id, "fetched": len(rates), "queued": queued}
 
@@ -78,13 +103,21 @@ async def collector_loop(app: FastAPI):
                 queued += await publish_rates(app, [rate], request_id)
             except Exception as exc:
                 failed += 1
-                logger.warning(
-                    '{"service":"api-fetcher","event":"collector_error","request_id":"%s","instrument_id":"%s","error_type":"%s"}',
-                    request_id, item["instrument_id"], type(exc).__name__,
+                log_event(
+                    logging.WARNING,
+                    "collector_error",
+                    "Provider collection failed",
+                    request_id=request_id,
+                    instrument_id=item["instrument_id"],
+                    error_type=type(exc).__name__,
                 )
-        logger.info(
-            '{"service":"api-fetcher","event":"collector_cycle","request_id":"%s","queued":%d,"failed":%d}',
-            request_id, queued, failed,
+        log_event(
+            logging.INFO,
+            "collector_cycle",
+            "Collector cycle completed",
+            request_id=request_id,
+            queued=queued,
+            failed=failed,
         )
 
 
@@ -127,9 +160,14 @@ async def request_context(request: Request, call_next):
     started = time.perf_counter()
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
-    logger.info(
-        '{"service":"api-fetcher","request_id":"%s","route":"%s","status":%s,"latency_ms":%.2f}',
-        request_id, request.url.path, response.status_code, (time.perf_counter() - started) * 1000,
+    log_event(
+        logging.INFO,
+        "http_request",
+        "HTTP request completed",
+        request_id=request_id,
+        route=request.url.path,
+        status=response.status_code,
+        latency_ms=round((time.perf_counter() - started) * 1000, 2),
     )
     return response
 

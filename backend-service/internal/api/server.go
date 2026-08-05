@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -225,7 +225,7 @@ func (s *Server) logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		next.ServeHTTP(w, r)
-		log.Printf(`{"service":"history-service","route":%q,"latency_ms":%d}`, r.URL.Path, time.Since(started).Milliseconds())
+		slog.Info("HTTP request", "service", "history-service", "event", "http_request", "route", r.URL.Path, "latency_ms", time.Since(started).Milliseconds())
 	})
 }
 

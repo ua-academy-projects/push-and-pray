@@ -2,7 +2,8 @@
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| Preserve five VMs | Implemented in configuration | `Vagrantfile` defines all five machines |
+| Preserve five application VMs | Implemented in configuration | `Vagrantfile` retains all five application machines |
+| Dedicated log database VM | Implemented in configuration | Sixth `logs` VM runs Loki/Grafana behind TLS Nginx |
 | Independent Compose per VM | Implemented in configuration | `infra/docker/<role>/compose.yml` |
 | No native application systemd services | Implemented in provisioners | Provisioners disable old units and start Compose |
 | UI reads History Service | Implemented | Nginx `/api/v1/` targets History Service |
@@ -13,6 +14,6 @@
 | Database persists outside container and VM root disk | Implemented in configuration | Bind-backed volume on `.vagrant-data/database/postgresql.qcow2` |
 | Empty DB initial backfill | Implemented | Startup planner uses a maximum 365-day range |
 | Existing DB incremental backfill | Implemented | Latest timestamp is calculated per instrument |
-| Runtime five-VM proof | Not yet verified in this change | Requires privileged QEMU/NFS/network execution |
+| Runtime six-VM proof | Not yet verified in this change | Requires privileged QEMU/vmnet/network execution |
 
 Static validation must be reported separately from runtime proof.

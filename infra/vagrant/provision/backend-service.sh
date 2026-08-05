@@ -7,5 +7,6 @@ rm -f /tmp/rateboard.env
 systemctl disable --now rateboard-backend-service.service rateboard-history-service.service 2>/dev/null || true
 docker compose \
   --env-file /etc/rateboard/backend-service.env \
+  --env-file /etc/rateboard/alloy.env \
   --file /vagrant/infra/docker/backend-service/compose.yml \
   up --detach --build --force-recreate --remove-orphans

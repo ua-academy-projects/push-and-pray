@@ -1,0 +1,115 @@
+name: rateboard-logs
+
+services:
+  loki:
+    image: grafana/loki:3.7.0
+    command: ["-config.file=/etc/loki/config.yml", "-config.expand-env=true"]
+    environment:
+      RATEBOARD_LOGS_RETENTION: "${RATEBOARD_LOGS_RETENTION}"
+    volumes:
+      - ./loki.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-loki
+    healthcheck:
+      test: ["CMD", "/usr/bin/loki", "-version"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_DOMAIN: rates-logs
+      GF_SERVER_ROOT_URL: https://rates-logs/
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  nginx:
+    image: nginx:1.27.5-alpine
+    environment:
+      NGINX_ENVSUBST_FILTER: "^LOGS_PUBLIC_HOST$"
+      LOGS_PUBLIC_HOST: rates-logs
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - /etc/rateboard/logs/tls:/etc/rateboard/logs/tls:ro
+      - /etc/rateboard/logs/htpasswd:/etc/nginx/htpasswd:ro
+    depends_on:
+      grafana:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-logs-nginx
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-q", "-O", "-", "https://127.0.0.1/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    env_file:
+      - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
+    command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    extra_hosts:
+      - "rates-logs:${RATEBOARD_LOGS_IP}"
+    volumes:
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /etc/rateboard/logs-ca.crt:/etc/rateboard/logs-ca.crt:ro
+      - ../alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      nginx:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-alloy
+
+volumes:
+  loki_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/rateboard-logs/loki
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/rateboard-logs/grafana
+  alloy_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/rateboard-logs/alloy

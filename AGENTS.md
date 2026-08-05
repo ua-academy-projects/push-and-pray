@@ -1,7 +1,7 @@
 # Rateboard source of truth
 
-This repository is a five-VM learning deployment for a crypto and fiat rates
-dashboard. Keep the implementation understandable to a DevOps Academy student,
+This repository is a six-VM learning deployment for a crypto and fiat rates
+dashboard: five application VMs and one dedicated logs VM. Keep the implementation understandable to a DevOps Academy student,
 keep service boundaries explicit, and do not bypass RabbitMQ or PostgreSQL
 ownership rules for convenience.
 
@@ -34,9 +34,9 @@ Hard boundaries:
 - A publisher confirmation means `queued`, not saved in PostgreSQL.
 - History Service ACKs an observation only after a successful database commit.
 
-## Five-VM deployment
+## Six-VM deployment
 
-Vagrant must preserve these five VMs:
+Vagrant must preserve the five application VMs and the separate logs VM:
 
 | VM | Compose project |
 |---|---|
@@ -45,6 +45,7 @@ Vagrant must preserve these five VMs:
 | `backend-service` | Go History Service |
 | `database` | PostgreSQL 16 |
 | `rabbitmq` | RabbitMQ and Redis |
+| `logs` | Loki, Grafana, Nginx, and Alloy |
 
 Vagrant owns VM creation, QEMU, bridged networking, hostnames, Docker
 installation, generated environment files, and Compose deployment.
@@ -55,7 +56,7 @@ to a VM. Cross-VM traffic uses bridged LAN hostnames or IP addresses.
 Do not run Rateboard application services natively through systemd. Systemd may
 manage only the Docker daemon and normal operating-system facilities.
 
-Do not replace the five VMs with one Compose host, Docker Swarm, Kubernetes, or
+Do not replace the six VMs with one Compose host, Docker Swarm, Kubernetes, or
 an overlay network.
 
 ## Networking
@@ -71,6 +72,7 @@ rates-api-fetcher
 rates-backend-service
 rates-db
 rates-rabbitmq
+rates-logs
 ```
 
 Services exposed to another VM must bind `0.0.0.0`. `localhost` inside a
@@ -78,6 +80,9 @@ container refers only to that container.
 
 The UI Nginx proxy routes `/api/v1/` to History Service. It must not route UI
 traffic to API Fetcher.
+
+The logs Nginx endpoint terminates TLS for Grafana and authenticated Loki
+ingestion. Loki is not exposed directly to the LAN.
 
 ## API Fetcher
 
@@ -292,6 +297,17 @@ per-service files under `infra/vagrant/generated` are mode `0600` and ignored.
 - History Service is the only application receiving `DATABASE_URL`.
 - Never log tokens, passwords, URLs containing credentials, or provider keys.
 
+## Centralized logging
+
+- Docker containers write stdout/stderr through the journald logging driver.
+- Alloy reads each VM's persistent host journal and ships asynchronously.
+- Only the `logs` VM runs Loki and Grafana.
+- Loki/Grafana data uses `.vagrant-data/logs/loki.qcow2`; it must never share
+  PostgreSQL's data directory or credentials.
+- Go application logs use `log/slog` JSON and Python logs use JSON formatting.
+- Log delivery failure must not block provider, queue, database, API, or UI work.
+- Loki retention defaults to 336 hours.
+
 ## Verification
 
 Static checks do not prove runtime deployment.
@@ -308,7 +324,7 @@ bash -n infra/vagrant/provision/*.sh scripts/*.sh
 git diff --check
 ```
 
-Runtime verification requires all five running VM Compose projects, healthy
+Runtime verification requires all six running VM Compose projects, healthy
 containers, History/API health endpoints, queue state, PostgreSQL ranges, and a
 real observation traversing provider -> MQ -> History -> PostgreSQL -> UI.
 

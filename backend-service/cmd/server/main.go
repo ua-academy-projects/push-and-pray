@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -17,12 +18,14 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	store, err := repository.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("database connection failed", "service", "history-service", "event", "database_connection_failed", "error_type", fmt.Sprintf("%T", err))
+		os.Exit(1)
 	}
 	defer store.Close()
 
@@ -42,9 +45,10 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
-		log.Printf(`{"service":"history-service","event":"listening","address":%q}`, cfg.Address)
+		slog.Info("history service listening", "service", "history-service", "event", "listening", "address", cfg.Address)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			slog.Error("HTTP server failed", "service", "history-service", "event", "http_server_failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -73,7 +77,7 @@ func planBackfill(ctx context.Context, store *repository.Store, publisher *queue
 	}
 	latest, err := store.LatestTimestamps(ctx)
 	if err != nil {
-		log.Printf(`{"service":"history-service","event":"backfill_plan_failed","error":%q}`, err.Error())
+		slog.Error("backfill plan failed", "service", "history-service", "event", "backfill_plan_failed", "error_type", fmt.Sprintf("%T", err))
 		return
 	}
 	now := time.Now().UTC()
@@ -104,12 +108,12 @@ func planBackfill(ctx context.Context, store *repository.Store, publisher *queue
 				cancel()
 			}
 			if err != nil {
-				log.Printf(`{"service":"history-service","event":"backfill_command_failed","instrument_id":%q,"error":%q}`, instrumentID, err.Error())
+				slog.Error("backfill command failed", "service", "history-service", "event", "backfill_command_failed", "instrument_id", instrumentID, "error_type", fmt.Sprintf("%T", err))
 				return
 			}
 		}
 	}
-	log.Printf(`{"service":"history-service","event":"backfill_plan_queued","instruments":%d}`, len(api.CatalogIDs()))
+	slog.Info("backfill plan queued", "service", "history-service", "event", "backfill_plan_queued", "instruments", len(api.CatalogIDs()))
 }
 
 func newUUID() string {

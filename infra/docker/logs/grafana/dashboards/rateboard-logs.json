@@ -1,0 +1,40 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": {"type": "loki", "uid": "rateboard-loki"},
+      "gridPos": {"h": 20, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"dedupStrategy": "none", "enableLogDetails": true, "showLabels": true, "showTime": true, "sortOrder": "Descending"},
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "rateboard-loki"},
+          "editorMode": "code",
+          "expr": "{vm=~\"$vm\", service=~\"$service\", container=~\"$container\", level=~\"$level\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Rateboard logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["rateboard", "logs"],
+  "templating": {
+    "list": [
+      {"allValue": ".+", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "loki", "uid": "rateboard-loki"}, "definition": "label_values(vm)", "includeAll": true, "label": "VM", "name": "vm", "query": "label_values(vm)", "refresh": 1, "type": "query"},
+      {"allValue": ".+", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "loki", "uid": "rateboard-loki"}, "definition": "label_values({vm=~\"$vm\"}, service)", "includeAll": true, "label": "Service", "name": "service", "query": "label_values({vm=~\"$vm\"}, service)", "refresh": 1, "type": "query"},
+      {"allValue": ".+", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "loki", "uid": "rateboard-loki"}, "definition": "label_values({vm=~\"$vm\"}, container)", "includeAll": true, "label": "Container", "name": "container", "query": "label_values({vm=~\"$vm\"}, container)", "refresh": 1, "type": "query"},
+      {"allValue": ".+", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "loki", "uid": "rateboard-loki"}, "definition": "label_values(level)", "includeAll": true, "label": "Level", "name": "level", "query": "label_values(level)", "refresh": 1, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Rateboard centralized logs",
+  "uid": "rateboard-central-logs",
+  "version": 1
+}

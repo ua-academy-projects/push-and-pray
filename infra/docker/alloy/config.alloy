@@ -1,0 +1,93 @@
+logging {
+  level  = "warn"
+  format = "logfmt"
+}
+
+loki.relabel "rateboard" {
+  // The journal source consumes this component's exported rules before it
+  // removes internal __journal_* labels. Entries do not pass through this
+  // receiver directly.
+  forward_to = [loki.process.rateboard.receiver]
+
+  rule {
+    action        = "drop"
+    source_labels = ["__journal_syslog_identifier"]
+    regex         = "rateboard-alloy"
+  }
+
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "service"
+    regex         = "(.+)"
+  }
+
+  rule {
+    source_labels = ["__journal_container_name"]
+    target_label  = "container"
+    regex         = "(.+)"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+    regex         = "(.+)"
+  }
+}
+
+loki.source.journal "host" {
+  path           = "/var/log/journal"
+  max_age        = "168h"
+  relabel_rules  = loki.relabel.rateboard.rules
+  labels = {
+    container   = "system",
+    environment = sys.env("RATEBOARD_ENVIRONMENT"),
+    level       = "info",
+    service     = "system",
+    vm          = sys.env("RATEBOARD_VM_NAME"),
+    vm_role     = sys.env("RATEBOARD_VM_ROLE"),
+  }
+  forward_to = [loki.process.rateboard.receiver]
+}
+
+loki.process "rateboard" {
+  stage.json {
+    expressions = {
+      event      = "event",
+      app_level  = "level",
+      app_service = "service",
+      request_id = "request_id",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      event      = "event",
+      app_level  = "app_level",
+      app_service = "app_service",
+      request_id = "request_id",
+    }
+  }
+
+  forward_to = [loki.write.central.receiver]
+}
+
+loki.write "central" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+
+    basic_auth {
+      username = sys.env("LOKI_INGEST_USER")
+      password = sys.env("LOKI_INGEST_PASSWORD")
+    }
+
+    tls_config {
+      ca_file     = "/etc/rateboard/logs-ca.crt"
+      server_name = "rates-logs"
+    }
+  }
+
+  wal {
+    enabled         = true
+    max_segment_age = "24h"
+  }
+}

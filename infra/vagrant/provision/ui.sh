@@ -27,5 +27,6 @@ chmod 0644 /etc/rateboard/tls/ui.crt
 systemctl disable --now nginx rateboard-ui.service 2>/dev/null || true
 docker compose \
   --env-file /etc/rateboard/ui.env \
+  --env-file /etc/rateboard/alloy.env \
   --file /vagrant/infra/docker/ui/compose.yml \
   up --detach --build --force-recreate --remove-orphans

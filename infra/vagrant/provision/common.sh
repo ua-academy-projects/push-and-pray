@@ -2,6 +2,7 @@
 set -euo pipefail
 
 managed_hosts="$1"
+ssh_username="$2"
 
 export DEBIAN_FRONTEND=noninteractive
 apt_get() { apt-get -o DPkg::Lock::Timeout=300 "$@"; }
@@ -31,7 +32,7 @@ sed -i '/# rateboard-vagrant-begin/,/# rateboard-vagrant-end/d' /etc/hosts
 } >> /etc/hosts
 
 apt_get update -qq
-apt_get install -y --no-install-recommends ca-certificates curl gnupg openssh-server
+apt_get install -y --no-install-recommends ca-certificates curl gnupg openssh-server sudo
 
 install -m 0755 -d /etc/apt/keyrings
 if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
@@ -50,6 +51,56 @@ usermod -aG docker vagrant
 docker version >/dev/null
 docker compose version >/dev/null
 
+if ! getent group "${ssh_username}" >/dev/null 2>&1; then
+  groupadd "${ssh_username}"
+fi
+if ! id -u "${ssh_username}" >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/bash --gid "${ssh_username}" "${ssh_username}"
+fi
+usermod --shell /bin/bash --append --groups sudo,docker "${ssh_username}"
+passwd --lock "${ssh_username}" >/dev/null 2>&1 || true
+
+printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "${ssh_username}" \
+  > "/etc/sudoers.d/90-rateboard-${ssh_username}"
+chmod 0440 "/etc/sudoers.d/90-rateboard-${ssh_username}"
+visudo -cf "/etc/sudoers.d/90-rateboard-${ssh_username}" >/dev/null
+
+ssh_home="$(getent passwd "${ssh_username}" | cut -d: -f6)"
+install -d -m 0700 -o "${ssh_username}" -g "${ssh_username}" "${ssh_home}/.ssh"
+authorized_keys="${ssh_home}/.ssh/authorized_keys"
+temporary_keys="$(mktemp)"
+trap 'rm -f "${temporary_keys}"' EXIT
+if [[ -f "${authorized_keys}" ]]; then
+  awk '
+    $0 == "# rateboard-managed-begin" { managed = 1; next }
+    $0 == "# rateboard-managed-end" { managed = 0; next }
+    !managed { print }
+  ' "${authorized_keys}" > "${temporary_keys}"
+fi
+{
+  echo '# rateboard-managed-begin'
+  cat /tmp/rateboard-authorized-keys
+  echo '# rateboard-managed-end'
+} >> "${temporary_keys}"
+install -m 0600 -o "${ssh_username}" -g "${ssh_username}" "${temporary_keys}" "${authorized_keys}"
+rm -f /tmp/rateboard-authorized-keys
+
+install -d -m 0755 /opt/rateboard /etc/rateboard
+install -m 0600 -o root -g root /tmp/rateboard-alloy.env /etc/rateboard/alloy.env
+install -m 0644 -o root -g root /tmp/rateboard-logs-ca.crt /etc/rateboard/logs-ca.crt
+rm -f /tmp/rateboard-alloy.env /tmp/rateboard-logs-ca.crt
+
+install -d -m 0755 /var/log/journal /etc/systemd/journald.conf.d
+{
+  echo '[Journal]'
+  echo 'Storage=persistent'
+  echo 'SystemMaxUse=128M'
+  echo 'RuntimeMaxUse=64M'
+  echo 'Compress=yes'
+} > /etc/systemd/journald.conf.d/60-rateboard.conf
+systemctl restart systemd-journald
+journalctl --flush >/dev/null 2>&1 || true
+
 # Expose SSH on both the Vagrant NAT adapter and the bridged LAN adapter.
 # Authentication still requires an authorized SSH key; root/password login is
 # not enabled.
@@ -59,6 +110,7 @@ install -d -m 0755 /etc/ssh/sshd_config.d
   echo 'ListenAddress 0.0.0.0'
   echo 'PubkeyAuthentication yes'
   echo 'PasswordAuthentication no'
+  echo 'KbdInteractiveAuthentication no'
   echo 'PermitRootLogin no'
 } > /etc/ssh/sshd_config.d/99-rateboard-lan.conf
 /usr/sbin/sshd -t

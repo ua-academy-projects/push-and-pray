@@ -13,8 +13,13 @@ for file in .env .env.vagrant.local; do
   [[ -f "${file}" ]] || { echo "Missing ${ROOT_DIR}/${file}" >&2; exit 1; }
 done
 
-vagrant up database rabbitmq backend-service api-fetcher ui --provider=qemu
+"${ROOT_DIR}/scripts/ensure-local-logging-env.sh"
+"${ROOT_DIR}/scripts/update-local-ssh-config.sh"
+"${ROOT_DIR}/scripts/update-local-hosts.sh"
+
+vagrant up logs database rabbitmq backend-service api-fetcher ui --provider=qemu
 vagrant rsync
+vagrant provision logs
 vagrant provision database
 vagrant provision rabbitmq
 vagrant provision backend-service

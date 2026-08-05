@@ -3,7 +3,8 @@ package messaging
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"fmt"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -33,7 +34,7 @@ type event struct {
 func (c *Consumer) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		if err := c.consume(ctx); err != nil && ctx.Err() == nil {
-			log.Printf(`{"service":"backend-service","event":"rabbitmq_consumer_error","error":%q}`, err.Error())
+			slog.Error("RabbitMQ consumer failed", "service", "history-service", "event", "rabbitmq_consumer_error", "error_type", fmt.Sprintf("%T", err))
 			select {
 			case <-ctx.Done():
 				return
@@ -86,7 +87,7 @@ func (c *Consumer) consume(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	log.Printf(`{"service":"backend-service","event":"rabbitmq_consumer_ready","queue":%q}`, c.Queue)
+	slog.Info("RabbitMQ consumer ready", "service", "history-service", "event", "rabbitmq_consumer_ready", "queue", c.Queue)
 	c.ready.Store(true)
 	for delivery := range deliveries {
 		c.handle(ctx, delivery)

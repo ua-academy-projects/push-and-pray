@@ -4,13 +4,17 @@ services:
   rabbitmq:
     image: rabbitmq:4-management
     env_file:
-      - /etc/rateboard/rabbitmq.env
+      - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/rabbitmq.env}
     ports:
       - "5672:5672"
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -20,7 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     env_file:
-      - /etc/rateboard/rabbitmq.env
+      - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/rabbitmq.env}
     command:
       - /bin/sh
       - -ec
@@ -30,12 +34,36 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-redis
     healthcheck:
       test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 18
 
+  alloy:
+    image: grafana/alloy:v1.18.0
+    env_file:
+      - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
+    command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    extra_hosts:
+      - "rates-logs:${RATEBOARD_LOGS_IP}"
+    volumes:
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /etc/rateboard/logs-ca.crt:/etc/rateboard/logs-ca.crt:ro
+      - ../alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-alloy
+
 volumes:
+  alloy_data:
   rabbitmq_data:
   redis_data:

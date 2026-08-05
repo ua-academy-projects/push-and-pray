@@ -4,19 +4,70 @@ services:
   postgres:
     image: postgres:16
     env_file:
-      - /etc/rateboard/database.env
+      - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/database.env}
     ports:
       - "5432:5432"
     volumes:
       - postgresql_data:/var/lib/postgresql/data
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 3s
       retries: 24
 
+  migrate:
+    image: postgres:16
+    profiles: ["tools"]
+    env_file:
+      - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/database.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for migration in /migrations/*.sql; do
+          echo "Applying $${migration}"
+          PGPASSWORD="$${POSTGRES_PASSWORD}" psql \
+            --host postgres \
+            --username "$${POSTGRES_USER}" \
+            --dbname "$${POSTGRES_DB}" \
+            --set ON_ERROR_STOP=1 \
+            --file "$${migration}"
+        done
+    volumes:
+      - ../../../backend-service/migrations:/migrations:ro
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-database-migrate
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    env_file:
+      - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
+    command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    extra_hosts:
+      - "rates-logs:${RATEBOARD_LOGS_IP}"
+    volumes:
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /etc/rateboard/logs-ca.crt:/etc/rateboard/logs-ca.crt:ro
+      - ../alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-alloy
+
 volumes:
+  alloy_data:
   postgresql_data:
     driver: local
     driver_opts:

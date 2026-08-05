@@ -1,0 +1,39 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${LOGS_PUBLIC_HOST};
+
+    ssl_certificate /etc/rateboard/logs/tls/server.crt;
+    ssl_certificate_key /etc/rateboard/logs/tls/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location /loki/api/ {
+        # An access entry for every Alloy batch would be collected and pushed
+        # again, creating a self-sustaining log loop on the logs VM.
+        access_log off;
+        auth_basic "Rateboard log ingestion";
+        auth_basic_user_file /etc/nginx/htpasswd;
+        proxy_pass http://loki:3100;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location = /loki-ready {
+        proxy_pass http://loki:3100/ready;
+    }
+
+    location / {
+        proxy_pass http://grafana:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}

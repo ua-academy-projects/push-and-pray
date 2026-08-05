@@ -9,10 +9,16 @@ for entry in \
   "api-fetcher:/vagrant/infra/docker/api-fetcher/compose.yml" \
   "backend-service:/vagrant/infra/docker/backend-service/compose.yml" \
   "rabbitmq:/vagrant/infra/docker/rabbitmq/compose.yml" \
-  "database:/vagrant/infra/docker/database/compose.yml"; do
+  "database:/vagrant/infra/docker/database/compose.yml" \
+  "logs:/vagrant/infra/docker/logs/compose.yml"; do
   machine="${entry%%:*}"
   compose_file="${entry#*:}"
-  vagrant ssh "${machine}" -c "sudo docker compose -f ${compose_file} down"
+  extra_env=""
+  if [[ "${machine}" == logs ]]; then
+    extra_env="--env-file /etc/rateboard/logs.env"
+  fi
+  vagrant ssh "${machine}" -c \
+    "sudo docker compose ${extra_env} --env-file /etc/rateboard/alloy.env -f ${compose_file} down"
 done
 
-echo "Containers stopped without deleting PostgreSQL or messaging volumes."
+echo "Containers stopped without deleting PostgreSQL, messaging, Loki, or Grafana data."

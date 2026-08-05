@@ -7,5 +7,6 @@ rm -f /tmp/rateboard.env
 systemctl disable --now rateboard-api-fetcher.service rateboard-backend.service 2>/dev/null || true
 docker compose \
   --env-file /etc/rateboard/api-fetcher.env \
+  --env-file /etc/rateboard/alloy.env \
   --file /vagrant/infra/docker/api-fetcher/compose.yml \
   up --detach --build --force-recreate --remove-orphans

@@ -1,0 +1,99 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="rateboard-vm-map" name="Rateboard VM Map">
+    <mxGraphModel dx="3872" dy="859" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;" value="Rateboard · 6 віртуальних машин і зв&#39;язки між ними" vertex="1">
+          <mxGeometry height="50" width="900" x="550" y="25" as="geometry" />
+        </mxCell>
+        <mxCell id="providers" parent="1" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;strokeWidth=2;fontSize=14;" value="&lt;b&gt;CoinGecko&lt;/b&gt;&lt;br&gt;&lt;b&gt;Frankfurter&lt;/b&gt;&lt;br&gt;Зовнішні API" vertex="1">
+          <mxGeometry height="120" width="190" x="-80" y="147.5" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;strokeWidth=2;fontSize=14;" value="&lt;b&gt;Browser&lt;/b&gt;&lt;br&gt;Користувач dashboard" vertex="1">
+          <mxGeometry height="90" width="190" x="50" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fbff;strokeColor=#1565c0;strokeWidth=3;fontSize=15;spacing=10;" value="&lt;b&gt;API Fetcher VM&lt;/b&gt;&lt;br&gt;Vagrant: &lt;b&gt;api-fetcher&lt;/b&gt;&lt;br&gt;Hostname: &lt;b&gt;rates-api-fetcher&lt;/b&gt;&lt;br&gt;IP: &lt;b&gt;192.168.0.222&lt;/b&gt;&lt;br&gt;&lt;br&gt;Python · FastAPI :8000&lt;br&gt;Alloy · journald" vertex="1">
+          <mxGeometry height="215" width="290" x="330" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ui" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fbff;strokeColor=#1565c0;strokeWidth=3;fontSize=15;spacing=10;" value="&lt;b&gt;UI VM&lt;/b&gt;&lt;br&gt;Vagrant: &lt;b&gt;ui&lt;/b&gt;&lt;br&gt;Hostname: &lt;b&gt;rates-ui&lt;/b&gt;&lt;br&gt;IP: &lt;b&gt;192.168.0.221&lt;/b&gt;&lt;br&gt;&lt;br&gt;Nginx / UI :80&lt;br&gt;Alloy · journald" vertex="1">
+          <mxGeometry height="215" width="290" x="290" y="838" as="geometry" />
+        </mxCell>
+        <mxCell id="rabbitmq" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#ef6c00;strokeWidth=3;fontSize=15;spacing=10;" value="&lt;b&gt;Messaging VM&lt;/b&gt;&lt;br&gt;Vagrant: &lt;b&gt;rabbitmq&lt;/b&gt;&lt;br&gt;Hostname: &lt;b&gt;rates-rabbitmq&lt;/b&gt;&lt;br&gt;IP: &lt;b&gt;192.168.0.225&lt;/b&gt;&lt;br&gt;&lt;br&gt;RabbitMQ :5672 / :15672&lt;br&gt;Redis :6379&lt;br&gt;Alloy · journald" vertex="1">
+          <mxGeometry height="235" width="310" x="1130" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="backend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fff4;strokeColor=#2e7d32;strokeWidth=3;fontSize=15;spacing=10;" value="&lt;b&gt;History Service VM&lt;/b&gt;&lt;br&gt;Vagrant: &lt;b&gt;backend-service&lt;/b&gt;&lt;br&gt;Hostname: &lt;b&gt;rates-backend-service&lt;/b&gt;&lt;br&gt;IP: &lt;b&gt;192.168.0.223&lt;/b&gt;&lt;br&gt;&lt;br&gt;Go History API :8081&lt;br&gt;slog JSON · Alloy · journald" vertex="1">
+          <mxGeometry height="225" width="320" x="1250" y="833" as="geometry" />
+        </mxCell>
+        <mxCell id="database" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f8fbff;strokeColor=#1565c0;strokeWidth=3;fontSize=15;spacing=10;" value="&lt;b&gt;Database VM&lt;/b&gt;&lt;br&gt;Vagrant: &lt;b&gt;database&lt;/b&gt;&lt;br&gt;Hostname: &lt;b&gt;rates-db&lt;/b&gt;&lt;br&gt;IP: &lt;b&gt;192.168.0.224&lt;/b&gt;&lt;br&gt;&lt;br&gt;PostgreSQL 16 :5432&lt;br&gt;Alloy · journald" vertex="1">
+          <mxGeometry height="225" width="300" x="1620" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="logs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f0ff;strokeColor=#6a1b9a;strokeWidth=4;fontSize=15;spacing=10;" value="&lt;b&gt;Logs VM&lt;/b&gt;&lt;br&gt;Vagrant: &lt;b&gt;logs&lt;/b&gt;&lt;br&gt;Hostname: &lt;b&gt;rates-logs&lt;/b&gt;&lt;br&gt;IP: &lt;b&gt;192.168.0.226&lt;/b&gt;&lt;br&gt;&lt;br&gt;Nginx TLS :443 · Loki&lt;br&gt;Grafana · Alloy · journald&lt;br&gt;loki.qcow2 · 10 GB · retention 14 днів" vertex="1">
+          <mxGeometry height="245" width="360" x="710" y="630" as="geometry" />
+        </mxCell>
+        <mxCell id="e-providers-api" edge="1" parent="1" source="providers" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565c0;strokeWidth=2;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;" target="api" value="HTTPS · rates / history">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-browser-ui" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565c0;strokeWidth=2;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;" target="ui" value="HTTP · dashboard">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ui-backend" edge="1" parent="1" source="ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1565c0;strokeWidth=3;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;" target="backend" value="HTTP :8081 · /api/v1/">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-api-rabbit" edge="1" parent="1" source="api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#ef6c00;strokeWidth=3;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;" target="rabbitmq" value="AMQP :5672 · observation events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rabbit-backend" edge="1" parent="1" source="rabbitmq" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#ef6c00;strokeWidth=3;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;exitX=1;exitY=0.65;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="backend" value="rates.observations">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-backend-rabbit" edge="1" parent="1" source="backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#ef6c00;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;" target="rabbitmq" value="rates.commands · backfill">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-backend-db" edge="1" parent="1" source="backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2e7d32;strokeWidth=3;endArrow=classic;endFill=1;fontSize=13;labelBackgroundColor=#ffffff;" target="database" value="PostgreSQL :5432">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="log-bus" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4f0ff;strokeColor=#6a1b9a;strokeWidth=2;fontSize=14;fontStyle=1;" value="HTTPS :443 · Alloy → Nginx → Loki · централізовані логи" vertex="1">
+          <mxGeometry height="55" width="410" x="500" y="427.5" as="geometry" />
+        </mxCell>
+        <mxCell id="e-api-log" edge="1" parent="1" source="api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="log-bus" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-ui-log" edge="1" parent="1" source="ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" target="log-bus" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-rabbit-log" edge="1" parent="1" source="rabbitmq" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="log-bus" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-backend-log" edge="1" parent="1" source="backend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" target="log-bus" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1160.09" y="889.36" />
+              <mxPoint x="1160.09" y="468.82" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-db-log" edge="1" parent="1" source="database" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="log-bus" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-bus-logs" edge="1" parent="1" source="log-bus" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=4;endArrow=classic;endFill=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;" target="logs" value="запис логів">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ssh-note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffde7;strokeColor=#f9a825;dashed=1;fontSize=14;spacing=8;" value="&lt;b&gt;SSH на кожну ВМ:&lt;/b&gt; локальні aliases ui, api-fetcher, backend-service, database, rabbitmq, logs · користувач admin" vertex="1">
+          <mxGeometry height="65" width="1100" x="450" y="1120" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-http" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontColor=#1565c0;" value="━━ HTTP / HTTPS" vertex="1">
+          <mxGeometry height="30" width="170" x="1530" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-amqp" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontColor=#ef6c00;" value="━━ AMQP" vertex="1">
+          <mxGeometry height="30" width="140" x="1700" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-db" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontColor=#2e7d32;" value="━━ PostgreSQL" vertex="1">
+          <mxGeometry height="30" width="160" x="1530" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-log" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=13;fontColor=#6a1b9a;" value="┅┅ Логи" vertex="1">
+          <mxGeometry height="30" width="120" x="1700" y="140" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

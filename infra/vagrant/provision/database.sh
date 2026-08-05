@@ -49,8 +49,13 @@ printf 'UUID=%s /srv/rateboard-data ext4 defaults,nofail 0 2\n' "${database_uuid
 mountpoint -q /srv/rateboard-data || mount /srv/rateboard-data
 install -d -m 0700 -o 999 -g 999 /srv/rateboard-data/postgresql
 
-compose=(docker compose --env-file /etc/rateboard/database.env --file /vagrant/infra/docker/database/compose.yml)
-"${compose[@]}" up --detach postgres
+compose=(
+  docker compose
+  --env-file /etc/rateboard/database.env
+  --env-file /etc/rateboard/alloy.env
+  --file /vagrant/infra/docker/database/compose.yml
+)
+"${compose[@]}" up --detach --remove-orphans postgres alloy
 
 for attempt in {1..60}; do
   if "${compose[@]}" exec -T postgres pg_isready -U rates -d rates >/dev/null 2>&1; then

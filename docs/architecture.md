@@ -13,6 +13,8 @@ API Fetcher -- persistent AMQP event --> rates.events
                                                |
                                                v
 Browser -> UI/Nginx -> History API -> PostgreSQL
+
+All VM journals -> Alloy -> HTTPS/Nginx -> Loki -> Grafana
 ```
 
 API Fetcher is a write-only data producer from the application perspective. It
@@ -29,9 +31,14 @@ by UI.
 | `backend-service` | `rateboard-history` | Go History Service |
 | `database` | `rateboard-database` | PostgreSQL 16 |
 | `rabbitmq` | `rateboard-messaging` | RabbitMQ, Redis |
+| `logs` | `rateboard-logs` | Loki, Grafana, Nginx, Alloy |
 
 Each Compose network is local to its VM. `/etc/hosts` and bridged LAN addresses
 provide cross-VM resolution.
+
+The first five VMs retain the application boundaries. The sixth `logs` VM has
+no provider, RabbitMQ, or observation-database responsibility. It accepts only
+authenticated log ingestion through Nginx and stores logs in Loki.
 
 ## Observation delivery
 
@@ -73,3 +80,15 @@ is not used for live PostgreSQL files.
 
 The browser saves anonymous presentation state in `localStorage`. Redis remains
 an independently deployed infrastructure container but is not a rate store.
+
+## Centralized logging
+
+Docker stdout/stderr is written to each VM's persistent systemd journal. Alloy
+reads the host journal, attaches `vm`, `vm_role`, `service`, `container`,
+`environment`, and `level` labels, and sends batches to Loki over verified TLS.
+Go uses `slog.JSONHandler`; Python uses a JSON formatter. Request IDs and events
+remain queryable JSON fields rather than high-cardinality Loki labels.
+
+Loki and Grafana use `.vagrant-data/logs/loki.qcow2`, mounted at
+`/srv/rateboard-logs`. This storage is completely separate from PostgreSQL's
+observation disk and has a default retention of 336 hours.

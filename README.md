@@ -1,7 +1,7 @@
 # Rateboard
 
 Rateboard displays current and historical cryptocurrency and fiat rates through
-a five-VM Vagrant/QEMU deployment.
+a six-VM Vagrant/QEMU deployment: five application VMs plus a dedicated logs VM.
 
 ```text
 Providers -> API Fetcher -> RabbitMQ -> History Service -> PostgreSQL
@@ -23,7 +23,7 @@ backend-service/migrations/  PostgreSQL migrations
 scripts/                     Deploy, verify, stop, and manual backfill helpers
 ```
 
-## Five-VM layout
+## Six-VM layout
 
 | VM | Default LAN address | Workload |
 |---|---:|---|
@@ -32,6 +32,7 @@ scripts/                     Deploy, verify, stop, and manual backfill helpers
 | `backend-service` | `192.168.0.223` | Go History Service container |
 | `database` | `192.168.0.224` | PostgreSQL container |
 | `rabbitmq` | `192.168.0.225` | RabbitMQ and Redis containers |
+| `logs` | `192.168.0.226` | Loki, Grafana, Nginx, and Alloy containers |
 
 Choose unused addresses in the real LAN and reserve them before booting.
 
@@ -44,6 +45,7 @@ rates-api-fetcher
 rates-backend-service
 rates-db
 rates-rabbitmq
+rates-logs
 ```
 
 ## Prerequisites on macOS
@@ -74,12 +76,14 @@ cp infra/vagrant/.env.vagrant.example .env.vagrant.local
 
 Set:
 
-- five unused LAN IP addresses;
+- six unused LAN IP addresses;
+- local SSH username `admin` and the absolute path to `id_ed25519.pub`;
 - the actual macOS network interface, normally `en0`;
 - API Fetcher internal token;
 - PostgreSQL password;
 - RabbitMQ username, password, and vhost;
 - Redis password;
+- Loki ingestion and Grafana admin credentials;
 - optional CoinGecko key.
 
 Do not commit `.env`, `.env.vagrant.local`, or generated files.
@@ -89,7 +93,7 @@ Do not commit `.env`, `.env.vagrant.local`, or generated files.
 The deployment order is:
 
 ```text
-PostgreSQL -> RabbitMQ/Redis -> History Service -> API Fetcher -> UI
+Loki/Grafana -> PostgreSQL -> RabbitMQ/Redis -> History Service -> API Fetcher -> UI
 ```
 
 Run:
@@ -100,18 +104,24 @@ sudo ./scripts/deploy-vagrant-compose.sh
 
 The script:
 
-1. starts all five VMs in dependency order;
-2. synchronizes source files;
-3. installs Docker Engine and the Compose plugin;
-4. starts the independent Compose project on each VM;
-5. applies idempotent PostgreSQL migrations;
-6. checks Compose and HTTP health.
+1. creates missing local logging credentials without printing them;
+2. updates managed `/etc/hosts` and `~/.ssh/config` entries;
+3. starts all six VMs in dependency order;
+4. synchronizes source files;
+5. installs Docker Engine and the Compose plugin;
+6. starts the independent Compose project on each VM;
+7. applies idempotent PostgreSQL migrations;
+8. checks Compose, SSH, health endpoints, and a real journald-to-Loki marker.
 
 Direct equivalent:
 
 ```bash
-sudo vagrant up database rabbitmq backend-service api-fetcher ui --provider=qemu
+sudo ./scripts/ensure-local-logging-env.sh
+sudo ./scripts/update-local-ssh-config.sh
+sudo ./scripts/update-local-hosts.sh
+sudo vagrant up logs database rabbitmq backend-service api-fetcher ui --provider=qemu
 sudo vagrant rsync
+sudo vagrant provision logs
 sudo vagrant provision database
 sudo vagrant provision rabbitmq
 sudo vagrant provision backend-service
@@ -124,10 +134,16 @@ Open:
 ```text
 https://<RATEBOARD_UI_IP>/
 https://rateboard.test/
+https://rates-logs/
 ```
 
 Use `scripts/update-local-hosts.sh` to reconcile `rateboard.test` with
 `.env.vagrant.local`.
+
+The deployment also manages SSH aliases for `admin`, so `ssh ui`, `ssh
+api-fetcher`, `ssh backend-service`, `ssh database`, `ssh rabbitmq`, and `ssh
+logs` use the configured LAN addresses and local identity file. Only public
+keys are installed on the VMs.
 
 ## Verify
 
@@ -139,13 +155,13 @@ Inspect an individual project:
 
 ```bash
 sudo vagrant ssh api-fetcher -c \
-  'sudo docker compose -f /vagrant/infra/docker/api-fetcher/compose.yml ps'
+  'sudo docker compose --env-file /etc/rateboard/alloy.env -f /vagrant/infra/docker/api-fetcher/compose.yml ps'
 
 sudo vagrant ssh backend-service -c \
-  'sudo docker compose -f /vagrant/infra/docker/backend-service/compose.yml logs --tail=100'
+  'sudo docker compose --env-file /etc/rateboard/alloy.env -f /vagrant/infra/docker/backend-service/compose.yml logs --tail=100'
 
 sudo vagrant ssh rabbitmq -c \
-  'sudo docker compose -f /vagrant/infra/docker/rabbitmq/compose.yml ps'
+  'sudo docker compose --env-file /etc/rateboard/alloy.env -f /vagrant/infra/docker/rabbitmq/compose.yml ps'
 ```
 
 Health endpoints:
@@ -157,6 +173,28 @@ http://<RATEBOARD_BACKEND_SERVICE_IP>:8081/health/ready
 
 API Fetcher readiness requires its RabbitMQ publisher and command consumer.
 History readiness requires PostgreSQL and its observation consumer.
+
+## Centralized logs
+
+Every application container uses Docker's journald logging driver. One Alloy
+container per VM reads the persistent host journal and sends entries over TLS
+and HTTP basic authentication to Loki on `rates-logs`. Grafana is available at
+`https://rates-logs/` and is preconfigured with the Rateboard Loki datasource
+and a dashboard filtered by VM, service, container, and level.
+
+The logs VM stores data separately from PostgreSQL:
+
+```text
+host .vagrant-data/logs/loki.qcow2
+  -> logs VM ext4 /srv/rateboard-logs
+  -> Loki, Grafana, and Alloy bind-backed volumes
+```
+
+Loki retains logs for `RATEBOARD_LOGS_RETENTION`, 14 days by default. If the
+logs VM is temporarily unavailable, Rateboard services continue normally and
+the local journals plus Alloy WAL provide a bounded retry buffer. Application
+logs must never contain tokens, passwords, authorization headers, or URLs with
+credentials.
 
 ## Stop without deleting data
 
@@ -274,7 +312,7 @@ git diff --check
 ```
 
 Static checks do not prove that QEMU, NFS, bridged networking, containers, or
-external providers work at runtime. Use the five-VM verification script on the
+external providers work at runtime. Use the six-VM verification script on the
 target Mac for that proof.
 
 ## More documentation

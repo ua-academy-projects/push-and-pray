@@ -2,7 +2,7 @@
 
 ## Short explanation
 
-> Rateboard uses five Vagrant VMs with a separate Docker Compose project on
+> Rateboard uses five application VMs plus a dedicated logs VM, with a separate Docker Compose project on
 > each VM. API Fetcher only calls providers and publishes normalized events to
 > RabbitMQ. History Service consumes those events, owns PostgreSQL, and serves
 > all UI reads.
@@ -39,7 +39,7 @@ events.
    instrument receives an initial command for at most 365 days.
 6. **How is the database preserved?** Its Docker volume binds to an ext4
    filesystem on a host-side qcow2 disk under `.vagrant-data/database`.
-7. **Why are there five Compose files?** Docker networks do not span independent
+7. **Why are there six Compose files?** Docker networks do not span independent
    VM daemons; each VM owns its workload and cross-VM traffic uses the LAN.
 8. **Why is systemd still present for Docker?** It manages the Docker daemon,
    not Rateboard application services.
@@ -47,5 +47,5 @@ events.
 ## Verification wording
 
 Passing unit tests, shell syntax, and `Vagrantfile` parsing are static evidence.
-Runtime proof requires five running VMs, healthy Compose containers, queue
+Runtime proof requires six running VMs, healthy Compose containers, queue
 inspection, database ranges, and an observation visible through History API.

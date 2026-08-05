@@ -5,7 +5,7 @@ services:
     build:
       context: ../../../ui-service
     env_file:
-      - /etc/rateboard/ui.env
+      - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/ui.env}
     environment:
       NGINX_ENVSUBST_FILTER: "^(UI_PUBLIC_HOST|HISTORY_SERVICE_URL)$"
     ports:
@@ -15,8 +15,34 @@ services:
       - /etc/rateboard/tls:/etc/rateboard/tls:ro
       - /etc/rateboard/runtime-config.js:/usr/share/nginx/html/js/runtime-config.js:ro
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-ui
     healthcheck:
       test: ["CMD", "wget", "--no-check-certificate", "-q", "-O", "-", "https://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       retries: 12
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    env_file:
+      - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
+    command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    extra_hosts:
+      - "rates-logs:${RATEBOARD_LOGS_IP}"
+    volumes:
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - /etc/rateboard/logs-ca.crt:/etc/rateboard/logs-ca.crt:ro
+      - ../alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: rateboard-alloy
+
+volumes:
+  alloy_data:
