@@ -29,6 +29,22 @@ done
 SOURCE_ROOT=/vagrant
 DEPLOY_ROOT=/opt/airaware
 
+sync_service() {
+    local service_directory="$1"
+
+    install -d -m 0755 "${DEPLOY_ROOT}/${service_directory}"
+    rsync -a \
+        --exclude='.env' \
+        --exclude='.venv/' \
+        --exclude='__pycache__/' \
+        --exclude='.mypy_cache/' \
+        --exclude='.pytest_cache/' \
+        --exclude='.ruff_cache/' \
+        --exclude='*.py[cod]' \
+        "${SOURCE_ROOT}/${service_directory}/" \
+        "${DEPLOY_ROOT}/${service_directory}/"
+}
+
 if [[ ! -f "${SOURCE_ROOT}/deploy/${AIRAWARE_ROLE}/compose.yml" ]]; then
     # Vagrant machine name remains database while deployment role is infrastructure.
     if [[ "${AIRAWARE_ROLE}" == "database" ]]; then
@@ -66,16 +82,19 @@ install -d -m 0755 "${DEPLOY_ROOT}"
 
 case "${AIRAWARE_ROLE}" in
     frontend)
-        cp -a "${SOURCE_ROOT}/frontend-service" "${DEPLOY_ROOT}/"
+        sync_service frontend-service
         ;;
     backend)
-        cp -a "${SOURCE_ROOT}/backend-service" "${DEPLOY_ROOT}/"
+        sync_service backend-service
         ;;
     fetcher)
-        cp -a "${SOURCE_ROOT}/api-fetcher-service" "${DEPLOY_ROOT}/"
+        sync_service api-fetcher-service
         ;;
     database)
-        cp -a "${SOURCE_ROOT}/backend-service" "${DEPLOY_ROOT}/"
+        install -d -m 0755 "${DEPLOY_ROOT}/backend-service/database"
+        install -m 0644 \
+            "${SOURCE_ROOT}/backend-service/database/init.sql" \
+            "${DEPLOY_ROOT}/backend-service/database/init.sql"
         ;;
     *)
         echo "Unsupported role: ${AIRAWARE_ROLE}" >&2
@@ -84,8 +103,11 @@ case "${AIRAWARE_ROLE}" in
 esac
 
 install -d -m 0755 "${DEPLOY_ROOT}/deploy"
-cp -a "${SOURCE_ROOT}/deploy/${COMPOSE_ROLE}" \
-    "${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}"
+install -d -m 0755 "${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}"
+rsync -a \
+    --exclude='.env' \
+    "${SOURCE_ROOT}/deploy/${COMPOSE_ROLE}/" \
+    "${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}/"
 
 python3 - "$AIRAWARE_DB_PASSWORD" "$AIRAWARE_REDIS_PASSWORD" \
     "$AIRAWARE_RABBITMQ_USER" "$AIRAWARE_RABBITMQ_PASSWORD" \
