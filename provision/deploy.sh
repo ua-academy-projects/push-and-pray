@@ -140,7 +140,9 @@ ENV
     backend)
         cat >"${ENV_FILE}" <<ENV
 DATABASE_URL=postgresql+psycopg://${AIRAWARE_DB_USER}:${encoded_database_password}@${AIRAWARE_DATABASE_IP}:5432/${AIRAWARE_DB_NAME}
+DATABASE_CONNECT_TIMEOUT_SECONDS=5
 RABBITMQ_URL=amqp://${encoded_rabbitmq_user}:${encoded_rabbitmq_password}@${AIRAWARE_DATABASE_IP}:5672/${encoded_rabbitmq_vhost}
+RABBITMQ_CONNECTION_TIMEOUT_SECONDS=10
 RABBITMQ_EXCHANGE=airaware.measurements
 RABBITMQ_QUEUE=airaware.measurements.persist
 RABBITMQ_ROUTING_KEY=measurement.created
@@ -160,6 +162,10 @@ RABBITMQ_QUEUE=airaware.measurements.persist
 RABBITMQ_ROUTING_KEY=measurement.created
 RABBITMQ_DEAD_LETTER_EXCHANGE=airaware.measurements.dead-letter
 RABBITMQ_DEAD_LETTER_QUEUE=airaware.measurements.dead-letter
+RABBITMQ_CONNECTION_TIMEOUT_SECONDS=10
+RABBITMQ_BLOCKED_CONNECTION_TIMEOUT_SECONDS=15
+RABBITMQ_CONNECTION_ATTEMPTS=3
+RABBITMQ_RETRY_DELAY_SECONDS=2
 HTTP_TIMEOUT_SECONDS=15
 FETCH_ON_STARTUP=true
 SCHEDULER_ENABLED=true

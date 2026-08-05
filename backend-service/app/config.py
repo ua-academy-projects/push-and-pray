@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +9,18 @@ class Settings(BaseSettings):
 
     database_url: str
     rabbitmq_url: str
+
+    database_connect_timeout_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+    )
+
+    rabbitmq_connection_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=120,
+    )
 
     rabbitmq_exchange: str = "airaware.measurements"
     rabbitmq_queue: str = "airaware.measurements.persist"

@@ -10,6 +10,9 @@ settings = get_settings()
 
 engine = create_engine(
     settings.database_url,
+    connect_args={
+        "connect_timeout": settings.database_connect_timeout_seconds,
+    },
     pool_pre_ping=True,
 )
 

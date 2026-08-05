@@ -119,7 +119,9 @@ class RabbitMQConsumer:
                 logger.info("Connecting Backend consumer to RabbitMQ")
                 self._connection = await aio_pika.connect_robust(
                     self._settings.rabbitmq_url,
-                    timeout=10,
+                    timeout=(
+                        self._settings.rabbitmq_connection_timeout_seconds
+                    ),
                     client_properties={
                         "connection_name": "airaware-backend-consumer",
                     },

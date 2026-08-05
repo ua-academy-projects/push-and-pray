@@ -37,6 +37,14 @@ class RabbitMQPublisher:
         self._dead_letter_queue = (
             settings.rabbitmq_dead_letter_queue
         )
+        self._connection_timeout = (
+            settings.rabbitmq_connection_timeout_seconds
+        )
+        self._blocked_connection_timeout = (
+            settings.rabbitmq_blocked_connection_timeout_seconds
+        )
+        self._connection_attempts = settings.rabbitmq_connection_attempts
+        self._retry_delay = settings.rabbitmq_retry_delay_seconds
 
     async def publish_measurement(
         self,
@@ -85,7 +93,7 @@ class RabbitMQPublisher:
         connection: pika.BlockingConnection | None = None
 
         try:
-            parameters = pika.URLParameters(self._url)
+            parameters = self._connection_parameters()
 
             connection = pika.BlockingConnection(
                 parameters
@@ -125,7 +133,7 @@ class RabbitMQPublisher:
         connection: pika.BlockingConnection | None = None
 
         try:
-            parameters = pika.URLParameters(self._url)
+            parameters = self._connection_parameters()
 
             connection = pika.BlockingConnection(
                 parameters
@@ -310,3 +318,16 @@ class RabbitMQPublisher:
             queue=self._queue,
             routing_key=self._routing_key,
         )
+
+    def _connection_parameters(self) -> pika.URLParameters:
+        """Build bounded connection parameters for each broker operation."""
+
+        parameters = pika.URLParameters(self._url)
+        parameters.socket_timeout = self._connection_timeout
+        parameters.stack_timeout = self._connection_timeout + 5
+        parameters.blocked_connection_timeout = (
+            self._blocked_connection_timeout
+        )
+        parameters.connection_attempts = self._connection_attempts
+        parameters.retry_delay = self._retry_delay
+        return parameters

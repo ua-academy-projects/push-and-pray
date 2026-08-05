@@ -19,6 +19,30 @@ class Settings(BaseSettings):
         "airaware.measurements.dead-letter"
     )
 
+    rabbitmq_connection_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=120,
+    )
+
+    rabbitmq_blocked_connection_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0,
+        le=300,
+    )
+
+    rabbitmq_connection_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+    )
+
+    rabbitmq_retry_delay_seconds: float = Field(
+        default=2.0,
+        ge=0,
+        le=60,
+    )
+
     http_timeout_seconds: float = Field(
         default=15.0,
         gt=0,
