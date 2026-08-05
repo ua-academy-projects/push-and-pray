@@ -1,24 +1,59 @@
 # AirAware SSH access
 
-Vagrant keeps its own `vagrant` account and managed key for provisioning and recovery.
-The project additionally configures an `airaware` login account with a user-provided
-public key.
-
-## Recommended setup on Windows
-
-Run from PowerShell in the repository root:
+Vagrant always manages its own `vagrant` account and private key for provisioning and recovery:
 
 ```powershell
-.\scripts\setup-ssh.ps1
-vagrant provision
+vagrant ssh backend
 ```
 
-The helper script:
+The project can additionally configure a personal public key for an `airaware` login on every VM.
 
-1. creates `~/.ssh/airaware_ed25519` when missing;
-2. loads the public key into `AIRAWARE_SSH_PUBLIC_KEY`;
-3. writes `~/.ssh/config.d/airaware`;
-4. adds `Include ~/.ssh/config.d/*` to the main SSH config when needed.
+## Generate a key on Windows
+
+```powershell
+ssh-keygen -t ed25519 -a 100 -f "$HOME\.ssh\airaware_ed25519" -C "airaware-vagrant"
+```
+
+Never commit the private key.
+
+## Configure Vagrant
+
+Add a public-key path to the root `.env`:
+
+```dotenv
+AIRAWARE_SSH_USER=airaware
+AIRAWARE_SSH_PUBLIC_KEY_PATH=C:/Users/your-name/.ssh/airaware_ed25519.pub
+```
+
+Forward slashes avoid Windows dotenv escaping surprises. Alternatively, export the public key for the current PowerShell session:
+
+```powershell
+$env:AIRAWARE_SSH_PUBLIC_KEY = (
+    Get-Content "$HOME\.ssh\airaware_ed25519.pub" -Raw
+).Trim()
+```
+
+Explicit environment variables override the root `.env`.
+
+## Provision SSH access
+
+For all machines:
+
+```powershell
+vagrant provision --provision-with ssh-access
+```
+
+For one machine:
+
+```powershell
+vagrant provision backend --provision-with ssh-access
+```
+
+If no public key is configured, the provisioner exits without changing personal-key access and `vagrant ssh` remains available.
+
+## Configure aliases
+
+Copy the relevant entries from `ssh/config.example` into `$HOME\.ssh\config`, or include that file from your main OpenSSH configuration. Update `HostName` values if the network prefix differs from `192.168.18`.
 
 Then connect with:
 
@@ -29,27 +64,4 @@ ssh airaware-fetcher
 ssh airaware-infrastructure
 ```
 
-## Manual setup
-
-Generate a key:
-
-```powershell
-ssh-keygen -t ed25519 -a 100 -f "$HOME\.ssh\airaware_ed25519" -C "airaware-vagrant"
-```
-
-Load it before Vagrant provisioning:
-
-```powershell
-$env:AIRAWARE_SSH_PUBLIC_KEY = (
-    Get-Content "$HOME\.ssh\airaware_ed25519.pub" -Raw
-).Trim()
-$env:AIRAWARE_SSH_USER = "airaware"
-```
-
-Copy `ssh/config.example` entries into your OpenSSH config and run:
-
-```powershell
-vagrant provision
-```
-
-Never commit the private key.
+The configured account receives passwordless sudo and Docker-group membership for lab administration. Keep the private key protected and use this feature only on a trusted LAN.

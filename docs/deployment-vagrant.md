@@ -1,38 +1,24 @@
-# Vagrant Deployment Guide
+# Vagrant deployment guide
 
-## 1. Overview
+## Overview
 
-AirAware is deployed with one Vagrant multi-machine environment containing four VirtualBox VMs:
+The Vagrantfile creates four VirtualBox VMs and runs four provisioners on each:
 
-| Machine | Role | Address | Port |
-|---|---|---:|---:|
-| `frontend` | Flask dashboard | `192.168.50.210` | `5000` |
-| `backend` | FastAPI application API | `192.168.50.211` | `8001` |
-| `fetcher` | Open-Meteo collector | `192.168.50.212` | `8000` |
-| `database` | PostgreSQL | `192.168.50.213` | `5432` |
+1. `common` installs basic tools and configures hostnames and LAN mappings.
+2. `docker` installs Docker Engine and the Compose plugin when missing.
+3. `ssh-access` optionally installs a personal public key.
+4. `compose` copies the required project files and deploys the role's containers.
 
-The Vagrantfile uses:
+| Machine | Fixed memory | CPUs | Default address |
+|---|---:|---:|---:|
+| `database` | 2048 MB | 2 | `192.168.18.213` |
+| `backend` | 640 MB | 1 | `192.168.18.211` |
+| `fetcher` | 640 MB | 1 | `192.168.18.212` |
+| `frontend` | 640 MB | 1 | `192.168.18.210` |
 
-- a machine configuration hash;
-- loops to generate VM definitions;
-- helper methods;
-- validation;
-- conditional provisioning;
-- one common provisioner;
-- one shared application provisioner;
-- a dedicated database provisioner.
+## Prerequisites
 
-## 2. Prerequisites
-
-Install:
-
-```text
-Vagrant 2.4+
-VirtualBox 7.x
-Git
-```
-
-Verify:
+Install and verify:
 
 ```powershell
 vagrant --version
@@ -40,334 +26,165 @@ VBoxManage --version
 git --version
 ```
 
-## 3. Network requirements
+Use Vagrant 2.4 or newer and VirtualBox 7.x. Keep at least 5 GB of host RAM available; 6 GB is recommended while dependencies and images are first downloaded.
 
-The current configuration expects:
+## Configure the root environment
 
-```text
-LAN subnet: 192.168.50.0/24
-Gateway:    192.168.50.1
-Bridge:     Intel(R) Wi-Fi 6 AX200 160MHz
+```powershell
+Copy-Item .env.example .env
 ```
 
-Before deployment:
+Edit `.env` before running Vagrant:
 
-1. Confirm that `.210`–`.213` are unused.
-2. Confirm they are outside the router DHCP pool or reserved.
-3. Confirm the selected bridge adapter is active.
-4. Confirm client isolation is disabled on the Wi-Fi network.
+```dotenv
+AIRAWARE_NETWORK_PREFIX=192.168.18
+AIRAWARE_NETMASK=255.255.255.0
+AIRAWARE_BRIDGE_ADAPTER=Intel(R) Wi-Fi 6 AX200 160MHz
 
-List bridged interfaces:
+AIRAWARE_DB_NAME=airaware
+AIRAWARE_DB_USER=airaware_user
+AIRAWARE_DB_PASSWORD=replace-with-a-strong-password
+
+AIRAWARE_REDIS_PASSWORD=replace-with-a-different-strong-password
+
+AIRAWARE_RABBITMQ_USER=airaware
+AIRAWARE_RABBITMQ_PASSWORD=replace-with-another-strong-password
+AIRAWARE_RABBITMQ_VHOST=airaware
+
+AIRAWARE_FLASK_SECRET_KEY=replace-with-at-least-32-random-bytes
+```
+
+Generate a Flask key with:
+
+```powershell
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Explicit host environment variables override matching values in `.env`. The file is ignored by Git.
+
+## Validate bridged networking
+
+List adapters and use the exact name of the active physical adapter:
 
 ```powershell
 VBoxManage list bridgedifs
 ```
 
-Test candidate addresses:
+Confirm `.210` through `.213` are unused and outside the router's dynamic DHCP range or reserved for these VMs:
 
 ```powershell
-$addresses = @(
-    "192.168.50.210",
-    "192.168.50.211",
-    "192.168.50.212",
-    "192.168.50.213"
-)
-
-foreach ($address in $addresses) {
-    Test-Connection -ComputerName $address -Count 2 -Quiet
+$addresses = 210..213 | ForEach-Object { "192.168.18.$_" }
+$addresses | ForEach-Object {
+    Test-Connection -ComputerName $_ -Count 1 -Quiet
 }
 ```
 
-Also inspect the router’s connected-device and DHCP pages.
+Bridged networking intentionally exposes every published container port to the trusted LAN.
 
-## 4. Environment configuration
-
-The following host environment variables are supported:
-
-```text
-AIRAWARE_VAGRANT_BOX
-AIRAWARE_NETWORK_PREFIX
-AIRAWARE_NETMASK
-AIRAWARE_BRIDGE_ADAPTER
-AIRAWARE_DB_NAME
-AIRAWARE_DB_USER
-AIRAWARE_DB_PASSWORD
-```
-
-Example:
-
-```powershell
-$env:AIRAWARE_NETWORK_PREFIX = "192.168.50"
-$env:AIRAWARE_NETMASK = "255.255.255.0"
-$env:AIRAWARE_BRIDGE_ADAPTER = "Intel(R) Wi-Fi 6 AX200 160MHz"
-$env:AIRAWARE_DB_NAME = "airaware"
-$env:AIRAWARE_DB_USER = "airaware_user"
-$env:AIRAWARE_DB_PASSWORD = "replace-with-a-strong-password"
-```
-
-These variables apply to the current PowerShell session.
-
-## 5. Validate the configuration
-
-From the repository root:
+## Validate and deploy
 
 ```powershell
 vagrant validate
 vagrant status
 ```
 
-Expected before the first run:
-
-```text
-database   not created
-backend    not created
-fetcher    not created
-frontend   not created
-```
-
-## 6. Deploy the environment
+For clear dependency ordering and easier diagnostics, start machines explicitly:
 
 ```powershell
-vagrant up --provider=virtualbox
+vagrant up database
+vagrant up backend
+vagrant up fetcher
+vagrant up frontend
 ```
 
-Expected provisioning order:
+`vagrant up` can start the entire environment in Vagrantfile order.
 
-```text
-database
-backend
-fetcher
-frontend
-```
+The Compose provisioner:
 
-Provisioning performs:
+- removes the previous copied deployment tree under `/opt/airaware`;
+- copies only required source and Compose files;
+- generates a root-only `.env` for that role;
+- safely quotes dotenv values and percent-encodes URL credentials;
+- pulls infrastructure images or builds application images;
+- starts containers with `--remove-orphans --wait --wait-timeout 180`;
+- prints container status and recent logs if startup fails;
+- applies pending SQL migrations after PostgreSQL is healthy.
 
-### All VMs
-
-- installs common diagnostic tools;
-- creates the `airaware` system user;
-- writes local hostname mappings;
-- creates `/opt/airaware`;
-- records machine metadata.
-
-### Database VM
-
-- installs PostgreSQL;
-- configures the database listener;
-- restricts application access to the Backend VM;
-- creates the role and database;
-- executes `backend-service/database/init.sql`;
-- verifies database objects.
-
-### Application VMs
-
-- installs Python and virtual-environment support;
-- copies service code to `/opt/airaware`;
-- creates a Python virtual environment;
-- installs dependencies;
-- generates `.env`;
-- creates a systemd service;
-- starts and verifies the service.
-
-## 7. Validate the deployment
-
-Check VM state:
+## Verify
 
 ```powershell
 vagrant status
+
+curl.exe http://192.168.18.210:5000/health/ready
+curl.exe http://192.168.18.211:8001/health/ready
+curl.exe http://192.168.18.212:8000/health/ready
 ```
 
-Check IP connectivity:
+Inspect each Compose project:
 
 ```powershell
-ping 192.168.50.210
-ping 192.168.50.211
-ping 192.168.50.212
-ping 192.168.50.213
+vagrant ssh database -c "cd /opt/airaware/deploy/infrastructure && sudo docker compose ps"
+vagrant ssh backend -c "cd /opt/airaware/deploy/backend && sudo docker compose ps"
+vagrant ssh fetcher -c "cd /opt/airaware/deploy/fetcher && sudo docker compose ps"
+vagrant ssh frontend -c "cd /opt/airaware/deploy/frontend && sudo docker compose ps"
 ```
 
-Check ports:
+## Reprovision changes
 
 ```powershell
-Test-NetConnection 192.168.50.210 -Port 5000
-Test-NetConnection 192.168.50.211 -Port 8001
-Test-NetConnection 192.168.50.212 -Port 8000
-Test-NetConnection 192.168.50.213 -Port 5432
+vagrant provision frontend --provision-with compose
+vagrant provision backend --provision-with compose
+vagrant provision fetcher --provision-with compose
+vagrant provision database --provision-with compose
 ```
 
-Check HTTP endpoints:
+Reprovision only the affected role when possible. Infrastructure provisioning retains named volumes and applies unrecorded migrations. It does not rerun applied migration files.
 
-```powershell
-Invoke-RestMethod http://192.168.50.210:5000/health
-Invoke-RestMethod http://192.168.50.210:5000/health/ready
+Do not edit files under `/opt/airaware` as the permanent source of truth: the next provision replaces the copied tree and generated `.env`.
 
-Invoke-RestMethod http://192.168.50.211:8001/health
-Invoke-RestMethod http://192.168.50.211:8001/health/ready
-
-Invoke-RestMethod http://192.168.50.212:8000/health
-Invoke-RestMethod http://192.168.50.212:8000/health/ready
-```
-
-Open:
-
-```text
-Frontend: http://192.168.50.210:5000
-Backend Swagger: http://192.168.50.211:8001/docs
-Fetcher Swagger: http://192.168.50.212:8000/docs
-```
-
-## 8. Validate from another physical device
-
-Connect another device to the same home LAN.
-
-Test:
-
-```powershell
-ping 192.168.50.210
-ping 192.168.50.211
-ping 192.168.50.212
-ping 192.168.50.213
-```
-
-Open:
-
-```text
-http://192.168.50.210:5000
-```
-
-No router port forwarding is required.
-
-## 9. Reprovisioning
-
-After changing Backend code:
-
-```powershell
-vagrant provision backend
-```
-
-After changing Fetcher code:
-
-```powershell
-vagrant provision fetcher
-```
-
-After changing Frontend code:
-
-```powershell
-vagrant provision frontend
-```
-
-After changing database initialisation:
-
-```powershell
-vagrant provision database
-```
-
-The application provisioner:
-
-- copies current source files;
-- updates dependencies;
-- rewrites `.env`;
-- restarts the corresponding systemd service.
-
-## 10. Starting and stopping
-
-Stop safely:
+## Start and stop
 
 ```powershell
 vagrant halt
-```
-
-Start again:
-
-```powershell
 vagrant up
 ```
 
-Suspend:
+Prefer a normal `vagrant halt` and allow the VMs and containers to stop cleanly. Avoid closing VirtualBox processes or powering off the host while infrastructure writes are active.
 
-```powershell
-vagrant suspend
-```
+## Network changes
 
-Resume:
-
-```powershell
-vagrant resume
-```
-
-## 11. Destroying the environment
+Change the root `.env`, confirm the new addresses are unused, and recreate the VMs:
 
 ```powershell
 vagrant destroy -f
+vagrant up database
+vagrant up backend
+vagrant up fetcher
+vagrant up frontend
 ```
 
-This deletes:
+Back up PostgreSQL before destroying the database VM.
 
-- all VMs;
-- PostgreSQL data inside the Database VM;
-- installed packages;
-- Python environments;
-- generated service configuration.
-
-It does not delete repository files.
-
-## 12. Fresh reproducibility test
-
-The final deployment test is:
+## Destroying machines
 
 ```powershell
-vagrant destroy -f
-vagrant up --provider=virtualbox
+vagrant destroy frontend -f
+vagrant destroy backend -f
+vagrant destroy fetcher -f
 ```
 
-After completion, verify:
-
-- all four VMs are running;
-- the database schema exists;
-- city configuration exists;
-- systemd services are active;
-- the Fetcher can create measurements;
-- the Frontend displays data.
-
-## 13. Moving to another LAN
-
-When moving from one network to another, update or override:
-
-```text
-network prefix
-netmask
-bridge adapter
-```
-
-Example:
+Destroying `database` removes its virtual disk, including the PostgreSQL, Redis, and RabbitMQ named volumes:
 
 ```powershell
-$env:AIRAWARE_NETWORK_PREFIX = "192.168.88"
-$env:AIRAWARE_NETMASK = "255.255.255.0"
-$env:AIRAWARE_BRIDGE_ADAPTER = "Intel(R) Wi-Fi 6 AX200 160MHz"
+vagrant destroy database -f
 ```
 
-The VM suffixes remain:
+Use the backup procedure in [Operations](operations.md) first.
 
-```text
-210
-211
-212
-213
-```
+## Optional personal-key SSH access
 
-Recreate VMs after changing network settings:
+Vagrant always retains its managed `vagrant` login. To add a personal key for the `airaware` account, follow [the SSH guide](../ssh/README.md). No helper script is required.
 
-```powershell
-vagrant destroy -f
-vagrant up
-```
+## Security note
 
-Confirm the new addresses are unused before deployment.
-
-## 14. Security note
-
-The VMs are bridged directly onto the LAN. Use this deployment only on a trusted home or lab network.
-
-Do not expose the VM ports to the public internet through router port forwarding.
+This deployment is intended for a trusted home or lab LAN. It does not configure TLS or a host firewall. Do not forward the published ports from the router to the public internet without adding appropriate security controls.

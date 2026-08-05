@@ -1,315 +1,162 @@
-# AirAware Architecture
+# AirAware architecture
 
-## 1. System overview
+## System overview
 
-AirAware is a distributed air-quality monitoring application deployed across four Vagrant-managed virtual machines.
-
-The system collects measurements from Open-Meteo, stores them in PostgreSQL, and displays current and historical information in a browser dashboard.
+AirAware is deployed across four Vagrant-managed Ubuntu VMs connected directly to the local network through VirtualBox bridged networking. Docker Compose runs one project per VM.
 
 ```text
-Open-Meteo
-    |
-    v
-API Fetcher Service
-    |
-    v
-Backend Service
-    |
-    v
-PostgreSQL
-
-Frontend Service
-    |
-    v
-Backend Service
-```
-
-The Frontend and API Fetcher are independent clients of the Backend. They never communicate directly with each other.
-
-## 2. Component diagram
-
-```text
-                            Internet
-                               |
-                               v
+                              Internet
+                                 |
+                                 v
                     Open-Meteo Air Quality API
-                               ^
-                               |
-                               | HTTPS
-                               |
-                 +-----------------------------+
-                 | API Fetcher VM              |
-                 | 192.168.50.212:8000         |
-                 | FastAPI + APScheduler       |
-                 +-------------+---------------+
-                               |
-                               | HTTP POST
-                               | /api/measurements
-                               v
-+-----------------------------+-----------------------------+
-| Backend VM                                                |
-| 192.168.50.211:8001                                     |
-| FastAPI + SQLAlchemy + Psycopg                           |
-+--------------------------+-------------------------------+
-                           |
-                           | PostgreSQL protocol
-                           v
-                 +-----------------------------+
-                 | Database VM                 |
-                 | 192.168.50.213:5432         |
-                 | PostgreSQL                  |
-                 +-----------------------------+
-
-+-----------------------------+
-| Frontend VM                 |
-| 192.168.50.210:5000         |
-| Flask + HTML/CSS/JavaScript |
-+-------------+---------------+
-              |
-              | HTTP GET
-              | /api/cities
-              | /api/dashboard
-              v
-        Backend VM
+                                 |
+                                 v
+                  API Fetcher VM 192.168.18.212
+                     |                       |
+                     | GET /api/cities       | publish durable event
+                     v                       v
+Backend VM 192.168.18.211 <------------- RabbitMQ
+          |                                  |
+          | consume, validate, acknowledge   |
+          +----------------------------------+
+          |
+          v
+PostgreSQL on infrastructure VM 192.168.18.213
+          ^
+          |
+Frontend VM 192.168.18.210 ---> Backend API
 ```
 
-## 3. Service responsibilities
+The infrastructure VM also runs Redis. Redis is password protected, persistent, published on the bridged LAN, and health checked. It is intentionally retained as an infrastructure service but is not used for Flask sessions.
 
-### 3.1 Frontend Service
+## Components
 
-The Frontend Service:
+### Frontend
 
-- serves the browser interface;
-- loads the configured city list;
-- requests dashboard data from the Backend;
-- displays the latest stored measurement;
-- displays 12-hour or 24-hour historical trends;
-- switches between metrics without contacting the API Fetcher;
-- never connects to PostgreSQL.
+The Flask frontend:
 
-The Refresh button reloads stored data from the Backend. It does not trigger a new Open-Meteo fetch.
+- serves the dashboard and static assets;
+- proxies city and dashboard requests to the Backend;
+- stores selected city, metric, and period in a signed client cookie;
+- checks Backend readiness before reporting itself ready;
+- never connects to PostgreSQL, RabbitMQ, or Redis.
 
-### 3.2 Backend Service
+The cookie is signed with `AIRAWARE_FLASK_SECRET_KEY`, is HTTP-only, uses `SameSite=Lax`, and expires according to `SESSION_TTL_SECONDS`. It is not encrypted, so only non-sensitive UI preferences belong in it.
 
-The Backend Service is the central application API and data-access layer.
+### Backend
 
-It:
+The FastAPI Backend owns persistence and:
 
-- accepts measurements from the API Fetcher;
-- validates incoming payloads;
-- resolves city codes;
-- prevents duplicate records;
-- stores measurements in PostgreSQL;
-- returns active cities;
-- returns the latest measurement for a city;
-- returns historical measurements for a requested period;
-- owns all database access.
+- lists configured cities and dashboard data;
+- accepts measurement payloads through its public API;
+- runs one RabbitMQ consumer inside the FastAPI lifespan;
+- validates events and persists them through SQLAlchemy;
+- reports ready only when PostgreSQL and the enabled consumer are connected.
 
-### 3.3 API Fetcher Service
+The container intentionally runs one Uvicorn worker. Each additional worker would create another competing RabbitMQ consumer.
 
-The API Fetcher Service:
+The consumer declares durable exchanges and queues, uses manual acknowledgements and `prefetch_count=1`, rejects permanent validation errors to the dead-letter path, and requeues transient database failures. Blocking SQLAlchemy work runs in a worker thread so it does not block the asyncio event loop.
 
-- retrieves the active city list from the Backend;
-- requests current values from Open-Meteo;
-- normalises the provider response;
-- sends each measurement to the Backend;
-- runs automatically every hour;
-- supports a manual fetch endpoint;
-- never connects directly to PostgreSQL;
-- never communicates with the Frontend.
+### API Fetcher
 
-### 3.4 PostgreSQL
+The Fetcher:
 
-PostgreSQL stores two main entities:
+- requests the active city list from the Backend;
+- fetches current measurements from Open-Meteo concurrently;
+- publishes persistent events to RabbitMQ;
+- prevents overlapping fetch runs with an asynchronous lock;
+- optionally fetches at startup;
+- schedules collection hourly at minute `05` by default;
+- reports ready only when the Backend and RabbitMQ are reachable.
 
-- configured cities;
-- hourly air-quality measurements.
+The Fetcher does not write measurements directly to PostgreSQL.
 
-The database is reachable remotely only from the Backend VM through PostgreSQL authentication rules.
+### Infrastructure
 
-## 4. Network topology
+One Compose project runs:
 
-The deployment uses VirtualBox bridged networking through Vagrant `public_network`.
+- PostgreSQL 18.4 for cities, measurements, and migration history;
+- Redis 8.8.0 with AOF persistence and password authentication;
+- RabbitMQ 4.2.9 with the management plugin and persistent data.
+
+Named Docker volumes preserve data across container recreation:
 
 ```text
-Home LAN: 192.168.50.0/24
-
-Frontend VM: 192.168.50.210
-Backend VM:  192.168.50.211
-Fetcher VM:  192.168.50.212
-Database VM: 192.168.50.213
-Gateway:     192.168.50.1
+airaware-postgres-data
+airaware-redis-data
+airaware-rabbitmq-data
 ```
 
-Each VM appears as a separate device on the home network.
+## Data flows
 
-Another device on the same LAN can access:
+### Scheduled collection
 
-```text
-Frontend: http://192.168.50.210:5000
-Backend:  http://192.168.50.211:8001
-Fetcher:  http://192.168.50.212:8000
-```
+1. APScheduler starts a fetch run.
+2. The Fetcher requests active cities from the Backend.
+3. The Fetcher retrieves Open-Meteo data for each city.
+4. Each successful result is published to the durable RabbitMQ exchange.
+5. The Backend consumer validates and persists the event.
+6. PostgreSQL rejects duplicate `(city_id, observed_at)` values.
+7. The consumer acknowledges the message only after persistence succeeds.
 
-Inter-service communication never uses `localhost`.
+RabbitMQ decouples collection from persistence: published events can remain queued while the Backend consumer is unavailable.
 
-`localhost` is used only for service self-checks within the same VM.
+### Dashboard
 
-## 5. Application flows
+1. The browser loads the Frontend.
+2. The Frontend proxies `/api/cities` and `/api/dashboard` to the Backend.
+3. The Backend queries PostgreSQL.
+4. The browser renders the latest measurement and requested history.
+5. UI preferences are saved in the signed Flask session cookie.
 
-### 5.1 Scheduled collection flow
+The Refresh button reads stored data; it does not trigger Open-Meteo collection.
 
-```text
-1. APScheduler starts an hourly job.
-2. API Fetcher requests the active city list from Backend.
-3. API Fetcher requests Open-Meteo data for each city.
-4. Measurements are normalised.
-5. API Fetcher sends them to Backend.
-6. Backend validates the payload.
-7. Backend inserts a record into PostgreSQL.
-8. PostgreSQL rejects duplicate city/time combinations.
-```
+## Database design and migrations
 
-### 5.2 Dashboard flow
+`cities` contains stable location configuration. `air_quality_measurements` contains timestamped metric values and has a unique constraint on `(city_id, observed_at)`.
 
-```text
-1. Browser opens the Frontend.
-2. Frontend requests cities through its local proxy route.
-3. Frontend Service requests /api/cities from Backend.
-4. Browser selects a city and period.
-5. Frontend Service requests /api/dashboard from Backend.
-6. Backend queries PostgreSQL.
-7. Backend returns the latest and historical measurements.
-8. Frontend renders metric cards and a graph.
-```
+Schema changes are numbered SQL files in `backend-service/database/migrations`. Infrastructure deployment waits for PostgreSQL, creates `airaware_schema_migrations`, and applies each unrecorded migration transactionally under a PostgreSQL advisory lock. This works for both empty and existing named volumes.
 
-## 6. Database design
+## Network topology
 
-### 6.1 `cities`
+Default addresses are:
 
-Stores stable city configuration:
+| Role | Address | Published ports |
+|---|---:|---|
+| Frontend | `192.168.18.210` | `5000` |
+| Backend | `192.168.18.211` | `8001` |
+| Fetcher | `192.168.18.212` | `8000` |
+| Infrastructure | `192.168.18.213` | `5432`, `6379`, `5672`, `15672` |
 
-- ID
-- code
-- name
-- country
-- latitude
-- longitude
-- timezone
-- active state
-- creation timestamp
+The network prefix and netmask can be changed in the root `.env`; VM suffixes remain `.210` through `.213`. Containers use their VM's published ports for cross-VM traffic. `localhost` is reserved for checks within the same VM or container.
 
-### 6.2 `air_quality_measurements`
+All published ports are intentionally reachable from the bridged LAN. Use a trusted lab or home network and do not add public internet port forwarding unless separately secured.
 
-Stores time-series measurements:
+## Deployment resilience
 
-- city ID
-- observation timestamp
-- fetch timestamp
-- European AQI
-- US AQI
-- PM2.5
-- PM10
-- nitrogen dioxide
-- ozone
-- carbon monoxide
-- UV index
-- source
-- source status code
+- Database and broker clients have bounded connection timeouts and retries.
+- Compose deployment waits for container health and prints diagnostics on failure.
+- Generated `.env` files are mode `0600`; URL credentials are percent encoded and Compose values are safely quoted.
+- Build contexts and VM copies exclude local virtual environments, caches, bytecode, and local `.env` files.
+- Container logs rotate at 10 MB with three files per container.
+- Infrastructure containers have CPU, memory, PID, and graceful-stop limits sized for the 2 GB VM.
+- PostgreSQL, Redis, and RabbitMQ health checks use slower steady-state intervals to reduce background VM load.
 
-A unique constraint exists on:
+## Failure behavior
 
-```text
-(city_id, observed_at)
-```
+| Failure | Expected behavior |
+|---|---|
+| Backend unavailable | Frontend and Fetcher readiness return `503`; stored infrastructure data remains intact. |
+| PostgreSQL unavailable | Backend readiness returns `503`; RabbitMQ retains unacknowledged or queued events. |
+| RabbitMQ unavailable | Backend consumer and Fetcher readiness return `503`; dashboard reads can still use PostgreSQL. |
+| Open-Meteo unavailable | Fetch run records per-city failures; existing dashboard data remains available. |
+| Duplicate observation | PostgreSQL uniqueness prevents a second row. |
 
-This prevents duplicate records when:
+## Security boundaries
 
-- the Fetcher restarts;
-- startup fetch and scheduled fetch overlap;
-- the manual fetch endpoint is called repeatedly;
-- Open-Meteo still returns the same hourly observation.
-
-## 7. Scheduling design
-
-The Fetcher uses an hourly cron-style schedule rather than a 60-minute interval from process startup.
-
-Recommended behaviour:
-
-```text
-Startup fetch: immediately
-Scheduled fetch: every hour at HH:05
-Manual fetch: independent of the schedule
-```
-
-Using a small delay after the hour gives the provider time to publish the latest observation.
-
-## 8. Time handling
-
-- Open-Meteo timestamps are treated as UTC.
-- PostgreSQL stores `TIMESTAMPTZ`.
-- Backend returns timezone-aware timestamps.
-- Frontend displays values in the configured city timezone.
-- Graph axis labels and tooltips use local city time.
-
-## 9. Failure behaviour
-
-### Backend unavailable
-
-- Frontend readiness returns `503`.
-- API Fetcher readiness returns `503`.
-- Scheduled collection fails and logs the error.
-
-### PostgreSQL unavailable
-
-- Backend readiness returns `503`.
-- Dashboard and measurement requests fail.
-- Frontend cannot load data.
-
-### Open-Meteo unavailable
-
-- Existing stored data remains available through the Frontend.
-- Fetcher logs per-city failures.
-- The Backend and Frontend continue running.
-
-### Duplicate measurement
-
-- Backend returns the existing record.
-- The result indicates that a new record was not created.
-- No duplicate database row is inserted.
-
-## 10. Security boundaries
-
-Current controls:
-
-- PostgreSQL accepts the application user only from the Backend VM address.
-- The Frontend and Fetcher do not receive database credentials.
-- Services run as a dedicated `airaware` system user.
-- `.env` files are created inside VMs with restricted permissions.
-- Real `.env` files are excluded from Git.
-
-## 11. Design decisions
-
-### Separate Backend and Fetcher
-
-The Fetcher is responsible for ingestion and scheduling. The Backend is responsible for validation and persistence. This makes the system easier to scale and test.
-
-### Frontend does not contact Fetcher
-
-The Frontend reads stored data only. It remains available even when the Fetcher or Open-Meteo is temporarily unavailable.
-
-### Backend owns the database
-
-A single service owns persistence and database credentials, reducing coupling and improving security.
-
-### Structured measurements instead of generic JSON history
-
-Structured columns simplify filtering, indexing, graph generation, validation, and future analytics.
-
-### Bridged networking
-
-Bridged networking makes every VM visible as a separate LAN device and demonstrates real machine-to-machine communication without using host port forwarding.
-
-### systemd services
-
-Application processes run independently of SSH sessions and start automatically with the VMs.
+- Real `.env` files and SSH private keys are ignored by Git.
+- Generated deployment `.env` files are readable only by root.
+- Application containers run as the non-root `airaware` user.
+- Only the Backend receives PostgreSQL credentials.
+- The Frontend receives only its Backend URL and signing key.
+- Vagrant's managed SSH account remains available even when optional personal-key access is configured.

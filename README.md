@@ -1,279 +1,137 @@
 # AirAware
 
-AirAware is a multi-service air-quality monitoring application that collects hourly air-quality data for a predefined set of cities, stores the measurements in PostgreSQL, and displays current and historical values in a web dashboard.
+AirAware is a four-VM air-quality monitoring system. It collects measurements from Open-Meteo, publishes them through RabbitMQ, stores them in PostgreSQL, and displays current and historical values in a Flask dashboard.
 
-The project is deployed with Vagrant across four separate virtual machines connected to the local home network through bridged networking.
-
-## Features
-
-- Hourly air-quality data collection from Open-Meteo
-- Preconfigured list of Ukrainian cities
-- Current air-quality metrics for each city
-- 12-hour and 24-hour historical views
-- City switcher in the dashboard
-- PostgreSQL time-series storage
-- Duplicate measurement prevention
-- Health and readiness endpoints
-- Automated deployment with Vagrant
-- Separate VMs for Frontend, Backend, API Fetcher, and PostgreSQL
+Vagrant creates and networks the Ubuntu VMs. Docker Compose runs every application and infrastructure service inside those VMs.
 
 ## Architecture
 
 ```text
-                             Internet
-                                |
-                                v
-                     Open-Meteo Air Quality API
-                                ^
-                                |
-                  API Fetcher VM — 192.168.50.212
-                                |
-                                | POST /api/measurements
-                                v
-Frontend VM ----------> Backend VM ----------> Database VM
-192.168.50.210          192.168.50.211         192.168.50.213
-      |                       |                       |
-      |                       |                       |
-Browser access         FastAPI Backend          PostgreSQL
-Flask dashboard        Data access layer        Persistent storage
+Open-Meteo
+    |
+    v
+API Fetcher -----> RabbitMQ -----> Backend consumer -----> PostgreSQL
+    |                                      ^
+    | reads active cities                  |
+    +--------------> Backend API <---------+---- Frontend
 ```
 
-The main communication rules are:
+Default bridged-LAN endpoints:
 
-- The Frontend communicates only with the Backend.
-- The API Fetcher communicates with Open-Meteo and the Backend.
-- The Backend is the only component that connects to PostgreSQL.
-- Services communicate through VM LAN addresses, not `localhost`.
+| VM | Address | Published services |
+|---|---:|---|
+| Frontend | `192.168.18.210` | Flask dashboard on `5000` |
+| Backend | `192.168.18.211` | FastAPI on `8001` |
+| Fetcher | `192.168.18.212` | FastAPI on `8000` |
+| Database | `192.168.18.213` | PostgreSQL `5432`, Redis `6379`, RabbitMQ `5672` and management UI `15672` |
 
-More details are available in [docs/architecture.md](docs/architecture.md).
+The frontend stores UI preferences in Flask signed-cookie sessions. Redis remains deployed as a persistent, password-protected infrastructure service, but it is not the frontend session store.
 
-## Components
-
-### Frontend Service
-
-- Technology: Flask, HTML, CSS, JavaScript
-- VM address: `192.168.50.210`
-- Port: `5000`
-- Purpose: displays current and historical air-quality information
-
-### Backend Service
-
-- Technology: FastAPI, SQLAlchemy, Psycopg
-- VM address: `192.168.50.211`
-- Port: `8001`
-- Purpose: validates, stores, and returns air-quality measurements
-
-### API Fetcher Service
-
-- Technology: FastAPI, HTTPX, APScheduler
-- VM address: `192.168.50.212`
-- Port: `8000`
-- Purpose: retrieves measurements from Open-Meteo every hour and sends them to the Backend
-
-### Database Service
-
-- Technology: PostgreSQL
-- VM address: `192.168.50.213`
-- Port: `5432`
-- Purpose: stores configured cities and hourly measurements
-
-## Repository structure
-
-```text
-AIRAWARE/
-├── api-fetcher-service/
-├── backend-service/
-│   └── database/
-│       └── init.sql
-├── frontend-service/
-├── provision/
-│   ├── common.sh
-│   ├── application.sh
-│   └── database.sh
-├── docs/
-│   ├── architecture.md
-│   ├── deployment-vagrant.md
-│   ├── operations.md
-│   └── troubleshooting.md
-├── Vagrantfile
-├── .gitattributes
-├── .gitignore
-└── README.md
-```
+See [Architecture](docs/architecture.md) for the complete data and failure flows.
 
 ## Prerequisites
 
 - Git
 - Vagrant 2.4 or newer
 - VirtualBox 7.x
-- A local network that allows devices to communicate with one another
-- Four unused IP addresses on the same local subnet
-- At least 4 GB of available RAM for the VMs
+- Four unused addresses on the active LAN
+- At least 5 GB of host memory available for the VMs and VirtualBox overhead; 6 GB is recommended during initial image builds
 
-The current configuration uses:
+The fixed VM allocation is 3968 MB: 2048 MB for the infrastructure VM and 640 MB for each application VM.
 
-```text
-Network:  192.168.50.0/24
-Gateway:  192.168.50.1
-Bridge:   Intel(R) Wi-Fi 6 AX200 160MHz
-```
+## Configure
 
-VM addresses:
-
-| Component | Address | Port |
-|---|---:|---:|
-| Frontend | `192.168.50.210` | `5000` |
-| Backend | `192.168.50.211` | `8001` |
-| API Fetcher | `192.168.50.212` | `8000` |
-| PostgreSQL | `192.168.50.213` | `5432` |
-
-Before deployment, confirm that these addresses are unused and are not assigned dynamically by the router.
-
-## Quick start
-
-From PowerShell in the repository root:
+Create the local configuration from the example:
 
 ```powershell
-$env:AIRAWARE_DB_PASSWORD = "replace-with-a-strong-password"
+Copy-Item .env.example .env
+```
+
+Edit `.env` and set:
+
+- the active LAN prefix and exact VirtualBox bridge-adapter name;
+- strong, distinct PostgreSQL, Redis, RabbitMQ, and Flask secrets;
+- an optional SSH public-key path.
+
+The root `.env` file and generated Compose `.env` files are ignored by Git. Do not commit them.
+
+## Deploy
+
+Validate first:
+
+```powershell
 vagrant validate
-vagrant up --provider=virtualbox
 ```
 
-Check the environment:
+Start the environment in dependency order:
 
 ```powershell
-vagrant status
+vagrant up database
+vagrant up backend
+vagrant up fetcher
+vagrant up frontend
 ```
 
-Expected result:
+`vagrant up` also starts the full multi-machine environment.
 
-```text
-database   running (virtualbox)
-backend    running (virtualbox)
-fetcher    running (virtualbox)
-frontend   running (virtualbox)
-```
+Provisioning copies only required source files, builds or pulls images, waits up to 180 seconds for containers to become healthy, and applies pending PostgreSQL migrations. Deployment fails with container status and recent logs if readiness is not reached.
 
-Open the application:
-
-```text
-http://192.168.50.210:5000
-```
-
-Backend documentation:
-
-```text
-http://192.168.50.211:8001/docs
-```
-
-Fetcher documentation:
-
-```text
-http://192.168.50.212:8000/docs
-```
-
-## Environment overrides
-
-The Vagrant configuration can be changed through environment variables.
-
-Example:
+## Verify
 
 ```powershell
-$env:AIRAWARE_NETWORK_PREFIX = "192.168.88"
-$env:AIRAWARE_NETMASK = "255.255.255.0"
-$env:AIRAWARE_BRIDGE_ADAPTER = "Intel(R) Wi-Fi 6 AX200 160MHz"
-$env:AIRAWARE_DB_PASSWORD = "replace-with-a-strong-password"
-
-vagrant up
+curl.exe http://192.168.18.210:5000/health/ready
+curl.exe http://192.168.18.211:8001/health/ready
+curl.exe http://192.168.18.212:8000/health/ready
+curl.exe -X POST http://192.168.18.212:8000/fetch
 ```
 
-When changing to another local network, ensure the VM addresses are valid and unused on that subnet.
+Open the dashboard at `http://192.168.18.210:5000`.
+
+Open API documentation at:
+
+- `http://192.168.18.211:8001/docs`
+- `http://192.168.18.212:8000/docs`
+
+Open RabbitMQ management at `http://192.168.18.213:15672`.
 
 ## Common commands
 
-Start all VMs:
-
 ```powershell
-vagrant up
-```
-
-Stop all VMs safely:
-
-```powershell
+vagrant status
+vagrant ssh backend
+vagrant provision backend --provision-with compose
 vagrant halt
 ```
 
-Show status:
+Reprovision only the VM whose source or Compose configuration changed. Database provisioning also runs every pending numbered SQL migration.
 
-```powershell
-vagrant status
-```
+Before destroying the database VM, create a PostgreSQL backup. `vagrant destroy database -f` deletes the VM disk and all named Docker volumes stored on it.
 
-Connect to a VM:
-
-```powershell
-vagrant ssh backend
-```
-
-Reprovision one service:
-
-```powershell
-vagrant provision backend
-```
-
-Destroy all VMs:
-
-```powershell
-vagrant destroy -f
-```
-
-Destroying the Database VM removes all PostgreSQL data stored inside it.
-
-## API summary
-
-### Backend Service
+## Repository structure
 
 ```text
-GET  /health
-GET  /health/ready
-GET  /api/cities
-POST /api/measurements
-GET  /api/dashboard?city=kyiv&hours=24
+AirAware/
+├── api-fetcher-service/
+├── backend-service/
+│   └── database/migrations/
+├── frontend-service/
+├── deploy/
+│   ├── backend/
+│   ├── fetcher/
+│   ├── frontend/
+│   └── infrastructure/
+├── provision/
+├── ssh/
+├── docs/
+├── Vagrantfile
+└── .env.example
 ```
-
-### API Fetcher Service
-
-```text
-GET  /health
-GET  /health/ready
-GET  /fetch/status
-POST /fetch
-```
-
-### Frontend Service
-
-```text
-GET /health
-GET /health/ready
-GET /api/cities
-GET /api/dashboard?city=kyiv&hours=24
-```
-
-## Data collection
-
-The API Fetcher:
-
-- performs an optional fetch at startup;
-- runs every hour at a configured minute;
-- fetches all active cities concurrently;
-- sends measurements to the Backend;
-- does not connect directly to PostgreSQL.
-
-The database prevents duplicate measurements through a unique constraint on city and observation time.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Vagrant deployment](docs/deployment-vagrant.md)
-- [Operations guide](docs/operations.md)
+- [Docker Compose deployment](docs/deployment-docker.md)
+- [Operations](docs/operations.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Optional SSH access](ssh/README.md)
