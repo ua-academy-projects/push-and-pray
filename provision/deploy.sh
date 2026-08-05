@@ -45,6 +45,62 @@ sync_service() {
         "${DEPLOY_ROOT}/${service_directory}/"
 }
 
+run_database_migrations() {
+    local migrations_directory="${DEPLOY_ROOT}/backend-service/database/migrations"
+    local migration_file
+    local migration_name
+
+    shopt -s nullglob
+    local migration_files=("${migrations_directory}"/*.sql)
+    shopt -u nullglob
+
+    if [[ "${#migration_files[@]}" -eq 0 ]]; then
+        echo "No database migrations found in ${migrations_directory}" >&2
+        return 1
+    fi
+
+    docker compose exec -T postgres sh -ec \
+        'exec psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --set=ON_ERROR_STOP=1' \
+        <<'SQL'
+CREATE TABLE IF NOT EXISTS airaware_schema_migrations (
+    version TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+SQL
+
+    for migration_file in "${migration_files[@]}"; do
+        migration_name="$(basename "${migration_file}")"
+        log "Checking database migration ${migration_name}"
+
+        {
+            cat <<'SQL'
+BEGIN;
+SELECT pg_advisory_xact_lock(
+    hashtextextended('airaware_schema_migrations', 0)
+);
+SELECT EXISTS (
+    SELECT 1
+    FROM airaware_schema_migrations
+    WHERE version = :'migration_name'
+) AS migration_applied \gset
+\if :migration_applied
+\echo Migration :migration_name is already applied
+\else
+SQL
+            cat "${migration_file}"
+            printf '\n'
+            cat <<'SQL'
+INSERT INTO airaware_schema_migrations (version)
+VALUES (:'migration_name');
+\endif
+COMMIT;
+SQL
+        } | docker compose exec -T postgres sh -ec \
+            'exec psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --set=ON_ERROR_STOP=1 --set=migration_name="$1"' \
+            sh "${migration_name}"
+    done
+}
+
 if [[ ! -f "${SOURCE_ROOT}/deploy/${AIRAWARE_ROLE}/compose.yml" ]]; then
     # Vagrant machine name remains database while deployment role is infrastructure.
     if [[ "${AIRAWARE_ROLE}" == "database" ]]; then
@@ -91,10 +147,10 @@ case "${AIRAWARE_ROLE}" in
         sync_service api-fetcher-service
         ;;
     database)
-        install -d -m 0755 "${DEPLOY_ROOT}/backend-service/database"
-        install -m 0644 \
-            "${SOURCE_ROOT}/backend-service/database/init.sql" \
-            "${DEPLOY_ROOT}/backend-service/database/init.sql"
+        install -d -m 0755 "${DEPLOY_ROOT}/backend-service/database/migrations"
+        rsync -a \
+            "${SOURCE_ROOT}/backend-service/database/migrations/" \
+            "${DEPLOY_ROOT}/backend-service/database/migrations/"
         ;;
     *)
         echo "Unsupported role: ${AIRAWARE_ROLE}" >&2
@@ -253,6 +309,11 @@ if ! docker compose up \
     docker compose ps --all || true
     docker compose logs --no-color --tail 200 || true
     exit 1
+fi
+
+if [[ "${AIRAWARE_ROLE}" == "database" ]]; then
+    log "Applying database migrations"
+    run_database_migrations
 fi
 
 docker compose ps

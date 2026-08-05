@@ -1,5 +1,4 @@
--- Database schema for the Air Quality Backend Service.
--- Run this script while connected to the application database.
+-- Initial database schema and reference data for AirAware.
 
 CREATE TABLE IF NOT EXISTS cities (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

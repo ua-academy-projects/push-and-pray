@@ -143,7 +143,7 @@ def validate_configuration!
     "frontend-service/Dockerfile",
     "backend-service/Dockerfile",
     "api-fetcher-service/Dockerfile",
-    "backend-service/database/init.sql"
+    "backend-service/database/migrations/001_initial_schema.sql"
   ]
 
   missing_files = required_files.reject do |path|
