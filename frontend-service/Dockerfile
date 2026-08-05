@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN groupadd --system airaware \
-    && useradd --system --gid airaware --home-dir /app airaware
+    && useradd --system --gid airaware --home-dir /app airaware \
+    && install -d -o airaware -g airaware -m 0750 /app/.gunicorn
 
 COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
