@@ -15,10 +15,6 @@ class Settings(BaseSettings):
         le=120,
     )
 
-    redis_url: str
-
-    session_key_prefix: str = "airaware:session:"
-
     session_ttl_seconds: int = Field(
         default=86400,
         gt=0,

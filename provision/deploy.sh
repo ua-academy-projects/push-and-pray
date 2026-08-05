@@ -109,7 +109,7 @@ rsync -a \
     "${SOURCE_ROOT}/deploy/${COMPOSE_ROLE}/" \
     "${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}/"
 
-python3 - "$AIRAWARE_DB_PASSWORD" "$AIRAWARE_REDIS_PASSWORD" \
+python3 - "$AIRAWARE_DB_PASSWORD" \
     "$AIRAWARE_RABBITMQ_USER" "$AIRAWARE_RABBITMQ_PASSWORD" \
     "$AIRAWARE_RABBITMQ_VHOST" <<'PY' \
     > /tmp/airaware-encoded-env
@@ -122,10 +122,9 @@ PY
 mapfile -t encoded_values </tmp/airaware-encoded-env
 rm -f /tmp/airaware-encoded-env
 encoded_database_password="${encoded_values[0]}"
-encoded_redis_password="${encoded_values[1]}"
-encoded_rabbitmq_user="${encoded_values[2]}"
-encoded_rabbitmq_password="${encoded_values[3]}"
-encoded_rabbitmq_vhost="${encoded_values[4]}"
+encoded_rabbitmq_user="${encoded_values[1]}"
+encoded_rabbitmq_password="${encoded_values[2]}"
+encoded_rabbitmq_vhost="${encoded_values[3]}"
 
 ENV_FILE="${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}/.env"
 
@@ -134,8 +133,6 @@ case "${AIRAWARE_ROLE}" in
         cat >"${ENV_FILE}" <<ENV
 BACKEND_SERVICE_URL=http://${AIRAWARE_BACKEND_IP}:8001
 HTTP_TIMEOUT_SECONDS=10
-REDIS_URL=redis://:${encoded_redis_password}@${AIRAWARE_DATABASE_IP}:6379/0
-SESSION_KEY_PREFIX=airaware:session:
 SESSION_TTL_SECONDS=86400
 FLASK_SECRET_KEY=${AIRAWARE_FLASK_SECRET_KEY}
 ENV

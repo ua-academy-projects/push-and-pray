@@ -1,7 +1,6 @@
 from datetime import timedelta
 from typing import Final
 
-import redis
 from flask import (
     Flask,
     jsonify,
@@ -9,7 +8,6 @@ from flask import (
     request,
     session,
 )
-from flask_session import Session
 
 from app.clients.backend import (
     BackendClient,
@@ -65,18 +63,8 @@ def create_app() -> Flask:
     settings = get_settings()
     backend_client = BackendClient(settings)
 
-    redis_client = redis.Redis.from_url(
-        settings.redis_url,
-        decode_responses=False,
-        socket_connect_timeout=3,
-        socket_timeout=3,
-    )
-
     app.config.update(
         SECRET_KEY=settings.flask_secret_key,
-        SESSION_TYPE="redis",
-        SESSION_REDIS=redis_client,
-        SESSION_KEY_PREFIX=settings.session_key_prefix,
         SESSION_PERMANENT=True,
         PERMANENT_SESSION_LIFETIME=timedelta(
             seconds=settings.session_ttl_seconds,
@@ -86,8 +74,6 @@ def create_app() -> Flask:
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=False,
     )
-
-    Session(app)
 
     @app.get("/")
     def index():
@@ -105,18 +91,8 @@ def create_app() -> Flask:
     @app.get("/health/ready")
     def readiness_check():
         checks = {
-            "backend_service": False,
-            "redis": False,
+            "backend_service": backend_client.is_ready(),
         }
-
-        if backend_client.is_ready():
-            checks["backend_service"] = True
-
-        try:
-            redis_client.ping()
-            checks["redis"] = True
-        except redis.RedisError:
-            pass
 
         if not all(checks.values()):
             return (
