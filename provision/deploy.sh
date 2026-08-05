@@ -189,7 +189,16 @@ log "Pulling/building container images"
 docker compose pull --ignore-buildable
 docker compose build --pull
 log "Starting containers"
-docker compose up -d --remove-orphans
+if ! docker compose up \
+    -d \
+    --remove-orphans \
+    --wait \
+    --wait-timeout 180; then
+    log "Containers did not become healthy before the deployment timeout"
+    docker compose ps --all || true
+    docker compose logs --no-color --tail 200 || true
+    exit 1
+fi
 
 docker compose ps
 log "Docker Compose deployment completed"
