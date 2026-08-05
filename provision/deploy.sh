@@ -109,22 +109,74 @@ rsync -a \
     "${SOURCE_ROOT}/deploy/${COMPOSE_ROLE}/" \
     "${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}/"
 
-python3 - "$AIRAWARE_DB_PASSWORD" \
-    "$AIRAWARE_RABBITMQ_USER" "$AIRAWARE_RABBITMQ_PASSWORD" \
-    "$AIRAWARE_RABBITMQ_VHOST" <<'PY' \
-    > /tmp/airaware-encoded-env
-import sys
+encoded_env_file="$(mktemp)"
+chmod 0600 "${encoded_env_file}"
+trap 'rm -f "${encoded_env_file}"' EXIT
+
+python3 <<'PY' >"${encoded_env_file}"
+import os
 from urllib.parse import quote
-for value in sys.argv[1:]:
+
+
+def dotenv_quote(value: str) -> str:
+    if any(character in value for character in "\0\r\n"):
+        raise SystemExit("Environment values must not contain NUL or line breaks")
+
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$")
+    return f'"{escaped}"'
+
+
+values = {
+    name: os.environ[name]
+    for name in (
+        "AIRAWARE_DB_NAME",
+        "AIRAWARE_DB_USER",
+        "AIRAWARE_DB_PASSWORD",
+        "AIRAWARE_REDIS_PASSWORD",
+        "AIRAWARE_FLASK_SECRET_KEY",
+        "AIRAWARE_RABBITMQ_USER",
+        "AIRAWARE_RABBITMQ_PASSWORD",
+        "AIRAWARE_RABBITMQ_VHOST",
+    )
+}
+
+for value in (
+    values["AIRAWARE_DB_NAME"],
+    values["AIRAWARE_DB_USER"],
+    values["AIRAWARE_DB_PASSWORD"],
+    values["AIRAWARE_RABBITMQ_USER"],
+    values["AIRAWARE_RABBITMQ_PASSWORD"],
+    values["AIRAWARE_RABBITMQ_VHOST"],
+):
     print(quote(value, safe=""))
+
+for value in values.values():
+    print(dotenv_quote(value))
 PY
 
-mapfile -t encoded_values </tmp/airaware-encoded-env
-rm -f /tmp/airaware-encoded-env
-encoded_database_password="${encoded_values[0]}"
-encoded_rabbitmq_user="${encoded_values[1]}"
-encoded_rabbitmq_password="${encoded_values[2]}"
-encoded_rabbitmq_vhost="${encoded_values[3]}"
+mapfile -t encoded_values <"${encoded_env_file}"
+rm -f "${encoded_env_file}"
+trap - EXIT
+
+if [[ "${#encoded_values[@]}" -ne 14 ]]; then
+    echo "Failed to encode deployment environment values" >&2
+    exit 1
+fi
+
+encoded_database_name="${encoded_values[0]}"
+encoded_database_user="${encoded_values[1]}"
+encoded_database_password="${encoded_values[2]}"
+encoded_rabbitmq_user="${encoded_values[3]}"
+encoded_rabbitmq_password="${encoded_values[4]}"
+encoded_rabbitmq_vhost="${encoded_values[5]}"
+dotenv_database_name="${encoded_values[6]}"
+dotenv_database_user="${encoded_values[7]}"
+dotenv_database_password="${encoded_values[8]}"
+dotenv_redis_password="${encoded_values[9]}"
+dotenv_flask_secret_key="${encoded_values[10]}"
+dotenv_rabbitmq_user="${encoded_values[11]}"
+dotenv_rabbitmq_password="${encoded_values[12]}"
+dotenv_rabbitmq_vhost="${encoded_values[13]}"
 
 ENV_FILE="${DEPLOY_ROOT}/deploy/${COMPOSE_ROLE}/.env"
 
@@ -134,12 +186,12 @@ case "${AIRAWARE_ROLE}" in
 BACKEND_SERVICE_URL=http://${AIRAWARE_BACKEND_IP}:8001
 HTTP_TIMEOUT_SECONDS=10
 SESSION_TTL_SECONDS=86400
-FLASK_SECRET_KEY=${AIRAWARE_FLASK_SECRET_KEY}
+FLASK_SECRET_KEY=${dotenv_flask_secret_key}
 ENV
         ;;
     backend)
         cat >"${ENV_FILE}" <<ENV
-DATABASE_URL=postgresql+psycopg://${AIRAWARE_DB_USER}:${encoded_database_password}@${AIRAWARE_DATABASE_IP}:5432/${AIRAWARE_DB_NAME}
+DATABASE_URL=postgresql+psycopg://${encoded_database_user}:${encoded_database_password}@${AIRAWARE_DATABASE_IP}:5432/${encoded_database_name}
 DATABASE_CONNECT_TIMEOUT_SECONDS=5
 RABBITMQ_URL=amqp://${encoded_rabbitmq_user}:${encoded_rabbitmq_password}@${AIRAWARE_DATABASE_IP}:5672/${encoded_rabbitmq_vhost}
 RABBITMQ_CONNECTION_TIMEOUT_SECONDS=10
@@ -174,13 +226,13 @@ ENV
         ;;
     database)
         cat >"${ENV_FILE}" <<ENV
-POSTGRES_DB=${AIRAWARE_DB_NAME}
-POSTGRES_USER=${AIRAWARE_DB_USER}
-POSTGRES_PASSWORD=${AIRAWARE_DB_PASSWORD}
-REDIS_PASSWORD=${AIRAWARE_REDIS_PASSWORD}
-RABBITMQ_USER=${AIRAWARE_RABBITMQ_USER}
-RABBITMQ_PASSWORD=${AIRAWARE_RABBITMQ_PASSWORD}
-RABBITMQ_VHOST=${AIRAWARE_RABBITMQ_VHOST}
+POSTGRES_DB=${dotenv_database_name}
+POSTGRES_USER=${dotenv_database_user}
+POSTGRES_PASSWORD=${dotenv_database_password}
+REDIS_PASSWORD=${dotenv_redis_password}
+RABBITMQ_USER=${dotenv_rabbitmq_user}
+RABBITMQ_PASSWORD=${dotenv_rabbitmq_password}
+RABBITMQ_VHOST=${dotenv_rabbitmq_vhost}
 ENV
         ;;
 esac
