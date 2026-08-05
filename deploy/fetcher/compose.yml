@@ -1,5 +1,11 @@
 name: airaware-fetcher
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   fetcher:
     build:
@@ -8,6 +14,7 @@ services:
     image: airaware/fetcher:local
     container_name: airaware-fetcher
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - .env
     ports:
