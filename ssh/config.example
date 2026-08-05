@@ -1,0 +1,30 @@
+# Copy these entries to ~/.ssh/config.
+# Adjust HostName values when AIRAWARE_NETWORK_PREFIX changes.
+
+Host airaware-frontend
+    HostName 192.168.18.210
+    User airaware
+    Port 22
+    IdentityFile ~/.ssh/airaware_ed25519
+    IdentitiesOnly yes
+
+Host airaware-backend
+    HostName 192.168.18.211
+    User airaware
+    Port 22
+    IdentityFile ~/.ssh/airaware_ed25519
+    IdentitiesOnly yes
+
+Host airaware-fetcher
+    HostName 192.168.18.212
+    User airaware
+    Port 22
+    IdentityFile ~/.ssh/airaware_ed25519
+    IdentitiesOnly yes
+
+Host airaware-infrastructure
+    HostName 192.168.18.213
+    User airaware
+    Port 22
+    IdentityFile ~/.ssh/airaware_ed25519
+    IdentitiesOnly yes

@@ -219,6 +219,12 @@ __marimo__/
 
 # Vagrant local machine state
 .vagrant/
-
 # Local Docker Compose environment files
 deploy/*/.env
+
+# Local SSH credentials and generated host configuration
+ssh/*.key
+ssh/*.pem
+ssh/*_rsa
+ssh/*_ed25519
+ssh/config

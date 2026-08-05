@@ -1,10 +1,54 @@
 # frozen_string_literal: true
 
+def load_env_file(path)
+  return unless File.file?(path)
+
+  File.foreach(path, chomp: true).with_index(1) do |raw_line, line_number|
+    line = raw_line.strip
+    next if line.empty? || line.start_with?("#")
+
+    key, value = line.split("=", 2)
+    unless value && key.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+      raise "Invalid environment entry in #{path}:#{line_number}"
+    end
+
+    value = value.strip
+    quoted = value.length >= 2 && (
+      (value.start_with?("\"") && value.end_with?("\"")) ||
+      (value.start_with?("'") && value.end_with?("'"))
+    )
+    value = value[1...-1] if quoted
+
+    # Explicitly exported host variables override values from the project file.
+    ENV[key] = value unless ENV.key?(key)
+  end
+end
+
+
+def ssh_public_key
+  inline_key = ENV.fetch("AIRAWARE_SSH_PUBLIC_KEY", "").strip
+  return inline_key unless inline_key.empty?
+
+  key_path = ENV.fetch("AIRAWARE_SSH_PUBLIC_KEY_PATH", "").strip
+  return "" if key_path.empty?
+
+  expanded_path = File.expand_path(key_path, __dir__)
+  unless File.file?(expanded_path)
+    raise "SSH public key file does not exist: #{expanded_path}"
+  end
+
+  File.read(expanded_path).strip
+end
+
+
+load_env_file(File.expand_path(".env", __dir__))
+
 VAGRANT_API_VERSION = "2"
 BOX_NAME = ENV.fetch("AIRAWARE_VAGRANT_BOX", "bento/ubuntu-24.04")
+SSH_PUBLIC_KEY = ssh_public_key.freeze
 
 NETWORK = {
-  prefix: ENV.fetch("AIRAWARE_NETWORK_PREFIX", "192.168.50"),
+  prefix: ENV.fetch("AIRAWARE_NETWORK_PREFIX", "192.168.18"),
   netmask: ENV.fetch("AIRAWARE_NETMASK", "255.255.255.0"),
   bridge: ENV.fetch(
     "AIRAWARE_BRIDGE_ADAPTER",
@@ -90,6 +134,7 @@ def validate_configuration!
   required_files = [
     "provision/common.sh",
     "provision/docker.sh",
+    "provision/ssh-access.sh",
     "provision/deploy.sh",
     "deploy/frontend/compose.yml",
     "deploy/backend/compose.yml",
@@ -127,7 +172,9 @@ COMMON_ENV = {
   "AIRAWARE_FLASK_SECRET_KEY" => FRONTEND.fetch(:secret_key),
   "AIRAWARE_RABBITMQ_USER" => RABBITMQ.fetch(:user),
   "AIRAWARE_RABBITMQ_PASSWORD" => RABBITMQ.fetch(:password),
-  "AIRAWARE_RABBITMQ_VHOST" => RABBITMQ.fetch(:vhost)
+  "AIRAWARE_RABBITMQ_VHOST" => RABBITMQ.fetch(:vhost),
+  "AIRAWARE_SSH_PUBLIC_KEY" => SSH_PUBLIC_KEY,
+  "AIRAWARE_SSH_USER" => ENV.fetch("AIRAWARE_SSH_USER", "airaware")
 }.freeze
 
 Vagrant.configure(VAGRANT_API_VERSION) do |config|
@@ -171,6 +218,13 @@ Vagrant.configure(VAGRANT_API_VERSION) do |config|
         "docker",
         type: "shell",
         path: "provision/docker.sh",
+        env: provision_env
+      )
+
+      machine.vm.provision(
+        "ssh-access",
+        type: "shell",
+        path: "provision/ssh-access.sh",
         env: provision_env
       )
 
