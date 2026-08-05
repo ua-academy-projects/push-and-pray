@@ -1,14 +1,6 @@
 BOX = "perk/ubuntu-2204-arm64"
 VMNET_INTERFACE = "en0"
 
-
-# .env is excluded for the same reason .venv is: it's generated inside the guest by each
-# service's provision.sh (cp .env.example .env, then a few sed rewrites for LAN IPs), never
-# present in the host repo. Vagrant's rsync synced folder defaults to `--delete`, mirroring
-# the guest directory to exactly match the host on every `vagrant up`/`reload` -- without this
-# exclusion, that wipes .env on every restart that isn't a full `--provision` run, silently
-# reverting every service back to its compiled-in config defaults (wrong RABBITMQ_URL host,
-# etc.) until someone notices and manually re-provisions.
 RSYNC_EXCLUDES = ["node_modules", ".venv", "__pycache__", ".pytest_cache", ".git", ".env"]
 
 NODES = {
