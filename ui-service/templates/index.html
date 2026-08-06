@@ -2,124 +2,771 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<title>Weather App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#10273f">
+<title>Небокрай — погода поруч</title>
 <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
-    h1 { font-size: 22px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-    input, button { font-size: 15px; padding: 8px 10px; border-radius: 6px; border: 1px solid #ccc; }
-    button { background: #2563eb; color: white; border: none; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 14px; }
-    #error { color: #b91c1c; margin-top: 8px; }
-    #current { margin-top: 10px; font-size: 15px; }
-
-    /* --- Контроли (нове) --- */
-    .control-group { margin-bottom: 16px; }
-    .control-group:last-child { margin-bottom: 0; }
-    .control-label { display: block; font-size: 14px; margin-bottom: 6px; color: #444; }
-    #periodSlider { width: 100%; }
-    .city-filters { display: flex; flex-wrap: wrap; gap: 14px; }
-    .city-filters label { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
-    .city-filters input { width: auto; padding: 0; }
-
-    /* --- Графік температури з історії БД --- */
-    #chartStatus { color: #888; font-size: 14px; }
-    #temperatureChart { display: block; width: 100%; height: auto; margin-top: 12px; }
-    .chart-grid { stroke: #e5e7eb; stroke-width: 1; }
-    .chart-axis-label { fill: #6b7280; font-size: 11px; }
-    .chart-line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
-    .chart-point { stroke: white; stroke-width: 1.5; }
-    #chartLegend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 13px; }
-    .legend-item { display: flex; align-items: center; gap: 5px; }
-    .legend-color { width: 10px; height: 10px; border-radius: 50%; }
-
-    /* --- Погодинний прогноз --- */
-    .city-row { margin-bottom: 18px; }
-    .city-row:last-child { margin-bottom: 0; }
-    .city-row h3 { margin: 0 0 8px; font-size: 16px; }
-    .hours-scroll { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
-    .hour-cell {
-        flex: 0 0 auto; width: 64px; text-align: center;
-        border: 1px solid #eee; border-radius: 8px; padding: 8px 4px;
-        font-size: 12px; background: #fafafa;
+    :root {
+        color-scheme: light;
+        --ink: #10273f;
+        --ink-soft: #526678;
+        --paper: #f5f8f8;
+        --card: rgba(255, 255, 255, .86);
+        --card-solid: #ffffff;
+        --line: rgba(16, 39, 63, .1);
+        --sky: #1c7993;
+        --sky-dark: #165e75;
+        --sun: #ffb85c;
+        --mint: #b9e5d2;
+        --shadow: 0 22px 55px rgba(28, 62, 82, .11);
+        --radius-lg: 28px;
+        --radius-md: 20px;
     }
-    .hour-cell .icon { font-size: 22px; }
-    .hour-cell .temp { font-weight: 600; margin-top: 2px; }
-    .hour-cell .prec { color: #2563eb; font-size: 11px; min-height: 14px; }
-    #hourlyContainer { color: #888; font-size: 14px; }
 
-    /* --- Згортний блок історії --- */
-    #historyDetails summary {
-        cursor: pointer;
-        font-size: 18px;
-        font-weight: 600;
-        list-style: none;
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+            radial-gradient(circle at 9% 12%, rgba(255, 184, 92, .28), transparent 25rem),
+            radial-gradient(circle at 91% 5%, rgba(105, 190, 204, .3), transparent 30rem),
+            linear-gradient(145deg, #eef6f4 0%, #f7f5ed 46%, #edf5f7 100%);
+    }
+
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        opacity: .23;
+        background-image: radial-gradient(rgba(16, 39, 63, .18) .6px, transparent .6px);
+        background-size: 14px 14px;
+        mask-image: linear-gradient(to bottom, black, transparent 72%);
+    }
+
+    button, input { font: inherit; }
+
+    button { color: inherit; }
+
+    .app-shell {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 34px 0 54px;
+    }
+
+    .topbar {
         display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 26px;
     }
+
+    .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 19px;
+        font-weight: 780;
+        letter-spacing: -.03em;
+    }
+
+    .brand-mark {
+        position: relative;
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        overflow: hidden;
+        border-radius: 14px;
+        color: white;
+        background: var(--ink);
+        box-shadow: 0 8px 18px rgba(16, 39, 63, .18);
+    }
+
+    .brand-mark::before {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        top: 7px;
+        right: 7px;
+        border-radius: 50%;
+        background: var(--sun);
+        box-shadow: 0 0 0 5px rgba(255, 184, 92, .13);
+    }
+
+    .brand-mark svg { position: relative; z-index: 1; margin: 10px 8px 0 0; }
+
+    .today {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--ink-soft);
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #33a56d;
+        box-shadow: 0 0 0 5px rgba(51, 165, 109, .12);
+    }
+
+    .hero {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr);
+        min-height: 330px;
+        overflow: hidden;
+        border-radius: 34px;
+        color: white;
+        background:
+            radial-gradient(circle at 80% 24%, rgba(255, 218, 147, .94) 0 4.5%, rgba(255, 201, 111, .22) 5% 12%, transparent 12.5%),
+            linear-gradient(135deg, #11324c 0%, #176f88 58%, #61b2bd 100%);
+        box-shadow: 0 30px 70px rgba(23, 94, 117, .24);
+    }
+
+    .hero::before,
+    .hero::after {
+        content: "";
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,.18);
+    }
+
+    .hero::before { width: 420px; height: 420px; right: -205px; top: -185px; }
+    .hero::after { width: 240px; height: 240px; right: -95px; top: -95px; }
+
+    .hero-copy {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 52px 58px;
+    }
+
+    .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 0 0 16px;
+        color: rgba(255,255,255,.75);
+        font-size: 12px;
+        font-weight: 760;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+    }
+
+    .eyebrow::before { content: ""; width: 26px; height: 1px; background: var(--sun); }
+
+    .hero h1 {
+        max-width: 690px;
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(42px, 6.2vw, 76px);
+        font-weight: 500;
+        letter-spacing: -.055em;
+        line-height: .98;
+    }
+
+    .hero-description {
+        max-width: 570px;
+        margin: 22px 0 0;
+        color: rgba(255,255,255,.72);
+        font-size: 15px;
+        line-height: 1.7;
+    }
+
+    .hero-metrics {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 1px;
+        margin: 24px;
+        padding: 8px;
+        border: 1px solid rgba(255,255,255,.15);
+        border-radius: 24px;
+        background: rgba(8, 36, 53, .22);
+        backdrop-filter: blur(12px);
+    }
+
+    .metric {
+        padding: 20px 22px;
+        border-radius: 17px;
+        background: rgba(255,255,255,.09);
+    }
+
+    .metric-value { display: block; font-size: 30px; font-weight: 690; letter-spacing: -.05em; }
+    .metric-label { display: block; margin-top: 3px; color: rgba(255,255,255,.62); font-size: 12px; }
+
+    .dashboard {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        gap: 22px;
+        margin-top: 22px;
+        align-items: start;
+    }
+
+    .card {
+        border: 1px solid rgba(255,255,255,.82);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+    }
+
+    .controls-card {
+        position: sticky;
+        top: 20px;
+        padding: 26px;
+    }
+
+    .card-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 8px;
+        color: var(--sky-dark);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+    }
+
+    .card-kicker::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--sun);
+    }
+
+    h2 {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(25px, 3vw, 33px);
+        font-weight: 500;
+        letter-spacing: -.035em;
+    }
+
+    .section-heading {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 24px;
+    }
+
+    .section-heading p {
+        max-width: 360px;
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 13px;
+        line-height: 1.55;
+        text-align: right;
+    }
+
+    .control-group { padding-top: 22px; }
+    .control-group + .control-group { margin-top: 22px; border-top: 1px solid var(--line); }
+
+    .control-label {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+        color: var(--ink-soft);
+        font-size: 13px;
+        font-weight: 650;
+    }
+
+    .period-badge {
+        min-width: 42px;
+        padding: 3px 8px;
+        border-radius: 99px;
+        color: var(--ink);
+        text-align: center;
+        background: #e6f0ef;
+    }
+
+    #periodSlider {
+        width: 100%;
+        height: 5px;
+        margin: 5px 0;
+        padding: 0;
+        border: 0;
+        border-radius: 99px;
+        accent-color: var(--sky);
+        cursor: pointer;
+    }
+
+    .range-labels {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 7px;
+        color: #8a9aa6;
+        font-size: 10px;
+    }
+
+    .city-filters { display: grid; gap: 9px; }
+
+    .city-option { position: relative; cursor: pointer; }
+    .city-option input { position: absolute; opacity: 0; pointer-events: none; }
+
+    .city-chip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 46px;
+        padding: 9px 12px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        color: var(--ink-soft);
+        background: rgba(255,255,255,.55);
+        transition: transform .18s ease, background .18s ease, border-color .18s ease;
+    }
+
+    .city-option:hover .city-chip { transform: translateX(3px); border-color: rgba(28,121,147,.28); }
+
+    .city-option input:checked + .city-chip {
+        color: var(--ink);
+        border-color: rgba(28,121,147,.2);
+        background: #e9f4f3;
+    }
+
+    .city-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--city-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--city-color) 17%, transparent); }
+    .city-name { flex: 1; font-size: 14px; font-weight: 680; }
+
+    .checkmark {
+        display: grid;
+        width: 20px;
+        height: 20px;
+        place-items: center;
+        border: 1px solid rgba(16,39,63,.14);
+        border-radius: 7px;
+        color: transparent;
+        font-size: 12px;
+        background: white;
+    }
+
+    .city-option input:checked + .city-chip .checkmark { color: white; border-color: var(--sky); background: var(--sky); }
+    .city-option input:focus-visible + .city-chip { outline: 3px solid rgba(28,121,147,.24); outline-offset: 2px; }
+
+    .session-note {
+        display: flex;
+        gap: 10px;
+        margin: 22px 0 0;
+        padding: 14px;
+        border-radius: 15px;
+        color: #687b88;
+        font-size: 11px;
+        line-height: 1.55;
+        background: rgba(240,244,241,.8);
+    }
+
+    .session-note svg { flex: 0 0 auto; margin-top: 1px; color: var(--sky); }
+
+    .content-stack { display: grid; gap: 22px; min-width: 0; }
+    .forecast-card, .chart-card { padding: 30px; }
+
+    .section-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 650;
+    }
+
+    .section-meta::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #33a56d; }
+
+    #hourlyContainer { min-height: 132px; color: var(--ink-soft); font-size: 14px; }
+
+    .city-row + .city-row { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+
+    .city-row-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 13px;
+    }
+
+    .city-title-wrap { display: flex; align-items: center; gap: 10px; }
+    .city-title-wrap .city-dot { width: 8px; height: 8px; }
+    .city-row h3 { margin: 0; font-size: 15px; font-weight: 760; }
+    .city-range { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+
+    .hours-scroll {
+        display: flex;
+        gap: 9px;
+        overflow-x: auto;
+        padding: 2px 2px 9px;
+        scrollbar-color: rgba(16,39,63,.18) transparent;
+        scrollbar-width: thin;
+        scroll-snap-type: x proximity;
+    }
+
+    .hour-cell {
+        flex: 0 0 84px;
+        padding: 13px 8px 11px;
+        border: 1px solid rgba(16,39,63,.08);
+        border-radius: 17px;
+        text-align: center;
+        background: rgba(248,250,248,.76);
+        scroll-snap-align: start;
+        transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    .hour-cell:first-child { border-color: rgba(28,121,147,.18); background: #eaf4f3; }
+    .hour-cell:hover { transform: translateY(-3px); background: white; box-shadow: 0 10px 20px rgba(28,62,82,.08); }
+    .hour-time { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+    .hour-cell .icon { margin: 8px 0 6px; font-size: 25px; filter: drop-shadow(0 4px 5px rgba(16,39,63,.08)); }
+    .hour-cell .temp { font-size: 18px; font-weight: 750; letter-spacing: -.04em; }
+    .hour-cell .prec { min-height: 15px; margin-top: 3px; color: var(--sky); font-size: 10px; font-weight: 650; }
+
+    .loading-state {
+        display: grid;
+        min-height: 132px;
+        place-items: center;
+        border: 1px dashed rgba(16,39,63,.12);
+        border-radius: 19px;
+        text-align: center;
+        background: rgba(255,255,255,.32);
+    }
+
+    .loading-inner { display: grid; justify-items: center; gap: 11px; }
+    .spinner { width: 24px; height: 24px; border: 2px solid rgba(28,121,147,.18); border-top-color: var(--sky); border-radius: 50%; animation: spin .8s linear infinite; }
+
+    .chart-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 4px;
+    }
+
+    #chartStatus { color: var(--ink-soft); font-size: 12px; }
+
+    #chartLegend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 99px; background: #f1f5f3; }
+    .legend-color { width: 7px; height: 7px; border-radius: 50%; }
+
+    .chart-wrap {
+        position: relative;
+        overflow: hidden;
+        margin-top: 18px;
+        padding: 12px 10px 0;
+        border: 1px solid rgba(16,39,63,.07);
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(235,245,244,.52), rgba(255,255,255,.3));
+    }
+
+    #temperatureChart { display: block; width: 100%; height: auto; min-height: 240px; }
+    .chart-grid { stroke: rgba(16,39,63,.09); stroke-width: 1; stroke-dasharray: 4 5; }
+    .chart-axis-label { fill: #7c8d98; font-size: 10px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .chart-line { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; filter: drop-shadow(0 3px 3px rgba(16,39,63,.08)); }
+    .chart-area { opacity: .08; }
+    .chart-point { stroke: white; stroke-width: 2; transition: r .15s ease; }
+    .chart-point:hover { r: 5; }
+
+    .history-card { overflow: hidden; }
+    #historyDetails summary {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        min-height: 92px;
+        padding: 24px 30px;
+        cursor: pointer;
+        list-style: none;
+    }
+
     #historyDetails summary::-webkit-details-marker { display: none; }
-    #historyDetails summary::before { content: "▶"; font-size: 12px; transition: transform 0.15s; }
-    #historyDetails[open] summary::before { transform: rotate(90deg); }
+
+    .summary-icon {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        place-items: center;
+        border-radius: 14px;
+        color: var(--sky-dark);
+        background: #e5f1ef;
+    }
+
+    .summary-copy { flex: 1; }
+    .summary-title { display: block; font-family: Georgia, "Times New Roman", serif; font-size: 23px; font-weight: 500; letter-spacing: -.025em; }
+    .summary-subtitle { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 12px; }
+
+    .summary-chevron {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        transition: transform .2s ease, background .2s ease;
+    }
+
+    #historyDetails[open] .summary-chevron { transform: rotate(180deg); background: #eef5f3; }
+
+    .history-content { padding: 0 30px 28px; border-top: 1px solid var(--line); }
+    .table-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; }
+    .table-hint { margin: 0; color: var(--ink-soft); font-size: 12px; }
+
+    .refresh-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 38px;
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 12px;
+        color: white;
+        font-size: 12px;
+        font-weight: 720;
+        background: var(--ink);
+        cursor: pointer;
+        box-shadow: 0 7px 16px rgba(16,39,63,.16);
+        transition: transform .18s ease, background .18s ease;
+    }
+
+    .refresh-button:hover { transform: translateY(-2px); background: var(--sky-dark); }
+    .refresh-button:active { transform: translateY(0); }
+    .refresh-button:focus-visible { outline: 3px solid rgba(28,121,147,.25); outline-offset: 3px; }
+
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { color: #7d8e99; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    td { color: var(--ink-soft); font-size: 13px; }
+    td:nth-child(2) { color: var(--ink); font-weight: 700; }
+    tbody tr { transition: background .15s ease; }
+    tbody tr:hover { background: rgba(234,244,243,.65); }
+
+    .footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 27px 4px 0;
+        color: #7d8e99;
+        font-size: 11px;
+    }
+
+    .footer-brand { color: var(--ink); font-weight: 760; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .hero, .dashboard { animation: rise .55s ease both; }
+    .dashboard { animation-delay: .08s; }
+
+    @media (max-width: 900px) {
+        .hero { grid-template-columns: 1fr; }
+        .hero-copy { padding: 44px 42px 24px; }
+        .hero-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 0; }
+        .metric { padding: 16px; }
+        .dashboard { grid-template-columns: 1fr; }
+        .controls-card { position: static; }
+        .city-filters { grid-template-columns: repeat(3, 1fr); }
+        .session-note { margin-bottom: 2px; }
+    }
+
+    @media (max-width: 620px) {
+        .app-shell { width: min(100% - 24px, 1180px); padding-top: 20px; }
+        .topbar { margin-bottom: 18px; }
+        .today span:last-child { display: none; }
+        .hero { min-height: 0; border-radius: 27px; }
+        .hero-copy { padding: 38px 26px 22px; }
+        .hero h1 { font-size: clamp(39px, 13vw, 56px); }
+        .hero-description { font-size: 13px; }
+        .hero-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 12px; }
+        .metric { padding: 14px 11px; }
+        .metric-value { font-size: 22px; }
+        .metric-label { font-size: 9px; }
+        .dashboard { gap: 14px; margin-top: 14px; }
+        .card { border-radius: 23px; }
+        .controls-card, .forecast-card, .chart-card { padding: 22px 18px; }
+        .city-filters { grid-template-columns: 1fr; }
+        .section-heading { align-items: flex-start; margin-bottom: 20px; }
+        .section-heading p { display: none; }
+        .chart-toolbar { align-items: flex-start; flex-direction: column; }
+        .chart-wrap { margin-inline: -7px; overflow-x: auto; }
+        #temperatureChart { width: 620px; max-width: none; }
+        #historyDetails summary { padding: 20px 18px; }
+        .history-content { padding: 0 18px 22px; }
+        .table-toolbar { align-items: flex-start; }
+        .table-hint { max-width: 190px; }
+        .footer { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
 </style>
 </head>
 <body>
-    <h1>🌤 Weather App</h1>
+    <main class="app-shell">
+        <header class="topbar">
+            <div class="brand" aria-label="Небокрай">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg width="25" height="18" viewBox="0 0 25 18" fill="none">
+                        <path d="M3 14.5h16.5a3 3 0 0 0 .1-6 6.4 6.4 0 0 0-12.2-1A3.7 3.7 0 0 0 3 14.5Z" fill="currentColor"/>
+                    </svg>
+                </span>
+                <span>Небокрай</span>
+            </div>
+            <div class="today">
+                <span class="status-dot" aria-hidden="true"></span>
+                <span id="currentDate">Дані оновлюються автоматично</span>
+            </div>
+        </header>
 
-    <div class="card">
-        <p style="color: #555; font-size: 14px; margin: 0;">
-            Дані оновлюються автоматично фоновим сервісом (Poller) з певним
-            інтервалом. Твої налаштування нижче зберігаються в Redis і
-            відновлюються після оновлення сторінки.
-        </p>
-    </div>
+        <section class="hero" aria-labelledby="pageTitle">
+            <div class="hero-copy">
+                <p class="eyebrow">Погода поруч</p>
+                <h1 id="pageTitle">Твій день починається з неба.</h1>
+                <p class="hero-description">
+                    Погодинний прогноз і жива історія температури для трьох європейських міст — в одному спокійному просторі.
+                </p>
+            </div>
+            <div class="hero-metrics" aria-label="Огляд даних">
+                <div class="metric">
+                    <span class="metric-value" id="activeCitiesMetric">3</span>
+                    <span class="metric-label">активні міста</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value" id="forecastMetric">—</span>
+                    <span class="metric-label">годин прогнозу</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">15 хв</span>
+                    <span class="metric-label">цикл оновлення</span>
+                </div>
+            </div>
+        </section>
 
-    <div class="card">
-        <h2>Налаштування</h2>
-        <div class="control-group">
-            <label class="control-label" for="periodSlider">
-                Період графіка: <span id="periodValue">100</span> останніх записів
-            </label>
-            <input type="range" id="periodSlider" min="10" max="200" step="10" value="100">
-        </div>
-        <div class="control-group">
-            <span class="control-label">Міста для показу:</span>
-            <div class="city-filters">
-                <label><input type="checkbox" class="cityFilter" value="Kyiv" checked> Kyiv</label>
-                <label><input type="checkbox" class="cityFilter" value="Warsaw" checked> Warsaw</label>
-                <label><input type="checkbox" class="cityFilter" value="Berlin" checked> Berlin</label>
+        <div class="dashboard">
+            <aside class="card controls-card" aria-labelledby="settingsTitle">
+                <span class="card-kicker">Персоналізація</span>
+                <h2 id="settingsTitle">Налаштуй огляд</h2>
+
+                <div class="control-group">
+                    <label class="control-label" for="periodSlider">
+                        <span>Глибина історії</span>
+                        <span class="period-badge"><span id="periodValue">100</span></span>
+                    </label>
+                    <input type="range" id="periodSlider" min="10" max="200" step="10" value="100">
+                    <div class="range-labels"><span>10 записів</span><span>200 записів</span></div>
+                </div>
+
+                <div class="control-group">
+                    <span class="control-label">Міста на дашборді</span>
+                    <div class="city-filters">
+                        <label class="city-option">
+                            <input type="checkbox" class="cityFilter" value="Kyiv" checked>
+                            <span class="city-chip"><span class="city-dot" style="--city-color:#1c7993"></span><span class="city-name">Київ</span><span class="checkmark">✓</span></span>
+                        </label>
+                        <label class="city-option">
+                            <input type="checkbox" class="cityFilter" value="Warsaw" checked>
+                            <span class="city-chip"><span class="city-dot" style="--city-color:#ed8b55"></span><span class="city-name">Варшава</span><span class="checkmark">✓</span></span>
+                        </label>
+                        <label class="city-option">
+                            <input type="checkbox" class="cityFilter" value="Berlin" checked>
+                            <span class="city-chip"><span class="city-dot" style="--city-color:#6fa97c"></span><span class="city-name">Берлін</span><span class="checkmark">✓</span></span>
+                        </label>
+                    </div>
+                </div>
+
+                <p class="session-note">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 3h4v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span>Вибір зберігається у твоїй сесії та відновиться після оновлення сторінки.</span>
+                </p>
+            </aside>
+
+            <div class="content-stack">
+                <section class="card forecast-card" aria-labelledby="forecastTitle">
+                    <div class="section-heading">
+                        <div>
+                            <span class="card-kicker">Сьогодні</span>
+                            <h2 id="forecastTitle">Погодинний прогноз</h2>
+                        </div>
+                        <span class="section-meta">Свіжі дані</span>
+                    </div>
+                    <div id="hourlyContainer" aria-live="polite">
+                        <div class="loading-state"><div class="loading-inner"><span class="spinner" aria-hidden="true"></span><span>Збираємо прогноз…</span></div></div>
+                    </div>
+                </section>
+
+                <section class="card chart-card" aria-labelledby="chartTitle">
+                    <div class="section-heading">
+                        <div>
+                            <span class="card-kicker">Динаміка</span>
+                            <h2 id="chartTitle">Температура в часі</h2>
+                        </div>
+                        <p>Порівнюй міста та помічай, як змінюється погода між циклами оновлення.</p>
+                    </div>
+                    <div class="chart-toolbar">
+                        <div id="chartStatus" aria-live="polite">Завантажуємо вимірювання…</div>
+                        <div id="chartLegend" aria-label="Легенда графіка"></div>
+                    </div>
+                    <div class="chart-wrap">
+                        <svg id="temperatureChart" viewBox="0 0 700 300" role="img" aria-label="Графік температури з історії"></svg>
+                    </div>
+                </section>
+
+                <section class="card history-card">
+                    <details id="historyDetails">
+                        <summary>
+                            <span class="summary-icon" aria-hidden="true">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                            </span>
+                            <span class="summary-copy">
+                                <span class="summary-title">Історія спостережень</span>
+                                <span class="summary-subtitle">Останні 20 записів із бази даних</span>
+                            </span>
+                            <span class="summary-chevron" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </span>
+                        </summary>
+                        <div class="history-content">
+                            <div class="table-toolbar">
+                                <p class="table-hint">Час показано у твоєму локальному часовому поясі.</p>
+                                <button class="refresh-button" id="refreshHistory" type="button">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    Оновити
+                                </button>
+                            </div>
+                            <div class="table-scroll">
+                                <table id="historyTable">
+                                    <thead><tr><th>Час</th><th>Місто</th><th>Температура</th><th>Вітер</th></tr></thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </details>
+                </section>
             </div>
         </div>
-    </div>
 
-    <div class="card">
-        <h2>Погодинний прогноз на сьогодні</h2>
-        <div id="hourlyContainer">Завантаження...</div>
-    </div>
-
-    <div class="card">
-        <h2>Температура з історії</h2>
-        <div id="chartStatus">Завантаження даних з бази...</div>
-        <svg id="temperatureChart" viewBox="0 0 600 270" role="img" aria-label="Графік температури з історії"></svg>
-        <div id="chartLegend"></div>
-    </div>
-
-    <div class="card">
-        <details id="historyDetails">
-            <summary>📜 Історія запитів</summary>
-            <div style="margin-top: 12px;">
-                <button onclick="loadHistory()">Оновити список</button>
-                <table id="historyTable">
-                    <thead>
-                        <tr><th>Час</th><th>Місто</th><th>Темп., °C</th><th>Вітер, км/год</th></tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </details>
-    </div>
+        <footer class="footer">
+            <span><span class="footer-brand">Небокрай</span> · мікросервісний weather dashboard</span>
+            <span>Poller → RabbitMQ → PostgreSQL → ти</span>
+        </footer>
+    </main>
 
 <script>
 const WEATHER_ICONS = {
@@ -134,11 +781,31 @@ const WEATHER_ICONS = {
     80: ["🌧️", "Зливи"], 81: ["🌧️", "Зливи"], 82: ["🌧️", "Сильні зливи"],
     95: ["⛈️", "Гроза"], 96: ["⛈️", "Гроза з градом"], 99: ["⛈️", "Гроза з градом"],
 };
+
+const CITY_META = {
+    Kyiv: { label: 'Київ', color: '#1c7993' },
+    Warsaw: { label: 'Варшава', color: '#ed8b55' },
+    Berlin: { label: 'Берлін', color: '#6fa97c' },
+};
+
 function getIcon(code) {
-    return WEATHER_ICONS[code] || ["❓", "Невідомо"];
+    return WEATHER_ICONS[code] || ["🌡️", "Немає опису"];
 }
 
-// --- Стан сесії (Redis) ---
+function getCityMeta(city) {
+    return CITY_META[city] || { label: city, color: '#798b98' };
+}
+
+function showMessage(container, message) {
+    container.innerHTML = '';
+    const wrapper = document.createElement('div');
+    wrapper.className = 'loading-state';
+    const text = document.createElement('span');
+    text.textContent = message;
+    wrapper.appendChild(text);
+    container.appendChild(wrapper);
+}
+
 let uiState = {
     graph_period: 100,
     filters: { cities: ["Kyiv", "Warsaw", "Berlin"] },
@@ -148,18 +815,21 @@ let uiState = {
 async function loadUiState() {
     try {
         const res = await fetch('/session/state');
+        if (!res.ok) throw new Error('Session response is not OK');
         const data = await res.json();
-        uiState = { ...uiState, ...data };
-    } catch (e) {
-        // Redis/UI-сервіс тимчасово недоступний - лишаємось на дефолтах
+        uiState = { ...uiState, ...data, filters: { ...uiState.filters, ...(data.filters || {}) } };
+    } catch (error) {
+        // Redis/UI-сервіс тимчасово недоступний — використовуємо безпечні дефолти.
     }
 
+    if (!Array.isArray(uiState.filters.cities)) uiState.filters.cities = [];
     document.getElementById('periodSlider').value = uiState.graph_period;
     document.getElementById('periodValue').textContent = uiState.graph_period;
-    document.querySelectorAll('.cityFilter').forEach(cb => {
-        cb.checked = uiState.filters.cities.includes(cb.value);
+    document.querySelectorAll('.cityFilter').forEach(checkbox => {
+        checkbox.checked = uiState.filters.cities.includes(checkbox.value);
     });
-    document.getElementById('historyDetails').open = !!uiState.history_expanded;
+    document.getElementById('historyDetails').open = Boolean(uiState.history_expanded);
+    updateActiveCitiesMetric();
 }
 
 async function saveUiState() {
@@ -169,15 +839,19 @@ async function saveUiState() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(uiState),
         });
-    } catch (e) {
-        // Збереження стану не критичне для роботи UI - просто ігноруємо
+    } catch (error) {
+        // Збереження стану не критичне для перегляду погоди.
     }
 }
 
 function getSelectedCities() {
     return Array.from(document.querySelectorAll('.cityFilter'))
-        .filter(cb => cb.checked)
-        .map(cb => cb.value);
+        .filter(checkbox => checkbox.checked)
+        .map(checkbox => checkbox.value);
+}
+
+function updateActiveCitiesMetric() {
+    document.getElementById('activeCitiesMetric').textContent = uiState.filters.cities.length;
 }
 
 async function loadHourly() {
@@ -186,20 +860,24 @@ async function loadHourly() {
     try {
         const res = await fetch('/hourly');
         data = await res.json();
-    } catch (e) {
-        container.textContent = 'Не вдалося звʼязатися з сервером';
+        if (!res.ok) throw new Error('Hourly response is not OK');
+    } catch (error) {
+        showMessage(container, 'Не вдалося звʼязатися із сервером. Спробуй трохи згодом.');
+        document.getElementById('forecastMetric').textContent = '—';
         return;
     }
 
     container.innerHTML = '';
     if (!Array.isArray(data) || data.length === 0) {
-        container.textContent = 'Даних ще немає - зачекай на перший цикл Poller.';
+        showMessage(container, 'Даних ще немає — зачекай на перший цикл Poller.');
+        document.getElementById('forecastMetric').textContent = '0';
         return;
     }
 
     data = data.filter(row => uiState.filters.cities.includes(row.city));
     if (data.length === 0) {
-        container.textContent = 'Усі міста приховані фільтром вище.';
+        showMessage(container, 'Обери хоча б одне місто у фільтрі зліва.');
+        document.getElementById('forecastMetric').textContent = '0';
         return;
     }
 
@@ -209,30 +887,61 @@ async function loadHourly() {
         byCity[row.city].push(row);
     }
 
-    for (const city of Object.keys(byCity)) {
+    const longestForecast = Math.max(...Object.values(byCity).map(rows => rows.length));
+    document.getElementById('forecastMetric').textContent = longestForecast;
+
+    for (const [city, hours] of Object.entries(byCity)) {
+        const meta = getCityMeta(city);
         const cityDiv = document.createElement('div');
         cityDiv.className = 'city-row';
 
+        const header = document.createElement('div');
+        header.className = 'city-row-header';
+
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'city-title-wrap';
+        const dot = document.createElement('span');
+        dot.className = 'city-dot';
+        dot.style.setProperty('--city-color', meta.color);
         const title = document.createElement('h3');
-        title.textContent = city;
-        cityDiv.appendChild(title);
+        title.textContent = meta.label;
+        titleWrap.append(dot, title);
+
+        const temperatures = hours.map(hour => Number(hour.temperature)).filter(Number.isFinite);
+        const range = document.createElement('span');
+        range.className = 'city-range';
+        range.textContent = temperatures.length
+            ? `${Math.round(Math.min(...temperatures))}° / ${Math.round(Math.max(...temperatures))}°`
+            : '—';
+        header.append(titleWrap, range);
+        cityDiv.appendChild(header);
 
         const scroll = document.createElement('div');
         scroll.className = 'hours-scroll';
+        scroll.setAttribute('aria-label', `Погодинний прогноз: ${meta.label}`);
 
-        for (const hour of byCity[city]) {
-            const [icon] = getIcon(hour.weathercode);
+        for (const hour of hours) {
+            const [icon, description] = getIcon(hour.weathercode);
             const time = new Date(hour.forecast_hour);
-            const hh = String(time.getHours()).padStart(2, '0');
-
-            const cell = document.createElement('div');
+            const hh = Number.isNaN(time.getTime()) ? '—' : String(time.getHours()).padStart(2, '0');
+            const cell = document.createElement('article');
             cell.className = 'hour-cell';
-            cell.innerHTML = `
-                <div>${hh}:00</div>
-                <div class="icon">${icon}</div>
-                <div class="temp">${Math.round(hour.temperature)}°</div>
-                <div class="prec">${hour.precipitation > 0 ? hour.precipitation + ' мм' : ''}</div>
-            `;
+            cell.title = description;
+
+            const timeElement = document.createElement('div');
+            timeElement.className = 'hour-time';
+            timeElement.textContent = hh === '—' ? hh : `${hh}:00`;
+            const iconElement = document.createElement('div');
+            iconElement.className = 'icon';
+            iconElement.setAttribute('aria-label', description);
+            iconElement.textContent = icon;
+            const temp = document.createElement('div');
+            temp.className = 'temp';
+            temp.textContent = Number.isFinite(Number(hour.temperature)) ? `${Math.round(Number(hour.temperature))}°` : '—';
+            const precipitation = document.createElement('div');
+            precipitation.className = 'prec';
+            precipitation.textContent = Number(hour.precipitation) > 0 ? `${hour.precipitation} мм` : 'без опадів';
+            cell.append(timeElement, iconElement, temp, precipitation);
             scroll.appendChild(cell);
         }
 
@@ -242,34 +951,48 @@ async function loadHourly() {
 }
 
 async function loadHistory() {
+    const button = document.getElementById('refreshHistory');
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
     let data;
     try {
         const res = await fetch('/history?limit=20');
         data = await res.json();
-    } catch (e) {
-        return;
+        if (!res.ok) throw new Error('History response is not OK');
+    } catch (error) {
+        data = [];
+    } finally {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
     }
+
     const tbody = document.querySelector('#historyTable tbody');
     tbody.innerHTML = '';
-    if (!Array.isArray(data)) return;
-    for (const row of data) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${new Date(row.requested_at).toLocaleString()}</td>
-            <td>${row.city}</td>
-            <td>${row.temperature ?? '-'}</td>
-            <td>${row.windspeed ?? '-'}</td>
-        `;
-        tbody.appendChild(tr);
+    if (!Array.isArray(data) || data.length === 0) {
+        const row = tbody.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 4;
+        cell.textContent = 'Записів поки немає.';
+        return;
+    }
+
+    for (const record of data) {
+        const row = tbody.insertRow();
+        const dateCell = row.insertCell();
+        const parsedDate = new Date(record.requested_at);
+        dateCell.textContent = Number.isNaN(parsedDate.getTime()) ? '—' : parsedDate.toLocaleString('uk-UA');
+        row.insertCell().textContent = getCityMeta(record.city).label;
+        row.insertCell().textContent = record.temperature == null ? '—' : `${record.temperature} °C`;
+        row.insertCell().textContent = record.windspeed == null ? '—' : `${record.windspeed} км/год`;
     }
 }
 
-const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c', '#0891b2'];
+const CHART_COLORS = ['#1c7993', '#ed8b55', '#6fa97c', '#8c6fc1', '#d7a733', '#3c9ca8'];
 
 function escapeXml(value) {
-    return String(value).replace(/[&<>'"]/g, char => ({
+    return String(value).replace(/[&<>'"]/g, character => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&apos;', '"': '&quot;'
-    }[char]));
+    }[character]));
 }
 
 function renderTemperatureChart(records) {
@@ -284,12 +1007,14 @@ function renderTemperatureChart(records) {
     svg.innerHTML = '';
     legend.innerHTML = '';
     if (points.length === 0) {
-        status.textContent = 'Немає даних для обраного періоду/фільтрів.';
+        status.textContent = 'Немає даних для обраного періоду або фільтрів.';
         return;
     }
 
-    status.textContent = `Показано ${points.length} вимірів (фільтр: ${uiState.filters.cities.join(', ')}).`;
-    const width = 600, height = 270, padding = { top: 18, right: 18, bottom: 42, left: 45 };
+    status.textContent = `${points.length} вимірів · останні ${uiState.graph_period} записів`;
+    const width = 700;
+    const height = 300;
+    const padding = { top: 20, right: 22, bottom: 45, left: 52 };
     const plotWidth = width - padding.left - padding.right;
     const plotHeight = height - padding.top - padding.bottom;
     const temperatures = points.map(point => point.temperature);
@@ -299,33 +1024,38 @@ function renderTemperatureChart(records) {
     const minTime = points[0].time;
     const maxTime = points[points.length - 1].time;
     const x = time => padding.left + (maxTime === minTime ? plotWidth / 2 : (time - minTime) / (maxTime - minTime) * plotWidth);
-    const y = temp => padding.top + (maxTemp - temp) / (maxTemp - minTemp) * plotHeight;
+    const y = temperature => padding.top + (maxTemp - temperature) / (maxTemp - minTemp) * plotHeight;
 
     let markup = '';
     for (let step = 0; step <= 4; step++) {
-        const temp = minTemp + (maxTemp - minTemp) * step / 4;
-        const lineY = y(temp);
+        const temperature = minTemp + (maxTemp - minTemp) * step / 4;
+        const lineY = y(temperature);
         markup += `<line class="chart-grid" x1="${padding.left}" y1="${lineY}" x2="${width - padding.right}" y2="${lineY}"/>`;
-        markup += `<text class="chart-axis-label" x="${padding.left - 8}" y="${lineY + 4}" text-anchor="end">${temp.toFixed(1)}°</text>`;
+        markup += `<text class="chart-axis-label" x="${padding.left - 10}" y="${lineY + 4}" text-anchor="end">${temperature.toFixed(1)}°</text>`;
     }
     for (let step = 0; step <= 3; step++) {
         const time = minTime + (maxTime - minTime) * step / 3;
         const label = new Date(time).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         const lineX = x(time);
-        markup += `<text class="chart-axis-label" x="${lineX}" y="${height - 12}" text-anchor="middle">${label}</text>`;
+        markup += `<text class="chart-axis-label" x="${lineX}" y="${height - 14}" text-anchor="middle">${label}</text>`;
     }
 
     const byCity = {};
     for (const point of points) (byCity[point.city] ??= []).push(point);
     Object.entries(byCity).forEach(([city, cityPoints], index) => {
-        const color = CHART_COLORS[index % CHART_COLORS.length];
+        const meta = getCityMeta(city);
+        const color = meta.color || CHART_COLORS[index % CHART_COLORS.length];
         const path = cityPoints.map((point, pointIndex) => `${pointIndex ? 'L' : 'M'} ${x(point.time).toFixed(1)} ${y(point.temperature).toFixed(1)}`).join(' ');
+        if (cityPoints.length > 1) {
+            const areaPath = `${path} L ${x(cityPoints.at(-1).time).toFixed(1)} ${height - padding.bottom} L ${x(cityPoints[0].time).toFixed(1)} ${height - padding.bottom} Z`;
+            markup += `<path class="chart-area" fill="${color}" d="${areaPath}"/>`;
+        }
         markup += `<path class="chart-line" stroke="${color}" d="${path}"/>`;
         for (const point of cityPoints) {
             const timestamp = new Date(point.time).toLocaleString('uk-UA');
-            markup += `<circle class="chart-point" fill="${color}" cx="${x(point.time).toFixed(1)}" cy="${y(point.temperature).toFixed(1)}" r="3"><title>${escapeXml(city)}: ${point.temperature}°C, ${escapeXml(timestamp)}</title></circle>`;
+            markup += `<circle class="chart-point" fill="${color}" cx="${x(point.time).toFixed(1)}" cy="${y(point.temperature).toFixed(1)}" r="3.5"><title>${escapeXml(meta.label)}: ${point.temperature}°C · ${escapeXml(timestamp)}</title></circle>`;
         }
-        legend.innerHTML += `<span class="legend-item"><span class="legend-color" style="background:${color}"></span>${escapeXml(city)}</span>`;
+        legend.innerHTML += `<span class="legend-item"><span class="legend-color" style="background:${color}"></span>${escapeXml(meta.label)}</span>`;
     });
     svg.innerHTML = markup;
 }
@@ -336,47 +1066,58 @@ async function loadTemperatureChart() {
         const res = await fetch(`/history?limit=${uiState.graph_period}`);
         const data = await res.json();
         if (!res.ok || !Array.isArray(data)) throw new Error('Invalid history response');
-        const filtered = data.filter(row => uiState.filters.cities.includes(row.city));
-        renderTemperatureChart(filtered);
-    } catch (e) {
+        renderTemperatureChart(data.filter(row => uiState.filters.cities.includes(row.city)));
+    } catch (error) {
         status.textContent = 'Не вдалося завантажити дані для графіка.';
+        document.getElementById('temperatureChart').innerHTML = '';
+        document.getElementById('chartLegend').innerHTML = '';
     }
 }
 
-// --- Обробники контролів (нове) ---
-document.getElementById('periodSlider').addEventListener('input', (e) => {
-    document.getElementById('periodValue').textContent = e.target.value;
+document.getElementById('periodSlider').addEventListener('input', event => {
+    document.getElementById('periodValue').textContent = event.target.value;
 });
-document.getElementById('periodSlider').addEventListener('change', (e) => {
-    uiState.graph_period = Number(e.target.value);
+
+document.getElementById('periodSlider').addEventListener('change', event => {
+    uiState.graph_period = Number(event.target.value);
     saveUiState();
     loadTemperatureChart();
 });
 
-document.querySelectorAll('.cityFilter').forEach(cb => {
-    cb.addEventListener('change', () => {
+document.querySelectorAll('.cityFilter').forEach(checkbox => {
+    checkbox.addEventListener('change', () => {
         uiState.filters.cities = getSelectedCities();
+        updateActiveCitiesMetric();
         saveUiState();
         loadTemperatureChart();
         loadHourly();
     });
 });
 
+document.getElementById('refreshHistory').addEventListener('click', loadHistory);
+
 let historyLoadedOnce = false;
-document.getElementById('historyDetails').addEventListener('toggle', (e) => {
-    uiState.history_expanded = e.target.open;
+document.getElementById('historyDetails').addEventListener('toggle', event => {
+    uiState.history_expanded = event.target.open;
     saveUiState();
-    if (e.target.open && !historyLoadedOnce) {
+    if (event.target.open && !historyLoadedOnce) {
         historyLoadedOnce = true;
         loadHistory();
     }
 });
 
-// --- Ініціалізація: спочатку відновлюємо стан з Redis, потім вантажимо дані ---
+document.getElementById('currentDate').textContent = new Intl.DateTimeFormat('uk-UA', {
+    weekday: 'long', day: 'numeric', month: 'long'
+}).format(new Date());
+
 (async function init() {
     await loadUiState();
     loadHourly();
     loadTemperatureChart();
+    if (uiState.history_expanded) {
+        historyLoadedOnce = true;
+        loadHistory();
+    }
 })();
 </script>
 </body>

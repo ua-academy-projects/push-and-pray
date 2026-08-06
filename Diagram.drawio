@@ -1,4 +1,4 @@
-<mxfile host="Electron" pages="2">
+<mxfile host="Electron" pages="3">
   <diagram id="weather-architecture" name="Architecture">
     <mxGraphModel dx="1576" dy="921" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
       <root>
@@ -236,6 +236,139 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="le7" value="SSH / journalctl" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block" edge="1" parent="log-network" source="journalctl" target="logs-vm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="presentation-overview" name="Presentation overview">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="pres-0" />
+        <mxCell id="pres-1" parent="pres-0" />
+
+        <mxCell id="pres-title" value="Weather App Infrastructure at a Glance" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=30;fontStyle=1;fontColor=#1f2937;" vertex="1" parent="pres-1">
+          <mxGeometry x="60" y="25" width="1480" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-subtitle" value="From local services to a reproducible multi-VM environment" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=17;fontColor=#6b7280;" vertex="1" parent="pres-1">
+          <mxGeometry x="60" y="70" width="1480" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-stat-vms" value="6 VMs" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontColor=#1e40af;fontSize=17;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="250" y="120" width="230" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-stat-containers" value="7 Containers" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontColor=#1e40af;fontSize=17;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="510" y="120" width="230" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-stat-networks" value="2 Networks" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#f5f3ff;strokeColor=#8b5cf6;fontColor=#5b21b6;fontSize=17;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="770" y="120" width="230" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-stat-logs" value="Centralized Logs" style="rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#22c55e;fontColor=#166534;fontSize=17;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="1030" y="120" width="260" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-browser" value="Browser" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#6b7280;fontColor=#111827;fontSize=16;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="70" y="285" width="125" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-ui" value="UI VM" style="swimlane;startSize=34;rounded=1;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontColor=#1e3a8a;fontSize=16;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="260" y="250" width="200" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-ui-container" value="academy-ui&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;Docker container&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bfdbfe;strokeColor=#60a5fa;fontColor=#1e3a8a;fontSize=15;" vertex="1" parent="pres-ui">
+          <mxGeometry x="20" y="55" width="160" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-backend" value="Backend VM" style="swimlane;startSize=34;rounded=1;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontColor=#1e3a8a;fontSize=16;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="650" y="250" width="220" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-backend-container" value="academy-backend&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;Docker container&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bfdbfe;strokeColor=#60a5fa;fontColor=#1e3a8a;fontSize=15;" vertex="1" parent="pres-backend">
+          <mxGeometry x="20" y="55" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-poller" value="Poller VM" style="swimlane;startSize=34;rounded=1;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontColor=#1e3a8a;fontSize=16;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="260" y="480" width="200" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-poller-container" value="academy-poller&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;Docker container&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bfdbfe;strokeColor=#60a5fa;fontColor=#1e3a8a;fontSize=15;" vertex="1" parent="pres-poller">
+          <mxGeometry x="20" y="50" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-proxy" value="Proxy VM" style="swimlane;startSize=34;rounded=1;html=1;fillColor=#dbeafe;strokeColor=#3b82f6;fontColor=#1e3a8a;fontSize=16;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="560" y="480" width="210" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-proxy-container" value="academy-proxy&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;Docker container&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bfdbfe;strokeColor=#60a5fa;fontColor=#1e3a8a;fontSize=15;" vertex="1" parent="pres-proxy">
+          <mxGeometry x="20" y="50" width="170" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-api" value="Open-Meteo&lt;br&gt;API" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#6b7280;fontColor=#374151;fontSize=15;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="820" y="610" width="150" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-db" value="DB / Infrastructure VM" style="swimlane;startSize=38;rounded=1;html=1;fillColor=#ede9fe;strokeColor=#8b5cf6;fontColor=#4c1d95;fontSize=17;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="1090" y="215" width="410" height="410" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-postgres" value="PostgreSQL&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;persistent data&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#ddd6fe;strokeColor=#8b5cf6;fontColor=#4c1d95;fontSize=15;fontStyle=1;" vertex="1" parent="pres-db">
+          <mxGeometry x="170" y="60" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-redis" value="Redis&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;UI sessions&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ddd6fe;strokeColor=#8b5cf6;fontColor=#4c1d95;fontSize=15;fontStyle=1;" vertex="1" parent="pres-db">
+          <mxGeometry x="170" y="175" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-rabbit" value="RabbitMQ&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;durable events&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontColor=#9a3412;fontSize=15;fontStyle=1;" vertex="1" parent="pres-db">
+          <mxGeometry x="170" y="285" width="190" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-log-source" value="All service VMs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontColor=#374151;fontSize=15;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="245" y="745" width="220" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-log-pipeline" value="Docker journald driver&lt;br&gt;+ systemd-journald&lt;br&gt;+ journal-upload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#eab308;fontColor=#854d0e;fontSize=14;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="620" y="720" width="290" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-logs-vm" value="Logs VM&lt;br&gt;&lt;font style=&quot;font-size: 13px;&quot;&gt;systemd-journal-remote&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size: 12px;&quot;&gt;central journalctl view&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#22c55e;fontColor=#166534;fontSize=17;fontStyle=1;" vertex="1" parent="pres-1">
+          <mxGeometry x="1070" y="720" width="300" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pres-edge-browser-ui" value="HTTP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#3b82f6;strokeWidth=2;fontColor=#1e40af;fontSize=13;" edge="1" parent="pres-1" source="pres-browser" target="pres-ui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-edge-ui-backend" value="HTTP read" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#3b82f6;strokeWidth=2;fontColor=#1e40af;fontSize=13;" edge="1" parent="pres-1" source="pres-ui" target="pres-backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-edge-backend-postgres" value="SQL" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#8b5cf6;strokeWidth=2;fontColor=#5b21b6;fontSize=13;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="pres-1" source="pres-backend" target="pres-postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-edge-ui-redis" value="Sessions" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#8b5cf6;strokeWidth=2;fontColor=#5b21b6;fontSize=13;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="pres-1" source="pres-ui" target="pres-redis">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="500" y="430" />
+              <mxPoint x="1030" y="430" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pres-edge-poller-proxy" value="HTTP trigger" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#3b82f6;strokeWidth=2;fontColor=#1e40af;fontSize=13;" edge="1" parent="pres-1" source="pres-poller" target="pres-proxy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-edge-proxy-api" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=block;startFill=1;endArrow=block;endFill=1;strokeColor=#6b7280;strokeWidth=2;fontColor=#374151;fontSize=13;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="pres-1" source="pres-proxy" target="pres-api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="650" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pres-edge-proxy-rabbit" value="AMQP publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#f97316;strokeWidth=2;fontColor=#9a3412;fontSize=13;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="pres-1" source="pres-proxy" target="pres-rabbit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-edge-rabbit-backend" value="AMQP consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#f97316;strokeWidth=2;fontColor=#9a3412;fontSize=13;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="pres-1" source="pres-rabbit" target="pres-backend">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="537" />
+              <mxPoint x="1010" y="430" />
+              <mxPoint x="900" y="430" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pres-edge-log-source" value="Logs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;dashed=1;dashPattern=8 6;strokeColor=#22c55e;strokeWidth=3;fontColor=#166534;fontSize=13;" edge="1" parent="pres-1" source="pres-log-source" target="pres-log-pipeline">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pres-edge-log-server" value="Private network" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;dashed=1;dashPattern=8 6;strokeColor=#22c55e;strokeWidth=3;fontColor=#166534;fontSize=13;" edge="1" parent="pres-1" source="pres-log-pipeline" target="pres-logs-vm">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
