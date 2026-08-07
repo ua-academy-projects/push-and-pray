@@ -1,0 +1,67 @@
+x-logging: &default-logging
+  driver: journald
+  options:
+    tag: "wildlife/{{.Name}}"
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.3.4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "${BACKEND_HOST}:5672:5672"
+      - "${BACKEND_HOST}:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - backend_private
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - -q
+        - ping
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: api_service/Dockerfile
+    image: wildlife-backend:local
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}
+      FETCHER_SERVICE_URL: http://${FETCHER_HOST}:8002
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      BACKEND_PROCESS_ATTEMPTS: ${BACKEND_PROCESS_ATTEMPTS}
+      BACKEND_RETRY_DELAY_SECONDS: ${BACKEND_RETRY_DELAY_SECONDS}
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8000
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_HOST}:8000:8000"
+    networks:
+      - backend_private
+    restart: unless-stopped
+    logging: *default-logging
+
+networks:
+  backend_private:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  rabbitmq_data:
+    name: wildlife_rabbitmq_data

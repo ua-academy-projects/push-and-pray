@@ -1,0 +1,28 @@
+x-logging: &default-logging
+  driver: journald
+  options:
+    tag: "wildlife/{{.Name}}"
+
+services:
+  fetcher:
+    build:
+      context: ../..
+      dockerfile: fetcher_service/Dockerfile
+    image: wildlife-fetcher:local
+    environment:
+      GBIF_BASE_URL: https://api.gbif.org/v1
+      GBIF_USER_AGENT: ${GBIF_USER_AGENT}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      RABBITMQ_HOST: ${BACKEND_HOST}
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      FETCHER_PUBLISH_ATTEMPTS: ${FETCHER_PUBLISH_ATTEMPTS}
+      FETCHER_RETRY_DELAY_SECONDS: ${FETCHER_RETRY_DELAY_SECONDS}
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8002
+    ports:
+      - "${FETCHER_HOST}:8002:8002"
+    restart: unless-stopped
+    logging: *default-logging

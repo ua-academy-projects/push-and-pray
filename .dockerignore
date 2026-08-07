@@ -1,0 +1,16 @@
+.git
+.gitignore
+.gitattributes
+.vagrant
+.venv
+.venv-1
+.env
+deploy.env
+tls
+logging/*.pub
+__pycache__
+*.py[cod]
+*.zip
+.pytest_cache
+.vscode
+.idea

@@ -1,0 +1,33 @@
+x-logging: &default-logging
+  driver: journald
+  options:
+    tag: "wildlife/{{.Name}}"
+
+services:
+  redis:
+    image: redis:7.4.10-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_HOST}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$${REDIS_PASSWORD}" --no-auth-warning ping
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  redis_data:
+    name: wildlife_redis_data

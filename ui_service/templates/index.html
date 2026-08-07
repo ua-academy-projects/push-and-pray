@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Дика природа України</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="theme-{{ theme }}">
+    <main class="page-shell">
+        <section class="hero">
+            <div class="hero-toolbar">
+                <span class="theme-status">
+                    Режим: {{ "темний" if theme == "dark" else "світлий" }}
+                </span>
+                <form method="post" action="{{ url_for('change_theme') }}">
+                    <input
+                        type="hidden"
+                        name="theme"
+                        value="{{ 'light' if theme == 'dark' else 'dark' }}"
+                    >
+                    <button class="theme-toggle" type="submit">
+                        {% if theme == "dark" %}
+                            ☀ Світла тема
+                        {% else %}
+                            ☾ Темна тема
+                        {% endif %}
+                    </button>
+                </form>
+            </div>
+            <h1>Дика природа України</h1>
+            <p class="lead">
+                Знайдіть тварину та перегляньте доступні дані про її
+                спостереження в Україні.
+            </p>
+
+            <form method="post" class="search-form">
+                <label for="animal_name">Назва тварини</label>
+                <div class="search-row">
+                    <input
+                        id="animal_name"
+                        name="animal_name"
+                        value="{{ search_name }}"
+                        placeholder="Наприклад: вовк або Canis lupus"
+                        minlength="2"
+                        maxlength="100"
+                        required
+                        autofocus
+                    >
+                    <button type="submit">Знайти</button>
+                </div>
+                <p class="examples">
+                    Спробуйте: вовк, лось, лисиця, олень, козуля, лелека білий
+                </p>
+            </form>
+        </section>
+
+        {% if error %}
+            <section class="message error" role="alert">
+                <strong>Не знайдено</strong>
+                <span>{{ error }}</span>
+            </section>
+        {% endif %}
+
+        {% if suggestions %}
+            <section class="suggestions-card">
+                <p>Можливо, ви мали на увазі:</p>
+                <div class="suggestion-list">
+                    {% for suggestion in suggestions %}
+                        <form method="post">
+                            <input type="hidden" name="animal_name" value="{{ suggestion }}">
+                            <button type="submit" class="suggestion-button">
+                                {{ suggestion }}
+                            </button>
+                        </form>
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
+
+        {% if result %}
+            <section class="result-card">
+                <div class="result-heading">
+                    <div>
+                        <p class="eyebrow">Дані про вид в Україні</p>
+                        <h2>{{ result.scientific_name }}</h2>
+                        <p>Результат пошуку для «{{ result.query }}»</p>
+                    </div>
+                    <div class="count-block">
+                        <span class="count">{{ "{:,}".format(result.observation_count).replace(",", " ") }}</span>
+                        <span>спостережень</span>
+                    </div>
+                </div>
+
+                <div class="notice">
+                    <strong>Важливо:</strong> {{ result.meaning }}
+                </div>
+
+                {% if result.sample_records %}
+                    <h3>Приклади спостережень</h3>
+                    <div class="samples">
+                        {% for sample in result.sample_records %}
+                            <article>
+                                <span>Рік: {{ sample.year or "не вказано" }}</span>
+                                <span>Місце: {{ sample.locality or "не вказано" }}</span>
+                                <span>Автор: {{ sample.recorded_by or "не вказано" }}</span>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <a href="{{ result.source_url }}" target="_blank" rel="noreferrer">
+                    Переглянути джерело даних ↗
+                </a>
+            </section>
+        {% endif %}
+
+        <section class="comparison-card">
+            <div class="comparison-heading">
+                <div>
+                    <p class="eyebrow">Порівняння</p>
+                    <h2>Кругова діаграма спостережень</h2>
+                </div>
+                <span>Від 2 до 8 видів</span>
+            </div>
+
+            <p class="comparison-help">
+                Введіть назви через кому. Наприклад:
+                <strong>вовк, лось, лисиця, рись</strong>.
+            </p>
+
+            <form method="post" action="{{ url_for('compare_animals') }}"
+                  class="comparison-form">
+                <label for="animal_names">Види для порівняння</label>
+                <div class="search-row">
+                    <input
+                        id="animal_names"
+                        name="animal_names"
+                        value="{{ chart_names }}"
+                        placeholder="вовк, лось, лисиця"
+                        required
+                    >
+                    <button type="submit">Побудувати</button>
+                </div>
+            </form>
+
+            {% if chart_error %}
+                <div class="message error chart-message" role="alert">
+                    <strong>Помилка:</strong>
+                    <span>{{ chart_error }}</span>
+                </div>
+            {% endif %}
+
+            {% if chart_suggestions %}
+                <p class="chart-suggestions">
+                    Можливі варіанти:
+                    {{ chart_suggestions|join(", ") }}
+                </p>
+            {% endif %}
+
+            {% if chart %}
+                <div class="chart-layout">
+                    <div
+                        class="pie-chart"
+                        role="img"
+                        aria-label="Частки записів GBIF для вибраних видів"
+                        style="background: conic-gradient({{ chart.gradient }});"
+                    >
+                        {% for item in chart.entries %}
+                            {% if item.image_url %}
+                                <figure
+                                    class="pie-image-segment"
+                                    style="clip-path: {{ item.clip_path }};"
+                                    title="{{ item.query }} — {{ item.percentage }}%"
+                                >
+                                    <img
+                                        src="{{ item.image_url }}"
+                                        alt=""
+                                        loading="lazy"
+                                        referrerpolicy="no-referrer"
+                                        onerror="this.parentElement.remove()"
+                                    >
+                                </figure>
+                            {% endif %}
+                        {% endfor %}
+                        <div class="pie-center">
+                            <strong>{{ "{:,}".format(chart.total).replace(",", " ") }}</strong>
+                            <span>записів разом</span>
+                        </div>
+                    </div>
+
+                    <div class="chart-legend">
+                        {% for item in chart.entries %}
+                            <article>
+                                {% if item.image_url %}
+                                    <img
+                                        class="legend-photo"
+                                        src="{{ item.image_url }}"
+                                        alt="{{ item.query }}"
+                                        loading="lazy"
+                                        referrerpolicy="no-referrer"
+                                        onerror="this.style.visibility='hidden'"
+                                    >
+                                {% else %}
+                                    <span
+                                        class="legend-color"
+                                        style="background: {{ item.color }};"
+                                    ></span>
+                                {% endif %}
+                                <div>
+                                    <strong>{{ item.query }}</strong>
+                                    <span>{{ item.scientific_name }}</span>
+                                    {% if item.image_source_url %}
+                                        <a
+                                            class="photo-credit"
+                                            href="{{ item.image_source_url }}"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Фото:
+                                            {{ item.image_creator or "джерело GBIF" }}
+                                            {% if item.image_license %}
+                                                · {{ item.image_license }}
+                                            {% endif %}
+                                        </a>
+                                    {% endif %}
+                                </div>
+                                <div class="legend-value">
+                                    <strong>
+                                        {{ "{:,}".format(item.observation_count).replace(",", " ") }}
+                                    </strong>
+                                    <span>{{ item.percentage }}%</span>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="notice">
+                    <strong>Важливо:</strong> {{ chart_meaning }}
+                    Сектори показують частку записів тільки серед вибраних
+                    вами видів.
+                </div>
+            {% endif %}
+        </section>
+
+        {% if has_searched and result %}
+            <section class="changes-card">
+                <div class="changes-heading">
+                    <div>
+                        <p class="eyebrow">Моніторинг</p>
+                        <h2>Зафіксовані зміни</h2>
+                    </div>
+                    <span>Останні {{ changes|length }}</span>
+                </div>
+
+                {% if changes %}
+                    <div class="change-table" role="table" aria-label="Зміни спостережень">
+                        <div class="change-row change-header" role="row">
+                            <span>Дата</span>
+                            <span>Вид</span>
+                            <span>Зміна</span>
+                        </div>
+                        {% for item in changes %}
+                            <div class="change-row" role="row">
+                                <time datetime="{{ item.changed_at }}">
+                                    {{ item.display_time }}
+                                </time>
+                                <strong>{{ item.scientific_name }}</strong>
+                                <strong class="change-value {{ item.change_class }}">
+                                    {{ item.display_change }}
+                                </strong>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty-state">
+                        Змін поки не зафіксовано. Перший пошук виду створює
+                        базову точку для майбутнього порівняння.
+                    </p>
+                {% endif %}
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>

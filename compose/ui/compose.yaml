@@ -1,0 +1,52 @@
+x-logging: &default-logging
+  driver: journald
+  options:
+    tag: "wildlife/{{.Name}}"
+
+services:
+  ui:
+    build:
+      context: ../..
+      dockerfile: ui_service/Dockerfile
+    image: wildlife-ui:local
+    environment:
+      API_SERVICE_URL: http://${BACKEND_HOST}:8000
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${REDIS_HOST}:6379/0
+      SESSION_LIFETIME_DAYS: ${SESSION_LIFETIME_DAYS}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 5000
+    expose:
+      - "5000"
+    networks:
+      - ui_private
+    restart: unless-stopped
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    environment:
+      UI_HOST: ${UI_HOST}
+    depends_on:
+      ui:
+        condition: service_healthy
+    ports:
+      - "${UI_HOST}:80:80"
+      - "${UI_HOST}:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - ui_private
+    restart: unless-stopped
+    logging: *default-logging
+
+networks:
+  ui_private:
+
+volumes:
+  caddy_data:
+    name: wildlife_caddy_data
+  caddy_config:
+    name: wildlife_caddy_config

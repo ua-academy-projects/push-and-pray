@@ -1,0 +1,18 @@
+{
+	default_sni {$UI_HOST}
+}
+
+https://{$UI_HOST} {
+	tls {
+		issuer internal {
+			lifetime 120h
+		}
+		renewal_window_ratio 0.8
+	}
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+	reverse_proxy ui:5000
+}
