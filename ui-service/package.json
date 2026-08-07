@@ -1,0 +1,12 @@
+{
+  "name": "ui-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static frontend for the weather app",
+  "scripts": {
+    "start": "http-server . -p 80 -c-1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

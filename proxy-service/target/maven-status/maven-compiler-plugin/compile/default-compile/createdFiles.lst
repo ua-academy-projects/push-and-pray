@@ -1,0 +1,9 @@
+com/example/weather_app/proxy_service/ApiWeatherResponse$ApiCondition.class
+com/example/weather_app/proxy_service/WeatherReadingDto.class
+com/example/weather_app/proxy_service/ApiWeatherResponse.class
+com/example/weather_app/proxy_service/ProxyServiceApplication.class
+com/example/weather_app/proxy_service/WeatherReadingMapper.class
+com/example/weather_app/proxy_service/WeatherApiClient.class
+com/example/weather_app/proxy_service/ApiWeatherResponse$ApiCurrent.class
+com/example/weather_app/proxy_service/ApiWeatherResponse$ApiLocation.class
+com/example/weather_app/proxy_service/WeatherProxyController.class

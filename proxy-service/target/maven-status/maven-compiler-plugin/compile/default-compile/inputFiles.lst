@@ -1,0 +1,9 @@
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/ApiWeatherResponse.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/ProxyServiceApplication.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/RabbitMqConfig.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/WeatherApiClient.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/WeatherFetchRequest.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/WeatherFetchRequestListener.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/WeatherProxyController.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/WeatherReadingDto.java
+/home/artur/projects/weather-app/proxy-service/src/main/java/com/example/weather_app/proxy_service/WeatherReadingMapper.java

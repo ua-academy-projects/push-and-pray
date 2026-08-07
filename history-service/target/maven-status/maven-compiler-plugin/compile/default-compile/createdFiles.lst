@@ -1,0 +1,6 @@
+com/example/weather_app/history_service/WeatherReadingRepository.class
+com/example/weather_app/history_service/WebConfig.class
+com/example/weather_app/history_service/HistoryServiceApplication.class
+com/example/weather_app/history_service/WeatherReading.class
+com/example/weather_app/history_service/WeatherIngestionService.class
+com/example/weather_app/history_service/WeatherQueryController.class

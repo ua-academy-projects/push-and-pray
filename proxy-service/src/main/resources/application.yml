@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: proxy-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.0.54}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:weather-app}
+    password: ${RABBITMQ_PASSWORD}
+
+server:
+  port: 8082
+
+weather:
+  api:
+    url: https://api.weatherapi.com/v1
+    key: ${WEATHER_API_KEY}
+  fetch:
+    requests-queue: weather.fetch.requests
+    responses-queue: weather.fetch.responses

@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: history-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/weatherdb
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  jackson:
+    deserialization:
+      accept-single-value-as-array: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.0.54}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:weather-app}
+    password: ${RABBITMQ_PASSWORD}
+    template:
+      reply-timeout: 3000
+
+server:
+  port: 8081
+
+weather:
+  ingestion:
+    mode: queue
+  fetch:
+    requests-queue: weather.fetch.requests
+    responses-queue: weather.fetch.responses
+
+proxy:
+  service:
+    url: ${PROXY_SERVICE_URL:http://192.168.0.50:8082}
+
+redis:
+  service:
+    url: ${REDIS_SERVICE_URL:http://192.168.0.53:8083}
+
+history:
+  poll-interval-ms: 3600000

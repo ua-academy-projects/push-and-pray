@@ -1,0 +1,13 @@
+services:
+  proxy:
+    build: .
+    ports:
+      - "8082:8082"
+    environment:
+      RABBITMQ_HOST: 192.168.0.54
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      WEATHER_API_KEY: ${WEATHER_API_KEY}
+    restart: unless-stopped
+      

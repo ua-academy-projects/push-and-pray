@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Station</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="panel">
+    <header class="panel-head">
+      <span class="eyebrow">Weather Station</span>
+      <h1>Look up a city</h1>
+    </header>
+
+    <form id="search-form" class="search">
+      <div class="field">
+        <label for="city-input">City</label>
+        <input
+          id="city-input"
+          type="text"
+          placeholder="Paris"
+          autocomplete="off"
+          required
+        >
+      </div>
+      <div class="field">
+        <label for="country-input">Country</label>
+        <input
+          id="country-input"
+          type="text"
+          placeholder="France"
+          autocomplete="off"
+          required
+        >
+      </div>
+      <button type="submit">Search</button>
+    </form>
+
+    <p id="status" class="status" hidden></p>
+
+    <section id="result" class="reading" hidden>
+      <div class="reading-primary">
+        <div class="reading-icon" id="result-icon"></div>
+        <div class="reading-headline">
+          <h2 id="result-city"></h2>
+          <p id="result-country" class="muted"></p>
+        </div>
+        <p class="reading-temp"><span id="result-temp"></span><span class="unit">°C</span></p>
+      </div>
+      <p id="result-condition" class="condition"></p>
+
+      <dl class="gauges">
+        <div class="gauge">
+          <dt>Humidity</dt>
+          <dd id="result-humidity"></dd>
+        </div>
+        <div class="gauge">
+          <dt>Wind</dt>
+          <dd id="result-wind"></dd>
+        </div>
+        <div class="gauge">
+          <dt>Pressure</dt>
+          <dd id="result-pressure"></dd>
+        </div>
+      </dl>
+
+      <p class="observed" id="result-observed"></p>
+
+      <div class="reading-actions">
+        <button type="button" id="trends-trigger" class="ghost-button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17.5l5.5-6 4 3.5 6.5-8"/><path d="M15 6.5h5v5"/></svg>
+          View trends
+        </button>
+      </div>
+    </section>
+
+    <section class="log">
+      <div class="log-header">
+        <h2>Previously searched</h2>
+        <button type="button" id="history-refresh">Refresh</button>
+      </div>
+      <p id="history-status" class="status" hidden></p>
+      <ul id="history-list" class="log-list"></ul>
+    </section>
+  </main>
+
+  <dialog id="trends-modal" class="trends-modal">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Historical trends</span>
+        <h2 id="trends-title"></h2>
+      </div>
+      <button type="button" id="trends-close" class="icon-button" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+      </button>
+    </div>
+
+    <div class="metric-tabs" id="metric-tabs">
+      <button type="button" class="metric-tab" data-metric="temperatureC" aria-pressed="true">Temperature</button>
+      <button type="button" class="metric-tab" data-metric="humidity" aria-pressed="false">Humidity</button>
+      <button type="button" class="metric-tab" data-metric="windSpeed" aria-pressed="false">Wind</button>
+      <button type="button" class="metric-tab" data-metric="pressure" aria-pressed="false">Pressure</button>
+    </div>
+
+    <div class="metric-tabs" id="range-tabs">
+      <button type="button" class="metric-tab" data-range="1d" aria-pressed="false">1 day</button>
+      <button type="button" class="metric-tab" data-range="7d" aria-pressed="true">7 days</button>
+      <button type="button" class="metric-tab" data-range="30d" aria-pressed="false">30 days</button>
+    </div>
+
+    <p id="trends-status" class="status" hidden></p>
+
+    <div id="chart-container" class="chart-container">
+      <svg id="trends-chart" viewBox="0 0 640 260" preserveAspectRatio="none" role="img" aria-labelledby="trends-title"></svg>
+      <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+    </div>
+
+    <button type="button" id="table-toggle" class="ghost-button small">View as table</button>
+    <div id="table-wrap" class="table-wrap" hidden>
+      <table id="trends-table">
+        <thead><tr><th>Updated</th><th id="table-metric-head">Temperature</th></tr></thead>
+        <tbody id="trends-table-body"></tbody>
+      </table>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "weather-app",
+			"path": ".."
+		},
+		{
+			"name": "rabbitmq-service",
+			"path": "../../../Downloads/rabbitmq-service"
+		}
+	],
+	"settings": {}
+}
