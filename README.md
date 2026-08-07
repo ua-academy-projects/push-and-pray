@@ -147,10 +147,4 @@ Backend Service tests run against real PostgreSQL — point `DATABASE_URL` at `s
 - [docs/project-status.md](docs/project-status.md) — current progress checklist
 - [docs/prompts/](docs/prompts/) — self-contained AI-agent prompts, one per refactor stage
 
-## Known limitations (v1)
 
-- Single hardcoded location (Ivano-Frankivsk) — no location picker.
-- The Fetcher's internal endpoints (`/internal/*`) have no authentication, nor does RabbitMQ (default `guest`/`guest` locally) — see security notes in [docs/architecture.md](docs/architecture.md). The Backend itself no longer exposes any `/internal/*` HTTP endpoint at all — synced data arrives over RabbitMQ instead.
-- "Refresh now" confirms the request was queued, not that it's been persisted — the dashboard shows the actual result a moment later, on its next poll.
-- No orchestration (Kubernetes) or CI/CD yet — the four services plus Postgres/Redis/RabbitMQ are containerized via Docker Compose, one Compose project per Vagrant VM (see "Running with Vagrant" above, `docs/architecture.md` §18), but there's no cluster orchestrator or automated build/deploy pipeline.
-- No system light/dark theme toggle — a deliberate choice, since the background already carries its own weather/day-night theming; see `docs/architecture.md` §15.

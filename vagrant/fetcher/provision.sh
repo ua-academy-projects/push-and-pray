@@ -10,8 +10,9 @@
 # bridged IP, no NAT/slirp gateway needed. The Fetcher never touches PostgreSQL
 # directly (see docs/architecture.md). It does talk to RabbitMQ, on the postgres
 # VM (see vagrant/postgres/provision.sh) -- publishing sync results there instead
-# of calling the Backend over HTTP. The container uses network_mode: host, so it
-# binds to this VM's own bridged IP the same way the old systemd process did.
+# of calling the Backend over HTTP. The container runs on its own bridge network
+# (see fetcher-service/docker-compose.yml) with its port published to this VM's
+# bridged IP, so it's reachable the same way the old systemd process was.
 set -euo pipefail
 
 APP_DIR="/app"

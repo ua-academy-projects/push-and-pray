@@ -10,9 +10,9 @@
 # browser on *any* device on the LAN, not just this host, so "localhost:8000" would
 # wrongly resolve to whichever device loaded the page. The backend's real LAN IP
 # works from the host and from every other device alike. This guest itself also
-# uses that same IP for the readiness check below. The container uses
-# network_mode: host, so it binds to this VM's own bridged IP on port 5173, same
-# as the old vite dev server did.
+# uses that same IP for the readiness check below. The container runs on its own
+# bridge network (see ui-service/docker-compose.yml) with port 5173 published to
+# this VM's bridged IP, so it's reachable the same way the old vite dev server was.
 set -euo pipefail
 
 APP_DIR="/app"

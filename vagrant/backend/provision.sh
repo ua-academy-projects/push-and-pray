@@ -8,11 +8,12 @@
 #
 # Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile), each
 # with its own fixed IP - this guest reaches postgres (and Redis/RabbitMQ, on the
-# same VM) directly at its bridged IP. Every container here uses
-# network_mode: host, so it binds to this VM's own bridged IP -- BACKEND_CORS_ORIGINS
-# is set to the ui-service VM's own LAN IP for the same reason it always was: every
-# browser that loads the UI does so from that address, and that's what its Origin
-# header will carry.
+# same VM) directly at its bridged IP. The container here runs on its own bridge
+# network (see backend-service/docker-compose.yml) with its port published to this
+# VM's bridged IP, so it's still reachable the same way host networking would be --
+# BACKEND_CORS_ORIGINS is set to the ui-service VM's own LAN IP for the same reason
+# it always was: every browser that loads the UI does so from that address, and
+# that's what its Origin header will carry.
 set -euo pipefail
 
 APP_DIR="/app"

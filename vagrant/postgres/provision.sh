@@ -5,10 +5,10 @@
 # its own container -- see infra/postgres/docker-compose.yml). Safe to re-run.
 #
 # Networking note: all VMs are bridged onto the host's LAN (see Vagrantfile), each
-# with its own fixed IP. Every container in the compose project uses
-# network_mode: host, so it binds directly to this VM's bridged interface at its
-# usual port -- no NAT/port-mapping trick needed, and nothing changes for the
-# backend-service/fetcher-service VMs that connect to it.
+# with its own fixed IP. Every container in the compose project (see
+# infra/postgres/docker-compose.yml) runs on its own bridge network with its usual
+# port explicitly published to this VM's bridged interface, so nothing changes for
+# the backend-service/fetcher-service VMs that connect to it.
 set -euo pipefail
 
 APP_DIR="/app"
