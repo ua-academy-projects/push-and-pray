@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+.env.*
+*.test
+coverage.out
+history-service
+bin/
+tmp/
+

@@ -1,0 +1,5 @@
+services:
+  api-fetcher:
+    build:
+      dockerfile: Dockerfile.wolfi
+
