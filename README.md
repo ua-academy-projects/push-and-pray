@@ -3,6 +3,7 @@
 Застосунок демонструє UI-сесії в Redis і асинхронний запис погодних даних
 через RabbitMQ. Повна схема та всі потоки описані у
 [`docs/architecture.md`](docs/architecture.md).
+<img width="1254" height="1912" alt="image" src="https://github.com/user-attachments/assets/df8e5797-9293-4b23-845c-50bcf8660b49" />
 
 ## Запуск через Docker Compose
 
