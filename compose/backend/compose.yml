@@ -1,0 +1,33 @@
+name: weatherflow-backend
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+  image: weatherflow-backend:local
+  network_mode: host
+  env_file:
+    - ./runtime.env
+  init: true
+  restart: unless-stopped
+
+services:
+  backend-api:
+    <<: *backend-common
+    container_name: weatherflow-backend-api
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()
+      interval: 10s
+      timeout: 6s
+      retries: 30
+      start_period: 15s
+
+  backend-consumer:
+    <<: *backend-common
+    container_name: weatherflow-backend-consumer
+    command: ["python", "consumer.py"]

@@ -1,0 +1,84 @@
+name: weatherflow-db
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: weatherflow-postgres
+    network_mode: host
+    env_file:
+      - ./runtime.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: weatherflow-redis
+    network_mode: host
+    env_file:
+      - ./runtime.env
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server
+        --bind 0.0.0.0
+        --protected-mode yes
+        --appendonly yes
+        --requirepass "$${REDIS_PASSWORD}"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: weatherflow-rabbitmq
+    network_mode: host
+    env_file:
+      - ./runtime.env
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+
+  db-init:
+    image: postgres:16-alpine
+    network_mode: host
+    env_file:
+      - ./runtime.env
+    volumes:
+      - ./db/init.sql:/sql/init.sql:ro
+    command:
+      - sh
+      - -c
+      - >-
+        export PGPASSWORD="$${POSTGRES_PASSWORD}";
+        until pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"; do sleep 2; done;
+        psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -f /sql/init.sql
+    profiles: ["tools"]
+    restart: "no"
+
+volumes:
+  postgres_data:
+    name: weatherflow_postgres_data
+  redis_data:
+    name: weatherflow_redis_data
+  rabbitmq_data:
+    name: weatherflow_rabbitmq_data

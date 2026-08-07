@@ -1,0 +1,8 @@
+*.sh text eol=lf
+Vagrantfile text eol=lf
+*.py text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf

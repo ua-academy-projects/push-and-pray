@@ -1,0 +1,4 @@
+# Dependency overview. Each service installs its own requirements file.
+# backend/requirements.txt
+# fetcher/requirements.txt
+# ui/requirements.txt

@@ -1,0 +1,9 @@
+.vagrant/
+__pycache__/
+*.py[cod]
+*.log
+.env
+runtime.env
+.DS_Store
+.ssh/
+*.zip

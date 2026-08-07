@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WeatherFlow</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="page-shell">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-icon" aria-hidden="true">☁</div>
+                <div>
+                    <h1>WeatherFlow</h1>
+                    <p>Погода обласних центрів України</p>
+                </div>
+            </div>
+            <div id="system-status" class="system-status checking">
+                <span class="status-dot"></span>
+                <span>Оновлення...</span>
+            </div>
+        </header>
+
+        <section class="control-panel">
+            <div class="control-grid">
+                <label>
+                    <span>Місто</span>
+                    <select id="city-select" disabled>
+                        <option>Завантаження міст...</option>
+                    </select>
+                </label>
+
+                <label>
+                    <span>Показник графіка</span>
+                    <select id="metric-select">
+                        <option value="temperature">Температура</option>
+                        <option value="feels_like">Відчувається як</option>
+                        <option value="humidity">Вологість</option>
+                        <option value="pressure">Тиск</option>
+                        <option value="wind_speed">Швидкість вітру</option>
+                    </select>
+                </label>
+
+                <label>
+                    <span>Період</span>
+                    <select id="period-select">
+                        <option value="24h">24 години</option>
+                        <option value="7d">7 днів</option>
+                        <option value="30d">30 днів</option>
+                        <option value="all">Весь час</option>
+                    </select>
+                </label>
+
+                <button id="reload-button" class="primary-button" type="button">
+                    Оновити дані
+                </button>
+            </div>
+
+            <div class="toggle-row">
+                <label class="switch-label">
+                    <input id="auto-refresh" type="checkbox">
+                    <span>Автоматично оновлювати</span>
+                </label>
+                <label class="switch-label">
+                    <input id="compact-mode" type="checkbox">
+                    <span>Компактний режим</span>
+                </label>
+            </div>
+        </section>
+
+        <div id="message" class="message hidden" role="status" aria-live="polite"></div>
+
+        <section id="weather-section" class="weather-section loading-state">
+            <div class="weather-heading">
+                <div>
+                    <p class="eyebrow">Погода зараз</p>
+                    <h2 id="city-name">Завантаження...</h2>
+                    <p id="oblast-name">—</p>
+                </div>
+                <div class="temperature-main">
+                    <span id="weather-icon" aria-hidden="true">◌</span>
+                    <strong><span id="temperature">—</span><small>°C</small></strong>
+                </div>
+            </div>
+
+            <p id="weather-description" class="weather-description">Завантаження даних...</p>
+
+            <div class="metrics-grid">
+                <article class="metric-card">
+                    <span>Відчувається</span>
+                    <strong><span id="feels-like">—</span> °C</strong>
+                </article>
+                <article class="metric-card">
+                    <span>Вологість</span>
+                    <strong><span id="humidity">—</span> %</strong>
+                </article>
+                <article class="metric-card">
+                    <span>Тиск</span>
+                    <strong><span id="pressure">—</span> hPa</strong>
+                </article>
+                <article class="metric-card">
+                    <span>Вітер</span>
+                    <strong><span id="wind-speed">—</span> км/год</strong>
+                </article>
+            </div>
+
+            <div class="metadata-grid">
+                <p><span>Оновлено:</span> <strong id="observed-at">—</strong></p>
+                <p><span>Координати:</span> <strong id="coordinates">—</strong></p>
+            </div>
+        </section>
+
+        <section class="chart-section">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Динаміка погоди</p>
+                    <h2 id="chart-title">Графік</h2>
+                </div>
+                <span id="chart-count" class="count-badge">0 точок</span>
+            </div>
+            <div class="chart-wrap">
+                <canvas id="weather-chart" aria-label="Графік історії погоди"></canvas>
+                <div id="chart-empty" class="empty-overlay hidden">Недостатньо даних для графіка</div>
+            </div>
+        </section>
+
+        <section class="history-section">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Останні спостереження</p>
+                    <h2>Детальна історія</h2>
+                </div>
+                <span id="history-count" class="count-badge">0 записів</span>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Час</th>
+                            <th>Температура</th>
+                            <th>Відчувається</th>
+                            <th>Вологість</th>
+                            <th>Тиск</th>
+                            <th>Вітер</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body"></tbody>
+                </table>
+                <div id="history-empty" class="empty-table hidden">Для цього міста ще немає даних.</div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

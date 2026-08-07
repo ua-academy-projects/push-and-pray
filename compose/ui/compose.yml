@@ -1,0 +1,25 @@
+name: weatherflow-ui
+
+services:
+  ui:
+    build:
+      context: ./ui
+    image: weatherflow-ui:local
+    container_name: weatherflow-ui
+    network_mode: host
+    env_file:
+      - ./runtime.env
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:5000/', timeout=5).read()
+      interval: 10s
+      timeout: 6s
+      retries: 30
+      start_period: 15s

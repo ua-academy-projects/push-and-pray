@@ -1,0 +1,13 @@
+name: weatherflow-fetcher
+
+services:
+  fetcher:
+    build:
+      context: ./fetcher
+    image: weatherflow-fetcher:local
+    container_name: weatherflow-fetcher
+    network_mode: host
+    env_file:
+      - ./runtime.env
+    init: true
+    restart: unless-stopped
