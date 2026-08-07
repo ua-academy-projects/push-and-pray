@@ -1,4 +1,6 @@
 # Weather microservices demo
+<img width="1319" height="907" alt="image" src="https://github.com/user-attachments/assets/12061463-a05a-4172-814a-c4daad543c14" />
+
 
 A small weather dashboard built from cooperating services: a UI, a backend/proxy, a
 history service, PostgreSQL for persistence, Redis for UI sessions, and RabbitMQ for
