@@ -11,6 +11,24 @@ Browser   -> UI/Nginx ----------------> History Service -> PostgreSQL
 API Fetcher only retrieves and normalizes provider data. History Service
 consumes RabbitMQ observations, owns PostgreSQL, and serves every UI read.
 
+## Screenshots
+
+### Overview
+
+![Rateboard overview with cryptocurrency and fiat rates](docs/screenshots/rateboard_overview.png)
+
+### Rate cards
+
+![Rateboard overview with detailed rate cards](docs/screenshots/rateboard_cards.png)
+
+### History
+
+![Rateboard historical rate chart](docs/screenshots/rateboard_history.png)
+
+### Capitalization
+
+![Rateboard cryptocurrency capitalization map](docs/screenshots/rateboard_capitalization.png)
+
 ## Repository
 
 ```text
