@@ -2,6 +2,9 @@
 
 A web application for automatically collecting, storing, and displaying weather data (current conditions, a 24-hour forecast, and history for the past 24 hours or 7 days) for **Nadvirna**.
 
+![current/forecast](https://github.com/ua-academy-projects/push-and-pray/blob/f7be1459605a687fb120fa1a9aa51b5679e8cd83/current_weather_and_forecast.png)
+![history](https://github.com/ua-academy-projects/push-and-pray/blob/f7be1459605a687fb120fa1a9aa51b5679e8cd83/weather_history.png)
+![archive](https://github.com/ua-academy-projects/push-and-pray/blob/f7be1459605a687fb120fa1a9aa51b5679e8cd83/archive.png)
 ---
 
 ## 🏛 Architecture
