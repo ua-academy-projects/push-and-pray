@@ -4,6 +4,16 @@ AirAware is a four-VM air-quality monitoring system. It collects measurements fr
 
 Vagrant creates and networks the Ubuntu VMs. Docker Compose runs every application and infrastructure service inside those VMs.
 
+## AirAware screenshots
+
+### Current air quality
+
+![AirAware dashboard showing current air-quality data](docs/images/airaware-current.png)
+
+### Historical data
+
+![AirAware dashboard showing historical air-quality data](docs/images/airaware-history.png)
+
 ## Architecture
 
 ```text
