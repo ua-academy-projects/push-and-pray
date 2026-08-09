@@ -71,6 +71,14 @@ install_docker() {
     if getent group docker >/dev/null 2>&1; then
         usermod -aG docker vagrant
     fi
+
+    if getent group systemd-journal >/dev/null 2>&1; then
+        usermod -aG systemd-journal vagrant
+    fi
+
+    if getent group adm >/dev/null 2>&1; then
+        usermod -aG adm vagrant
+    fi
 }
 
 configure_local_name_resolution() {
@@ -150,13 +158,21 @@ setup_custom_user() {
         adduser --disabled-password --gecos "" "${username}"
     fi
 
-    # 2. Перевірка наявності та додавання до груп sudo і docker
+    # 2. Перевірка наявності та додавання до груп sudo, docker, systemd-journal i adm
     if getent group sudo >/dev/null 2>&1; then
         usermod -aG sudo "${username}"
     fi
 
     if getent group docker >/dev/null 2>&1; then
         usermod -aG docker "${username}"
+    fi
+
+    if getent group systemd-journal >/dev/null 2>&1; then
+        usermod -aG systemd-journal "${username}"
+    fi
+
+    if getent group adm >/dev/null 2>&1; then
+        usermod -aG adm "${username}"
     fi
 
     # 3. Налаштування SSH директорії та ключа
