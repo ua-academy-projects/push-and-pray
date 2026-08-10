@@ -28,3 +28,5 @@ coverage/
 *.dump
 *.backup
 .run/
+/.tmp_*/
+/Знімок екрана *.png

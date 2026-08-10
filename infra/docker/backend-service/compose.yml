@@ -14,13 +14,16 @@ services:
       options:
         tag: rateboard-history-service
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health/ready"]
+      test:
+        - CMD
+        - /usr/local/bin/healthcheck
+        - http://127.0.0.1:8081/health/ready
       interval: 10s
       timeout: 3s
       retries: 18
 
   alloy:
-    image: grafana/alloy:v1.18.0
+    image: grafana/alloy:v1.18.0@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308
     env_file:
       - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
     command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]

@@ -2,7 +2,7 @@ name: rateboard-logs
 
 services:
   loki:
-    image: grafana/loki:3.7.0
+    image: grafana/loki:3.7.0@sha256:c316b7c7589a5eeca843b6926c7446149d18300b79ac8538dc4ae063bc478da2
     command: ["-config.file=/etc/loki/config.yml", "-config.expand-env=true"]
     environment:
       RATEBOARD_LOGS_RETENTION: "${RATEBOARD_LOGS_RETENTION}"
@@ -21,7 +21,7 @@ services:
       retries: 20
 
   grafana:
-    image: grafana/grafana:12.3.0
+    image: grafana/grafana:12.3.0@sha256:70d9599b186ce287be0d2c5ba9a78acb2e86c1a68c9c41449454d0fc3eeb84e8
     environment:
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
@@ -48,7 +48,7 @@ services:
       retries: 20
 
   nginx:
-    image: nginx:1.27.5-alpine
+    image: nginx:1-alpine-slim@sha256:45b82ed5f285b90d63df07ba70430fdd8f25624b416617d9e6dc93412b2006dc
     environment:
       NGINX_ENVSUBST_FILTER: "^LOGS_PUBLIC_HOST$"
       LOGS_PUBLIC_HOST: rates-logs
@@ -73,7 +73,7 @@ services:
       retries: 20
 
   alloy:
-    image: grafana/alloy:v1.18.0
+    image: grafana/alloy:v1.18.0@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308
     env_file:
       - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
     command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]

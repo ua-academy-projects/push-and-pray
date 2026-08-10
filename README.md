@@ -41,6 +41,11 @@ backend-service/migrations/  PostgreSQL migrations
 scripts/                     Deploy, verify, stop, and manual backfill helpers
 ```
 
+API Fetcher and History Service use digest-pinned Chainguard runtime images.
+History Service also ships a static readiness binary because its minimal image
+does not contain a shell or `wget`. Third-party deployment images are pinned by
+version and multi-platform digest for repeatable builds.
+
 ## Six-VM layout
 
 | VM | Default LAN address | Workload |

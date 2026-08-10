@@ -1,10 +1,10 @@
 <mxfile host="app.diagrams.net">
   <diagram id="rateboard-vm-map" name="Rateboard VM Map">
-    <mxGraphModel dx="3872" dy="859" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1200" math="0" shadow="0">
+    <mxGraphModel dx="4808" dy="1176" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1200" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;" value="Rateboard · 6 віртуальних машин і зв&#39;язки між ними" vertex="1">
+        <mxCell id="title" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=25;fontStyle=1;" value="Rateboard" vertex="1">
           <mxGeometry height="50" width="900" x="550" y="25" as="geometry" />
         </mxCell>
         <mxCell id="providers" parent="1" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;strokeWidth=2;fontSize=14;" value="&lt;b&gt;CoinGecko&lt;/b&gt;&lt;br&gt;&lt;b&gt;Frankfurter&lt;/b&gt;&lt;br&gt;Зовнішні API" vertex="1">

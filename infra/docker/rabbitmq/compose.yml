@@ -2,7 +2,7 @@ name: rateboard-messaging
 
 services:
   rabbitmq:
-    image: rabbitmq:4-management
+    image: rabbitmq:4-management@sha256:eb5295d083325da5929a5ade766684d4019ffd2bce8bc7e43d6f9a05cafc8646
     env_file:
       - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/rabbitmq.env}
     ports:
@@ -22,7 +22,7 @@ services:
       retries: 18
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     env_file:
       - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/rabbitmq.env}
     command:
@@ -45,7 +45,7 @@ services:
       retries: 18
 
   alloy:
-    image: grafana/alloy:v1.18.0
+    image: grafana/alloy:v1.18.0@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308
     env_file:
       - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
     command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]

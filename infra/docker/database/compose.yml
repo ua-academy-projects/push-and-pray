@@ -2,7 +2,7 @@ name: rateboard-database
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
     env_file:
       - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/database.env}
     ports:
@@ -21,7 +21,7 @@ services:
       retries: 24
 
   migrate:
-    image: postgres:16
+    image: postgres:16@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
     profiles: ["tools"]
     env_file:
       - ${RATEBOARD_SERVICE_ENV_FILE:-/etc/rateboard/database.env}
@@ -48,7 +48,7 @@ services:
         tag: rateboard-database-migrate
 
   alloy:
-    image: grafana/alloy:v1.18.0
+    image: grafana/alloy:v1.18.0@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308
     env_file:
       - ${RATEBOARD_ALLOY_ENV_FILE:-/etc/rateboard/alloy.env}
     command: ["run", "--stability.level=experimental", "--server.http.listen-addr=127.0.0.1:12345", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]

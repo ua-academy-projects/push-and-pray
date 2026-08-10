@@ -54,7 +54,7 @@ rm -f /tmp/rateboard-logs-server.crt /tmp/rateboard-logs-server.key
 
 password_hash="$(printf '%s\n' "${RATEBOARD_LOGS_INGEST_PASSWORD}" | openssl passwd -apr1 -stdin)"
 printf '%s:%s\n' "${RATEBOARD_LOGS_INGEST_USER}" "${password_hash}" > /etc/rateboard/logs/htpasswd
-# nginx:1.27.5-alpine runs workers as UID/GID 101. The bind-mounted file must
+# The pinned Nginx Alpine image runs workers as UID/GID 101. The bind-mounted file must
 # remain private while being readable by those workers for auth_basic.
 chown root:101 /etc/rateboard/logs/htpasswd
 chmod 0640 /etc/rateboard/logs/htpasswd

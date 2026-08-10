@@ -1,9 +1,0 @@
-services:
-  history-service:
-    build:
-      dockerfile: Dockerfile.wolfi
-    healthcheck:
-      test:
-        - CMD
-        - /usr/local/bin/healthcheck
-        - http://127.0.0.1:8081/health/ready
