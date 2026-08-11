@@ -8,6 +8,7 @@ source "${SCRIPT_DIR}/host-lib.sh"
 load_host_config
 cd "${HOST_PROJECT_ROOT}"
 repair_vagrant_ownership
+provider="$(resolve_vagrant_provider)"
 
 if [[ -z "${VAGRANT_BIN}" ]]; then
   printf 'Vagrant is not installed or is not in PATH.\n' >&2
@@ -62,28 +63,40 @@ for entry in "${machines[@]}"; do
   required_ips+=("${ip}")
 done
 
-if ! vagrant plugin list | grep -q '^vagrant-qemu '; then
-  printf 'Missing vagrant-qemu plugin. Install it with: vagrant plugin install vagrant-qemu\n' >&2
-  exit 1
-fi
-if [[ "$(uname -s)" == "Darwin" && -z "${QEMU_VMNET_INTERFACE:-}" ]]; then
-  printf 'QEMU_VMNET_INTERFACE is required for vmnet-bridged networking.\n' >&2
-  exit 1
+if [[ "${provider}" == "qemu" ]]; then
+  if ! vagrant plugin list | grep -q '^vagrant-qemu '; then
+    printf 'Missing vagrant-qemu plugin. Install it with: vagrant plugin install vagrant-qemu\n' >&2
+    exit 1
+  fi
+  if [[ "$(uname -s)" == "Darwin" && -z "${QEMU_VMNET_INTERFACE:-}" ]]; then
+    printf 'QEMU_VMNET_INTERFACE is required for vmnet-bridged networking.\n' >&2
+    exit 1
+  fi
+else
+  if ! command -v VBoxManage >/dev/null 2>&1 && ! command -v VBoxManage.exe >/dev/null 2>&1; then
+    printf 'VirtualBox is not installed or VBoxManage is not in PATH.\n' >&2
+    exit 1
+  fi
+  if [[ -z "${VIRTUALBOX_BRIDGE_INTERFACE:-}" ]]; then
+    printf 'VIRTUALBOX_BRIDGE_INTERFACE is required for bridged LAN networking.\n' >&2
+    printf 'List available adapters with: VBoxManage list bridgedifs\n' >&2
+    exit 1
+  fi
 fi
 
 for entry in "${machines[@]}"; do
   machine="${entry%%:*}"
   ip="${entry#*:}"
-  if [[ -f ".vagrant/machines/${machine}/qemu/id" ]]; then
+  if [[ -f ".vagrant/machines/${machine}/${provider}/id" ]]; then
     continue
   fi
-  if ping -c 1 -W 500 "${ip}" >/dev/null 2>&1; then
+  if host_replies_to_ping "${ip}"; then
     printf 'LAN IP %s already responds. Choose an unused/reserved address.\n' "${ip}" >&2
     exit 1
   fi
 done
 
 printf 'Preflight passed: provider=%s, LAN=%s, addresses=%s\n' \
-  "qemu" \
+  "${provider}" \
   "${LAN_CIDR}" \
   "${required_ips[*]}"

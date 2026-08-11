@@ -31,7 +31,11 @@ ssh_config="${ssh_directory}/config"
 begin_marker="# oil-price-tracker aliases begin"
 end_marker="# oil-price-tracker aliases end"
 
-install -d -m 0700 "${ssh_directory}"
+if is_windows_host; then
+  mkdir -p "${ssh_directory}"
+else
+  install -d -m 0700 "${ssh_directory}"
+fi
 
 if [[ ! -f "${identity_file}" ]]; then
   if [[ -f "${public_key}" ]]; then
@@ -50,8 +54,10 @@ elif [[ ! -f "${public_key}" ]]; then
   chmod 0644 "${public_key}"
 fi
 
-chmod 0600 "${identity_file}"
-chmod 0644 "${public_key}"
+if ! is_windows_host; then
+  chmod 0600 "${identity_file}"
+  chmod 0644 "${public_key}"
+fi
 
 temporary_config="$(mktemp)"
 trap 'rm -f "${temporary_config}"' EXIT
@@ -102,7 +108,11 @@ fi
   fi
 } > "${temporary_config}.new"
 
-install -m 0600 "${temporary_config}.new" "${ssh_config}"
+if is_windows_host; then
+  cp "${temporary_config}.new" "${ssh_config}"
+else
+  install -m 0600 "${temporary_config}.new" "${ssh_config}"
+fi
 rm -f "${temporary_config}.new"
 
 printf 'SSH aliases configured: app, database, history, worker.\n'

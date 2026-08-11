@@ -17,6 +17,64 @@ load_host_config() {
   set +a
 }
 
+is_windows_host() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_vagrant_provider() {
+  local requested_provider="${VAGRANT_PROVIDER:-auto}"
+  requested_provider="$(printf '%s' "${requested_provider}" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ "${requested_provider}" == "auto" ]]; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      requested_provider="qemu"
+    else
+      requested_provider="virtualbox"
+    fi
+  fi
+
+  case "${requested_provider}" in
+    qemu|virtualbox) printf '%s\n' "${requested_provider}" ;;
+    *)
+      printf 'VAGRANT_PROVIDER must be auto, qemu, or virtualbox.\n' >&2
+      return 2
+      ;;
+  esac
+}
+
+vagrant_box_for() {
+  case "$1" in
+    qemu) printf '%s\n' "${QEMU_VAGRANT_BOX:-${VAGRANT_BOX:-cloud-image/ubuntu-24.04}}" ;;
+    virtualbox) printf '%s\n' "${VIRTUALBOX_VAGRANT_BOX:-bento/ubuntu-24.04}" ;;
+  esac
+}
+
+vagrant_box_version_for() {
+  case "$1" in
+    qemu) printf '%s\n' "${QEMU_VAGRANT_BOX_VERSION:-${VAGRANT_BOX_VERSION:-}}" ;;
+    virtualbox) printf '%s\n' "${VIRTUALBOX_VAGRANT_BOX_VERSION:-}" ;;
+  esac
+}
+
+vagrant_box_architecture_for() {
+  case "$1" in
+    qemu) printf '%s\n' "${QEMU_VAGRANT_BOX_ARCHITECTURE:-${VAGRANT_BOX_ARCHITECTURE:-arm64}}" ;;
+    virtualbox) printf '%s\n' "${VIRTUALBOX_VAGRANT_BOX_ARCHITECTURE:-amd64}" ;;
+  esac
+}
+
+host_replies_to_ping() {
+  local ip="$1"
+  if is_windows_host; then
+    ping.exe -n 1 -w 500 "${ip}" >/dev/null 2>&1
+  else
+    ping -c 1 -W 500 "${ip}" >/dev/null 2>&1
+  fi
+}
+
 repair_vagrant_ownership() {
   [[ "$(uname -s)" == "Darwin" ]] || return 0
 

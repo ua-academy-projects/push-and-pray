@@ -57,7 +57,7 @@ have already been persisted in PostgreSQL.
 | Persistence | PostgreSQL 18 |
 | UI sessions | Redis 8 |
 | Packaging | Docker Engine and Docker Compose |
-| Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64 |
+| Virtualization | Vagrant, QEMU or VirtualBox, Ubuntu 24.04 |
 
 ## Architecture
 
@@ -131,13 +131,14 @@ scientific data source.
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
 ├── uv.lock                         Locked Python dependencies
-└── Vagrantfile                     Four-VM QEMU definition
+└── Vagrantfile                     Four-VM QEMU/VirtualBox definition
 ```
 
 ## Vagrant deployment
 
-The deployment targets Apple Silicon and uses only the `vagrant-qemu` provider. Vagrant
-creates the VMs and runs shell provisioners. Docker is installed by
+The deployment supports QEMU on Apple Silicon and VirtualBox on AMD64 Windows hosts.
+Vagrant creates the same four Ubuntu VMs and runs the same shell provisioners with either
+provider. Docker is installed by
 `infrastructure/vagrant/provisioning/docker-install.sh`; the native Vagrant Docker
 provisioner is not used.
 
@@ -151,23 +152,37 @@ provisioner is not used.
 | `ui` | `192.168.88.223` | UI Service, Redis | `8080/http`, `6379/tcp` |
 
 These addresses are examples. Configure four unused addresses from the host's real LAN,
-reserve them outside the router's dynamic DHCP pool, and keep them unique. The QEMU
-`vmnet-bridged` network makes the VMs reachable from other devices on the same LAN.
+reserve them outside the router's dynamic DHCP pool, and keep them unique. QEMU uses
+`vmnet-bridged`; VirtualBox uses a bridged `public_network`. With either provider, the VMs
+are reachable from other devices on the same LAN.
 
-### Host prerequisites
+### Common host prerequisites
+
+- Vagrant.
+- An OilPriceAPI key.
+
+### Apple Silicon with QEMU
 
 - macOS on Apple Silicon.
 - QEMU.
-- Vagrant.
 - The `vagrant-qemu` plugin.
 - Four unused and reserved LAN addresses.
-- An OilPriceAPI key.
 
 Install the provider plugin once:
 
 ```bash
 vagrant plugin install vagrant-qemu
 ```
+
+### Windows with VirtualBox
+
+- Windows on an AMD64 processor.
+- VirtualBox.
+- Git for Windows, including Git Bash.
+
+Vagrant includes the VirtualBox provider, so no provider plugin is required. Run the
+project's `.sh` commands from Git Bash. The default VirtualBox configuration uses an
+AMD64 `bento/ubuntu-24.04` box and bridges the VMs to a selected physical adapter.
 
 ### Configure the deployment
 
@@ -194,7 +209,14 @@ cp infrastructure/vagrant/config/vagrant.env.example \
 At minimum, review and set:
 
 ```dotenv
+VAGRANT_PROVIDER=auto
+
+# QEMU on Apple Silicon only
 QEMU_VMNET_INTERFACE=en0
+
+# VirtualBox on Windows only; find the exact name with VBoxManage list bridgedifs
+VIRTUALBOX_BRIDGE_INTERFACE="Intel(R) Wi-Fi 6 AX200 160MHz"
+
 LAN_CIDR=192.168.88.0/24
 LAN_NETMASK=255.255.255.0
 
@@ -209,6 +231,24 @@ RABBITMQ_USER=oil_tracker
 RABBITMQ_PASSWORD=use-a-real-password
 ```
 
+`VAGRANT_PROVIDER=auto` selects QEMU on macOS and VirtualBox on Windows. To select a
+provider explicitly, set it to `qemu` or `virtualbox`.
+
+For example, a Windows host on `192.168.50.0/24` can use four reserved addresses from
+that LAN:
+
+```dotenv
+VAGRANT_PROVIDER=virtualbox
+VIRTUALBOX_BRIDGE_INTERFACE="Intel(R) Wi-Fi 6 AX200 160MHz"
+LAN_CIDR=192.168.50.0/24
+LAN_NETMASK=255.255.255.0
+
+DB_LAN_IP=192.168.50.220
+HISTORY_LAN_IP=192.168.50.221
+FETCHER_LAN_IP=192.168.50.222
+UI_LAN_IP=192.168.50.223
+```
+
 Do not commit `.env` or `infrastructure/vagrant/config/vagrant.env`; both are ignored.
 
 ### Start everything
@@ -218,9 +258,9 @@ Do not commit `.env` or `infrastructure/vagrant/config/vagrant.env`; both are ig
 ```
 
 The command performs preflight validation, creates the project SSH key and aliases,
-downloads the ARM64 QEMU box when required, starts the VMs in dependency order, installs
-Docker, runs the four Compose projects, applies PostgreSQL migrations, and verifies
-cross-VM communication.
+downloads the selected provider's Ubuntu box when required, starts the VMs in dependency
+order, installs Docker, runs the four Compose projects, applies PostgreSQL migrations,
+and verifies cross-VM communication.
 
 After a deployment using the example addresses, open:
 

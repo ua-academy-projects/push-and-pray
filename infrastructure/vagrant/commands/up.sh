@@ -10,7 +10,7 @@ cd "${PROJECT_ROOT}"
 
 if [[ ! -f infrastructure/vagrant/config/vagrant.env ]]; then
   cp infrastructure/vagrant/config/vagrant.env.example infrastructure/vagrant/config/vagrant.env
-  printf 'Created infrastructure/vagrant/config/vagrant.env. Review QEMU_VMNET_INTERFACE, LAN_CIDR and static IPs, then run this script again.\n'
+  printf 'Created infrastructure/vagrant/config/vagrant.env. Review the provider, network, static IPs and credentials, then run this script again.\n'
   exit 1
 fi
 
@@ -25,13 +25,17 @@ if ! awk -F= '$1 == "OILPRICEAPI_KEY" && $2 != "" && $2 != "replace-me" { found=
 fi
 
 load_host_config
+provider="$(resolve_vagrant_provider)"
+box_name="$(vagrant_box_for "${provider}")"
+box_version="$(vagrant_box_version_for "${provider}")"
+box_architecture="$(vagrant_box_architecture_for "${provider}")"
 "${SCRIPT_DIR}/ssh-setup.sh"
 "${SCRIPT_DIR}/preflight.sh"
 
 if ! vagrant box list | awk \
-  -v box="${VAGRANT_BOX}" \
-  -v provider="qemu" \
-  -v version="${VAGRANT_BOX_VERSION:-}" \
+  -v box="${box_name}" \
+  -v provider="${provider}" \
+  -v version="${box_version}" \
   '$1 == box &&
    index($0, "(" provider ",") &&
    (version == "" || index($0, ", " version ",") || index($0, ", " version ")")) {
@@ -39,14 +43,16 @@ if ! vagrant box list | awk \
    }
    END { exit !found }'; then
   printf '\n=== Downloading %s for %s as the current user ===\n' \
-    "${VAGRANT_BOX}" "qemu"
+    "${box_name}" "${provider}"
   box_add_args=(
-    "${VAGRANT_BOX}"
-    "--provider=qemu"
-    "--architecture=${VAGRANT_BOX_ARCHITECTURE:-arm64}"
+    "${box_name}"
+    "--provider=${provider}"
   )
-  if [[ -n "${VAGRANT_BOX_VERSION:-}" ]]; then
-    box_add_args+=("--box-version=${VAGRANT_BOX_VERSION}")
+  if [[ -n "${box_architecture}" ]]; then
+    box_add_args+=("--architecture=${box_architecture}")
+  fi
+  if [[ -n "${box_version}" ]]; then
+    box_add_args+=("--box-version=${box_version}")
   fi
   vagrant box add "${box_add_args[@]}"
 fi
@@ -55,7 +61,7 @@ run_vagrant validate
 
 for machine in database history fetcher ui; do
   printf '\n=== Starting %s ===\n' "${machine}"
-  run_vagrant up "${machine}" --provider=qemu --provision
+  run_vagrant up "${machine}" --provider="${provider}" --provision
 done
 
 "${SCRIPT_DIR}/show-ips.sh"

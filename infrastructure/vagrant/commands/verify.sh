@@ -10,6 +10,35 @@ cd "${HOST_PROJECT_ROOT}"
 
 failures=0
 
+check_tcp() {
+  local label="$1"
+  local host="$2"
+  local port="$3"
+  local reachable=false
+
+  if is_windows_host; then
+    if powershell.exe -NoProfile -NonInteractive -Command \
+      '$client = New-Object System.Net.Sockets.TcpClient; try { $result = $client.BeginConnect($args[0], [int]$args[1], $null, $null); if (-not $result.AsyncWaitHandle.WaitOne(5000)) { exit 1 }; $client.EndConnect($result); exit 0 } catch { exit 1 } finally { $client.Close() }' \
+      "${host}" "${port}" >/dev/null 2>&1; then
+      reachable=true
+    fi
+  elif nc -z -w 5 "${host}" "${port}"; then
+    reachable=true
+  fi
+
+  if [[ "${reachable}" == "true" ]]; then
+    printf 'PASS  %-24s %s:%s\n' "${label}" "${host}" "${port}"
+  else
+    printf 'FAIL  %-24s %s:%s\n' "${label}" "${host}" "${port}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+json_string_field() {
+  local field="$1"
+  sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
+}
+
 check_ssh_alias() {
   local alias_name="$1"
   local actual_user=""
@@ -124,26 +153,9 @@ history_ip="$(lan_ip_for history)"
 fetcher_ip="$(lan_ip_for fetcher)"
 ui_ip="$(lan_ip_for ui)"
 
-if nc -z -w 5 "${db_ip}" 5432; then
-  printf 'PASS  PostgreSQL LAN socket  %s:5432\n' "${db_ip}"
-else
-  printf 'FAIL  PostgreSQL LAN socket  %s:5432\n' "${db_ip}" >&2
-  failures=$((failures + 1))
-fi
-
-if nc -z -w 5 "${ui_ip}" 6379; then
-  printf 'PASS  Redis LAN socket       %s:6379\n' "${ui_ip}"
-else
-  printf 'FAIL  Redis LAN socket       %s:6379\n' "${ui_ip}" >&2
-  failures=$((failures + 1))
-fi
-
-if nc -z -w 5 "${history_ip}" 5672; then
-  printf 'PASS  RabbitMQ AMQP socket   %s:5672\n' "${history_ip}"
-else
-  printf 'FAIL  RabbitMQ AMQP socket   %s:5672\n' "${history_ip}" >&2
-  failures=$((failures + 1))
-fi
+check_tcp 'PostgreSQL LAN socket' "${db_ip}" 5432
+check_tcp 'Redis LAN socket' "${ui_ip}" 6379
+check_tcp 'RabbitMQ AMQP socket' "${history_ip}" 5672
 
 check_http 'History health' "http://${history_ip}:8001/health"
 check_http 'Fetcher health' "http://${fetcher_ip}:8002/health"
@@ -153,7 +165,7 @@ check_http 'Saved data through UI' "http://${ui_ip}:8080/api/latest"
 check_http 'Redis-backed UI session' "http://${ui_ip}:8080/api/session/preferences"
 
 history_rabbit="$(curl -fsS --max-time 10 "http://${history_ip}:8001/health" \
-  | jq -r '.rabbitmq // empty' || true)"
+  | json_string_field rabbitmq || true)"
 if [[ "${history_rabbit}" == "connected" ]]; then
   printf 'PASS  History consumes RabbitMQ events\n'
 else
@@ -196,7 +208,7 @@ else
 fi
 
 fetcher_error="$(curl -fsS --max-time 10 "http://${fetcher_ip}:8002/health" \
-  | jq -r '.last_error // empty' || true)"
+  | json_string_field last_error || true)"
 if [[ -n "${fetcher_error}" ]]; then
   printf 'FAIL  Fetcher last_error: %s\n' "${fetcher_error}" >&2
   failures=$((failures + 1))

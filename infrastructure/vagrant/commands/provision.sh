@@ -8,6 +8,7 @@ source "${SCRIPT_DIR}/host-lib.sh"
 load_host_config
 cd "${HOST_PROJECT_ROOT}"
 "${SCRIPT_DIR}/ssh-setup.sh"
+provider="$(resolve_vagrant_provider)"
 
 machine="${1:-}"
 case "${machine}" in
@@ -18,5 +19,7 @@ case "${machine}" in
     ;;
 esac
 
-run_vagrant rsync "${machine}"
+if [[ "${provider}" == "qemu" ]]; then
+  run_vagrant rsync "${machine}"
+fi
 run_vagrant provision "${machine}"

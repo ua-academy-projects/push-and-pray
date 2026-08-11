@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "ipaddr"
+require "rbconfig"
 
 def load_project_settings(path)
   return {} unless File.file?(path)
@@ -15,15 +16,55 @@ def load_project_settings(path)
 end
 
 settings = load_project_settings(File.join(__dir__, "infrastructure/vagrant/config/vagrant.env"))
-box_name = ENV.fetch("VAGRANT_BOX", settings.fetch("VAGRANT_BOX", "cloud-image/ubuntu-24.04"))
-box_version = ENV.fetch("VAGRANT_BOX_VERSION", settings.fetch("VAGRANT_BOX_VERSION", ""))
-box_architecture = ENV.fetch(
-  "VAGRANT_BOX_ARCHITECTURE",
-  settings.fetch("VAGRANT_BOX_ARCHITECTURE", "arm64")
-)
+
+host_os = RbConfig::CONFIG.fetch("host_os", "")
+default_provider = host_os.match?(/darwin/i) ? "qemu" : "virtualbox"
+selected_provider = ENV.fetch(
+  "VAGRANT_PROVIDER",
+  settings.fetch("VAGRANT_PROVIDER", "auto")
+).downcase
+selected_provider = default_provider if selected_provider == "auto"
+unless %w[qemu virtualbox].include?(selected_provider)
+  raise "VAGRANT_PROVIDER must be auto, qemu, or virtualbox."
+end
+
+if selected_provider == "qemu"
+  box_name = ENV.fetch(
+    "QEMU_VAGRANT_BOX",
+    settings.fetch("QEMU_VAGRANT_BOX", settings.fetch("VAGRANT_BOX", "cloud-image/ubuntu-24.04"))
+  )
+  box_version = ENV.fetch(
+    "QEMU_VAGRANT_BOX_VERSION",
+    settings.fetch("QEMU_VAGRANT_BOX_VERSION", settings.fetch("VAGRANT_BOX_VERSION", ""))
+  )
+  box_architecture = ENV.fetch(
+    "QEMU_VAGRANT_BOX_ARCHITECTURE",
+    settings.fetch(
+      "QEMU_VAGRANT_BOX_ARCHITECTURE",
+      settings.fetch("VAGRANT_BOX_ARCHITECTURE", "arm64")
+    )
+  )
+else
+  box_name = ENV.fetch(
+    "VIRTUALBOX_VAGRANT_BOX",
+    settings.fetch("VIRTUALBOX_VAGRANT_BOX", "bento/ubuntu-24.04")
+  )
+  box_version = ENV.fetch(
+    "VIRTUALBOX_VAGRANT_BOX_VERSION",
+    settings.fetch("VIRTUALBOX_VAGRANT_BOX_VERSION", "")
+  )
+  box_architecture = ENV.fetch(
+    "VIRTUALBOX_VAGRANT_BOX_ARCHITECTURE",
+    settings.fetch("VIRTUALBOX_VAGRANT_BOX_ARCHITECTURE", "amd64")
+  )
+end
 qemu_interface = ENV.fetch(
   "QEMU_VMNET_INTERFACE",
   settings.fetch("QEMU_VMNET_INTERFACE", "en0")
+)
+virtualbox_bridge_interface = ENV.fetch(
+  "VIRTUALBOX_BRIDGE_INTERFACE",
+  settings.fetch("VIRTUALBOX_BRIDGE_INTERFACE", "")
 )
 ssh_admin_user = ENV.fetch(
   "SSH_ADMIN_USER",
@@ -108,41 +149,62 @@ Vagrant.configure("2") do |config|
   config.vm.box_architecture = box_architecture unless box_architecture.empty?
   config.vm.boot_timeout = 900
   config.ssh.insert_key = true
-  config.vm.synced_folder ".", "/vagrant",
-    type: "rsync",
-    rsync__exclude: [
-      ".env",
-      ".git/",
-      ".venv/",
-      ".vagrant/",
-      ".pytest_cache/",
-      ".ruff_cache/",
-      "**/__pycache__/",
-      "**/node_modules/"
-    ]
+  if selected_provider == "qemu"
+    config.vm.synced_folder ".", "/vagrant",
+      type: "rsync",
+      rsync__exclude: [
+        ".env",
+        ".git/",
+        ".venv/",
+        ".vagrant/",
+        ".pytest_cache/",
+        ".ruff_cache/",
+        "**/__pycache__/",
+        "**/node_modules/"
+      ]
+  else
+    config.vm.synced_folder ".", "/vagrant", type: "virtualbox"
+  end
 
   machines.each do |name, machine|
     config.vm.define name, primary: name == "ui" do |node|
       node.vm.hostname = machine[:hostname]
 
-      # vagrant-qemu 0.6.x maps this high-level private_network declaration
-      # to its second, vmnet-bridged NIC. The address is a real LAN address.
-      node.vm.network "private_network",
-        ip: machine[:lan_ip],
-        netmask: lan_netmask
+      if selected_provider == "qemu"
+        # vagrant-qemu maps this declaration to its vmnet-bridged LAN NIC.
+        node.vm.network "private_network",
+          ip: machine[:lan_ip],
+          netmask: lan_netmask
 
-      node.vm.provider "qemu" do |provider|
-        provider.memory = "#{machine[:memory]}M"
-        provider.smp = machine[:cpus].to_s
-        provider.ssh_port = machine[:ssh_port].to_s
-        provider.ssh_auto_correct = true
-        provider.advanced_network = true
-        provider.net_mode = :vmnet_bridged
-        provider.vmnet_interface = qemu_interface
-        # QEMU's -daemonize forks after macOS frameworks have initialized,
-        # which can trigger Objective-C fork-safety crashes on Apple Silicon.
-        # Let Vagrant detach the process instead of making QEMU fork itself.
-        provider.no_daemonize = true if RUBY_PLATFORM.include?("darwin")
+        node.vm.provider "qemu" do |provider|
+          provider.memory = "#{machine[:memory]}M"
+          provider.smp = machine[:cpus].to_s
+          provider.ssh_port = machine[:ssh_port].to_s
+          provider.ssh_auto_correct = true
+          provider.advanced_network = true
+          provider.net_mode = :vmnet_bridged
+          provider.vmnet_interface = qemu_interface
+          # QEMU's -daemonize forks after macOS frameworks have initialized,
+          # which can trigger Objective-C fork-safety crashes on Apple Silicon.
+          # Let Vagrant detach the process instead of making QEMU fork itself.
+          provider.no_daemonize = true if RUBY_PLATFORM.include?("darwin")
+        end
+      else
+        # VirtualBox public_network creates a bridged NIC on the host's real
+        # LAN, so the static address is reachable by other LAN devices.
+        network_options = {
+          ip: machine[:lan_ip],
+          netmask: lan_netmask
+        }
+        unless virtualbox_bridge_interface.empty?
+          network_options[:bridge] = virtualbox_bridge_interface
+        end
+        node.vm.network "public_network", **network_options
+
+        node.vm.provider "virtualbox" do |provider|
+          provider.memory = machine[:memory]
+          provider.cpus = machine[:cpus]
+        end
       end
 
       node.vm.provision "shell", name: "common", path: "infrastructure/vagrant/provisioning/common.sh"
