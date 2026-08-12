@@ -1,0 +1,220 @@
+name: petroscope-single-node
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oil_tracker
+      POSTGRES_USER: oil_tracker
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PGDATA: /var/lib/postgresql/18/docker
+      TZ: UTC
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/postgres
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.3.4-management}
+    restart: unless-stopped
+    hostname: oil-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: oil_tracker
+      TZ: UTC
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "15672:15672"         
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/rabbitmq
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.8-bookworm}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      TZ: UTC
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/redis
+
+  history:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.history
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.13-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://oil_tracker:${DB_PASSWORD}@postgres:5432/oil_tracker
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/oil_tracker
+      RABBITMQ_EXCHANGE: oil.price.events
+      RABBITMQ_QUEUE: history.price-observations
+      RABBITMQ_ROUTING_KEY: prices.observed
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/history
+
+  fetcher:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.fetcher
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.24.13-bookworm}
+        RUNTIME_IMAGE: ${GO_RUNTIME_IMAGE:-debian:bookworm-slim}
+    restart: unless-stopped
+    init: true
+    environment:
+      OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
+      DATA_PROVIDER: oilpriceapi
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/oil_tracker
+      RABBITMQ_EXCHANGE: oil.price.events
+      RABBITMQ_QUEUE: history.price-observations
+      RABBITMQ_ROUTING_KEY: prices.observed
+      FETCH_CRON_HOURS: "0,6,12,18"
+      FETCH_TIMEZONE: UTC
+      FETCH_ON_STARTUP: "true"
+      REQUEST_TIMEOUT_SECONDS: "15"
+      LISTEN_ADDRESS: 0.0.0.0:8002
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "127.0.0.1:8002:8002"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/fetcher
+
+  ui:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.ui
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24.13.0-bookworm-slim}
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.13-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}
+    restart: unless-stopped
+    init: true
+    environment:
+      HISTORY_SERVICE_URL: http://history:8001
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SESSION_TTL_SECONDS: "2592000"
+      SESSION_COOKIE_SECURE: "false"
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      history:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/ui
+
+volumes:
+  postgres_data:
+    name: petroscope-postgres-data
+  rabbitmq_data:
+    name: petroscope-rabbitmq-data
+  redis_data:
+    name: petroscope-redis-data
