@@ -1,0 +1,37 @@
+[project]
+name = "oil-price-tracker"
+version = "0.1.0"
+description = "Research application for collecting and visualizing daily oil and gasoline prices"
+requires-python = ">=3.12"
+dependencies = [
+    "aio-pika>=9.6,<11",
+    "fastapi>=0.115,<1",
+    "httpx>=0.28,<1",
+    "psycopg[binary]>=3.2,<4",
+    "pydantic-settings>=2.9,<3",
+    "redis>=8,<9",
+    "sqlalchemy>=2.0,<3",
+    "uvicorn[standard]>=0.34,<1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<10",
+    "ruff>=0.12,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["services/history/tests", "services/ui/backend/tests"]
+pythonpath = ["services/history/src", "services/ui/backend/src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["services/history/src", "services/ui/backend/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

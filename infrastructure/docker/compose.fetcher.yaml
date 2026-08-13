@@ -1,0 +1,42 @@
+name: petroscope-fetcher
+
+services:
+  fetcher:
+    image: petroscope-fetcher:local
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.fetcher
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.24.13-bookworm}
+        RUNTIME_IMAGE: ${GO_RUNTIME_IMAGE:-debian:bookworm-slim}
+    restart: unless-stopped
+    init: true
+    environment:
+      OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
+      DATA_PROVIDER: oilpriceapi
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?RABBITMQ_USER is required}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:5672/oil_tracker
+      RABBITMQ_EXCHANGE: oil.price.events
+      RABBITMQ_QUEUE: history.price-observations
+      RABBITMQ_ROUTING_KEY: prices.observed
+      FETCH_CRON_HOURS: "0,6,12,18"
+      FETCH_TIMEZONE: UTC
+      FETCH_ON_STARTUP: "true"
+      REQUEST_TIMEOUT_SECONDS: "15"
+      LISTEN_ADDRESS: 0.0.0.0:8002
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "${FETCHER_LAN_IP:?FETCHER_LAN_IP is required}:8002:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/fetcher

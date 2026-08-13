@@ -1,0 +1,32 @@
+name: petroscope-database
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oil_tracker
+      POSTGRES_USER: oil_tracker
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PGDATA: /var/lib/postgresql/18/docker
+      TZ: UTC
+    ports:
+      - "${DB_LAN_IP:?DB_LAN_IP is required}:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/postgres
+
+volumes:
+  postgres_data:
+    name: petroscope-postgres-data

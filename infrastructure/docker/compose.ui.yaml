@@ -1,0 +1,79 @@
+name: petroscope-ui
+
+services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.8-bookworm}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      TZ: UTC
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${REDIS_PASSWORD}
+    ports:
+      - "${UI_LAN_IP:?UI_LAN_IP is required}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/redis
+
+  ui:
+    image: petroscope-ui:local
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.ui
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24.13.0-bookworm-slim}
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.13-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}
+    restart: unless-stopped
+    init: true
+    environment:
+      HISTORY_SERVICE_URL: http://${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:8001
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SESSION_TTL_SECONDS: "2592000"
+      SESSION_COOKIE_SECURE: "false"
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "${UI_LAN_IP}:8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/ui
+
+volumes:
+  redis_data:
+    name: petroscope-redis-data

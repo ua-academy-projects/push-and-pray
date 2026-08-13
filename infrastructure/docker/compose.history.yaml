@@ -1,0 +1,73 @@
+name: petroscope-history
+
+services:
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.3.4-management}
+    restart: unless-stopped
+    hostname: oil-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: oil_tracker
+      TZ: UTC
+    ports:
+      - "${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:5672:5672"
+      - "${HISTORY_LAN_IP}:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/rabbitmq
+
+  history:
+    image: petroscope-history:local
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.history
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12.13-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/oil_tracker
+      RABBITMQ_EXCHANGE: oil.price.events
+      RABBITMQ_QUEUE: history.price-observations
+      RABBITMQ_ROUTING_KEY: prices.observed
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "${HISTORY_LAN_IP}:8001:8001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/history
+
+volumes:
+  rabbitmq_data:
+    name: petroscope-rabbitmq-data
