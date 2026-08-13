@@ -3,7 +3,7 @@ name: petroscope-ui
 services:
   ui:
     build:
-      context: ..
+      context: ../..
       dockerfile: infrastructure/docker/Dockerfile.ui
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:24.16.0-bookworm-slim}
