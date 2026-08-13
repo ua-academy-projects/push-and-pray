@@ -1,0 +1,107 @@
+name: petroscope-ui
+
+services:
+  ui:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.ui
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24.16.0-bookworm-slim}
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.13.14-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}
+
+    restart: unless-stopped
+    init: true
+
+    environment:
+      HISTORY_SERVICE_URL: ${HISTORY_SERVICE_URL:?HISTORY_SERVICE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: UTC
+
+    expose:
+      - "8080"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+    stop_grace_period: 20s
+
+    security_opt:
+      - no-new-privileges:true
+
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.ui.rule: "Host(`${APP_DOMAIN:?APP_DOMAIN is required}`)"
+      traefik.http.routers.ui.entrypoints: websecure
+      traefik.http.routers.ui.tls: "true"
+      traefik.http.routers.ui.tls.certresolver: letsencrypt
+      traefik.http.services.ui.loadbalancer.server.port: "8080"
+
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/ui
+
+    networks:
+      - frontend
+
+  traefik:
+    image: ${TRAEFIK_IMAGE:-traefik:v3.7}
+    restart: unless-stopped
+
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=petroscope-ui_frontend"
+
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL is required}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/traefik
+
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    driver: bridge
+
+volumes:
+  traefik_certs:
+    name: petroscope-traefik-certs

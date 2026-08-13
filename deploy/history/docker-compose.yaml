@@ -1,0 +1,48 @@
+name: petroscope-history
+
+services:
+  history:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.history
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.13.14-slim-bookworm}
+        UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}
+
+    restart: unless-stopped
+    init: true
+
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      RABBITMQ_URL: ${RABBITMQ_URL:?RABBITMQ_URL is required}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-oil.price.events}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-history.price-observations}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-prices.observed}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: UTC
+
+    ports:
+      - "${HISTORY_BIND_IP:?HISTORY_BIND_IP is required}:8001:8001"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+    stop_grace_period: 20s
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/history

@@ -1,0 +1,80 @@
+name: petroscope-infra
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oil_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-oil_tracker}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "${INFRA_BIND_IP:?INFRA_BIND_IP is required}:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - infra
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.3.4-management}
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oil_tracker}
+    ports:
+      - "${INFRA_BIND_IP:?INFRA_BIND_IP is required}:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - infra
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.8-bookworm}
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    ports:
+      - "${INFRA_BIND_IP:?INFRA_BIND_IP is required}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - infra
+
+networks:
+  infra:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
