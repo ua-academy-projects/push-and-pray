@@ -1,0 +1,72 @@
+services:
+  redis:
+    ports: !reset []
+
+  ui:
+    environment:
+      SESSION_COOKIE_SECURE: "true"
+    ports: !reset []
+
+  nginx:
+    image: petroscope-nginx:local
+    build:
+      context: ../..
+      dockerfile: infrastructure/nginx/Dockerfile
+      args:
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.30.4-alpine}
+    restart: unless-stopped
+    init: true
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+      TZ: UTC
+    ports:
+      - "${UI_LAN_IP:?UI_LAN_IP is required}:80:80"
+      - "${UI_LAN_IP}:443:443"
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    depends_on:
+      ui:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health | grep -qx ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/nginx
+
+  certbot:
+    image: ${CERTBOT_IMAGE:-certbot/certbot:v5.7.0}
+    restart: unless-stopped
+    init: true
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:?CERTBOT_EMAIL is required}
+      TZ: UTC
+    entrypoint: ["/bin/sh", "/usr/local/bin/certbot-loop.sh"]
+    volumes:
+      - ../certbot/certbot-loop.sh:/usr/local/bin/certbot-loop.sh:ro
+      - certbot_etc:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    depends_on:
+      nginx:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/certbot
+
+volumes:
+  certbot_etc:
+    name: petroscope-certbot-etc
+  certbot_webroot:
+    name: petroscope-certbot-webroot

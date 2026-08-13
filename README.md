@@ -283,6 +283,50 @@ Each VM runs one independent Docker Compose project:
 | `compose.fetcher.yaml` | `petroscope-fetcher` | `fetcher` |
 | `compose.ui.yaml` | `petroscope-ui` | `redis`, `ui` |
 
+For a public GCP deployment, `compose.ui.tls.yaml` is applied on top of the UI Compose
+file. It adds Nginx and Certbot, publishes only ports 80 and 443, enables secure session
+cookies, obtains a Let's Encrypt certificate with HTTP-01, and renews it automatically.
+
+### GCP UI TLS deployment
+
+Before starting the TLS deployment:
+
+- reserve and attach a static external IPv4 address to the UI VM;
+- create an `A` record for the domain that points to that address;
+- allow public ingress to TCP ports 80 and 443 on the UI VM;
+- do not expose ports 8080 or 6379 in the GCP firewall.
+
+Add the domain and Let's Encrypt notification email to the Compose environment file:
+
+```dotenv
+APP_DOMAIN=wildanimals.pp.ua
+CERTBOT_EMAIL=you@example.com
+```
+
+Start the UI stack on the UI VM:
+
+```bash
+docker compose \
+  --env-file /etc/oil-price-tracker/docker.env \
+  --file infrastructure/docker/compose.ui.yaml \
+  --file infrastructure/docker/compose.ui.tls.yaml \
+  up --detach --build
+```
+
+Nginx initially serves HTTP so Certbot can complete the ACME HTTP-01 challenge. When the
+certificate is issued, Nginx automatically reloads with HTTPS and redirects regular HTTP
+requests to HTTPS. Certificate and ACME account data are retained in named Docker volumes.
+
+Check certificate issuance with:
+
+```bash
+docker compose \
+  --env-file /etc/oil-price-tracker/docker.env \
+  --file infrastructure/docker/compose.ui.yaml \
+  --file infrastructure/docker/compose.ui.tls.yaml \
+  logs --follow certbot nginx
+```
+
 Containers on the same VM use their Compose network and service names. Communication
 between VMs uses the configured bridged LAN addresses. PostgreSQL, RabbitMQ, and Redis
 use named Docker volumes. All containers use `restart: unless-stopped` and the journald
