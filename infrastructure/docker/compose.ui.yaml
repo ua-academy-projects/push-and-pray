@@ -143,3 +143,7 @@ services:
 volumes:
   redis_data:
     name: petroscope-redis-data
+  letsencrypt:
+    name: petroscope-letsencrypt
+  letsencrypt_lib:
+    name: petroscope-letsencrypt-lib
