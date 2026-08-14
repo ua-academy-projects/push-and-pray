@@ -11,3 +11,4 @@ htmlcov/
 infrastructure/vagrant/config/vagrant.env
 node_modules/
 .idea/
+gcp/
