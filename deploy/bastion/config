@@ -1,0 +1,38 @@
+Host aegisx-bastion
+    HostName 34.24.85.111
+    User jumpuser
+    Port 48002
+    IdentityFile ~/.ssh/aegisx_ed25519
+    IdentitiesOnly yes
+
+Host aegisx-fetcher
+    HostName 10.10.0.10
+    User lordletterbox
+    Port 22
+    IdentityFile ~/.ssh/aegisx_ed25519
+    IdentitiesOnly yes
+    ProxyJump aegisx-bastion
+
+Host aegisx-history
+    HostName 10.10.0.11
+    User lordletterbox
+    Port 22
+    IdentityFile ~/.ssh/aegisx_ed25519
+    IdentitiesOnly yes
+    ProxyJump aegisx-bastion
+
+Host aegisx-infra
+    HostName 10.10.0.12
+    User lordletterbox
+    Port 22
+    IdentityFile ~/.ssh/aegisx_ed25519
+    IdentitiesOnly yes
+    ProxyJump aegisx-bastion
+
+Host aegisx-ui
+    HostName <UI_PRIVATE_IP>
+    User lordletterbox
+    Port 22
+    IdentityFile ~/.ssh/aegisx_ed25519
+    IdentitiesOnly yes
+    ProxyJump aegisx-bastion
