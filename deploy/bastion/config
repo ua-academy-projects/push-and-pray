@@ -30,7 +30,7 @@ Host aegisx-infra
     ProxyJump aegisx-bastion
 
 Host aegisx-ui
-    HostName <UI_PRIVATE_IP>
+    HostName 10.10.0.14
     User lordletterbox
     Port 22
     IdentityFile ~/.ssh/aegisx_ed25519
