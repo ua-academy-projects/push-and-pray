@@ -1,0 +1,24 @@
+server {
+    listen 80;
+    server_name ${UI_DOMAIN};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${UI_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${UI_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${UI_DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    location / {
+        proxy_pass http://ui:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

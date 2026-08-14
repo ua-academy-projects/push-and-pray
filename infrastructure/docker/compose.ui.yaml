@@ -48,7 +48,7 @@ services:
       HISTORY_SERVICE_URL: http://${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:8001
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SESSION_TTL_SECONDS: "2592000"
-      SESSION_COOKIE_SECURE: "false"
+      SESSION_COOKIE_SECURE: "true"
       LOG_LEVEL: INFO
       TZ: UTC
     ports:
@@ -73,6 +73,72 @@ services:
       driver: journald
       options:
         tag: petroscope/ui
+
+  certbot:
+    image: ${CERTBOT_IMAGE:-certbot/dns-cloudflare:v5.0.0}
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - letsencrypt_lib:/var/lib/letsencrypt
+      - /etc/oil-price-tracker/cloudflare.ini:/etc/cloudflare.ini:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        certbot certonly \
+          --non-interactive --agree-tos --email your@email.com \
+          --dns-cloudflare \
+          --dns-cloudflare-credentials /etc/cloudflare.ini \
+          --dns-cloudflare-propagation-seconds 30 \
+          --keep-until-expiring \
+          -d "${UI_DOMAIN:?UI_DOMAIN is required}"
+        trap exit TERM
+        while :; do sleep 12h & wait $${!}; certbot renew; done
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test -f /etc/letsencrypt/live/${UI_DOMAIN}/fullchain.pem
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/certbot
+
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    environment:
+      UI_DOMAIN: ${UI_DOMAIN:?UI_DOMAIN is required}
+      NGINX_ENVSUBST_FILTER: UI_DOMAIN
+      TZ: UTC
+    ports:
+      - "${UI_LAN_IP}:80:80"
+      - "${UI_LAN_IP}:443:443"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      ui:
+        condition: service_healthy
+      certbot:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        while :; do sleep 6h & wait $${!}; nginx -s reload; done &
+        exec nginx -g 'daemon off;'
+    stop_grace_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/nginx
 
 volumes:
   redis_data:

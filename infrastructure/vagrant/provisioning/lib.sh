@@ -96,6 +96,7 @@ write_compose_env() {
     printf 'HISTORY_LAN_IP=%s\n' "${HISTORY_LAN_IP}"
     printf 'FETCHER_LAN_IP=%s\n' "${FETCHER_LAN_IP}"
     printf 'UI_LAN_IP=%s\n' "${UI_LAN_IP}"
+    printf 'UI_DOMAIN=%s\n' "${UI_DOMAIN:?UI_DOMAIN is required}"
     printf 'DB_PASSWORD=%s\n' "${DB_PASSWORD}"
     printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD}"
     printf 'RABBITMQ_USER=%s\n' "${RABBITMQ_USER}"
@@ -108,6 +109,9 @@ write_compose_env() {
     printf 'GO_IMAGE=%s\n' "${GO_IMAGE:-golang:1.24.13-bookworm}"
     printf 'GO_RUNTIME_IMAGE=%s\n' "${GO_RUNTIME_IMAGE:-debian:bookworm-slim}"
     printf 'NODE_IMAGE=%s\n' "${NODE_IMAGE:-node:24.13.0-bookworm-slim}"
+#    if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+#      printf 'CLOUDFLARE_API_TOKEN=%s\n' "${CLOUDFLARE_API_TOKEN}"
+#    fi
     if [[ "${include_api_key}" == "true" ]]; then
       : "${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required in the project root .env}"
       if [[ "${OILPRICEAPI_KEY}" == "replace-me" ]]; then
