@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,8 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"oil-price-tracker/fetcher/internal/broker"
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"oil-price-tracker/fetcher/internal/config"
+	"oil-price-tracker/fetcher/internal/eventstore"
 	"oil-price-tracker/fetcher/internal/provider"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
@@ -30,11 +33,15 @@ func main() {
 	if configuration.DataProvider == "oilpriceapi" {
 		priceProvider = provider.OilPriceAPI{APIKey: configuration.OilPriceAPIKey, Client: httpClient}
 	}
-	collector := service.New(priceProvider, broker.Publisher{
-		URL:        configuration.RabbitMQURL,
-		Exchange:   configuration.RabbitExchange,
-		Queue:      configuration.RabbitQueue,
-		RoutingKey: configuration.RabbitRoute,
+	database, err := sql.Open("pgx", configuration.DatabaseURL)
+	if err != nil {
+		slog.Error("open PostgreSQL connection", "error", err)
+		os.Exit(1)
+	}
+	defer database.Close()
+
+	collector := service.New(priceProvider, eventstore.Publisher{
+		DB: database,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -75,7 +82,7 @@ func main() {
 		}
 		writeJSON(response, http.StatusOK, map[string]any{
 			"status": "ok", "provider": configuration.DataProvider, "running": running,
-			"delivery":    "rabbitmq",
+			"delivery":    "postgresql",
 			"schedule":    map[string]any{"hours": configuration.CronHours, "timezone": configuration.Timezone.String(), "next_run": nextRun},
 			"last_result": last, "last_error": lastError,
 		})
