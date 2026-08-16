@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from .sessions import SessionPreferences, resolve_session_id
 
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 from sqlalchemy.orm import Session
 from fastapi import Depends
 from sqlalchemy import text
@@ -79,6 +80,10 @@ async def health(request: Request, db: Session = Depends(get_db)) -> dict[str, s
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Database is unavailable") from exc
     return {"status": "ok", "history": "connected", "database": "connected"}
+
+
+def _new_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
