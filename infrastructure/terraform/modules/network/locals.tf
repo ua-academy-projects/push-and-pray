@@ -7,6 +7,11 @@ locals {
   tag_app     = "${local.prefix}-app"
   tag_db      = "${local.prefix}-db"
 
+  # Placeholder contract for the public-facing UI instance, which is created
+  # elsewhere (issue #14). The rule exists now; whoever builds that instance only
+  # has to attach this tag - exported through the network_tags output.
+  tag_ui = "${local.prefix}-ui"
+
   internal_ranges = compact([
     var.public_subnet_cidr,
     var.private_subnet_cidr,

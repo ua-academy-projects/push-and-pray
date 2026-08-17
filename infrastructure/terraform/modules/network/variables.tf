@@ -31,7 +31,7 @@ variable "labels" {
 # variables related to network and subnets
 
 variable "public_subnet_cidr" {
-  description = "CIDR of the public subnet. Only the bastion lives here."
+  description = "CIDR of the public subnet. The bastion and the public-facing UI instance live here."
   type        = string
   default     = "10.10.0.0/24"
 
@@ -181,6 +181,43 @@ variable "db_port" {
   description = "Database port. Reachable only from instances carrying the application tag."
   type        = number
   default     = 5432
+}
+
+variable "enable_ui_public_ingress" {
+  description = "Create the public HTTP/HTTPS ingress rule for instances tagged <name_prefix>-ui."
+  type        = bool
+  default     = true
+}
+
+variable "ui_public_ports" {
+  description = <<-EOT
+    TCP ports the UI service exposes to the internet. 80 is kept so the UI can
+    redirect to HTTPS and so ACME HTTP-01 challenges work.
+    Application and database ports must never appear here.
+  EOT
+  type        = list(string)
+  default     = ["80", "443"]
+
+  validation {
+    condition     = !var.enable_ui_public_ingress || length(var.ui_public_ports) > 0
+    error_message = "ui_public_ports must not be empty when enable_ui_public_ingress is true."
+  }
+}
+
+variable "ui_source_ranges" {
+  description = <<-EOT
+    Source ranges allowed to reach ui_public_ports. 0.0.0.0/0 on purpose: this is
+    the public web entry point. Narrow it while the UI is not meant to be public yet.
+  EOT
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+
+  validation {
+    condition = alltrue([
+      for c in var.ui_source_ranges : can(cidrhost(c, 0))
+    ])
+    error_message = "Every entry in ui_source_ranges must be a valid IPv4 CIDR block."
+  }
 }
 
 # variables related to firewall behavior

@@ -3,7 +3,7 @@
 resource "google_compute_network" "vpc" {
   project     = var.project_id
   name        = "${local.prefix}-vpc"
-  description = "Custom-mode VPC for ${local.prefix}: public bastion subnet + private workload subnet."
+  description = "Custom-mode VPC for ${local.prefix}: public subnet (bastion, UI) + private workload subnet."
 
   auto_create_subnetworks = false
   routing_mode            = var.routing_mode
@@ -19,14 +19,14 @@ resource "google_compute_network" "vpc" {
 resource "google_compute_subnetwork" "public" {
   project     = var.project_id
   name        = "${local.prefix}-subnet-public"
-  description = "Public subnet: bastion host only."
+  description = "Public subnet: bastion host and the public-facing UI instance."
 
   region        = var.region
   network       = google_compute_network.vpc.id
   ip_cidr_range = var.public_subnet_cidr
 
-  # Not needed here (the bastion has a public IP and a route to the internet),
-  # but harmless and keeps behaviour identical if the external IP is ever removed.
+  # Not needed while these instances have public IPs and a route to the internet,
+  # but harmless and keeps behaviour identical if an external IP is ever removed.
   private_ip_google_access = true
 }
 

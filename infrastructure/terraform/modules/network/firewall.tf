@@ -34,19 +34,65 @@ resource "google_compute_firewall" "bastion_ssh_ingress" {
   }
 }
 
+# public entry point: http/https to the ui service
+#
+# The UI instance itself is created by the compute work (issue #14). This rule is
+# the network-side contract for it: whatever that instance turns out to be, it
+# becomes publicly reachable on ui_public_ports the moment it carries the
+# <name_prefix>-ui tag, and on nothing else. Ingress in GCP selects targets by
+# tag, not by destination range, so no IP has to be known here in advance.
+
+resource "google_compute_firewall" "ui_public_ingress" {
+  count = var.enable_ui_public_ingress ? 1 : 0
+
+  project     = var.project_id
+  name        = "${local.prefix}-allow-ui-public"
+  description = "Ingress ${join(",", var.ui_public_ports)} from ${join(",", var.ui_source_ranges)} to instances tagged ${local.tag_ui}. The only intentionally public service."
+
+  network   = google_compute_network.vpc.id
+  direction = "INGRESS"
+  priority  = 1000
+
+  source_ranges = var.ui_source_ranges
+  target_tags   = [local.tag_ui]
+
+  allow {
+    protocol = "tcp"
+    ports    = var.ui_public_ports
+  }
+
+  dynamic "log_config" {
+    for_each = local.firewall_log_config
+
+    content {
+      metadata = "INCLUDE_ALL_METADATA"
+    }
+  }
+
+  lifecycle {
+    # The public rule must never become a way in to an internal port. If the UI
+    # ever needs to serve on an application port, put a reverse proxy in front of
+    # it instead of widening this rule.
+    precondition {
+      condition     = length(setintersection(toset(var.ui_public_ports), toset(concat(var.app_ports, [tostring(var.db_port)])))) == 0
+      error_message = "ui_public_ports must not contain any app_ports or db_port: internal application and database ports stay off the public internet."
+    }
+  }
+}
+
 # ssh to private instances only from bastion
 
 resource "google_compute_firewall" "ssh_from_bastion" {
   project     = var.project_id
   name        = "${local.prefix}-allow-ssh-from-bastion"
-  description = "Ingress SSH on port ${var.ssh_port} to private instances, only from instances tagged ${local.tag_bastion}."
+  description = "Ingress SSH on port ${var.ssh_port} to application, database and UI instances, only from instances tagged ${local.tag_bastion}."
 
   network   = google_compute_network.vpc.id
   direction = "INGRESS"
   priority  = 1000
 
   source_tags = [local.tag_bastion]
-  target_tags = [local.tag_app, local.tag_db]
+  target_tags = [local.tag_app, local.tag_db, local.tag_ui]
 
   allow {
     protocol = "tcp"
@@ -141,7 +187,7 @@ resource "google_compute_firewall" "internal_icmp" {
   priority  = 1000
 
   source_ranges = local.internal_ranges
-  target_tags   = [local.tag_bastion, local.tag_app, local.tag_db]
+  target_tags   = [local.tag_bastion, local.tag_app, local.tag_db, local.tag_ui]
 
   allow {
     protocol = "icmp"

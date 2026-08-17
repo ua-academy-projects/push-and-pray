@@ -25,6 +25,11 @@ output "network_tags" {
   value       = module.network.network_tags
 }
 
+output "ui_public_ports" {
+  description = "Ports published to the internet for instances carrying the ui network tag."
+  value       = module.network.ui_public_ports
+}
+
 output "firewall_rules" {
   description = "Ingress firewall rules created for this VPC."
   value       = module.network.firewall_rules

@@ -39,6 +39,7 @@ output "network_tags" {
     bastion = local.tag_bastion
     app     = local.tag_app
     db      = local.tag_db
+    ui      = local.tag_ui
   }
 }
 
@@ -54,14 +55,16 @@ output "nat_egress_ips" {
 
 output "firewall_rules" {
   description = "Names of every firewall rule created, in priority order. Handy for `gcloud compute firewall-rules describe`."
-  value = compact([
+  value = compact(concat([
     google_compute_firewall.bastion_ssh_ingress.name,
     google_compute_firewall.ssh_from_bastion.name,
     google_compute_firewall.app_internal.name,
     google_compute_firewall.db_from_app.name,
     google_compute_firewall.internal_icmp.name,
     google_compute_firewall.deny_all_ingress.name,
-  ])
+    ],
+    google_compute_firewall.ui_public_ingress[*].name,
+  ))
 }
 output "egress_firewall_rules" {
   description = "Names of the egress rules. Empty when restrict_egress is false and the permissive implied egress rule applies."
@@ -87,6 +90,11 @@ output "ssh_port" {
 output "bastion_allowed_cidrs" {
   description = "Source ranges currently allowed to reach the bastion on ssh_port."
   value       = var.bastion_allowed_cidrs
+}
+
+output "ui_public_ports" {
+  description = "Ports published to the internet for instances carrying the ui tag. Empty when the public UI rule is disabled."
+  value       = var.enable_ui_public_ingress ? var.ui_public_ports : []
 }
 
 output "app_ports" {
