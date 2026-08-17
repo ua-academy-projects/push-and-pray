@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import RabbitConsumer
 from .models import PriceObservation
 from .repository import insert_batch, latest_observations, list_instruments, list_observations
 from .schemas import BatchResult, InstrumentRead, ObservationBatch, ObservationRead
@@ -23,18 +22,13 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger(__name__)
-rabbit_consumer = RabbitConsumer(settings)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("database schema is ready")
-    await rabbit_consumer.start()
-    try:
-        yield
-    finally:
-        await rabbit_consumer.stop()
+    yield
 
 
 app = FastAPI(
@@ -48,11 +42,7 @@ app = FastAPI(
 @app.get("/health", tags=["operations"])
 def health(db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
     db.execute(text("SELECT 1"))
-    return {
-        "status": "ok",
-        "database": "connected",
-        "rabbitmq": "connected" if rabbit_consumer.is_ready else "reconnecting",
-    }
+    return {"status": "ok", "database": "connected"}
 
 
 @app.post(

@@ -101,17 +101,13 @@ for machine in database history fetcher ui; do
 done
 
 check_compose_service database database postgres
-check_compose_service history history rabbitmq
 check_compose_service history history history
 check_compose_service fetcher fetcher fetcher
-check_compose_service ui ui redis
 check_compose_service ui ui ui
 
 check_journald_logging database database postgres
-check_journald_logging history history rabbitmq
 check_journald_logging history history history
 check_journald_logging fetcher fetcher fetcher
-check_journald_logging ui ui redis
 check_journald_logging ui ui ui
 
 check_ssh_alias database
@@ -131,67 +127,28 @@ else
   failures=$((failures + 1))
 fi
 
-if nc -z -w 5 "${ui_ip}" 6379; then
-  printf 'PASS  Redis LAN socket       %s:6379\n' "${ui_ip}"
-else
-  printf 'FAIL  Redis LAN socket       %s:6379\n' "${ui_ip}" >&2
-  failures=$((failures + 1))
-fi
-
-if nc -z -w 5 "${history_ip}" 5672; then
-  printf 'PASS  RabbitMQ AMQP socket   %s:5672\n' "${history_ip}"
-else
-  printf 'FAIL  RabbitMQ AMQP socket   %s:5672\n' "${history_ip}" >&2
-  failures=$((failures + 1))
-fi
-
 check_http 'History health' "http://${history_ip}:8001/health"
 check_http 'Fetcher health' "http://${fetcher_ip}:8002/health"
 check_http 'UI health' "http://${ui_ip}:8080/health"
 check_http 'UI page' "http://${ui_ip}:8080/"
 check_http 'Saved data through UI' "http://${ui_ip}:8080/api/latest"
-check_http 'Redis-backed UI session' "http://${ui_ip}:8080/api/session/preferences"
+check_http 'PostgreSQL-backed UI session' "http://${ui_ip}:8080/api/session/preferences"
 
-history_rabbit="$(curl -fsS --max-time 10 "http://${history_ip}:8001/health" \
-  | jq -r '.rabbitmq // empty' || true)"
-if [[ "${history_rabbit}" == "connected" ]]; then
-  printf 'PASS  History consumes RabbitMQ events\n'
-else
-  printf 'FAIL  History RabbitMQ state: %s\n' "${history_rabbit:-unknown}" >&2
-  failures=$((failures + 1))
-fi
-
-rabbit_queues="$(run_vagrant ssh history -c \
-  'sudo docker compose \
-    --env-file /etc/oil-price-tracker/docker.env \
-    --file /opt/oil-price-tracker/source/infrastructure/docker/compose.history.yaml \
-    --project-name petroscope-history \
-    exec -T rabbitmq \
-    rabbitmqctl -q list_queues -p oil_tracker name consumers messages_ready' \
-  2>/dev/null || true)"
-if awk '$1 == "history.price-observations" && $2 >= 1 { found=1 } END { exit !found }' \
-  <<< "${rabbit_queues}"; then
-  printf 'PASS  Durable queue has an active History consumer\n'
-else
-  printf 'FAIL  RabbitMQ queue/consumer is not ready\n' >&2
-  failures=$((failures + 1))
-fi
-
-schema_columns="$(run_vagrant ssh database -c \
+schema_tables="$(run_vagrant ssh database -c \
   'sudo docker compose \
     --env-file /etc/oil-price-tracker/docker.env \
     --file /opt/oil-price-tracker/source/infrastructure/docker/compose.database.yaml \
     --project-name petroscope-database \
     exec -T postgres \
     psql -U oil_tracker -d oil_tracker -Atc \
-    "SELECT count(*) FROM information_schema.columns WHERE table_name='\''price_observations'\'' AND column_name='\''source_observed_at'\''"' \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema='\''public'\'' AND table_name IN ('\''price_observations'\'', '\''price_events'\'', '\''sessions'\'')"' \
   2>/dev/null || true)"
-# vagrant ssh may return CRLF even though the SQL value itself is just "1".
-schema_columns="${schema_columns//$'\r'/}"
-if [[ "${schema_columns}" == "1" ]]; then
+# vagrant ssh may return CRLF even though the SQL value itself is just "3".
+schema_tables="${schema_tables//$'\r'/}"
+if [[ "${schema_tables}" == "3" ]]; then
   printf 'PASS  PostgreSQL migrations are applied\n'
 else
-  printf 'FAIL  PostgreSQL schema migration check returned: %s\n' "${schema_columns:-empty}" >&2
+  printf 'FAIL  PostgreSQL schema migration check returned: %s\n' "${schema_tables:-empty}" >&2
   failures=$((failures + 1))
 fi
 
@@ -209,4 +166,4 @@ if ((failures > 0)); then
   exit 1
 fi
 
-printf '\nAll Docker Compose services communicate successfully across the Vagrant VMs.\n'
+printf '\nAll PostgreSQL-only Docker Compose services communicate successfully across the Vagrant VMs.\n'

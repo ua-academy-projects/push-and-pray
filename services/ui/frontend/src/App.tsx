@@ -252,7 +252,7 @@ function App() {
               <span>00:00 · 06:00 · 12:00 · 18:00 UTC</span>
             </div>
             <div className="protocol-flow">
-              {["API", "AMQP", "DB", "UI"].map((step, index) => (
+              {["API", "PG EVENT", "DB", "UI"].map((step, index) => (
                 <span key={step}><b>{String(index + 1).padStart(2, "0")}</b>{step}</span>
               ))}
             </div>
@@ -478,7 +478,7 @@ function App() {
 
       <footer className="site-footer">
         <div><Database size={15} /><span>PostgreSQL is the market-data source of truth</span></div>
-        <span>OilPriceAPI → Go Fetcher → RabbitMQ → History → PostgreSQL → UI</span>
+        <span>OilPriceAPI → Go Fetcher → PostgreSQL → History → UI</span>
         <b>PS / 03</b>
       </footer>
     </div>
