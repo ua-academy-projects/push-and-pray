@@ -1,0 +1,21 @@
+name:  Label issues
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+jobs:
+  label_issues:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Add bug label
+        if: contains(github.event.issue.title, '[BUG]')
+        run: gh issue edit "$NUMBER" --add-label "bug"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
