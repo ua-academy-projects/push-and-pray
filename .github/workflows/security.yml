@@ -1,0 +1,155 @@
+name: Security
+
+# Static analysis and supply-chain scanning for every pull request targeting
+# develop or main, plus a weekly re-scan of develop.
+#
+# The weekly schedule matters: new CVEs and new CodeQL rules appear without any
+# code changing, so a repository that passed last month can be vulnerable today.
+#
+# Enforcement policy (see docs/security-scanning.md for the reasoning):
+#   Secrets      blocking  - a committed credential is always an emergency
+#   IaC          blocking  - we own this code completely, findings are fixable
+#   CodeQL       reporting - results land in the Security tab as annotations
+#   Dependencies reporting - a new CVE upstream must not block unrelated work
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history: a secret that was committed and later deleted is
+          # still in the history and still compromised.
+          fetch-depth: 0
+
+      - name: Scan git history for secrets
+        run: |
+          docker run --rm -v "${PWD}:/repo" \
+            zricethezav/gitleaks:latest detect \
+            --source /repo \
+            --redact \
+            --no-banner \
+            --verbose
+
+  iac:
+    name: IaC scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan Terraform, Dockerfiles and Compose for misconfiguration
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: sarif
+          output: trivy-config.sarif
+
+      - name: Upload results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+  dependencies:
+    name: Dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan lockfiles for known vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          # Reporting only: a CVE published upstream overnight must not block
+          # a PR that has nothing to do with it. Findings still appear in the
+          # Security tab and are triaged there.
+          exit-code: "0"
+          format: sarif
+          output: trivy-fs.sarif
+
+      - name: Upload results to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/fetcher/go.mod
+          cache-dependency-path: services/fetcher/go.sum
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

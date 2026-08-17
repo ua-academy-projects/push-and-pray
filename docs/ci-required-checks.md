@@ -56,3 +56,10 @@ Image publishing. This workflow builds images to prove the Dockerfiles are
 valid and throws them away (`push: false`). Pushing to a registry belongs in a
 separate workflow triggered from `develop`/`main`, not from pull requests —
 a PR from a fork must never be able to publish an image.
+
+## Security checks
+
+`.github/workflows/security.yml` adds four more checks: `Secret scan`,
+`IaC scan`, `Dependency scan` and `CodeQL (…)`. Only the first two are intended
+to be required — see [security-scanning.md](security-scanning.md) for why the
+other two report rather than block.
