@@ -10,7 +10,12 @@ from .models import PriceObservation
 from .schemas import ObservationCreate
 
 
-def insert_batch(session: Session, observations: list[ObservationCreate]) -> tuple[int, int]:
+def insert_observations(session: Session, observations: list[ObservationCreate]) -> tuple[int, int]:
+    """Insert observations idempotently without committing.
+
+    Callers that need atomicity with other writes (e.g. marking an event as
+    processed) commit the enclosing transaction themselves.
+    """
     values = [item.model_dump(mode="python") for item in observations]
     statement = (
         insert(PriceObservation)
@@ -19,8 +24,13 @@ def insert_batch(session: Session, observations: list[ObservationCreate]) -> tup
         .returning(PriceObservation.id)
     )
     inserted = len(session.execute(statement).scalars().all())
-    session.commit()
     return inserted, len(observations) - inserted
+
+
+def insert_batch(session: Session, observations: list[ObservationCreate]) -> tuple[int, int]:
+    inserted, duplicates = insert_observations(session, observations)
+    session.commit()
+    return inserted, duplicates
 
 
 def _filtered_query(

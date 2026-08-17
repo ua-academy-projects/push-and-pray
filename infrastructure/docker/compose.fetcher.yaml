@@ -14,6 +14,7 @@ services:
     environment:
       OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
       DATA_PROVIDER: oilpriceapi
+      DATABASE_URL: postgresql://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker?sslmode=disable
       RABBITMQ_URL: amqp://${RABBITMQ_USER:?RABBITMQ_USER is required}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:5672/oil_tracker
       RABBITMQ_EXCHANGE: oil.price.events
       RABBITMQ_QUEUE: history.price-observations

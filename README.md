@@ -12,7 +12,7 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through RabbitMQ.
+- Asynchronous, durable delivery through a PostgreSQL event queue.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
@@ -53,7 +53,6 @@ have already been persisted in PostgreSQL.
 | History API | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend | Python 3.12, FastAPI, httpx, redis-py, uv |
 | UI frontend | React 19, TypeScript, Vite, Apache ECharts |
-| Messaging | RabbitMQ 4 |
 | Persistence | PostgreSQL 18 |
 | UI sessions | Redis 8 |
 | Packaging | Docker Engine and Docker Compose |
@@ -61,16 +60,15 @@ have already been persisted in PostgreSQL.
 
 ## Architecture
 
-The runtime is divided into three application services and three infrastructure
+The runtime is divided into three application services and two infrastructure
 components.
 
 | Component | Responsibility | Owns |
 |---|---|---|
 | Go Fetcher | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events | External API integration and collection schedule |
-| History Service | Consumes RabbitMQ events, validates batches, persists observations, and exposes read endpoints | Market history and PostgreSQL access |
+| History Service | Claims durable price events from PostgreSQL, validates and persists observations, and exposes read endpoints | Market history and PostgreSQL access |
 | UI Service | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions |
-| RabbitMQ | Delivers persistent price events from Fetcher to History | Durable exchange, queue, and routing |
-| PostgreSQL | Stores normalized observations and original source metadata | Durable market-data records |
+| PostgreSQL | Stores normalized observations, the durable event queue, and original source metadata | Durable market-data records and event delivery |
 | Redis | Stores server-side UI preferences | Session state with TTL |
 
 ### Data flow
@@ -78,19 +76,27 @@ components.
 1. The Go Fetcher selects the current scheduled UTC slot.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
-3. The Fetcher publishes a persistent versioned event to the durable RabbitMQ direct
-   exchange `oil.price.events` with routing key `prices.observed`.
-4. RabbitMQ routes the event to the durable queue `history.price-observations`.
-5. History validates and commits the batch to PostgreSQL, then acknowledges the message.
+3. The Fetcher inserts one versioned event row into the durable `price_events` table,
+   keyed by an idempotent `event_key` so a retried publish never duplicates an event.
+4. The History Service's PostgreSQL worker polls `price_events`, claiming the oldest
+   available `pending` row with `SELECT ... FOR UPDATE SKIP LOCKED` so multiple workers
+   never double-process the same event.
+5. The worker validates the claimed event's payload, inserts its observations using the
+   idempotent batch-insert logic, and marks the event `processed` in the same database
+   transaction, so an event is only ever marked processed once its observations are
+   durably committed alongside it.
 6. The UI Service requests saved observations from History over HTTP.
 7. The browser receives only persisted data through the UI Service.
 8. UI preferences are stored separately in Redis under `ui:session:<session-id>`.
 
-RabbitMQ publisher confirms are enabled. The Fetcher retries a failed publish, and the
-History consumer acknowledges a message only after the database transaction succeeds.
-Invalid events are rejected without requeue; transient persistence failures are negatively
-acknowledged and requeued. Database uniqueness on `(instrument_code, scheduled_for)` makes
-redelivery idempotent.
+Permanently invalid payloads are marked `failed` immediately. Transient failures (for
+example a lost database connection mid-insert) are retried with a backoff delay, up to a
+configured attempt limit, after which the event is marked `failed`; every attempt records
+its outcome in the event's `attempts` and `last_error` columns. An event a worker claimed
+but never finished — because it crashed or was killed mid-processing — is left
+`processing`; the worker reclaims any event still `processing` past a configured age back
+to `pending` so it gets retried. Database uniqueness on `(instrument_code, scheduled_for)`
+makes observation inserts idempotent regardless of how many times an event is retried.
 
 ## Tracked instruments
 
@@ -124,7 +130,7 @@ scientific data source.
 │       └── provisioning/           Idempotent guest provisioning scripts
 ├── services/
 │   ├── fetcher/                    Go scheduler, provider, and AMQP publisher
-│   ├── history/                    Python History API and RabbitMQ consumer
+│   ├── history/                    Python History API and PostgreSQL event worker
 │   └── ui/
 │       ├── backend/                Python UI gateway and Redis sessions
 │       └── frontend/               React and TypeScript application
@@ -384,7 +390,7 @@ run Python tools through `uv run`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | PostgreSQL and RabbitMQ status |
+| `GET` | `/health` | PostgreSQL and event worker status |
 | `POST` | `/v1/observations/batch` | Direct idempotent batch ingestion |
 | `GET` | `/v1/observations` | Filtered and paginated history |
 | `GET` | `/v1/observations/latest` | Latest observation per instrument |
@@ -419,6 +425,12 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
+The `price_events` table is the durable queue between Fetcher and History. Each row holds
+one versioned batch payload plus `status` (`pending`, `processing`, `processed`, or
+`failed`), an `attempts` counter, `available_at` (when it may next be claimed),
+`processing_started_at`, and `last_error`. `event_key` is unique, so a retried Fetcher
+publish never inserts a duplicate event.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -430,6 +442,10 @@ ordered in `database/migrations/` and are safe to apply repeatedly.
 | `FETCH_ON_STARTUP` | `true` | Collect the latest slot after startup |
 | `REQUEST_TIMEOUT_SECONDS` | `15` | External HTTP timeout |
 | `DATABASE_URL` | see `.env.example` | History PostgreSQL connection |
+| `HISTORY_WORKER_POLL_INTERVAL_SECONDS` | `2.0` | Delay between empty-queue polls |
+| `HISTORY_WORKER_MAX_ATTEMPTS` | `5` | Attempts before a retried event is marked `failed` |
+| `HISTORY_WORKER_RETRY_BACKOFF_SECONDS` | `5.0` | Delay before a failed attempt is retried |
+| `HISTORY_WORKER_STUCK_AFTER_SECONDS` | `300.0` | Age at which a `processing` event is reclaimed |
 | `RABBITMQ_URL` | see `.env.example` | Fetcher and History AMQP connection |
 | `RABBITMQ_EXCHANGE` | `oil.price.events` | Durable direct exchange |
 | `RABBITMQ_QUEUE` | `history.price-observations` | Durable History queue |
