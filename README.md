@@ -12,7 +12,7 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Durable PostgreSQL event storage for fetched price batches.
+- Asynchronous, durable delivery through a PostgreSQL event queue.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
@@ -364,7 +364,7 @@ run Python tools through `uv run`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | PostgreSQL status |
+| `GET` | `/health` | PostgreSQL and event worker status |
 | `POST` | `/v1/observations/batch` | Direct idempotent batch ingestion |
 | `GET` | `/v1/observations` | Filtered and paginated history |
 | `GET` | `/v1/observations/latest` | Latest observation per instrument |
@@ -398,6 +398,12 @@ source metadata, and four different time concepts:
 
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
+
+The `price_events` table is the durable queue between Fetcher and History. Each row holds
+one versioned batch payload plus `status` (`pending`, `processing`, `processed`, or
+`failed`), an `attempts` counter, `available_at` (when it may next be claimed),
+`processing_started_at`, and `last_error`. `event_key` is unique, so a retried Fetcher
+publish never inserts a duplicate event.
 
 ## Configuration
 

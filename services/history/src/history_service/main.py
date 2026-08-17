@@ -15,6 +15,7 @@ from .database import Base, engine, get_db
 from .models import PriceObservation
 from .repository import insert_batch, latest_observations, list_instruments, list_observations
 from .schemas import BatchResult, InstrumentRead, ObservationBatch, ObservationRead
+from .worker import PostgresEventWorker
 
 settings = get_settings()
 logging.basicConfig(
