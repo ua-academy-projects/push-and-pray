@@ -1,0 +1,240 @@
+name: PR Validation
+
+# Validates code, configuration, tests and Docker image builds for every pull
+# request targeting develop or main. Nothing is published from this workflow —
+# images are built and thrown away. Publishing lives in a separate workflow.
+#
+# Job names below are stable and unique so they can be selected as required
+# status checks in branch protection. See docs/ci-required-checks.md.
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  yaml:
+    name: YAML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install yamllint
+        run: pip install yamllint==1.35.1
+
+      - name: Lint versioned YAML files
+        run: yamllint -c .yamllint.yml .
+
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run pytest
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/fetcher
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/fetcher/go.mod
+          cache-dependency-path: services/fetcher/go.sum
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "${unformatted}" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "${unformatted}"
+            echo "Run: gofmt -w ${unformatted}"
+            exit 1
+          fi
+          echo "All Go files are correctly formatted."
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test ./...
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ui/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: services/ui/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+  compose:
+    name: Docker Compose
+    runs-on: ubuntu-latest
+    env:
+      # Every Compose file uses ${VAR:?message} for required settings, so
+      # `docker compose config` fails unless they are defined. These are
+      # throwaway values used only to prove the files parse and interpolate.
+      DB_PASSWORD: ci-validation
+      DB_LAN_IP: 127.0.0.1
+      OILPRICEAPI_KEY: ci-validation
+      RABBITMQ_USER: ci-validation
+      RABBITMQ_PASSWORD: ci-validation
+      HISTORY_LAN_IP: 127.0.0.1
+      FETCHER_LAN_IP: 127.0.0.1
+      UI_LAN_IP: 127.0.0.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        working-directory: infrastructure/docker
+        run: |
+          status=0
+          for file in compose.*.yaml; do
+            echo "::group::${file}"
+            if docker compose -f "${file}" config --quiet; then
+              echo "${file}: OK"
+            else
+              echo "${file}: INVALID"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "${status}"
+
+  image:
+    name: Docker image (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - fetcher
+          - history
+          - ui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.${{ matrix.service }}
+          push: false
+          load: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # This job always runs and always reports a result, even when there is no
+      # Terraform in the repository yet. A skipped job never reports a status,
+      # which would leave a required check pending forever.
+      - name: Detect Terraform configuration
+        id: detect
+        run: |
+          if [ -n "$(find . -path ./.git -prune -o -name '*.tf' -print)" ]; then
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+            echo "Terraform configuration found."
+          else
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            echo "No Terraform configuration in the repository yet - nothing to validate."
+          fi
+
+      - name: Set up Terraform
+        if: steps.detect.outputs.present == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Check formatting
+        if: steps.detect.outputs.present == 'true'
+        run: terraform fmt -check -recursive
+
+      - name: Validate
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          status=0
+          directories="$(find . -path ./.git -prune -o -name '*.tf' -print \
+            | xargs -r -n1 dirname | sort -u)"
+          for directory in ${directories}; do
+            echo "::group::${directory}"
+            terraform -chdir="${directory}" init -backend=false -input=false \
+              || status=1
+            terraform -chdir="${directory}" validate || status=1
+            echo "::endgroup::"
+          done
+          exit "${status}"

@@ -1,0 +1,10 @@
+project_id  = "your-gcp-project-id"
+region      = "europe-central2"
+zone        = "europe-central2-a"
+name_prefix = "oil"
+environment = "dev"
+
+common_labels = {
+  project = "oil-price-tracker"
+  team    = "ua-academy"
+}
