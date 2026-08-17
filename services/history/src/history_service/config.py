@@ -7,10 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://oil_tracker:change-me@localhost:5432/oil_tracker"
-    rabbitmq_url: str = "amqp://oil_tracker:change-me@localhost:5672/oil_tracker"
-    rabbitmq_exchange: str = "oil.price.events"
-    rabbitmq_queue: str = "history.price-observations"
-    rabbitmq_routing_key: str = "prices.observed"
+    history_worker_poll_interval_seconds: float = 2.0
+    history_worker_max_attempts: int = 5
+    history_worker_retry_backoff_seconds: float = 5.0
+    history_worker_stuck_after_seconds: float = 300.0
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
