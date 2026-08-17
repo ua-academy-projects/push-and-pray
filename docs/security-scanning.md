@@ -39,11 +39,22 @@ permanently red and therefore ignored. So a PR is scanned with
 `--log-opts base..head` and blocks; `develop` and the weekly run scan everything
 and report to the Security tab without failing.
 
-**Blocking — `IaC scan`.** We write this Terraform ourselves and every finding
-is directly fixable by us. Enforcing from the start is cheap; retrofitting a
-security baseline onto infrastructure that already exists is not. Right now the
-Terraform is still a scaffold, so this check passes trivially — that is exactly
-the right time to turn it on.
+**Blocking — `IaC scan`, at HIGH and CRITICAL only.** We write this Terraform
+ourselves and every finding is directly fixable by us, so enforcing from the
+start is cheap; retrofitting a baseline onto infrastructure that already exists
+is not.
+
+The job runs Trivy twice. Asked for SARIF, the action reports every severity and
+ignores the `severity` input, because GitHub code scanning filters by level
+itself — so the SARIF pass runs with `exit-code: 0` and only feeds the Security
+tab. A second pass with `severity: HIGH,CRITICAL` and `exit-code: 1` decides
+whether the build fails. Without that split, an informational finding fails the
+build.
+
+Today the scan reports three LOW findings, one per Dockerfile: DS-0026, "add a
+HEALTHCHECK instruction". Our health checks are declared in the Compose files
+rather than baked into the images, which is a legitimate choice, so these are
+visible in the Security tab but do not block. The Terraform is clean.
 
 **Reporting only — `Dependency scan`.** A CVE published upstream overnight would
 otherwise block every unrelated PR the next morning, including the one fixing

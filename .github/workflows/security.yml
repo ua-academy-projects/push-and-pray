@@ -100,13 +100,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Scan Terraform, Dockerfiles and Compose for misconfiguration
+      # Two passes on purpose. When the action is asked for SARIF it reports
+      # every severity and ignores the `severity` input, because GitHub code
+      # scanning does its own filtering. Combining that with exit-code 1 would
+      # fail the build on informational findings, so reporting and gating are
+      # separated: the first pass feeds the Security tab and never fails, the
+      # second decides the verdict.
+      - name: Scan Terraform, Dockerfiles and Compose (report)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: "1"
+          exit-code: "0"
           format: sarif
           output: trivy-config.sarif
 
@@ -116,6 +121,17 @@ jobs:
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
+
+      - name: Fail on HIGH or CRITICAL misconfiguration
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: table
+          # Trivy is already installed by the pass above.
+          skip-setup-trivy: true
 
   dependencies:
     name: Dependency scan
