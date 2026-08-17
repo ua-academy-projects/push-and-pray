@@ -1,7 +1,4 @@
 services:
-  redis:
-    ports: !reset []
-
   ui:
     environment:
       SESSION_COOKIE_SECURE: "true"

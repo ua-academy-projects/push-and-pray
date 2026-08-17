@@ -12,11 +12,11 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through RabbitMQ.
+- Durable, idempotent event delivery through PostgreSQL.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
-- Redis-backed UI preferences with a sliding 30-day TTL.
+- PostgreSQL-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Passwordless project-specific SSH access and journald-based container logging.
@@ -49,48 +49,42 @@ have already been persisted in PostgreSQL.
 
 | Area | Technology |
 |---|---|
-| Fetcher | Go 1.24 |
+| Fetcher | Go 1.25 |
 | History API | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
-| UI backend | Python 3.12, FastAPI, httpx, redis-py, uv |
+| UI backend | Python 3.12, FastAPI, httpx, SQLAlchemy, psycopg, uv |
 | UI frontend | React 19, TypeScript, Vite, Apache ECharts |
-| Messaging | RabbitMQ 4 |
-| Persistence | PostgreSQL 18 |
-| UI sessions | Redis 8 |
+| Persistence and event delivery | PostgreSQL 18 |
 | Packaging | Docker Engine and Docker Compose |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64 |
 
 ## Architecture
 
-The runtime is divided into three application services and three infrastructure
-components.
+The runtime is divided into three application services backed by PostgreSQL.
 
 | Component | Responsibility | Owns |
 |---|---|---|
-| Go Fetcher | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events | External API integration and collection schedule |
-| History Service | Consumes RabbitMQ events, validates batches, persists observations, and exposes read endpoints | Market history and PostgreSQL access |
+| Go Fetcher | Runs the UTC schedule, calls OilPriceAPI, validates the response, and writes versioned price events to PostgreSQL | External API integration and collection schedule |
+| History Service | Validates direct observation batches, persists observations, and exposes read endpoints | Market history and PostgreSQL access |
 | UI Service | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions |
-| RabbitMQ | Delivers persistent price events from Fetcher to History | Durable exchange, queue, and routing |
-| PostgreSQL | Stores normalized observations and original source metadata | Durable market-data records |
-| Redis | Stores server-side UI preferences | Session state with TTL |
+| PostgreSQL | Stores durable price events, normalized observations, source metadata, and UI sessions | All persistent application state |
 
 ### Data flow
 
 1. The Go Fetcher selects the current scheduled UTC slot.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
-3. The Fetcher publishes a persistent versioned event to the durable RabbitMQ direct
-   exchange `oil.price.events` with routing key `prices.observed`.
-4. RabbitMQ routes the event to the durable queue `history.price-observations`.
-5. History validates and commits the batch to PostgreSQL, then acknowledges the message.
+3. The Fetcher inserts a versioned event into PostgreSQL `price_events` using a deterministic
+   event key for idempotency.
+4. PostgreSQL durably stores event payloads and normalized observations without a separate
+   message broker.
+5. History validates direct batches, commits observations to PostgreSQL, and serves read APIs.
 6. The UI Service requests saved observations from History over HTTP.
 7. The browser receives only persisted data through the UI Service.
-8. UI preferences are stored separately in Redis under `ui:session:<session-id>`.
+8. UI preferences are stored in the PostgreSQL `sessions` table with sliding expiration.
 
-RabbitMQ publisher confirms are enabled. The Fetcher retries a failed publish, and the
-History consumer acknowledges a message only after the database transaction succeeds.
-Invalid events are rejected without requeue; transient persistence failures are negatively
-acknowledged and requeued. Database uniqueness on `(instrument_code, scheduled_for)` makes
-redelivery idempotent.
+The Fetcher retries transient PostgreSQL failures and reuses the same event key on every
+attempt. Database uniqueness on event keys and `(instrument_code, scheduled_for)` keeps
+event delivery and observation ingestion idempotent.
 
 ## Tracked instruments
 
@@ -123,10 +117,10 @@ scientific data source.
 │       ├── config/                 Vagrant configuration template
 │       └── provisioning/           Idempotent guest provisioning scripts
 ├── services/
-│   ├── fetcher/                    Go scheduler, provider, and AMQP publisher
-│   ├── history/                    Python History API and RabbitMQ consumer
+│   ├── fetcher/                    Go scheduler, provider, and PostgreSQL publisher
+│   ├── history/                    Python History and ingestion API
 │   └── ui/
-│       ├── backend/                Python UI gateway and Redis sessions
+│       ├── backend/                Python UI gateway and PostgreSQL sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
@@ -146,9 +140,9 @@ provisioner is not used.
 | VM | Default example IP | Containers | Exposed ports |
 |---|---:|---|---|
 | `database` | `192.168.88.220` | PostgreSQL | `5432/tcp` |
-| `history` | `192.168.88.221` | RabbitMQ, History Service | `5672/tcp`, `15672/http`, `8001/http` |
+| `history` | `192.168.88.221` | History Service | `8001/http` |
 | `fetcher` | `192.168.88.222` | Go Fetcher | `8002/http` |
-| `ui` | `192.168.88.223` | UI Service, Redis | `8080/http`, `6379/tcp` |
+| `ui` | `192.168.88.223` | UI Service | `8080/http` |
 
 These addresses are examples. Configure four unused addresses from the host's real LAN,
 reserve them outside the router's dynamic DHCP pool, and keep them unique. The QEMU
@@ -204,9 +198,6 @@ FETCHER_LAN_IP=192.168.88.222
 UI_LAN_IP=192.168.88.223
 
 DB_PASSWORD=use-a-real-password
-REDIS_PASSWORD=use-a-real-password
-RABBITMQ_USER=oil_tracker
-RABBITMQ_PASSWORD=use-a-real-password
 ```
 
 Do not commit `.env` or `infrastructure/vagrant/config/vagrant.env`; both are ignored.
@@ -227,10 +218,6 @@ After a deployment using the example addresses, open:
 - Application: `http://192.168.88.223:8080`
 - History OpenAPI: `http://192.168.88.221:8001/docs`
 - Fetcher health: `http://192.168.88.222:8002/health`
-- RabbitMQ management: `http://192.168.88.221:15672`
-
-RabbitMQ management uses `RABBITMQ_USER` and `RABBITMQ_PASSWORD` from the Vagrant
-configuration file.
 
 ### Day-to-day commands
 
@@ -241,7 +228,7 @@ configuration file.
 # Display configured VM addresses and endpoints
 ./infrastructure/vagrant/commands/show-ips.sh
 
-# Verify Docker, containers, HTTP services, AMQP, Redis, PostgreSQL, SSH, and logging
+# Verify Docker, containers, HTTP services, PostgreSQL, SSH, and logging
 ./infrastructure/vagrant/commands/verify.sh
 
 # Re-sync and reprovision one VM
@@ -253,7 +240,7 @@ configuration file.
 
 # Read journald container logs
 ./infrastructure/vagrant/commands/logs.sh fetcher --follow
-./infrastructure/vagrant/commands/logs.sh rabbitmq 200
+./infrastructure/vagrant/commands/logs.sh history 200
 
 # Stop all VMs
 ./infrastructure/vagrant/commands/halt.sh
@@ -279,9 +266,9 @@ Each VM runs one independent Docker Compose project:
 | Compose file | Project | Services |
 |---|---|---|
 | `compose.database.yaml` | `petroscope-database` | `postgres` |
-| `compose.history.yaml` | `petroscope-history` | `rabbitmq`, `history` |
+| `compose.history.yaml` | `petroscope-history` | `history` |
 | `compose.fetcher.yaml` | `petroscope-fetcher` | `fetcher` |
-| `compose.ui.yaml` | `petroscope-ui` | `redis`, `ui` |
+| `compose.ui.yaml` | `petroscope-ui` | `ui` |
 
 For a public GCP deployment, `compose.ui.tls.yaml` is applied on top of the UI Compose
 file. It adds Nginx and Certbot, publishes only ports 80 and 443, enables secure session
@@ -294,7 +281,7 @@ Before starting the TLS deployment:
 - reserve and attach a static external IPv4 address to the UI VM;
 - create an `A` record for the domain that points to that address;
 - allow public ingress to TCP ports 80 and 443 on the UI VM;
-- do not expose ports 8080 or 6379 in the GCP firewall.
+- do not expose port 8080 in the GCP firewall.
 
 Add the domain and Let's Encrypt notification email to the Compose environment file:
 
@@ -328,9 +315,8 @@ docker compose \
 ```
 
 Containers on the same VM use their Compose network and service names. Communication
-between VMs uses the configured bridged LAN addresses. PostgreSQL, RabbitMQ, and Redis
-use named Docker volumes. All containers use `restart: unless-stopped` and the journald
-logging driver.
+between VMs uses the configured bridged LAN addresses. PostgreSQL owns the only named data
+volume. All containers use `restart: unless-stopped` and the journald logging driver.
 
 Journald is limited by provisioning to 200 MB and seven days per VM. Grafana and Loki are
 not part of this project.
@@ -360,8 +346,7 @@ or pass the token as a Docker build argument.
 
 ## Local development
 
-Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL, RabbitMQ, and
-Redis.
+Local development requires Python 3.12+, uv, Go 1.25+, Node.js, and PostgreSQL.
 
 Install Python dependencies and build the frontend:
 
@@ -428,7 +413,7 @@ run Python tools through `uv run`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | PostgreSQL and RabbitMQ status |
+| `GET` | `/health` | PostgreSQL status |
 | `POST` | `/v1/observations/batch` | Direct idempotent batch ingestion |
 | `GET` | `/v1/observations` | Filtered and paginated history |
 | `GET` | `/v1/observations/latest` | Latest observation per instrument |
@@ -440,7 +425,7 @@ run Python tools through `uv run`.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/` | React application |
-| `GET` | `/health` | History and Redis status |
+| `GET` | `/health` | History and PostgreSQL status |
 | `GET` | `/api/observations` | Read-only proxy to persisted history |
 | `GET` | `/api/latest` | Read-only proxy to latest persisted values |
 | `GET` | `/api/instruments` | Read-only proxy to instruments |
@@ -473,14 +458,9 @@ ordered in `database/migrations/` and are safe to apply repeatedly.
 | `FETCH_TIMEZONE` | `UTC` | Schedule timezone |
 | `FETCH_ON_STARTUP` | `true` | Collect the latest slot after startup |
 | `REQUEST_TIMEOUT_SECONDS` | `15` | External HTTP timeout |
-| `DATABASE_URL` | see `.env.example` | History PostgreSQL connection |
-| `RABBITMQ_URL` | see `.env.example` | Fetcher and History AMQP connection |
-| `RABBITMQ_EXCHANGE` | `oil.price.events` | Durable direct exchange |
-| `RABBITMQ_QUEUE` | `history.price-observations` | Durable History queue |
-| `RABBITMQ_ROUTING_KEY` | `prices.observed` | Event routing key |
+| `DATABASE_URL` | see `.env.example` | Fetcher, History, and UI PostgreSQL connection |
 | `HISTORY_SERVICE_URL` | `http://127.0.0.1:8001` | UI-to-History base URL |
-| `REDIS_URL` | `redis://127.0.0.1:6379/0` | UI session storage |
-| `SESSION_TTL_SECONDS` | `2592000` | Sliding session TTL, 30 days |
+| `SESSION_TTL_SECONDS` | `2592000` | PostgreSQL-backed sliding session TTL, 30 days |
 | `SESSION_COOKIE_SECURE` | `false` | Secure-cookie flag for HTTPS deployments |
 | `LISTEN_ADDRESS` | `:8002` | Fetcher diagnostic API address |
 | `LOG_LEVEL` | `INFO` | Python service log level |
@@ -501,5 +481,5 @@ uv run ruff check .
 - Reserve the VM addresses and restrict sensitive LAN ports at the router or firewall when
   the network is not trusted.
 - `SESSION_COOKIE_SECURE=false` is suitable only for local HTTP. Enable it behind HTTPS.
-- RabbitMQ management, PostgreSQL, and Redis are exposed to the configured LAN for this
-  lab deployment; production deployments should restrict their network exposure.
+- PostgreSQL is exposed to the configured LAN for this lab deployment; production
+  deployments should restrict its network exposure.

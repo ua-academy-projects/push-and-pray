@@ -36,10 +36,6 @@ class ObservationBatch(BaseModel):
     observations: list[ObservationCreate] = Field(min_length=1, max_length=50)
 
 
-class ObservationEvent(ObservationBatch):
-    schema_version: Literal[1]
-
-
 class ObservationRead(ObservationCreate):
     id: UUID
     created_at: datetime

@@ -140,8 +140,6 @@ jobs:
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
       OILPRICEAPI_KEY: ci-validation
-      RABBITMQ_USER: ci-validation
-      RABBITMQ_PASSWORD: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
       UI_LAN_IP: 127.0.0.1

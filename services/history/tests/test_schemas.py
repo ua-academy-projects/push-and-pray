@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from history_service.schemas import ObservationBatch, ObservationCreate, ObservationEvent
+from history_service.schemas import ObservationBatch, ObservationCreate
 
 
 def valid_observation() -> dict:
@@ -29,16 +29,6 @@ def valid_observation() -> dict:
 def test_valid_observation_batch() -> None:
     batch = ObservationBatch(observations=[valid_observation()])
     assert batch.observations[0].price == Decimal("68.42")
-
-
-def test_valid_versioned_rabbitmq_event() -> None:
-    event = ObservationEvent(schema_version=1, observations=[valid_observation()])
-    assert event.schema_version == 1
-
-
-def test_unknown_rabbitmq_schema_is_rejected() -> None:
-    with pytest.raises(ValidationError):
-        ObservationEvent(schema_version=2, observations=[valid_observation()])
 
 
 def test_timestamp_must_be_timezone_aware() -> None:
