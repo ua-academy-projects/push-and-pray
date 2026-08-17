@@ -1,0 +1,26 @@
+# Configuration for yamllint, used by the "YAML" job in PR validation.
+#
+# The defaults are stricter than this project needs (80-column limit,
+# mandatory "---" document start), so a few rules are relaxed rather than
+# reformatting every Compose file to satisfy them.
+
+extends: default
+
+ignore: |
+  .venv/
+  node_modules/
+  services/ui/frontend/node_modules/
+
+rules:
+  # Compose files legitimately contain long connection strings and healthcheck
+  # commands. 200 is generous but still catches genuinely runaway lines.
+  line-length:
+    max: 200
+    level: error
+
+  # "---" at the top of every file adds nothing here.
+  document-start: disable
+
+  # GitHub Actions uses `on:` as a key, which the truthy rule flags by default.
+  truthy:
+    check-keys: false

@@ -9,7 +9,6 @@ dependencies = [
     "httpx>=0.28,<1",
     "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.9,<3",
-    "redis>=8,<9",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.34,<1",
 ]
@@ -35,3 +34,15 @@ src = ["services/history/src", "services/ui/backend/src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are called in argument defaults by
+# design; B008 is a false positive for them.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]

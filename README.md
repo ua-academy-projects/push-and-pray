@@ -335,6 +335,29 @@ logging driver.
 Journald is limited by provisioning to 200 MB and seven days per VM. Grafana and Loki are
 not part of this project.
 
+### Published application images
+
+GitHub Actions builds and publishes every application image to GitHub Container Registry:
+
+| Application | Image |
+|---|---|
+| Fetcher | `ghcr.io/<owner>/push-and-pray/fetcher` |
+| History | `ghcr.io/<owner>/push-and-pray/history` |
+| UI | `ghcr.io/<owner>/push-and-pray/ui` |
+
+Replace `<owner>` with the lowercase GitHub account or organization that owns the
+repository. Every published image receives the full commit SHA as an immutable tag.
+Additional moving tags identify the delivery channel:
+
+- pushes to `develop`: `develop` and `integration`;
+- pushes to `main`: `main` and `latest`;
+- release tags matching `v*`: the Git tag and, for semantic versions, normalized version
+  and `major.minor` tags (for example `v1.4.2`, `1.4.2`, and `1.4`).
+
+Images are pushed only after a successful Buildx build. The registry login uses the
+workflow-scoped `GITHUB_TOKEN`, which GitHub Actions masks in logs; workflows do not print
+or pass the token as a Docker build argument.
+
 ## Local development
 
 Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL, RabbitMQ, and

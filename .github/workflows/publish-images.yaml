@@ -1,0 +1,41 @@
+name: Publish application images
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  fetcher:
+    name: Publish Fetcher image
+    uses: ./.github/workflows/reusable-build-image.yaml
+    with:
+      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/fetcher
+      dockerfile: infrastructure/docker/Dockerfile.fetcher
+      context: .
+      description: Petroscope scheduled oil-price fetcher
+
+  history:
+    name: Publish History image
+    uses: ./.github/workflows/reusable-build-image.yaml
+    with:
+      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/history
+      dockerfile: infrastructure/docker/Dockerfile.history
+      context: .
+      description: Petroscope price history API and event consumer
+
+  ui:
+    name: Publish UI image
+    uses: ./.github/workflows/reusable-build-image.yaml
+    with:
+      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/ui
+      dockerfile: infrastructure/docker/Dockerfile.ui
+      context: .
+      description: Petroscope web UI and backend service

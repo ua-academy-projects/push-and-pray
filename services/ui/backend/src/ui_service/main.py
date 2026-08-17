@@ -3,16 +3,20 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Annotated
 
 import httpx
-import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
-from redis.exceptions import RedisError
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from .database import get_db
+from .repository import create_session, get_session, refresh_session
 from .sessions import SessionPreferences, resolve_session_id
 
 logging.basicConfig(
@@ -22,7 +26,6 @@ logging.basicConfig(
 
 STATIC_DIR = Path(__file__).parent / "static"
 HISTORY_SERVICE_URL = os.getenv("HISTORY_SERVICE_URL", "http://localhost:8001").rstrip("/")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "petroscope_session")
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
@@ -31,18 +34,10 @@ SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(base_url=HISTORY_SERVICE_URL, timeout=10.0)
-    app.state.redis = redis.Redis.from_url(
-        REDIS_URL,
-        decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-        health_check_interval=30,
-    )
     try:
         yield
     finally:
         await app.state.client.aclose()
-        await app.state.redis.aclose()
 
 
 app = FastAPI(
@@ -72,17 +67,21 @@ async def proxy_get(request: Request, path: str, params: dict | None = None) -> 
 
 
 @app.get("/health", tags=["operations"])
-async def health(request: Request) -> dict[str, str]:
+async def health(request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
     try:
         upstream = await request.app.state.client.get("/health")
         upstream.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="History Service is unavailable") from exc
     try:
-        await request.app.state.redis.ping()
-    except RedisError as exc:
-        raise HTTPException(status_code=503, detail="Redis is unavailable") from exc
-    return {"status": "ok", "history": "connected", "redis": "connected"}
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Database is unavailable") from exc
+    return {"status": "ok", "history": "connected", "database": "connected"}
+
+
+def _new_expiry() -> datetime:
+    return datetime.now(UTC) + timedelta(seconds=SESSION_TTL_SECONDS)
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
@@ -97,41 +96,31 @@ def _set_session_cookie(response: Response, session_id: str) -> None:
     )
 
 
-def _session_key(session_id: str) -> str:
-    return f"ui:session:{session_id}"
-
-
 @app.get(
     "/api/session/preferences",
     response_model=SessionPreferences,
     tags=["session"],
 )
-async def get_session_preferences(request: Request, response: Response) -> SessionPreferences:
+async def get_session_preferences(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+) -> SessionPreferences:
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
-    key = _session_key(session_id)
-    try:
-        stored = await request.app.state.redis.get(key)
-        if stored is None:
+    record = get_session(db, session_id)
+    if record is None:
+        preferences = SessionPreferences()
+        create_session(db, session_id, preferences.model_dump(), _new_expiry())
+    else:
+        try:
+            preferences = SessionPreferences.model_validate(record.preferences)
+        except ValidationError:
             preferences = SessionPreferences()
-            await request.app.state.redis.set(
-                key,
-                preferences.model_dump_json(),
-                ex=SESSION_TTL_SECONDS,
-            )
+            record.preferences = preferences.model_dump()
+            record.expires_at = _new_expiry()
+            db.commit()
         else:
-            try:
-                preferences = SessionPreferences.model_validate_json(stored)
-            except ValidationError:
-                preferences = SessionPreferences()
-                await request.app.state.redis.set(
-                    key,
-                    preferences.model_dump_json(),
-                    ex=SESSION_TTL_SECONDS,
-                )
-            else:
-                await request.app.state.redis.expire(key, SESSION_TTL_SECONDS)
-    except RedisError as exc:
-        raise HTTPException(status_code=503, detail="Redis is unavailable") from exc
+            refresh_session(db, session_id, _new_expiry())
     _set_session_cookie(response, session_id)
     return preferences
 
@@ -145,16 +134,16 @@ async def update_session_preferences(
     payload: SessionPreferences,
     request: Request,
     response: Response,
+    db: Annotated[Session, Depends(get_db)],
 ) -> SessionPreferences:
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
-    try:
-        await request.app.state.redis.set(
-            _session_key(session_id),
-            payload.model_dump_json(),
-            ex=SESSION_TTL_SECONDS,
-        )
-    except RedisError as exc:
-        raise HTTPException(status_code=503, detail="Redis is unavailable") from exc
+    record = get_session(db, session_id)
+    if record is None:
+        create_session(db, session_id, payload.model_dump(), _new_expiry())
+    else:
+        record.preferences = payload.model_dump()
+        record.expires_at = _new_expiry()
+        db.commit()
     _set_session_cookie(response, session_id)
     return payload
 

@@ -10,3 +10,18 @@ htmlcov/
 .vagrant/
 infrastructure/vagrant/config/vagrant.env
 node_modules/
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+crash.log
+crash.*.log
+backend.hcl
+
+# Credentials and private keys
+*.pem
+*.key
