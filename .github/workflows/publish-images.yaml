@@ -39,3 +39,4 @@ jobs:
       dockerfile: infrastructure/docker/Dockerfile.ui
       context: .
       description: Petroscope web UI and backend service
+      
