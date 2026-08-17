@@ -41,7 +41,7 @@ resource "google_compute_instance" "bastion" {
 
   zone         = var.zone
   machine_type = var.bastion_machine_type
-  tags         = [local.tag_bastion, var.network_tag]
+  tags         = local.instance_tags
   labels       = local.labels
 
   # Never route other hosts' traffic through the bastion.

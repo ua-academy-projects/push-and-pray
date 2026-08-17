@@ -63,3 +63,38 @@ output "firewall_rules" {
     google_compute_firewall.deny_all_ingress.name,
   ])
 }
+output "egress_firewall_rules" {
+  description = "Names of the egress rules. Empty when restrict_egress is false and the permissive implied egress rule applies."
+  value = compact(concat(
+    google_compute_firewall.egress_internal[*].name,
+    google_compute_firewall.egress_metadata_server[*].name,
+    google_compute_firewall.egress_dns_ntp[*].name,
+    google_compute_firewall.egress_internet[*].name,
+    google_compute_firewall.deny_all_egress[*].name,
+  ))
+}
+
+output "default_route_name" {
+  description = "Name of the explicitly managed default route, or null when the auto-created route is kept."
+  value       = var.manage_default_route ? google_compute_route.default_internet[0].name : null
+}
+
+output "ssh_port" {
+  description = "Non-default SSH port opened by the firewall rules. The bastion module must configure sshd on the same port."
+  value       = var.ssh_port
+}
+
+output "bastion_allowed_cidrs" {
+  description = "Source ranges currently allowed to reach the bastion on ssh_port."
+  value       = var.bastion_allowed_cidrs
+}
+
+output "app_ports" {
+  description = "Application ports reachable from inside the VPC only."
+  value       = var.app_ports
+}
+
+output "db_port" {
+  description = "Database port, reachable only from instances tagged as application servers."
+  value       = var.db_port
+}

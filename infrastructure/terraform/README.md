@@ -20,3 +20,4 @@ Create a local variable file:
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
+```

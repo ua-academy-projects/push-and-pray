@@ -57,3 +57,27 @@ variable "common_labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "ssh_port" {
+  description = "Team-approved non-default SSH port. Used by the firewall rules and by sshd on the bastion."
+  type        = number
+  default     = 18832
+
+  validation {
+    condition     = var.ssh_port >= 1024 && var.ssh_port <= 65535 && var.ssh_port != 22
+    error_message = "ssh_port must be in the 1024-65535 range and must not be the default port 22."
+  }
+}
+
+variable "bastion_allowed_cidrs" {
+  description = "Source CIDRs allowed to reach the bastion on ssh_port. Office ranges / VPN egress IPs only, never 0.0.0.0/0."
+  type        = list(string)
+}
+
+variable "ssh_users" {
+  description = <<-EOT
+    One PUBLIC SSH key per person, keyed by the Linux username.
+    Private keys are never generated, accepted or stored by this configuration.
+  EOT
+  type        = map(string)
+}

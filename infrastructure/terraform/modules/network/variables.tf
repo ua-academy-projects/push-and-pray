@@ -11,12 +11,6 @@ variable "region" {
   default     = "europe-central2"
 }
 
-variable "zone" {
-  description = "Zone for the bastion host (and the optional example workloads)."
-  type        = string
-  default     = "europe-central2-a"
-}
-
 variable "name_prefix" {
   description = "Prefix for every resource name. Keep it short: GCP names are limited to 63 chars."
   type        = string
@@ -132,7 +126,7 @@ variable "nat_log_filter" {
 # variables for ssh access
 
 variable "ssh_port" {
-  description = "Non-default SSH port. Used both in the firewall rule and in the sshd configuration."
+  description = "Non-default SSH port. Used both in the firewall rules here and in the sshd configuration of the bastion module."
   type        = number
   default     = 18832
 
@@ -170,69 +164,12 @@ variable "bastion_allowed_cidrs" {
   }
 }
 
-variable "ssh_users" {
-  description = <<-EOT
-    One public SSH key per person, keyed by the Linux username.
-    Values are PUBLIC keys only (ssh-ed25519 / ssh-rsa / ecdsa-* / sk-*).
-    Private keys are never accepted, never generated and never stored by this module.
-
-    Example:
-      ssh_users = {
-        tabula = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... tabula@laptop"
-        rasa  = file("~/keys/rasa.pub")
-      }
-  EOT
-  type        = map(string)
-  default     = {}
-
-  validation {
-    condition = alltrue([
-      for u in keys(var.ssh_users) : can(regex("^[a-z_][a-z0-9_-]{0,31}$", u))
-    ])
-    error_message = "Every ssh_users key must be a valid POSIX username (lowercase, starts with a letter or underscore, max 32 chars)."
-  }
-
-  validation {
-    condition = alltrue([
-      for k in values(var.ssh_users) :
-      can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\\.com|sk-ecdsa-sha2-nistp256@openssh\\.com) AAAA[0-9A-Za-z+/=]+", trimspace(k)))
-    ])
-    error_message = "Every ssh_users value must be a single OpenSSH PUBLIC key line starting with a supported key type."
-  }
-
-  validation {
-    condition = alltrue([
-      for k in values(var.ssh_users) :
-      !can(regex("(?i)PRIVATE KEY", k))
-    ])
-    error_message = "A PRIVATE key was passed to ssh_users. Private keys must never enter Terraform code or state - pass the .pub file only."
-  }
-
-  validation {
-    condition = alltrue([
-      for k in values(var.ssh_users) : length(split("\n", trimspace(k))) == 1
-    ])
-    error_message = "Exactly one public key per person is supported: each ssh_users value must be a single line."
-  }
-}
-
-variable "enable_os_login" {
-  description = <<-EOT
-    Use OS Login instead of instance metadata keys. When true, ssh_users is ignored and
-    access is granted through IAM (roles/compute.osLogin + roles/iap.tunnelResourceAccessor),
-    which gives central revocation and audit logs. Set to false to use the per-person
-    metadata keys from ssh_users.
-  EOT
-  type        = bool
-  default     = false
-}
-
 # variables related to application / db ports
 
 variable "app_ports" {
-  description = "Internal application ports, reachable only from inside the VPC and from Google load balancer health checks."
+  description = "Internal application ports, reachable only from inside the VPC. Never from the internet."
   type        = list(string)
-  default     = ["8080","5672","6379","15672"]
+  default     = ["8080", "5672", "6379", "15672"]
 
   validation {
     condition     = length(var.app_ports) > 0
@@ -244,12 +181,6 @@ variable "db_port" {
   description = "Database port. Reachable only from instances carrying the application tag."
   type        = number
   default     = 5432
-}
-
-variable "enable_lb_health_checks" {
-  description = "Allow Google's load balancer / health check probe ranges (35.191.0.0/16, 130.211.0.0/22) to reach app_ports."
-  type        = bool
-  default     = true
 }
 
 # variables related to firewall behavior
@@ -269,8 +200,9 @@ variable "log_denied_traffic" {
 variable "restrict_egress" {
   description = <<-EOT
     When true, the permissive implied egress rule is overridden by a deny-all egress rule plus
-    narrow allows (DNS, NTP, HTTPS, in-VPC traffic). Genuine least privilege, but it will break
-    anything that talks to an unexpected endpoint - roll it out in a non-production project first.
+    narrow allows (DNS, NTP, the metadata server, egress_allowed_ports and in-VPC traffic).
+    Genuine least privilege, but it will break anything that talks to an unexpected endpoint -
+    roll it out in a non-production project first.
   EOT
   type        = bool
   default     = false
@@ -280,4 +212,9 @@ variable "egress_allowed_ports" {
   description = "TCP ports allowed outbound to the internet when restrict_egress is true."
   type        = list(string)
   default     = ["443"]
+
+  validation {
+    condition     = !var.restrict_egress || length(var.egress_allowed_ports) > 0
+    error_message = "egress_allowed_ports must not be empty when restrict_egress is true."
+  }
 }

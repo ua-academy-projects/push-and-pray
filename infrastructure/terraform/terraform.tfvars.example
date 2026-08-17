@@ -8,3 +8,24 @@ common_labels = {
   project = "oil-price-tracker"
   team    = "ua-academy"
 }
+
+# Non-default SSH port. Port 22 is closed everywhere.
+ssh_port = 18832
+
+# Who may reach the bastion at all. Office / VPN egress addresses only.
+# 0.0.0.0/0 (and anything broader than /8) is rejected by variable validation.
+bastion_allowed_cidrs = [
+  "203.0.113.10/32",
+  "198.51.100.0/28",
+]
+
+# One PUBLIC key per person, keyed by the Linux username.
+# Never put a private key here: this file feeds Terraform state.
+ssh_users = {
+  tabula = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexampleexampleexampleexampleexample tabula@laptop"
+  rasa   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIanotherkeyanotherkeyanotherkeyanoth rasa@laptop"
+}
+
+# Subnet CIDRs, application/database ports, NAT and egress restriction come from
+# the defaults in modules/network/variables.tf. Override them in main.tf if the
+# defaults ever stop fitting.

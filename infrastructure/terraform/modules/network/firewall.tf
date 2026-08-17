@@ -173,3 +173,135 @@ resource "google_compute_firewall" "deny_all_ingress" {
     }
   }
 }
+# egress: least privilege outbound, opt-in via restrict_egress
+#
+# GCP's implied egress rule allows everything. These rules override it: a
+# catch-all deny at priority 65534 plus narrow allows above it. Cloud NAT still
+# provides the path to the internet - these rules decide what is allowed to use it.
+
+resource "google_compute_firewall" "egress_internal" {
+  count = var.restrict_egress ? 1 : 0
+
+  project     = var.project_id
+  name        = "${local.prefix}-allow-egress-internal"
+  description = "Egress between instances inside the VPC."
+
+  network   = google_compute_network.vpc.id
+  direction = "EGRESS"
+  priority  = 1000
+
+  destination_ranges = local.internal_ranges
+
+  allow {
+    protocol = "all"
+  }
+
+  dynamic "log_config" {
+    for_each = local.firewall_log_config
+
+    content {
+      metadata = "INCLUDE_ALL_METADATA"
+    }
+  }
+}
+
+resource "google_compute_firewall" "egress_metadata_server" {
+  count = var.restrict_egress ? 1 : 0
+
+  project     = var.project_id
+  name        = "${local.prefix}-allow-egress-metadata"
+  description = "Egress to the GCE metadata server: DNS, instance metadata and SSH key propagation depend on it."
+
+  network   = google_compute_network.vpc.id
+  direction = "EGRESS"
+  priority  = 1000
+
+  destination_ranges = ["169.254.169.254/32"]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "53"]
+  }
+
+  allow {
+    protocol = "udp"
+    ports    = ["53"]
+  }
+}
+
+resource "google_compute_firewall" "egress_dns_ntp" {
+  count = var.restrict_egress ? 1 : 0
+
+  project     = var.project_id
+  name        = "${local.prefix}-allow-egress-dns-ntp"
+  description = "Egress DNS and NTP. Without these an instance cannot resolve names or keep its clock, which breaks TLS."
+
+  network   = google_compute_network.vpc.id
+  direction = "EGRESS"
+  priority  = 1000
+
+  destination_ranges = ["0.0.0.0/0"]
+
+  allow {
+    protocol = "udp"
+    ports    = ["53", "123"]
+  }
+
+  allow {
+    protocol = "tcp"
+    ports    = ["53"]
+  }
+}
+
+resource "google_compute_firewall" "egress_internet" {
+  count = var.restrict_egress ? 1 : 0
+
+  project     = var.project_id
+  name        = "${local.prefix}-allow-egress-internet"
+  description = "Egress to the internet on ${join(",", var.egress_allowed_ports)} only: package repositories, container registries and the upstream price API."
+
+  network   = google_compute_network.vpc.id
+  direction = "EGRESS"
+  priority  = 1000
+
+  destination_ranges = ["0.0.0.0/0"]
+
+  allow {
+    protocol = "tcp"
+    ports    = var.egress_allowed_ports
+  }
+
+  dynamic "log_config" {
+    for_each = local.firewall_log_config
+
+    content {
+      metadata = "INCLUDE_ALL_METADATA"
+    }
+  }
+}
+
+resource "google_compute_firewall" "deny_all_egress" {
+  count = var.restrict_egress ? 1 : 0
+
+  project     = var.project_id
+  name        = "${local.prefix}-deny-all-egress"
+  description = "Explicit catch-all egress deny. Overrides the permissive implied egress rule."
+
+  network   = google_compute_network.vpc.id
+  direction = "EGRESS"
+  priority  = 65534
+
+  destination_ranges = ["0.0.0.0/0"]
+
+  deny {
+    protocol = "all"
+  }
+
+  dynamic "log_config" {
+    for_each = local.firewall_deny_log_config
+
+    content {
+      metadata = "INCLUDE_ALL_METADATA"
+    }
+  }
+}

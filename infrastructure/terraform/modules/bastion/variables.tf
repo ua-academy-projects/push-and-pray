@@ -4,15 +4,20 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Primary region for the subnets, Cloud Router and Cloud NAT."
+  description = "Region of the bastion's static external IP. Must be the region of the subnet the bastion is placed in."
   type        = string
   default     = "europe-central2"
 }
 
 variable "zone" {
-  description = "Zone for the bastion host (and the optional example workloads)."
+  description = "Zone for the bastion host. Must belong to var.region."
   type        = string
   default     = "europe-central2-a"
+
+  validation {
+    condition     = startswith(var.zone, "${var.region}-")
+    error_message = "zone must belong to the selected region, for example europe-central2-a for region europe-central2."
+  }
 }
 
 variable "name_prefix" {
@@ -63,7 +68,7 @@ variable "grant_bastion_logging_roles" {
 }
 
 variable "ssh_port" {
-  description = "Non-default SSH port. Used both in the firewall rule and in the sshd configuration."
+  description = "Non-default SSH port. Must match the ssh_port of the network module, whose firewall rule opens it."
   type        = number
   default     = 18832
 
@@ -74,12 +79,12 @@ variable "ssh_port" {
 }
 
 variable "subnetwork_id" {
-  description = "ID of the subnet to place the bastion in."
+  description = "ID of the subnet to place the bastion in. Pass module.network.public_subnet.id."
   type        = string
 }
 
 variable "network_tag" {
-  description = "Network tag that the network module's firewall rules expect."
+  description = "Network tag the network module's firewall rules expect on the bastion. Pass module.network.network_tags.bastion."
   type        = string
 }
 
@@ -92,11 +97,10 @@ variable "ssh_users" {
     Example:
       ssh_users = {
         tabula = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... tabula@laptop"
-        rasa  = file("~/keys/rasa.pub")
+        rasa   = file("~/keys/rasa.pub")
       }
   EOT
   type        = map(string)
-  default     = {}
 
   validation {
     condition     = length(var.ssh_users) > 0
@@ -132,15 +136,4 @@ variable "ssh_users" {
     ])
     error_message = "Exactly one public key per person is supported: each ssh_users value must be a single line."
   }
-}
-
-variable "enable_os_login" {
-  description = <<-EOT
-    Use OS Login instead of instance metadata keys. When true, ssh_users is ignored and
-    access is granted through IAM (roles/compute.osLogin + roles/iap.tunnelResourceAccessor),
-    which gives central revocation and audit logs. Set to false to use the per-person
-    metadata keys from ssh_users.
-  EOT
-  type        = bool
-  default     = false
 }

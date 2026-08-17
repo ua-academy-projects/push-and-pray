@@ -2,25 +2,23 @@ locals {
   prefix = var.name_prefix
 
   # Network tags are the handle firewall rules use to select instances.
-  # Nothing is reachable unless it carries the right tag.
+  # The tag comes from the network module; the local one is the same value and is
+  # kept only so the module still names its instance correctly when used standalone.
   tag_bastion = "${local.prefix}-bastion"
 
-  # "user:public-key" lines, one per person. Empty when OS Login is enabled.
+  instance_tags = distinct(compact([local.tag_bastion, var.network_tag]))
+
+  # "user:public-key" lines, one per person.
   ssh_keys_metadata = join("\n", [
     for user, key in var.ssh_users : "${user}:${trimspace(key)}"
   ])
 
-  # Common metadata for every instance in this module.
-  # Built as one map with nulls filtered out, so the type is always map(string).
   common_metadata = {
-    for k, v in {
-      # Project-wide SSH keys are ignored: access is decided here, not by whoever
-      # happens to have project metadata permissions.
-      block-project-ssh-keys = "TRUE"
-      enable-oslogin         = "FALSE"
-      serial-port-enable = "FALSE"
-      ssh-keys           = local.ssh_keys_metadata
-    } : k => v if v != null
+    # Project-wide SSH keys are ignored: access is decided here, not by whoever
+    # happens to have project metadata permissions.
+    block-project-ssh-keys = "TRUE"
+    serial-port-enable     = "FALSE"
+    ssh-keys               = local.ssh_keys_metadata
   }
 
   startup_script = templatefile("${path.module}/templates/sshd-hardening.sh.tftpl", {
@@ -29,8 +27,8 @@ locals {
 
   labels = merge(
     {
-      managed-by = "terraform"
-      module     = "network-bastion"
+      managed_by = "terraform"
+      module     = "bastion"
     },
     var.labels
   )
