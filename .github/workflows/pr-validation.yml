@@ -4,8 +4,10 @@ name: PR Validation
 # request targeting develop or main. Nothing is published from this workflow —
 # images are built and thrown away. Publishing lives in a separate workflow.
 #
-# Job names below are stable and unique so they can be selected as required
-# status checks in branch protection. See docs/ci-required-checks.md.
+# Jobs only run when files they actually care about changed. Because a skipped
+# job reports no status at all, branch protection must require the single
+# "Required checks" job at the bottom rather than the individual ones — it
+# always runs and decides the overall verdict. See docs/ci-required-checks.md.
 
 on:
   pull_request:
@@ -25,9 +27,103 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      yaml: ${{ steps.filter.outputs.yaml == 'true' || github.event_name == 'workflow_dispatch' }}
+      python: ${{ steps.filter.outputs.python == 'true' || github.event_name == 'workflow_dispatch' }}
+      go: ${{ steps.filter.outputs.go == 'true' || github.event_name == 'workflow_dispatch' }}
+      frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
+      compose: ${{ steps.filter.outputs.compose == 'true' || github.event_name == 'workflow_dispatch' }}
+      terraform: ${{ steps.filter.outputs.terraform == 'true' || github.event_name == 'workflow_dispatch' }}
+      images: ${{ steps.images.outputs.list }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Every filter below also lists this workflow file: if the pipeline
+      # itself changes we re-validate everything, otherwise a broken edit to
+      # the pipeline could merge without ever being exercised.
+      - name: Work out what changed
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            yaml:
+              - '**/*.yml'
+              - '**/*.yaml'
+              - '.yamllint.yml'
+            python:
+              - '.github/workflows/pr-validation.yml'
+              - 'services/history/**'
+              - 'services/ui/backend/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            go:
+              - '.github/workflows/pr-validation.yml'
+              - 'services/fetcher/**'
+            frontend:
+              - '.github/workflows/pr-validation.yml'
+              - 'services/ui/frontend/**'
+            compose:
+              - '.github/workflows/pr-validation.yml'
+              - 'infrastructure/docker/compose.*.yaml'
+            terraform:
+              - '.github/workflows/pr-validation.yml'
+              - '**/*.tf'
+              - '**/*.tfvars'
+            image-fetcher:
+              - '.github/workflows/pr-validation.yml'
+              - 'services/fetcher/**'
+              - 'infrastructure/docker/Dockerfile.fetcher'
+            image-history:
+              - '.github/workflows/pr-validation.yml'
+              - 'services/history/**'
+              - 'infrastructure/docker/Dockerfile.history'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            image-ui:
+              - '.github/workflows/pr-validation.yml'
+              - 'services/ui/**'
+              - 'infrastructure/docker/Dockerfile.ui'
+              - 'pyproject.toml'
+              - 'uv.lock'
+
+      # The image job uses a dynamic matrix so that only the services whose
+      # build inputs changed get rebuilt. An empty list means the job is
+      # skipped entirely (see its `if:`), because an empty matrix is an error.
+      - name: Build the image matrix
+        id: images
+        run: |
+          services=()
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            services=('"fetcher"' '"history"' '"ui"')
+          else
+            if [ "${{ steps.filter.outputs.image-fetcher }}" = "true" ]; then
+              services+=('"fetcher"')
+            fi
+            if [ "${{ steps.filter.outputs.image-history }}" = "true" ]; then
+              services+=('"history"')
+            fi
+            if [ "${{ steps.filter.outputs.image-ui }}" = "true" ]; then
+              services+=('"ui"')
+            fi
+          fi
+          list="[$(IFS=,; echo "${services[*]-}")]"
+          echo "list=${list}" >> "${GITHUB_OUTPUT}"
+          echo "Images to build: ${list}"
+
   yaml:
     name: YAML
+    needs: changes
+    if: needs.changes.outputs.yaml == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,7 +141,14 @@ jobs:
 
   python:
     name: Python
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Never silently re-resolve the lockfile: CI must test the versions that
+      # are actually pinned.
+      UV_FROZEN: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,7 +176,10 @@ jobs:
 
   go:
     name: Go
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: services/fetcher
@@ -106,7 +212,10 @@ jobs:
 
   frontend:
     name: Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: services/ui/frontend
@@ -132,7 +241,10 @@ jobs:
 
   compose:
     name: Docker Compose
+    needs: changes
+    if: needs.changes.outputs.compose == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       # Every Compose file uses ${VAR:?message} for required settings, so
       # `docker compose config` fails unless they are defined. These are
@@ -167,14 +279,14 @@ jobs:
 
   image:
     name: Docker image (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.images != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - fetcher
-          - history
-          - ui
+        service: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -194,14 +306,14 @@ jobs:
 
   terraform:
     name: Terraform
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # This job always runs and always reports a result, even when there is no
-      # Terraform in the repository yet. A skipped job never reports a status,
-      # which would leave a required check pending forever.
       - name: Detect Terraform configuration
         id: detect
         run: |
@@ -210,7 +322,7 @@ jobs:
             echo "Terraform configuration found."
           else
             echo "present=false" >> "${GITHUB_OUTPUT}"
-            echo "No Terraform configuration in the repository yet - nothing to validate."
+            echo "No Terraform configuration in the repository - nothing to do."
           fi
 
       - name: Set up Terraform
@@ -228,13 +340,56 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         run: |
           status=0
-          directories="$(find . -path ./.git -prune -o -name '*.tf' -print \
-            | xargs -r -n1 dirname | sort -u)"
-          for directory in ${directories}; do
+          while IFS= read -r directory; do
             echo "::group::${directory}"
             terraform -chdir="${directory}" init -backend=false -input=false \
               || status=1
             terraform -chdir="${directory}" validate || status=1
             echo "::endgroup::"
-          done
+          done < <(find . -path ./.git -prune -o -name '*.tf' -print \
+            | xargs -r -n1 dirname | sort -u)
           exit "${status}"
+
+  # The only job branch protection should require. It always runs, so it always
+  # reports a status, which is exactly what a skipped job cannot do. A skipped
+  # dependency counts as success; a failed or cancelled one fails the check.
+  required-checks:
+    name: Required checks
+    if: always()
+    needs:
+      - changes
+      - yaml
+      - python
+      - go
+      - frontend
+      - compose
+      - image
+      - terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarise results
+        run: |
+          {
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            echo "| Detect changes | ${{ needs.changes.result }} |"
+            echo "| YAML | ${{ needs.yaml.result }} |"
+            echo "| Python | ${{ needs.python.result }} |"
+            echo "| Go | ${{ needs.go.result }} |"
+            echo "| Frontend | ${{ needs.frontend.result }} |"
+            echo "| Docker Compose | ${{ needs.compose.result }} |"
+            echo "| Docker image | ${{ needs.image.result }} |"
+            echo "| Terraform | ${{ needs.terraform.result }} |"
+            echo ""
+            echo "\`skipped\` means nothing relevant to that job changed."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Fail if any job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "At least one validation job did not succeed."
+          exit 1
+
+      - name: Report success
+        run: echo "All validation jobs passed or were skipped as irrelevant."

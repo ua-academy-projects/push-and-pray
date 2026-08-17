@@ -4,38 +4,41 @@
 `develop` and `main`, and on pushes to `develop`. It validates code,
 configuration, tests and Docker image builds. It never publishes an image.
 
-## Checks to mark as required in branch protection
+## The one check to mark as required
 
-Set these on **both** `develop` and `main`
-(Settings → Branches → branch protection rule → *Require status checks to pass
-before merging*). The names below are exactly what GitHub reports:
+Set exactly **one** required status check on both `develop` and `main`
+(Settings → Rules, or Settings → Branches → *Require status checks to pass
+before merging*):
 
-| Check name              | What it guards                                        |
-| ----------------------- | ----------------------------------------------------- |
-| `YAML`                  | every versioned YAML file parses and passes yamllint   |
-| `Python`                | ruff lint, ruff format, pytest                         |
-| `Go`                    | gofmt, go vet, go test                                 |
-| `Frontend`              | npm ci, typecheck, production build                    |
-| `Docker Compose`        | all Compose files parse and interpolate                |
-| `Docker image (fetcher)`| the fetcher image builds                               |
-| `Docker image (history)`| the history image builds                               |
-| `Docker image (ui)`     | the UI image builds                                    |
-| `Terraform`             | terraform fmt and validate, once Terraform exists      |
+| Check name        | What it guards                                     |
+| ----------------- | -------------------------------------------------- |
+| `Required checks` | every validation job passed or was legitimately skipped |
 
 Also enable *Require branches to be up to date before merging*, otherwise two
 PRs that each pass individually can still break `develop` when both land.
 
-## Why `Terraform` is safe to require now
+### Why one check and not nine
 
-There is no Terraform in the repository yet. A job guarded by an `if:` at the
-job level would be **skipped**, and a skipped job reports no status at all — a
-required check that never reports leaves every PR stuck on "Expected — waiting
-for status to be reported".
+Jobs only run when files they care about changed — a documentation-only PR does
+not rebuild three Docker images. But a **skipped job reports no status at all**,
+so requiring `Python` directly would leave every PR that does not touch Python
+stuck forever on *"Expected — waiting for status to be reported"*.
 
-So the `Terraform` job always runs. Its first step looks for any `*.tf` file;
-if none exists it logs that and the remaining steps are skipped, so the job
-still finishes green. The moment someone adds Terraform, `fmt -check` and
-`validate` start running against it with no change to branch protection.
+`Required checks` solves this. It declares `needs:` on every other job and
+`if: always()`, so it runs no matter what happened upstream, and fails only when
+a dependency actually failed or was cancelled. A skipped dependency counts as
+success. Its job summary prints a table of what ran and what was skipped, so the
+detail is still one click away.
+
+Do **not** add the individual job names as required checks. The moment path
+filtering skips one, merges block.
+
+## Why the `Terraform` job detects its own input
+
+The job runs when a `*.tf` or `*.tfvars` file changed, but its first step still
+checks whether any Terraform actually exists in the tree before setting up the
+CLI. That covers the case where the last Terraform file in the repository is
+deleted: the job runs, finds nothing, and passes instead of erroring.
 
 ## Notes for people writing PRs
 
