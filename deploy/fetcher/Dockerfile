@@ -1,5 +1,5 @@
 ARG GO_IMAGE=golang:1.24.13-bookworm
-ARG RUNTIME_IMAGE=alpine:3.19
+ARG RUNTIME_IMAGE=alpine:3.24
 
 FROM ${GO_IMAGE} AS builder
 
