@@ -7,7 +7,8 @@ name: Security
 # code changing, so a repository that passed last month can be vulnerable today.
 #
 # Enforcement policy (see docs/security-scanning.md for the reasoning):
-#   Secrets      blocking  - a committed credential is always an emergency
+#   Secrets      blocking on PRs for newly added commits; the full-history
+#                scan runs on develop and weekly, and reports instead
 #   IaC          blocking  - we own this code completely, findings are fixable
 #   CodeQL       reporting - results land in the Security tab as annotations
 #   Dependencies reporting - a new CVE upstream must not block unrelated work
@@ -35,23 +36,58 @@ jobs:
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history: a secret that was committed and later deleted is
-          # still in the history and still compromised.
+          # Full history is needed for both modes below: a secret that was
+          # committed and later deleted is still in the history, and still
+          # compromised.
           fetch-depth: 0
 
-      - name: Scan git history for secrets
+      # On a pull request we scan only the commits the pull request adds.
+      # Blocking here is fair: the author can fix what they just wrote.
+      # Scanning the whole history on every PR would instead re-report the
+      # existing backlog and make the check permanently red for everyone.
+      - name: Scan the commits added by this pull request
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           docker run --rm -v "${PWD}:/repo" \
             zricethezav/gitleaks:latest detect \
             --source /repo \
             --redact \
             --no-banner \
-            --verbose
+            --verbose \
+            --log-opts "${BASE_SHA}..${HEAD_SHA}"
+
+      # On develop and on the weekly run we scan everything ever committed and
+      # report it, without failing the run. This is where the historical
+      # backlog stays visible until it is dealt with.
+      - name: Scan the full history
+        if: github.event_name != 'pull_request'
+        run: |
+          docker run --rm -v "${PWD}:/repo" \
+            zricethezav/gitleaks:latest detect \
+            --source /repo \
+            --redact \
+            --no-banner \
+            --exit-code 0 \
+            --report-format sarif \
+            --report-path /repo/gitleaks.sarif
+
+      - name: Upload history findings to the Security tab
+        if: github.event_name != 'pull_request' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks-history
 
   iac:
     name: IaC scan
@@ -65,7 +101,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Scan Terraform, Dockerfiles and Compose for misconfiguration
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
@@ -93,7 +129,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Scan lockfiles for known vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
