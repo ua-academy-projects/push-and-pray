@@ -21,6 +21,7 @@ node_modules/
 crash.log
 crash.*.log
 backend.hcl
+infrastructure/terraform/backend.tf
 
 # Credentials and private keys
 *.pem

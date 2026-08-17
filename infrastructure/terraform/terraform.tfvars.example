@@ -1,8 +1,43 @@
 project_id  = "your-gcp-project-id"
-region      = "europe-central2"
-zone        = "europe-central2-a"
-name_prefix = "oil"
+region      = "us-east1"
+zone        = "us-east1-b"
+name_prefix = "oilscope"
 environment = "dev"
+
+network_name = "oilscope-vpc"
+subnet_name  = "oilscope-subnet"
+subnet_cidr  = "10.10.0.0/24"
+router_name  = "oilscope-router"
+nat_name     = "oilscope-nat"
+
+internal_addresses = {
+  fetcher = "10.10.0.10"
+  history = "10.10.0.11"
+  infra   = "10.10.0.12"
+  ui      = "10.10.0.14"
+}
+
+machine_types = {
+  infra   = "e2-small"
+  history = "e2-micro"
+  fetcher = "e2-micro"
+  ui      = "e2-micro"
+}
+
+boot_image_project       = "ubuntu-os-cloud"
+boot_image_family        = "ubuntu-2404-lts-amd64"
+boot_disk_size_gb        = 20
+boot_disk_type           = "pd-balanced"
+infra_data_disk_size_gb  = 30
+infra_data_disk_type     = "pd-balanced"
+
+app_domain = "oilscope.example.com"
+acme_email = "admin@example.com"
+ghcr_owner = "your-github-owner"
+
+fetcher_image_tag = "0123456789abcdef0123456789abcdef01234567"
+history_image_tag = "0123456789abcdef0123456789abcdef01234567"
+ui_image_tag      = "0123456789abcdef0123456789abcdef01234567"
 
 common_labels = {
   project = "oil-price-tracker"

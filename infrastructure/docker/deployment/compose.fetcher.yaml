@@ -1,0 +1,33 @@
+name: oilscope-fetcher
+
+services:
+  fetcher:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/push-and-pray/fetcher:${FETCHER_IMAGE_TAG:?FETCHER_IMAGE_TAG must be a full commit SHA}
+    restart: unless-stopped
+    init: true
+    environment:
+      OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
+      DATA_PROVIDER: oilpriceapi
+      DATABASE_URL: postgres://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@10.10.0.12:5432/oil_tracker?sslmode=disable
+      FETCH_CRON_HOURS: "0,6,12,18"
+      FETCH_TIMEZONE: UTC
+      FETCH_ON_STARTUP: "true"
+      REQUEST_TIMEOUT_SECONDS: "15"
+      LISTEN_ADDRESS: 0.0.0.0:8002
+      LOG_LEVEL: INFO
+      TZ: UTC
+    ports:
+      - "10.10.0.10:8002:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/fetcher

@@ -1,0 +1,53 @@
+name: oilscope-infra
+
+services:
+  postgres:
+    image: postgres:18.4-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: oil_tracker
+      POSTGRES_USER: oil_tracker
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PGDATA: /var/lib/postgresql/18/docker
+      TZ: UTC
+    ports:
+      - "10.10.0.12:5432:5432"
+    volumes:
+      - /opt/oilscope/data/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/postgres
+
+  rabbitmq:
+    image: rabbitmq:4.3.4-management
+    restart: unless-stopped
+    hostname: oilscope-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: oil_tracker
+      TZ: UTC
+    ports:
+      - "10.10.0.12:5672:5672"
+    volumes:
+      - /opt/oilscope/data/rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/rabbitmq
