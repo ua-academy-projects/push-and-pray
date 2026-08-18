@@ -5,26 +5,20 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    JSON,
     CheckConstraint,
     Date,
     DateTime,
     Index,
-    Integer,
     Numeric,
-    SmallInteger,
     String,
     Text,
     UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
-
-_JSON_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 
 class PriceObservation(Base):
@@ -61,50 +55,7 @@ class PriceObservation(Base):
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
-    raw_data: Mapped[dict] = mapped_column(_JSON_TYPE, nullable=False)
+    raw_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-
-class PriceEvent(Base):
-    __tablename__ = "price_events"
-    __table_args__ = (
-        UniqueConstraint("event_key", name="uq_price_events_event_key"),
-        CheckConstraint("schema_version > 0", name="ck_price_events_schema_version_positive"),
-        CheckConstraint(
-            "status IN ('pending', 'processing', 'processed', 'failed')",
-            name="ck_price_events_status_known",
-        ),
-        CheckConstraint("attempts >= 0", name="ck_price_events_attempts_non_negative"),
-        Index(
-            "ix_price_events_ready",
-            "available_at",
-            "created_at",
-            postgresql_where=text("status = 'pending'"),
-        ),
-        Index(
-            "ix_price_events_processing_started_at",
-            "processing_started_at",
-            postgresql_where=text("status = 'processing'"),
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    event_key: Mapped[str] = mapped_column(String(200), nullable=False)
-    schema_version: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1)
-    payload: Mapped[dict] = mapped_column(_JSON_TYPE, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    available_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    last_error: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

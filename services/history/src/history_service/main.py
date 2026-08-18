@@ -12,10 +12,10 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
+from .messaging import RabbitConsumer
 from .models import PriceObservation
 from .repository import insert_batch, latest_observations, list_instruments, list_observations
 from .schemas import BatchResult, InstrumentRead, ObservationBatch, ObservationRead
-from .worker import PostgresEventWorker
 
 settings = get_settings()
 logging.basicConfig(
@@ -23,18 +23,18 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger(__name__)
-event_worker = PostgresEventWorker(settings)
+rabbit_consumer = RabbitConsumer(settings)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("database schema is ready")
-    await event_worker.start()
+    await rabbit_consumer.start()
     try:
         yield
     finally:
-        await event_worker.stop()
+        await rabbit_consumer.stop()
 
 
 app = FastAPI(
@@ -51,7 +51,7 @@ def health(db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
     return {
         "status": "ok",
         "database": "connected",
-        "worker": "running" if event_worker.is_ready else "stopped",
+        "rabbitmq": "connected" if rabbit_consumer.is_ready else "reconnecting",
     }
 
 
