@@ -1,6 +1,38 @@
 name: petroscope-ui
 
 services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.8-bookworm}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      TZ: UTC
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${REDIS_PASSWORD}
+    ports:
+      - "${UI_LAN_IP:?UI_LAN_IP is required}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/redis
+
   ui:
     image: petroscope-ui:local
     build:
@@ -14,13 +46,16 @@ services:
     init: true
     environment:
       HISTORY_SERVICE_URL: http://${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:8001
-      DATABASE_URL: postgresql+psycopg://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SESSION_TTL_SECONDS: "2592000"
       SESSION_COOKIE_SECURE: "false"
       LOG_LEVEL: INFO
       TZ: UTC
     ports:
       - "${UI_LAN_IP}:8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD
@@ -38,3 +73,7 @@ services:
       driver: journald
       options:
         tag: petroscope/ui
+
+volumes:
+  redis_data:
+    name: petroscope-redis-data
