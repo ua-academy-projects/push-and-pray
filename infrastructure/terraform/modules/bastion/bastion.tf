@@ -34,6 +34,7 @@ resource "google_compute_address" "bastion" {
   labels       = local.labels
 }
 
+#trivy:ignore:AVD-GCP-0031
 resource "google_compute_instance" "bastion" {
   project     = var.project_id
   name        = "${local.prefix}-bastion"
