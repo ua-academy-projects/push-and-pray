@@ -3,7 +3,7 @@
 resource "google_compute_network" "vpc" {
   project     = var.project_id
   name        = "${local.prefix}-vpc"
-  description = "Custom-mode VPC for ${local.prefix}: public subnet (bastion, UI) + private workload subnet."
+  description = "Custom-mode VPC for ${local.prefix}: management and application workload subnets."
 
   auto_create_subnetworks = false
   routing_mode            = var.routing_mode
@@ -19,11 +19,11 @@ resource "google_compute_network" "vpc" {
 resource "google_compute_subnetwork" "public" {
   project     = var.project_id
   name        = "${local.prefix}-subnet-public"
-  description = "Public subnet: bastion host and the public-facing UI instance."
+  description = "Management subnet for the bastion host."
 
   region        = var.region
   network       = google_compute_network.vpc.id
-  ip_cidr_range = var.public_subnet_cidr
+  ip_cidr_range = var.management_subnet_cidr
 
   # Not needed while these instances have public IPs and a route to the internet,
   # but harmless and keeps behaviour identical if an external IP is ever removed.
@@ -33,11 +33,11 @@ resource "google_compute_subnetwork" "public" {
 resource "google_compute_subnetwork" "private" {
   project     = var.project_id
   name        = "${local.prefix}-subnet-private"
-  description = "Private subnet: application and database instances, no external IPs."
+  description = "Subnet for application workload instances."
 
   region        = var.region
   network       = google_compute_network.vpc.id
-  ip_cidr_range = var.private_subnet_cidr
+  ip_cidr_range = var.workload_subnet_cidr
 
   # Lets instances without an external IP reach Google APIs (Artifact Registry,
   # Cloud Logging, Secret Manager, ...) over internal IPs instead of via NAT.

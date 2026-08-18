@@ -12,17 +12,17 @@ infrastructure/vagrant/config/vagrant.env
 node_modules/
 
 # Terraform
-**/.terraform/*
+**/.terraform/
 *.tfstate
 *.tfstate.*
+terraform.tfvars
+infrastructure/terraform/terraform.tfvars
 *.tfvars
 *.tfvars.json
 *.tfplan
+**/tfplan
 crash.log
 crash.*.log
-backend.hcl
-infrastructure/terraform/backend.tf
-infrastructure/terraform/tfplan
 
 # Credentials and private keys
 *.pem

@@ -79,7 +79,7 @@ variable "ssh_port" {
 }
 
 variable "subnetwork_id" {
-  description = "ID of the subnet to place the bastion in. Pass module.network.public_subnet.id."
+  description = "ID of the subnet to place the bastion in. Pass module.network.management_subnet.id."
   type        = string
 }
 

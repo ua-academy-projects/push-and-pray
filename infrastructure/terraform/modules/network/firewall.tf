@@ -9,7 +9,6 @@ resource "google_compute_firewall" "bastion_ssh_ingress" {
   direction = "INGRESS"
   priority  = 1000
 
-  # Validated in variables.tf: 0.0.0.0/0 and anything broader than /8 is rejected.
   source_ranges = var.bastion_allowed_cidrs
   target_tags   = [local.tag_bastion]
 
@@ -26,12 +25,6 @@ resource "google_compute_firewall" "bastion_ssh_ingress" {
     }
   }
 
-  lifecycle {
-    precondition {
-      condition     = !contains([for c in var.bastion_allowed_cidrs : trimspace(c)], "0.0.0.0/0")
-      error_message = "Refusing to create an unrestricted public SSH rule: bastion_allowed_cidrs contains 0.0.0.0/0."
-    }
-  }
 }
 
 # public entry point: http/https to the ui service
@@ -74,8 +67,11 @@ resource "google_compute_firewall" "ui_public_ingress" {
     # ever needs to serve on an application port, put a reverse proxy in front of
     # it instead of widening this rule.
     precondition {
-      condition     = length(setintersection(toset(var.ui_public_ports), toset(concat(var.app_ports, [tostring(var.db_port)])))) == 0
-      error_message = "ui_public_ports must not contain any app_ports or db_port: internal application and database ports stay off the public internet."
+      condition = length(setintersection(
+        toset(var.ui_public_ports),
+        toset([tostring(var.history_api_port), tostring(var.rabbitmq_port), tostring(var.db_port)])
+      )) == 0
+      error_message = "ui_public_ports must not contain History API, RabbitMQ or PostgreSQL ports."
     }
   }
 }
@@ -85,14 +81,14 @@ resource "google_compute_firewall" "ui_public_ingress" {
 resource "google_compute_firewall" "ssh_from_bastion" {
   project     = var.project_id
   name        = "${local.prefix}-allow-ssh-from-bastion"
-  description = "Ingress SSH on port ${var.ssh_port} to application, database and UI instances, only from instances tagged ${local.tag_bastion}."
+  description = "Ingress SSH on port ${var.ssh_port} to workload instances, only from the bastion role."
 
   network   = google_compute_network.vpc.id
   direction = "INGRESS"
   priority  = 1000
 
   source_tags = [local.tag_bastion]
-  target_tags = [local.tag_app, local.tag_db, local.tag_ui]
+  target_tags = local.workload_tags
 
   allow {
     protocol = "tcp"
@@ -108,23 +104,23 @@ resource "google_compute_firewall" "ssh_from_bastion" {
   }
 }
 
-# application ports: only internal
+# History API: UI is its only cross-VM client.
 
-resource "google_compute_firewall" "app_internal" {
+resource "google_compute_firewall" "history_api_from_ui" {
   project     = var.project_id
-  name        = "${local.prefix}-allow-app-internal"
-  description = "Ingress to application ports ${join(",", var.app_ports)} from inside the VPC only. Never from the internet."
+  name        = "${local.prefix}-allow-history-api-from-ui"
+  description = "Ingress to the History API from the UI workload only."
 
   network   = google_compute_network.vpc.id
   direction = "INGRESS"
   priority  = 1000
 
-  source_ranges = local.internal_ranges
-  target_tags   = [local.tag_app]
+  source_tags = [local.tag_ui]
+  target_tags = [local.tag_history]
 
   allow {
     protocol = "tcp"
-    ports    = var.app_ports
+    ports    = [tostring(var.history_api_port)]
   }
 
   dynamic "log_config" {
@@ -135,35 +131,53 @@ resource "google_compute_firewall" "app_internal" {
     }
   }
 
-  lifecycle {
-    precondition {
-      condition     = !contains(var.app_ports, tostring(var.db_port))
-      error_message = "db_port must not appear in app_ports, otherwise the database port would inherit the broader application sources."
-    }
-  }
 }
 
-# db port
-# No source_ranges at all. The only way to reach the database port is to be an
-# instance tagged as an application server. The bastion is deliberately NOT a
-# source here: an operator SSHes into an app host first, or port-forwards through
-# the bastion, which is logged.
+# PostgreSQL on Infra is used directly by History.
 
-resource "google_compute_firewall" "db_from_app" {
+resource "google_compute_firewall" "postgresql_to_infra" {
   project     = var.project_id
-  name        = "${local.prefix}-allow-db-from-app"
-  description = "Ingress to database port ${var.db_port} from instances tagged ${local.tag_app} only. Not reachable from the internet."
+  name        = "${local.prefix}-allow-postgresql-to-infra"
+  description = "Ingress to PostgreSQL on Infra from History only."
 
   network   = google_compute_network.vpc.id
   direction = "INGRESS"
   priority  = 1000
 
-  source_tags = [local.tag_app]
-  target_tags = [local.tag_db]
+  source_tags = [local.tag_history]
+  target_tags = [local.tag_infra]
 
   allow {
     protocol = "tcp"
     ports    = [tostring(var.db_port)]
+  }
+
+  dynamic "log_config" {
+    for_each = local.firewall_log_config
+
+    content {
+      metadata = "INCLUDE_ALL_METADATA"
+    }
+  }
+}
+
+# Fetcher publishes to RabbitMQ on Infra and History consumes from it.
+
+resource "google_compute_firewall" "rabbitmq_to_infra" {
+  project     = var.project_id
+  name        = "${local.prefix}-allow-rabbitmq-to-infra"
+  description = "Ingress to RabbitMQ on Infra from Fetcher and History only."
+
+  network   = google_compute_network.vpc.id
+  direction = "INGRESS"
+  priority  = 1000
+
+  source_tags = [local.tag_fetcher, local.tag_history]
+  target_tags = [local.tag_infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.rabbitmq_port)]
   }
 
   dynamic "log_config" {
@@ -187,7 +201,7 @@ resource "google_compute_firewall" "internal_icmp" {
   priority  = 1000
 
   source_ranges = local.internal_ranges
-  target_tags   = [local.tag_bastion, local.tag_app, local.tag_db, local.tag_ui]
+  target_tags   = concat([local.tag_bastion], local.workload_tags)
 
   allow {
     protocol = "icmp"

@@ -13,8 +13,8 @@ output "network_self_link" {
   value       = google_compute_network.vpc.self_link
 }
 
-output "public_subnet" {
-  description = "Public (bastion) subnet: name, id and CIDR."
+output "management_subnet" {
+  description = "Management (bastion) subnet: name, id and CIDR."
   value = {
     name = google_compute_subnetwork.public.name
     id   = google_compute_subnetwork.public.id
@@ -22,8 +22,8 @@ output "public_subnet" {
   }
 }
 
-output "private_subnet" {
-  description = "Private (workload) subnet: name, id, CIDR and secondary ranges."
+output "workload_subnet" {
+  description = "Application workload subnet: name, id, CIDR and secondary ranges."
   value = {
     name             = google_compute_subnetwork.private.name
     id               = google_compute_subnetwork.private.id
@@ -37,8 +37,9 @@ output "network_tags" {
   description = "Network tags an instance must carry to be matched by the firewall rules."
   value = {
     bastion = local.tag_bastion
-    app     = local.tag_app
-    db      = local.tag_db
+    infra   = local.tag_infra
+    history = local.tag_history
+    fetcher = local.tag_fetcher
     ui      = local.tag_ui
   }
 }
@@ -58,8 +59,9 @@ output "firewall_rules" {
   value = compact(concat([
     google_compute_firewall.bastion_ssh_ingress.name,
     google_compute_firewall.ssh_from_bastion.name,
-    google_compute_firewall.app_internal.name,
-    google_compute_firewall.db_from_app.name,
+    google_compute_firewall.history_api_from_ui.name,
+    google_compute_firewall.postgresql_to_infra.name,
+    google_compute_firewall.rabbitmq_to_infra.name,
     google_compute_firewall.internal_icmp.name,
     google_compute_firewall.deny_all_ingress.name,
     ],
@@ -97,12 +99,17 @@ output "ui_public_ports" {
   value       = var.enable_ui_public_ingress ? var.ui_public_ports : []
 }
 
-output "app_ports" {
-  description = "Application ports reachable from inside the VPC only."
-  value       = var.app_ports
+output "history_api_port" {
+  description = "History API port reachable from the UI workload."
+  value       = var.history_api_port
 }
 
 output "db_port" {
-  description = "Database port, reachable only from instances tagged as application servers."
+  description = "PostgreSQL port on Infra, reachable from History."
   value       = var.db_port
+}
+
+output "rabbitmq_port" {
+  description = "RabbitMQ AMQP port on Infra, reachable from Fetcher and History."
+  value       = var.rabbitmq_port
 }

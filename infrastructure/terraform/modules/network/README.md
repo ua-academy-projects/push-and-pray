@@ -1,70 +1,77 @@
 # Network module
 
-Creates the VPC that everything else in the project runs in: one custom-mode
-network, a public subnet for the bastion, a private subnet for the application
-and database instances, explicit routing, Cloud NAT for outbound-only internet
-access, and a least-privilege firewall set.
+Creates the OilScope VPC foundation: management and workload subnets, explicit
+routing, Cloud NAT and role-based firewall rules for Bastion, Infra, History,
+Fetcher and UI.
 
-## What it creates
+## Network tags
 
-| Resource | Name | Purpose |
-| --- | --- | --- |
-| `google_compute_network` | `<prefix>-vpc` | Custom-mode VPC, no auto subnets |
-| `google_compute_subnetwork` | `<prefix>-subnet-public` | Bastion and the public-facing UI instance |
-| `google_compute_subnetwork` | `<prefix>-subnet-private` | App + database, no external IPs |
-| `google_compute_route` | `<prefix>-rt-default-internet` | Explicit `0.0.0.0/0` default route |
-| `google_compute_router` / `_router_nat` | `<prefix>-router` / `<prefix>-nat` | Egress-only internet for the private subnet |
-| `google_compute_firewall` | see below | Ingress and (optional) egress rules |
+The module exports one tag for every VM role:
 
-Instances are selected by network tag, exported through the `network_tags`
-output: `<prefix>-bastion`, `<prefix>-app`, `<prefix>-db`, `<prefix>-ui`. An
-instance that carries no tag is reachable by nothing.
-
-The tags are a contract, not a dependency: this module creates the rules, and
-whoever creates an instance decides which tag it carries. In particular the UI
-instance does not exist yet (issue #14) - the `<prefix>-ui` rule is already in
-place and starts applying the moment that instance is tagged.
-
-```bash
-terraform output network_tags     # -> { app, bastion, db, ui }
-terraform output ui_public_ports  # -> ["80", "443"]
+```hcl
+network_tags = {
+  bastion = "<prefix>-bastion"
+  infra   = "<prefix>-infra"
+  history = "<prefix>-history"
+  fetcher = "<prefix>-fetcher"
+  ui      = "<prefix>-ui"
+}
 ```
 
-## Firewall rules
+The bastion module consumes `network_tags.bastion`. Future workload compute
+must attach the tag matching its role. The firewall contract does not use
+generic `app` or `db` tags.
 
-Ingress (always created):
+## Resources
 
-| Rule | Source | Target | Ports |
+| Resource | Purpose |
+| --- | --- |
+| `<prefix>-vpc` | Custom-mode VPC without automatic subnets |
+| `<prefix>-subnet-public` | Management subnet used by the bastion; GCP name retained for state compatibility |
+| `<prefix>-subnet-private` | Application workload subnet; GCP name retained for state compatibility |
+| `<prefix>-rt-default-internet` | Optional explicitly managed default route |
+| `<prefix>-router`, `<prefix>-nat` | Outbound internet access for the workload subnet |
+
+## Ingress firewall contract
+
+| Rule | Source | Destination | TCP ports |
 | --- | --- | --- | --- |
-| `<prefix>-allow-ssh-to-bastion` | `bastion_allowed_cidrs` | `<prefix>-bastion` | `ssh_port` |
-| `<prefix>-allow-ssh-from-bastion` | tag `<prefix>-bastion` | `<prefix>-app`, `<prefix>-db`, `<prefix>-ui` | `ssh_port` |
-| `<prefix>-allow-app-internal` | VPC subnets only | `<prefix>-app` | `app_ports` |
-| `<prefix>-allow-db-from-app` | tag `<prefix>-app` | `<prefix>-db` | `db_port` |
-| `<prefix>-allow-ui-public` | `ui_source_ranges` (`0.0.0.0/0`) | `<prefix>-ui` | `ui_public_ports` (`80`, `443`) |
-| `<prefix>-allow-internal-icmp` | VPC subnets only | all tags | ICMP |
-| `<prefix>-deny-all-ingress` (priority 65533) | `0.0.0.0/0` | everything | all |
+| `allow-ssh-to-bastion` | `bastion_allowed_cidrs` | Bastion | `ssh_port` |
+| `allow-ssh-from-bastion` | Bastion | Infra, History, Fetcher, UI | `ssh_port` |
+| `allow-history-api-from-ui` | UI | History | `8001` by default |
+| `allow-postgresql-to-infra` | History | Infra | `5432` by default |
+| `allow-rabbitmq-to-infra` | Fetcher, History | Infra | `5672` by default |
+| `allow-ui-public` | `ui_source_ranges` | UI | `80`, `443` by default |
+| `allow-internal-icmp` | VPC subnet ranges | All five roles | ICMP |
+| `deny-all-ingress` | `0.0.0.0/0` | All instances | All denied |
 
-Consequences that are deliberate, not accidental:
+This matrix follows the current deployment configuration:
 
-- The database port has **no** public source range at all. Only instances tagged
-  `<prefix>-app` can open it - not even the bastion.
-- Application ports are reachable from inside the VPC only. The single
-  intentionally public service is the UI, on `80`/`443` and on nothing else: a
-  `lifecycle.precondition` fails the plan if `ui_public_ports` ever overlaps
-  `app_ports` or `db_port`. A UI that needs to serve an application port gets a
-  reverse proxy in front of it, not a wider rule.
-- The UI rule is opt-out (`enable_ui_public_ingress = false`) and can be narrowed
-  to specific sources with `ui_source_ranges` while the UI is not meant to be
-  public yet.
-- Port 22 is never opened. SSH lives on `ssh_port` (default `18832`).
-- `bastion_allowed_cidrs` rejects `0.0.0.0/0`, `::/0` and any prefix shorter than
-  `/8`, in variable validation and again in a `lifecycle.precondition` on the rule.
+- UI calls the History API;
+- History connects directly to PostgreSQL on Infra;
+- Fetcher publishes to RabbitMQ on Infra and History consumes from it;
+- UI still uses Redis for session preferences, but the working Vagrant
+  deployment co-locates Redis with UI on a Docker network, so it is not an
+  inter-VM firewall dependency;
+- the cloud deployment Compose currently supplies unused `DATABASE_URL`
+  values to Fetcher and UI and omits the Redis service required by UI code;
+- Fetcher port `8002` is used by its local container healthcheck only;
+- RabbitMQ management port `15672` is not published by the deployment;
+- UI port `8080` remains inside the UI VM's Docker network behind Traefik.
 
-Egress is permissive by default (GCP's implied allow). Setting
-`restrict_egress = true` replaces it with a deny-all at priority 65534 plus narrow
-allows: in-VPC traffic, the metadata server, DNS/NTP, and `egress_allowed_ports`
-(default `443`). Roll that out in a non-production project first - it breaks
-anything talking to an unexpected endpoint.
+Consequently, there are no VPC ingress rules for `6379`, `8002`, `8080` or
+`15672`.
+
+## Egress
+
+Cloud NAT applies to the workload subnet and is unchanged by the role-based
+ingress contract. Egress remains permissive through GCP's implied rule by
+default.
+
+When `restrict_egress = true`, the module adds the existing allow rules for
+in-VPC traffic, metadata, DNS/NTP and configured internet TCP ports, followed
+by an explicit deny-all egress rule. This opt-in behavior is intentionally not
+role-specific.
 
 ## Usage
 
@@ -74,89 +81,30 @@ module "network" {
 
   project_id  = var.project_id
   region      = var.region
-  name_prefix = "oil"
+  name_prefix = local.name_prefix
 
-  ssh_port              = 18832
-  bastion_allowed_cidrs = ["203.0.113.10/32"]
+  ssh_port              = var.ssh_port
+  bastion_allowed_cidrs = var.bastion_allowed_cidrs
 }
 ```
 
-Key inputs: `public_subnet_cidr`, `private_subnet_cidr`, `ssh_port`,
-`bastion_allowed_cidrs` (required), `app_ports`, `db_port`,
-`enable_ui_public_ingress`, `ui_public_ports`, `ui_source_ranges`, `enable_nat`,
-`nat_static_ip_count`, `restrict_egress`, `enable_firewall_logging`.
-Run `terraform-docs` or read [variables.tf](variables.tf) for the full list.
+Important inputs include subnet CIDRs, `ssh_port`,
+`bastion_allowed_cidrs`, `history_api_port`, `db_port`, `rabbitmq_port`, UI
+ingress settings, NAT settings and the optional egress restrictions.
 
-Key outputs: `network_id`, `public_subnet`, `private_subnet`, `network_tags`,
-`nat_name`, `nat_egress_ips`, `firewall_rules`, `egress_firewall_rules`,
-`ssh_port`, `db_port`, `ui_public_ports`.
+Important outputs include VPC/subnet identifiers, `network_tags`, NAT details,
+firewall rule names and the configured service ports.
 
 ## Access procedure
 
-This module grants no access by itself: it only decides which paths exist. Two
-things have to happen for a person to get in.
+Add an operator's office or VPN CIDR to `bastion_allowed_cidrs` and their
+public key to the bastion module's `ssh_users`. The resulting administration
+path is:
 
-1. **Add the person's source address.** Append the office or VPN egress address
-   (a `/32` where possible) to `bastion_allowed_cidrs` in `terraform.tfvars`,
-   open a PR, and apply after review. Requests for `0.0.0.0/0` fail at plan time
-   by design.
-2. **Add the person's public key** to `ssh_users` of the
-   [bastion module](../bastion/README.md), which is where SSH identities live.
-
-The resulting path is fixed:
-
-```
-operator -> (ssh_port, allowed CIDR only) -> bastion -> (ssh_port, source tag) -> private instance
-private instance -> Cloud NAT -> internet   # outbound only, no inbound path
+```text
+operator -> bastion -> private workload VM
+private workload VM -> Cloud NAT -> internet
 ```
 
-To revoke network access, remove the CIDR and apply. Existing sessions are not
-terminated by a firewall change, so also remove the person's key from `ssh_users`.
-
-## Verifying the network
-
-Run after `terraform apply`. Replace `oil` with your `name_prefix`.
-
-```bash
-gcloud compute networks describe oil-vpc --format='value(name,routingConfig.routingMode)'
-gcloud compute networks subnets list --filter='network~oil-vpc' \
-  --format='table(name,region,ipCidrRange,privateIpGoogleAccess)'
-```
-
-Confirm the firewall matrix, in particular that nothing internal is public:
-
-```bash
-gcloud compute firewall-rules list --filter='network~oil-vpc' \
-  --format='table(name,direction,priority,sourceRanges.list(),targetTags.list(),allowed[].map().firewall_rule().list())'
-```
-
-Expected: `0.0.0.0/0` appears only on `oil-deny-all-ingress` and on
-`oil-allow-ui-public`, and the latter carries `80,443` and nothing else. Neither
-the database port nor the application ports appear on any rule whose source is a
-public range.
-
-Once the UI instance exists and carries the `oil-ui` tag, the public side is two
-open ports and no more:
-
-```bash
-nc -vz -w 5 <ui-public-ip> 443   # succeeds
-nc -vz -w 5 <ui-public-ip> 8080  # must time out
-nc -vz -w 5 <ui-public-ip> 22    # must time out
-```
-
-Prove the database port is not reachable from outside - this must time out:
-
-```bash
-nc -vz -w 5 <bastion-public-ip> 5432
-```
-
-Check outbound connectivity from a private instance (through the bastion, see the
-[bastion README](../bastion/README.md)):
-
-```bash
-gcloud compute routers nats describe oil-nat --router=oil-router --region=europe-central2
-ssh -J <user>@<bastion-ip>:18832 -p 18832 <user>@<private-ip> 'curl -sS -o /dev/null -w "%{http_code}\n" https://api.github.com'
-```
-
-A `200` proves egress works; an inbound connection attempt to the same instance
-from the internet has no route and no rule, so it cannot succeed.
+Public SSH on port 22 is never opened. PostgreSQL, RabbitMQ and the History API
+have role-tag sources only and are not reachable directly from the internet.

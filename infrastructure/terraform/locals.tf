@@ -1,55 +1,6 @@
 locals {
   name_prefix = "${var.name_prefix}-${var.environment}"
 
-  internal_address_names = {
-    for role, _ in var.internal_addresses : role => "${var.name_prefix}-${role}-ip"
-  }
-
-  vm_network_tags = {
-    fetcher = "${var.name_prefix}-fetcher"
-    history = "${var.name_prefix}-history"
-    infra   = "${var.name_prefix}-infra"
-    ui      = "${var.name_prefix}-ui"
-  }
-
-  vm_roles = toset(["infra", "history", "fetcher", "ui"])
-
-  deployment_secrets = {
-    db_password = {
-      secret_id = "${local.name_prefix}-db-password"
-      consumers = toset(["infra", "history", "fetcher", "ui"])
-    }
-    rabbitmq_username = {
-      secret_id = "${local.name_prefix}-rabbitmq-username"
-      consumers = toset(["infra", "history"])
-    }
-    rabbitmq_password = {
-      secret_id = "${local.name_prefix}-rabbitmq-password"
-      consumers = toset(["infra", "history"])
-    }
-    oilpriceapi_key = {
-      secret_id = "${local.name_prefix}-oilpriceapi-key"
-      consumers = toset(["fetcher"])
-    }
-    ghcr_username = {
-      secret_id = "${local.name_prefix}-ghcr-username"
-      consumers = toset(["history", "fetcher", "ui"])
-    }
-    ghcr_read_token = {
-      secret_id = "${local.name_prefix}-ghcr-read-token"
-      consumers = toset(["history", "fetcher", "ui"])
-    }
-  }
-
-  secret_access_bindings = merge([
-    for secret_key, secret in local.deployment_secrets : {
-      for role in secret.consumers : "${secret_key}.${role}" => {
-        secret_key = secret_key
-        role       = role
-      }
-    }
-  ]...)
-
   common_labels = merge(
     {
       application = "oil-price-tracker"
@@ -58,4 +9,35 @@ locals {
     },
     var.common_labels
   )
+
+  workloads = {
+    infra = {
+      machine_type       = var.machine_types.infra
+      internal_ip        = var.internal_addresses.infra
+      network_tag        = module.network.network_tags.infra
+      subnetwork_id      = module.network.workload_subnet.id
+      assign_external_ip = false
+    }
+    history = {
+      machine_type       = var.machine_types.history
+      internal_ip        = var.internal_addresses.history
+      network_tag        = module.network.network_tags.history
+      subnetwork_id      = module.network.workload_subnet.id
+      assign_external_ip = false
+    }
+    fetcher = {
+      machine_type       = var.machine_types.fetcher
+      internal_ip        = var.internal_addresses.fetcher
+      network_tag        = module.network.network_tags.fetcher
+      subnetwork_id      = module.network.workload_subnet.id
+      assign_external_ip = false
+    }
+    ui = {
+      machine_type       = var.machine_types.ui
+      internal_ip        = var.internal_addresses.ui
+      network_tag        = module.network.network_tags.ui
+      subnetwork_id      = module.network.workload_subnet.id
+      assign_external_ip = true
+    }
+  }
 }

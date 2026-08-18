@@ -10,14 +10,14 @@ output "network_self_link" {
   value       = module.network.network_self_link
 }
 
-output "public_subnet" {
-  description = "Public (bastion) subnet: name, id and CIDR."
-  value       = module.network.public_subnet
+output "management_subnet" {
+  description = "Management (bastion) subnet: name, id and CIDR."
+  value       = module.network.management_subnet
 }
 
-output "private_subnet" {
-  description = "Private (workload) subnet: name, id, CIDR and secondary ranges."
-  value       = module.network.private_subnet
+output "workload_subnet" {
+  description = "Application workload subnet: name, id, CIDR and secondary ranges."
+  value       = module.network.workload_subnet
 }
 
 output "network_tags" {
@@ -90,4 +90,34 @@ output "bastion_ssh_command" {
 output "bastion_proxy_jump_command" {
   description = "Template for reaching a private instance through the bastion with ProxyJump."
   value       = module.bastion.bastion_proxy_jump_command
+}
+
+# workload compute
+
+output "workload_vm_names" {
+  description = "Compute Engine instance names keyed by workload role."
+  value = {
+    for role, vm in module.workload_vm : role => vm.name
+  }
+}
+
+output "workload_internal_ips" {
+  description = "Reserved internal IPv4 addresses keyed by workload role."
+  value = {
+    for role, vm in module.workload_vm : role => vm.internal_ip
+  }
+}
+
+output "workload_external_ips" {
+  description = "External IPv4 addresses keyed by workload role; null for private VMs."
+  value = {
+    for role, vm in module.workload_vm : role => vm.external_ip
+  }
+}
+
+output "workload_service_accounts" {
+  description = "Dedicated service-account emails keyed by workload role."
+  value = {
+    for role, account in google_service_account.workload : role => account.email
+  }
 }

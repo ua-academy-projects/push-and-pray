@@ -11,14 +11,14 @@ resource "google_compute_route" "default_internet" {
   priority         = 1000
 }
 
-# Cloud NAT for private subnet
+# Cloud NAT for workload subnet
 
 resource "google_compute_router" "router" {
   count = var.enable_nat ? 1 : 0
 
   project     = var.project_id
   name        = "${local.prefix}-router"
-  description = "Cloud Router hosting the NAT gateway for the private subnet."
+  description = "Cloud Router hosting the NAT gateway for the workload subnet."
   region      = var.region
   network     = google_compute_network.vpc.id
 }
@@ -45,7 +45,7 @@ resource "google_compute_router_nat" "nat" {
   nat_ip_allocate_option = var.nat_static_ip_count > 0 ? "MANUAL_ONLY" : "AUTO_ONLY"
   nat_ips                = var.nat_static_ip_count > 0 ? google_compute_address.nat[*].self_link : null
 
-  # Only the private subnet is NATed. The bastion uses its own external IP,
+  # Only the workload subnet is NATed. The bastion uses its own external IP,
   # so it never consumes NAT ports.
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
 

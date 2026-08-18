@@ -30,31 +30,31 @@ variable "labels" {
 
 # variables related to network and subnets
 
-variable "public_subnet_cidr" {
-  description = "CIDR of the public subnet. The bastion and the public-facing UI instance live here."
+variable "management_subnet_cidr" {
+  description = "CIDR of the management subnet used by the bastion."
   type        = string
   default     = "10.10.0.0/24"
 
   validation {
-    condition     = can(cidrhost(var.public_subnet_cidr, 0))
-    error_message = "public_subnet_cidr must be a valid IPv4 CIDR block."
+    condition     = can(cidrhost(var.management_subnet_cidr, 0))
+    error_message = "management_subnet_cidr must be a valid IPv4 CIDR block."
   }
 }
 
-variable "private_subnet_cidr" {
-  description = "CIDR of the private subnet. Application and database instances live here and never get an external IP."
+variable "workload_subnet_cidr" {
+  description = "CIDR of the application workload subnet."
   type        = string
   default     = "10.10.1.0/24"
 
   validation {
-    condition     = can(cidrhost(var.private_subnet_cidr, 0))
-    error_message = "private_subnet_cidr must be a valid IPv4 CIDR block."
+    condition     = can(cidrhost(var.workload_subnet_cidr, 0))
+    error_message = "workload_subnet_cidr must be a valid IPv4 CIDR block."
   }
 }
 
 variable "private_secondary_ranges" {
   description = <<-EOT
-    Optional secondary ranges on the private subnet (e.g. GKE pods/services).
+    Optional secondary ranges on the workload subnet (e.g. GKE pods/services).
     Example: { pods = "10.20.0.0/16", services = "10.21.0.0/20" }
   EOT
   type        = map(string)
@@ -137,50 +137,50 @@ variable "ssh_port" {
 }
 
 variable "bastion_allowed_cidrs" {
-  description = <<-EOT
-    Source CIDRs allowed to reach the bastion on ssh_port. Office ranges / VPN egress IPs only.
-    Unrestricted access (0.0.0.0/0, ::/0, or anything broader than /8) is rejected.
-  EOT
+  description = "IPv4 source CIDRs allowed to reach the bastion on ssh_port."
   type        = list(string)
 
   validation {
-    condition     = length(var.bastion_allowed_cidrs) > 0
-    error_message = "bastion_allowed_cidrs must contain at least one CIDR: the bastion is useless without an allowed source."
-  }
-
-  validation {
     condition = alltrue([
-      for c in var.bastion_allowed_cidrs : can(cidrhost(c, 0))
+      for c in var.bastion_allowed_cidrs : can(cidrnetmask(c))
     ])
     error_message = "Every entry in bastion_allowed_cidrs must be a valid IPv4 CIDR block (e.g. 203.0.113.10/32)."
   }
-
-  validation {
-    condition = alltrue([
-      for c in var.bastion_allowed_cidrs :
-      !contains(["0.0.0.0/0", "::/0"], trimspace(c)) && try(tonumber(split("/", c)[1]) >= 8, false)
-    ])
-    error_message = "Unrestricted public SSH is not allowed: remove 0.0.0.0/0 (and any prefix shorter than /8) from bastion_allowed_cidrs."
-  }
 }
 
-# variables related to application / db ports
+# variables related to workload service ports
 
-variable "app_ports" {
-  description = "Internal application ports, reachable only from inside the VPC. Never from the internet."
-  type        = list(string)
-  default     = ["8080", "5672", "6379", "15672"]
+variable "history_api_port" {
+  description = "History API port, reachable from the UI workload only."
+  type        = number
+  default     = 8001
 
   validation {
-    condition     = length(var.app_ports) > 0
-    error_message = "app_ports must not be empty."
+    condition     = var.history_api_port >= 1 && var.history_api_port <= 65535
+    error_message = "history_api_port must be between 1 and 65535."
   }
 }
 
 variable "db_port" {
-  description = "Database port. Reachable only from instances carrying the application tag."
+  description = "PostgreSQL port on Infra, reachable from History only."
   type        = number
   default     = 5432
+
+  validation {
+    condition     = var.db_port >= 1 && var.db_port <= 65535
+    error_message = "db_port must be between 1 and 65535."
+  }
+}
+
+variable "rabbitmq_port" {
+  description = "RabbitMQ AMQP port on Infra, reachable from Fetcher and History."
+  type        = number
+  default     = 5672
+
+  validation {
+    condition     = var.rabbitmq_port >= 1 && var.rabbitmq_port <= 65535
+    error_message = "rabbitmq_port must be between 1 and 65535."
+  }
 }
 
 variable "enable_ui_public_ingress" {

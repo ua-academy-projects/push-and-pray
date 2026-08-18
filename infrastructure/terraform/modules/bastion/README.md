@@ -1,7 +1,7 @@
 # Bastion module
 
 Creates the single SSH entry point into the VPC: one small hardened instance in
-the public subnet, a static external IP, a dedicated service account, and per
+the management subnet, a static external IP, a dedicated service account, and per
 person public keys installed through instance metadata.
 
 ## What it creates
@@ -50,7 +50,7 @@ module "bastion" {
   region     = var.region
   zone       = var.zone
 
-  subnetwork_id = module.network.public_subnet.id
+  subnetwork_id = module.network.management_subnet.id
   network_tag   = module.network.network_tags.bastion
 
   ssh_port  = 18832

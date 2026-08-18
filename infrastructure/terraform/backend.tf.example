@@ -1,6 +1,0 @@
-terraform {
-  backend "gcs" {
-    bucket = "PROJECT_ID-oilscope-tfstate"
-    prefix = "oilscope/dev/network"
-  }
-}
