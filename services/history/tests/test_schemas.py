@@ -4,7 +4,11 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from history_service.schemas import ObservationBatch, ObservationCreate, ObservationEvent
+from history_service.schemas import (
+    ObservationBatch,
+    ObservationCreate,
+    ObservationEvent,
+)
 
 
 def valid_observation() -> dict:
@@ -18,39 +22,97 @@ def valid_observation() -> dict:
         "source": "OilPriceAPI",
         "source_series_id": "WTI_USD",
         "source_period": "2026-07-27",
-        "source_observed_at": datetime(2026, 7, 27, 5, 59, tzinfo=UTC),
-        "scheduled_for": datetime(2026, 7, 27, 6, tzinfo=UTC),
-        "fetched_at": datetime(2026, 7, 27, 6, 0, 2, tzinfo=UTC),
+        "source_observed_at": datetime(
+            2026,
+            7,
+            27,
+            5,
+            59,
+            tzinfo=UTC,
+        ),
+        "scheduled_for": datetime(
+            2026,
+            7,
+            27,
+            6,
+            tzinfo=UTC,
+        ),
+        "fetched_at": datetime(
+            2026,
+            7,
+            27,
+            6,
+            0,
+            2,
+            tzinfo=UTC,
+        ),
         "source_url": "https://api.oilpriceapi.com/v1/prices/latest",
-        "raw_data": {"code": "WTI_USD", "price": "68.42"},
+        "raw_data": {
+            "code": "WTI_USD",
+            "price": "68.42",
+        },
     }
 
 
 def test_valid_observation_batch() -> None:
     batch = ObservationBatch(observations=[valid_observation()])
+
     assert batch.observations[0].price == Decimal("68.42")
 
 
-def test_valid_versioned_rabbitmq_event() -> None:
-    event = ObservationEvent(schema_version=1, observations=[valid_observation()])
+def test_valid_versioned_observation_event() -> None:
+    event = ObservationEvent(
+        schema_version=1,
+        event_key="oil-prices:2026-07-27T06:00:00Z",
+        observations=[valid_observation()],
+    )
+
     assert event.schema_version == 1
+    assert event.event_key == "oil-prices:2026-07-27T06:00:00Z"
 
 
-def test_unknown_rabbitmq_schema_is_rejected() -> None:
+def test_unknown_event_schema_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        ObservationEvent(schema_version=2, observations=[valid_observation()])
+        ObservationEvent(
+            schema_version=2,
+            event_key="oil-prices:2026-07-27T06:00:00Z",
+            observations=[valid_observation()],
+        )
+
+
+def test_event_key_is_required() -> None:
+    with pytest.raises(ValidationError):
+        ObservationEvent(
+            schema_version=1,
+            observations=[valid_observation()],
+        )
 
 
 def test_timestamp_must_be_timezone_aware() -> None:
     payload = valid_observation()
-    payload["scheduled_for"] = datetime(2026, 7, 22, 6)
+
+    payload["scheduled_for"] = datetime(
+        2026,
+        7,
+        22,
+        6,
+    )
+
     with pytest.raises(ValidationError):
         ObservationCreate.model_validate(payload)
 
 
 def test_source_timestamp_must_be_timezone_aware() -> None:
     payload = valid_observation()
-    payload["source_observed_at"] = datetime(2026, 7, 21, 20, 30)
+
+    payload["source_observed_at"] = datetime(
+        2026,
+        7,
+        21,
+        20,
+        30,
+    )
+
     with pytest.raises(ValidationError):
         ObservationCreate.model_validate(payload)
 
@@ -58,5 +120,6 @@ def test_source_timestamp_must_be_timezone_aware() -> None:
 def test_price_must_be_positive() -> None:
     payload = valid_observation()
     payload["price"] = 0
+
     with pytest.raises(ValidationError):
         ObservationCreate.model_validate(payload)

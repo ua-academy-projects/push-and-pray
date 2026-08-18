@@ -98,7 +98,7 @@ Before the first plan, manually set or confirm:
 - workload internal addresses, which must remain inside the workload subnet and
   must not already be allocated.
 
-No domain, application credential, database password, RabbitMQ credential,
+No domain, application credential, database password, external message broker credential,
 Redis credential or container image input is required by the current root.
 
 ## First plan
@@ -130,5 +130,5 @@ accounts.
 The workload VMs boot the selected Ubuntu image with no application cloud-init
 metadata. Terraform does not install Docker, pull images, retrieve application
 secrets, initialize PostgreSQL, start
-RabbitMQ or Redis, configure Traefik, run Compose, or apply database migrations.
+external message broker or Redis, configure Traefik, run Compose, or apply database migrations.
 Those actions require a separate reviewed integration stage.

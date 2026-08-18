@@ -478,7 +478,7 @@ function App() {
 
       <footer className="site-footer">
         <div><Database size={15} /><span>PostgreSQL is the market-data source of truth</span></div>
-        <span>OilPriceAPI → Go Fetcher → RabbitMQ → History → PostgreSQL → UI</span>
+        <span>OilPriceAPI → Go Fetcher → PGMQ → History → PostgreSQL → UI</span>
         <b>PS / 03</b>
       </footer>
     </div>

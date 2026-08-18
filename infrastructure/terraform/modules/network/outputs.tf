@@ -61,7 +61,6 @@ output "firewall_rules" {
     google_compute_firewall.ssh_from_bastion.name,
     google_compute_firewall.history_api_from_ui.name,
     google_compute_firewall.postgresql_to_infra.name,
-    google_compute_firewall.rabbitmq_to_infra.name,
     google_compute_firewall.internal_icmp.name,
     google_compute_firewall.deny_all_ingress.name,
     ],
@@ -107,9 +106,4 @@ output "history_api_port" {
 output "db_port" {
   description = "PostgreSQL port on Infra, reachable from History."
   value       = var.db_port
-}
-
-output "rabbitmq_port" {
-  description = "RabbitMQ AMQP port on Infra, reachable from Fetcher and History."
-  value       = var.rabbitmq_port
 }

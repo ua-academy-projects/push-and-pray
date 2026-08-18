@@ -7,7 +7,7 @@ services:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.database
       args:
-        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-postgres:18.4-bookworm}
+        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-ghcr.io/pgmq/pg18-pgmq:v1.12.0}
     restart: unless-stopped
     environment:
       POSTGRES_DB: oil_tracker

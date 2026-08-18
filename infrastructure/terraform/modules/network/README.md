@@ -40,7 +40,6 @@ generic `app` or `db` tags.
 | `allow-ssh-from-bastion` | Bastion | Infra, History, Fetcher, UI | `ssh_port` |
 | `allow-history-api-from-ui` | UI | History | `8001` by default |
 | `allow-postgresql-to-infra` | History | Infra | `5432` by default |
-| `allow-rabbitmq-to-infra` | Fetcher, History | Infra | `5672` by default |
 | `allow-ui-public` | `ui_source_ranges` | UI | `80`, `443` by default |
 | `allow-internal-icmp` | VPC subnet ranges | All five roles | ICMP |
 | `deny-all-ingress` | `0.0.0.0/0` | All instances | All denied |
@@ -49,14 +48,13 @@ This matrix follows the current deployment configuration:
 
 - UI calls the History API;
 - History connects directly to PostgreSQL on Infra;
-- Fetcher publishes to RabbitMQ on Infra and History consumes from it;
+- Fetcher and History connect directly to PostgreSQL on Infra;
 - UI still uses Redis for session preferences, but the working Vagrant
   deployment co-locates Redis with UI on a Docker network, so it is not an
   inter-VM firewall dependency;
 - the cloud deployment Compose currently supplies unused `DATABASE_URL`
   values to Fetcher and UI and omits the Redis service required by UI code;
 - Fetcher port `8002` is used by its local container healthcheck only;
-- RabbitMQ management port `15672` is not published by the deployment;
 - UI port `8080` remains inside the UI VM's Docker network behind Traefik.
 
 Consequently, there are no VPC ingress rules for `6379`, `8002`, `8080` or
@@ -89,7 +87,7 @@ module "network" {
 ```
 
 Important inputs include subnet CIDRs, `ssh_port`,
-`bastion_allowed_cidrs`, `history_api_port`, `db_port`, `rabbitmq_port`, UI
+`bastion_allowed_cidrs`, `history_api_port`, `db_port`, UI
 ingress settings, NAT settings and the optional egress restrictions.
 
 Important outputs include VPC/subnet identifiers, `network_tags`, NAT details,
@@ -106,5 +104,5 @@ operator -> bastion -> private workload VM
 private workload VM -> Cloud NAT -> internet
 ```
 
-Public SSH on port 22 is never opened. PostgreSQL, RabbitMQ and the History API
+Public SSH on port 22 is never opened. PostgreSQL and the History API
 have role-tag sources only and are not reachable directly from the internet.

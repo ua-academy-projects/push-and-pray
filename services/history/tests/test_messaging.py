@@ -1,6 +1,3 @@
-import asyncio
-import json
-
 from history_service import messaging
 from history_service.config import Settings
 
@@ -8,6 +5,7 @@ from history_service.config import Settings
 def valid_event() -> dict:
     return {
         "schema_version": 1,
+        "event_key": "oil-prices:2026-07-27T06:00:00Z",
         "observations": [
             {
                 "instrument_code": "WTI_USD_BBL",
@@ -23,65 +21,164 @@ def valid_event() -> dict:
                 "scheduled_for": "2026-07-27T06:00:00Z",
                 "fetched_at": "2026-07-27T06:00:02Z",
                 "source_url": "https://api.oilpriceapi.com/v1/prices/latest",
-                "raw_data": {"code": "WTI_USD", "price": "68.42"},
+                "raw_data": {
+                    "code": "WTI_USD",
+                    "price": "68.42",
+                },
             }
         ],
     }
 
 
-class FakeMessage:
-    def __init__(self, body: bytes) -> None:
-        self.body = body
-        self.message_id = "test-message"
-        self.acked = False
-        self.rejected = False
-        self.nacked = False
-        self.requeue: bool | None = None
+def test_consumer_archives_only_after_persistence(
+    monkeypatch,
+) -> None:
+    archived: list[int] = []
 
-    async def ack(self) -> None:
-        self.acked = True
+    monkeypatch.setattr(
+        messaging,
+        "insert_batch",
+        lambda session, observations: (1, 0),
+    )
 
-    async def reject(self, requeue: bool = False) -> None:
-        self.rejected = True
-        self.requeue = requeue
+    monkeypatch.setattr(
+        messaging.PGMQConsumer,
+        "_archive_message",
+        lambda self, msg_id: archived.append(msg_id),
+    )
 
-    async def nack(self, requeue: bool = True) -> None:
-        self.nacked = True
-        self.requeue = requeue
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+    monkeypatch.setattr(
+        messaging,
+        "SessionLocal",
+        lambda: FakeSession(),
+    )
+
+    consumer = messaging.PGMQConsumer(Settings())
+
+    consumer._handle_message(
+        msg_id=123,
+        read_count=1,
+        message=valid_event(),
+    )
+
+    assert archived == [123]
 
 
-def test_consumer_acknowledges_only_after_persistence(monkeypatch) -> None:
-    message = FakeMessage(json.dumps(valid_event()).encode())
-    monkeypatch.setattr(messaging, "_persist_event", lambda _: (1, 0))
+def test_consumer_archives_invalid_schema(
+    monkeypatch,
+) -> None:
+    archived: list[int] = []
 
-    asyncio.run(messaging.RabbitConsumer(Settings())._handle(message))
+    monkeypatch.setattr(
+        messaging.PGMQConsumer,
+        "_archive_message",
+        lambda self, msg_id: archived.append(msg_id),
+    )
 
-    assert message.acked is True
-    assert message.rejected is False
-    assert message.nacked is False
-
-
-def test_consumer_rejects_invalid_schema_without_requeue() -> None:
     payload = valid_event()
     payload["schema_version"] = 99
-    message = FakeMessage(json.dumps(payload).encode())
 
-    asyncio.run(messaging.RabbitConsumer(Settings())._handle(message))
+    consumer = messaging.PGMQConsumer(Settings())
 
-    assert message.rejected is True
-    assert message.requeue is False
-    assert message.acked is False
+    consumer._handle_message(
+        msg_id=456,
+        read_count=1,
+        message=payload,
+    )
+
+    assert archived == [456]
 
 
-def test_consumer_requeues_transient_persistence_failure(monkeypatch) -> None:
-    message = FakeMessage(json.dumps(valid_event()).encode())
+def test_consumer_does_not_archive_transient_failure(
+    monkeypatch,
+) -> None:
+    archived: list[int] = []
 
-    def fail_persistence(_):
+    def fail_persistence(session, observations):
         raise RuntimeError("database is temporarily unavailable")
 
-    monkeypatch.setattr(messaging, "_persist_event", fail_persistence)
-    asyncio.run(messaging.RabbitConsumer(Settings())._handle(message))
+    monkeypatch.setattr(
+        messaging,
+        "insert_batch",
+        fail_persistence,
+    )
 
-    assert message.nacked is True
-    assert message.requeue is True
-    assert message.acked is False
+    monkeypatch.setattr(
+        messaging.PGMQConsumer,
+        "_archive_message",
+        lambda self, msg_id: archived.append(msg_id),
+    )
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+    monkeypatch.setattr(
+        messaging,
+        "SessionLocal",
+        lambda: FakeSession(),
+    )
+
+    consumer = messaging.PGMQConsumer(Settings(pgmq_max_attempts=5))
+
+    consumer._handle_message(
+        msg_id=789,
+        read_count=2,
+        message=valid_event(),
+    )
+
+    assert archived == []
+
+
+def test_consumer_archives_after_retry_limit(
+    monkeypatch,
+) -> None:
+    archived: list[int] = []
+
+    def fail_persistence(session, observations):
+        raise RuntimeError("database is still unavailable")
+
+    monkeypatch.setattr(
+        messaging,
+        "insert_batch",
+        fail_persistence,
+    )
+
+    monkeypatch.setattr(
+        messaging.PGMQConsumer,
+        "_archive_message",
+        lambda self, msg_id: archived.append(msg_id),
+    )
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+    monkeypatch.setattr(
+        messaging,
+        "SessionLocal",
+        lambda: FakeSession(),
+    )
+
+    consumer = messaging.PGMQConsumer(Settings(pgmq_max_attempts=5))
+
+    consumer._handle_message(
+        msg_id=999,
+        read_count=5,
+        message=valid_event(),
+    )
+
+    assert archived == [999]

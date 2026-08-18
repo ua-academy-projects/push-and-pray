@@ -1,5 +1,7 @@
-ARG POSTGRES_IMAGE=postgres:18.4-bookworm
+ARG POSTGRES_IMAGE=ghcr.io/pgmq/pg18-pgmq:v1.12.0
 FROM ${POSTGRES_IMAGE}
+
+USER root
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-18-cron \

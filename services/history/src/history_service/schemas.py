@@ -24,27 +24,38 @@ class ObservationCreate(BaseModel):
     source_url: str = Field(min_length=1)
     raw_data: dict
 
-    @field_validator("source_observed_at", "scheduled_for", "fetched_at")
+    @field_validator(
+        "source_observed_at",
+        "scheduled_for",
+        "fetched_at",
+    )
     @classmethod
     def require_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("timestamp must include a timezone")
+
         return value
 
 
 class ObservationBatch(BaseModel):
-    observations: list[ObservationCreate] = Field(min_length=1, max_length=50)
+    observations: list[ObservationCreate] = Field(
+        min_length=1,
+        max_length=50,
+    )
 
 
 class ObservationEvent(ObservationBatch):
     schema_version: Literal[1]
+    event_key: str = Field(min_length=1, max_length=200)
 
 
 class ObservationRead(ObservationCreate):
     id: UUID
     created_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class BatchResult(BaseModel):
