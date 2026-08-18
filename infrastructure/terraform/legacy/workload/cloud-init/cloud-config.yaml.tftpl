@@ -1,0 +1,47 @@
+#cloud-config
+
+write_files:
+  - path: /etc/oilscope/role.conf
+    owner: root:root
+    permissions: "0600"
+    encoding: b64
+    content: ${role_config_b64}
+
+  - path: /opt/oilscope/deployment/compose.${role}.yaml
+    owner: root:root
+    permissions: "0644"
+    encoding: b64
+    content: ${compose_b64}
+
+  - path: /usr/local/sbin/oilscope-bootstrap
+    owner: root:root
+    permissions: "0750"
+    encoding: b64
+    content: ${bootstrap_script_b64}
+
+  - path: /usr/local/sbin/oilscope-runtime-env
+    owner: root:root
+    permissions: "0750"
+    encoding: b64
+    content: ${runtime_env_script_b64}
+
+  - path: /usr/local/sbin/oilscope-deploy
+    owner: root:root
+    permissions: "0750"
+    encoding: b64
+    content: ${deploy_script_b64}
+
+  - path: /usr/local/sbin/oilscope-stop
+    owner: root:root
+    permissions: "0750"
+    encoding: b64
+    content: ${stop_script_b64}
+
+  - path: /etc/systemd/system/oilscope-deployment.service
+    owner: root:root
+    permissions: "0644"
+    encoding: b64
+    content: ${systemd_unit_b64}
+
+runcmd:
+  - [bash, /usr/local/sbin/oilscope-bootstrap]

@@ -1,0 +1,85 @@
+name: oilscope-ui
+
+services:
+  traefik:
+    image: traefik:v3.7.1
+    restart: unless-stopped
+    command:
+      - --api.dashboard=false
+      - --ping=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=oilscope-proxy
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL is required}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /opt/oilscope/data/traefik:/letsencrypt
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/traefik
+
+  ui:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/push-and-pray/ui:${UI_IMAGE_TAG:?UI_IMAGE_TAG must be a full commit SHA}
+    restart: unless-stopped
+    init: true
+    environment:
+      HISTORY_SERVICE_URL: http://10.10.0.11:8001
+      DATABASE_URL: postgresql+psycopg://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@10.10.0.12:5432/oil_tracker
+      SESSION_TTL_SECONDS: "2592000"
+      SESSION_COOKIE_SECURE: "true"
+      LOG_LEVEL: INFO
+      TZ: UTC
+    expose:
+      - "8080"
+    networks:
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: oilscope-proxy
+      traefik.http.routers.ui.rule: Host(`${APP_DOMAIN:?APP_DOMAIN is required}`)
+      traefik.http.routers.ui.entrypoints: websecure
+      traefik.http.routers.ui.tls: "true"
+      traefik.http.routers.ui.tls.certresolver: letsencrypt
+      traefik.http.services.ui.loadbalancer.server.port: "8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/ui
+
+networks:
+  proxy:
+    name: oilscope-proxy

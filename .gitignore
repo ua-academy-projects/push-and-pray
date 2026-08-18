@@ -10,7 +10,6 @@ htmlcov/
 .vagrant/
 infrastructure/vagrant/config/vagrant.env
 node_modules/
-infrastructure/docker/deployment
 
 # Terraform
 **/.terraform/
@@ -18,7 +17,6 @@ infrastructure/docker/deployment
 *.tfstate.*
 terraform.tfvars
 infrastructure/terraform/terraform.tfvars
-infrastructure/terraform/legacy
 *.tfvars
 *.tfvars.json
 *.tfplan
