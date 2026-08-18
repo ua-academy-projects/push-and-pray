@@ -251,7 +251,7 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.15.0"
+          terraform_version: "1.15.1"
           terraform_wrapper: false
 
       - name: Check formatting
