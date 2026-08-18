@@ -20,19 +20,15 @@ func TestParseHours(t *testing.T) {
 func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 	t.Setenv("DATA_PROVIDER", "oilpriceapi")
 	t.Setenv("OILPRICEAPI_KEY", "test-key")
-	t.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/test?sslmode=disable")
-
 	configuration, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
 	if configuration.OilPriceAPIKey != "test-key" || configuration.DataProvider != "oilpriceapi" {
 		t.Fatalf("unexpected configuration: %+v", configuration)
 	}
-
-	if configuration.DatabaseURL != "postgres://test:test@localhost:5432/test?sslmode=disable" {
-		t.Fatalf("unexpected database URL: %s", configuration.DatabaseURL)
+	if configuration.RabbitQueue != "history.price-observations" {
+		t.Fatalf("unexpected RabbitMQ queue: %s", configuration.RabbitQueue)
 	}
 }
 

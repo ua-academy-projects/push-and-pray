@@ -142,6 +142,7 @@ jobs:
       OILPRICEAPI_KEY: ci-validation
       RABBITMQ_USER: ci-validation
       RABBITMQ_PASSWORD: ci-validation
+      REDIS_PASSWORD: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
       UI_LAN_IP: 127.0.0.1
@@ -198,43 +199,69 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # This job always runs and always reports a result, even when there is no
-      # Terraform in the repository yet. A skipped job never reports a status,
-      # which would leave a required check pending forever.
-      - name: Detect Terraform configuration
-        id: detect
+      # Keep the job itself unconditional so the required check always reports
+      # a result. Only the expensive Terraform steps depend on path changes.
+      - name: Detect Terraform changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
         run: |
-          if [ -n "$(find . -path ./.git -prune -o -name '*.tf' -print)" ]; then
-            echo "present=true" >> "${GITHUB_OUTPUT}"
-            echo "Terraform configuration found."
+          changed=false
+
+          case "${EVENT_NAME}" in
+            pull_request)
+              base_sha="${PR_BASE_SHA}"
+              head_sha="${PR_HEAD_SHA}"
+              ;;
+            push)
+              base_sha="${PUSH_BASE_SHA}"
+              head_sha="${PUSH_HEAD_SHA}"
+              ;;
+            *)
+              echo "Terraform checks are disabled for ${EVENT_NAME}."
+              echo "changed=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+              ;;
+          esac
+
+          if git diff --quiet "${base_sha}" "${head_sha}" \
+            -- infrastructure/terraform/; then
+            echo "No Terraform changes detected."
           else
-            echo "present=false" >> "${GITHUB_OUTPUT}"
-            echo "No Terraform configuration in the repository yet - nothing to validate."
+            status=$?
+            if [ "${status}" -ne 1 ]; then
+              echo "Failed to detect Terraform changes."
+              exit "${status}"
+            fi
+
+            changed=true
+            echo "Terraform changes detected."
           fi
 
+          echo "changed=${changed}" >> "${GITHUB_OUTPUT}"
+
       - name: Set up Terraform
-        if: steps.detect.outputs.present == 'true'
+        if: steps.changes.outputs.changed == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.15.0"
           terraform_wrapper: false
 
       - name: Check formatting
-        if: steps.detect.outputs.present == 'true'
-        run: terraform fmt -check -recursive
+        if: steps.changes.outputs.changed == 'true'
+        run: terraform -chdir=infrastructure/terraform fmt -check -recursive
 
       - name: Validate
-        if: steps.detect.outputs.present == 'true'
+        if: steps.changes.outputs.changed == 'true'
         run: |
-          status=0
-          directories="$(find . -path ./.git -prune -o -name '*.tf' -print \
-            | xargs -r -n1 dirname | sort -u)"
-          for directory in ${directories}; do
-            echo "::group::${directory}"
-            terraform -chdir="${directory}" init -backend=false -input=false \
-              || status=1
-            terraform -chdir="${directory}" validate || status=1
-            echo "::endgroup::"
-          done
-          exit "${status}"
+          terraform -chdir=infrastructure/terraform init \
+            -backend=false \
+            -input=false
+          terraform -chdir=infrastructure/terraform validate

@@ -1,18 +1,5 @@
 name: Security
 
-# Static analysis and supply-chain scanning for every pull request targeting
-# develop or main, plus a weekly re-scan of develop.
-#
-# The weekly schedule matters: new CVEs and new CodeQL rules appear without any
-# code changing, so a repository that passed last month can be vulnerable today.
-#
-# Enforcement policy (see docs/security-scanning.md for the reasoning):
-#   Secrets      blocking on PRs for newly added commits; the full-history
-#                scan runs on develop and weekly, and reports instead
-#   IaC          blocking  - we own this code completely, findings are fixable
-#   CodeQL       reporting - results land in the Security tab as annotations
-#   Dependencies reporting - a new CVE upstream must not block unrelated work
-
 on:
   pull_request:
     branches:
@@ -21,6 +8,7 @@ on:
   push:
     branches:
       - develop
+      - main
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -44,15 +32,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history is needed for both modes below: a secret that was
-          # committed and later deleted is still in the history, and still
-          # compromised.
           fetch-depth: 0
 
-      # On a pull request we scan only the commits the pull request adds.
-      # Blocking here is fair: the author can fix what they just wrote.
-      # Scanning the whole history on every PR would instead re-report the
-      # existing backlog and make the check permanently red for everyone.
+
       - name: Scan the commits added by this pull request
         if: github.event_name == 'pull_request'
         env:
@@ -67,9 +49,7 @@ jobs:
             --verbose \
             --log-opts "${BASE_SHA}..${HEAD_SHA}"
 
-      # On develop and on the weekly run we scan everything ever committed and
-      # report it, without failing the run. This is where the historical
-      # backlog stays visible until it is dealt with.
+
       - name: Scan the full history
         if: github.event_name != 'pull_request'
         run: |
@@ -100,12 +80,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Two passes on purpose. When the action is asked for SARIF it reports
-      # every severity and ignores the `severity` input, because GitHub code
-      # scanning does its own filtering. Combining that with exit-code 1 would
-      # fail the build on informational findings, so reporting and gating are
-      # separated: the first pass feeds the Security tab and never fails, the
-      # second decides the verdict.
+
       - name: Scan Terraform, Dockerfiles and Compose (report)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -151,9 +126,6 @@ jobs:
           scan-ref: .
           scanners: vuln
           severity: HIGH,CRITICAL
-          # Reporting only: a CVE published upstream overnight must not block
-          # a PR that has nothing to do with it. Findings still appear in the
-          # Security tab and are triaged there.
           exit-code: "0"
           format: sarif
           output: trivy-fs.sarif

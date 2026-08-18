@@ -1,98 +1,93 @@
+# network
+
 output "network_name" {
-  description = "Name of the application VPC network"
-  value       = google_compute_network.main.name
+  description = "Name of the VPC network."
+  value       = module.network.network_name
 }
 
 output "network_self_link" {
-  description = "Self-link of the application VPC network"
-  value       = google_compute_network.main.self_link
+  description = "Self link of the VPC network."
+  value       = module.network.network_self_link
 }
 
-output "subnet_name" {
-  description = "Name of the regional application subnet"
-  value       = google_compute_subnetwork.main.name
+output "public_subnet" {
+  description = "Public (bastion) subnet: name, id and CIDR."
+  value       = module.network.public_subnet
 }
 
-output "subnet_self_link" {
-  description = "Self-link of the regional application subnet"
-  value       = google_compute_subnetwork.main.self_link
+output "private_subnet" {
+  description = "Private (workload) subnet: name, id, CIDR and secondary ranges."
+  value       = module.network.private_subnet
 }
 
-output "subnet_cidr" {
-  description = "Primary IPv4 CIDR range of the application subnet"
-  value       = google_compute_subnetwork.main.ip_cidr_range
+output "network_tags" {
+  description = "Network tags an instance must carry to be matched by the firewall rules."
+  value       = module.network.network_tags
 }
 
-output "router_name" {
-  description = "Name of the Cloud Router"
-  value       = google_compute_router.main.name
+output "ui_public_ports" {
+  description = "Ports published to the internet for instances carrying the ui network tag."
+  value       = module.network.ui_public_ports
+}
+
+output "firewall_rules" {
+  description = "Ingress firewall rules created for this VPC."
+  value       = module.network.firewall_rules
+}
+
+output "egress_firewall_rules" {
+  description = "Egress firewall rules. Empty unless restrict_egress is enabled."
+  value       = module.network.egress_firewall_rules
 }
 
 output "nat_name" {
-  description = "Name of the Cloud NAT gateway"
-  value       = google_compute_router_nat.main.name
+  description = "Name of the Cloud NAT gateway that gives private instances outbound access."
+  value       = module.network.nat_name
 }
 
-output "reserved_internal_addresses" {
-  description = "Reserved internal IPv4 addresses keyed by future VM role"
-  value = {
-    for role, address in google_compute_address.vm_internal : role => address.address
-  }
+output "nat_egress_ips" {
+  description = "Static egress IPs used by Cloud NAT. Empty when NAT allocates addresses automatically."
+  value       = module.network.nat_egress_ips
 }
 
-output "vm_network_tags" {
-  description = "Network tags that future VMs must use for the managed firewall rules"
-  value       = local.vm_network_tags
+# bastion
+
+output "bastion_name" {
+  description = "Name of the bastion instance."
+  value       = module.bastion.bastion_name
 }
 
-output "service_account_emails" {
-  description = "Service-account emails keyed by future VM role"
-  value = {
-    for role, service_account in google_service_account.vm : role => service_account.email
-  }
+output "bastion_public_ip" {
+  description = "Static external IP of the bastion: the single entry point into the VPC."
+  value       = module.bastion.bastion_public_ip
 }
 
-output "secret_ids" {
-  description = "Secret Manager secret IDs keyed by deployment secret"
-  value = {
-    for key, secret in google_secret_manager_secret.deployment : key => secret.secret_id
-  }
+output "bastion_private_ip" {
+  description = "Internal IP of the bastion inside the VPC."
+  value       = module.bastion.bastion_private_ip
 }
 
-output "secret_resource_names" {
-  description = "Fully qualified Secret Manager resource names keyed by deployment secret"
-  value = {
-    for key, secret in google_secret_manager_secret.deployment : key => secret.name
-  }
+output "bastion_service_account" {
+  description = "Email of the dedicated bastion service account."
+  value       = module.bastion.bastion_service_account
 }
 
-output "ui_external_ipv4_address" {
-  description = "Reserved regional external IPv4 address for the future UI VM and DNS record"
-  value       = google_compute_address.ui_external.address
+output "ssh_port" {
+  description = "Team-approved non-default SSH port. Port 22 is closed everywhere."
+  value       = var.ssh_port
 }
 
-output "vm_names" {
-  description = "Compute Engine instance names keyed by VM role"
-  value = {
-    for role, instance in google_compute_instance.vm : role => instance.name
-  }
+output "ssh_users" {
+  description = "Usernames with a public key installed on the bastion."
+  value       = module.bastion.ssh_users
 }
 
-output "vm_internal_ips" {
-  description = "Internal IPv4 addresses attached to the Compute Engine instances"
-  value = {
-    for role, instance in google_compute_instance.vm : role => instance.network_interface[0].network_ip
-  }
+output "bastion_ssh_command" {
+  description = "Ready-to-run SSH command for the bastion. Replace <user> with your own username."
+  value       = module.bastion.bastion_ssh_command
 }
 
-output "vm_self_links" {
-  description = "Compute Engine instance self-links keyed by VM role"
-  value = {
-    for role, instance in google_compute_instance.vm : role => instance.self_link
-  }
-}
-
-output "infra_data_disk_name" {
-  description = "Name of the persistent data disk attached to the Infra VM"
-  value       = google_compute_disk.infra_data.name
+output "bastion_proxy_jump_command" {
+  description = "Template for reaching a private instance through the bastion with ProxyJump."
+  value       = module.bastion.bastion_proxy_jump_command
 }

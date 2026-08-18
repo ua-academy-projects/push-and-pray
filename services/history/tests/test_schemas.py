@@ -31,12 +31,12 @@ def test_valid_observation_batch() -> None:
     assert batch.observations[0].price == Decimal("68.42")
 
 
-def test_valid_versioned_event() -> None:
+def test_valid_versioned_rabbitmq_event() -> None:
     event = ObservationEvent(schema_version=1, observations=[valid_observation()])
     assert event.schema_version == 1
 
 
-def test_unknown_schema_version_is_rejected() -> None:
+def test_unknown_rabbitmq_schema_is_rejected() -> None:
     with pytest.raises(ValidationError):
         ObservationEvent(schema_version=2, observations=[valid_observation()])
 
