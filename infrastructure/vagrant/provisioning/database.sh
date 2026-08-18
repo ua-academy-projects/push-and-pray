@@ -19,6 +19,9 @@ if systemctl is-active --quiet postgresql 2>/dev/null && command -v psql >/dev/n
     "SELECT to_regclass('public.price_observations')" 2>/dev/null | grep -qx price_observations; then
     log "Applying current SQL migrations to native PostgreSQL before backup"
     for migration in "${PROJECT_SHARE}"/database/migrations/*.sql; do
+      if [[ "$(basename "${migration}")" == "003_create_ui_sessions.sql" ]]; then
+        continue
+      fi
       PGPASSWORD="${DB_PASSWORD}" psql \
         -h 127.0.0.1 \
         -U oil_tracker \

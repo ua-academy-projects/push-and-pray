@@ -46,9 +46,23 @@ jobs:
   python:
     name: Python
     runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ci-validation
+      DB_LAN_IP: 127.0.0.1
+      TEST_DATABASE_URL: postgresql://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Start PostgreSQL 18 with session extensions
+        run: docker compose -f infrastructure/docker/compose.database.yaml up --detach --build --wait postgres
+
+      - name: Apply PostgreSQL migrations
+        run: |
+          for migration in database/migrations/*.sql; do
+            docker compose -f infrastructure/docker/compose.database.yaml exec -T postgres \
+              psql -U oil_tracker -d oil_tracker -v ON_ERROR_STOP=1 < "${migration}"
+          done
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -142,7 +156,6 @@ jobs:
       OILPRICEAPI_KEY: ci-validation
       RABBITMQ_USER: ci-validation
       RABBITMQ_PASSWORD: ci-validation
-      REDIS_PASSWORD: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
       UI_LAN_IP: 127.0.0.1

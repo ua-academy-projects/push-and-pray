@@ -73,10 +73,9 @@ service_url_for() {
   local ip="$2"
   case "${machine}" in
     database) printf 'postgresql://oil_tracker@%s:5432/oil_tracker\n' "${ip}" ;;
-    redis) printf 'redis://%s:6379/0\n' "${ip}" ;;
     rabbitmq) printf 'http://%s:15672\n' "${ip}" ;;
     history) printf 'http://%s:8001/docs (RabbitMQ management: http://%s:15672)\n' "${ip}" "${ip}" ;;
     fetcher) printf 'http://%s:8002/health\n' "${ip}" ;;
-    ui) printf 'http://%s:8080 (Redis: %s:6379)\n' "${ip}" "${ip}" ;;
+    ui) printf 'http://%s:8080\n' "${ip}" ;;
   esac
 }

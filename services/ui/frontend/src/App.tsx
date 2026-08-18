@@ -224,7 +224,7 @@ function App() {
           <span><i className={loadState === "ready" ? "online" : "pending"} />History / PostgreSQL</span>
           <span>
             {sessionState === "saved" ? <Check size={13} /> : sessionState === "local" ? <CloudOff size={13} /> : <Activity size={13} />}
-            {sessionState === "saved" ? "Redis session saved" : sessionState === "local" ? "Local defaults" : "Saving session"}
+            {sessionState === "saved" ? "PostgreSQL session saved" : sessionState === "local" ? "Local defaults" : "Saving session"}
           </span>
           <time>{lastRead ? `${formatDateTime(lastRead)} UTC` : "Waiting for data"}</time>
         </div>
