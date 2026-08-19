@@ -84,9 +84,7 @@ def test_hstore_extensions_and_postgresql_hashing_are_active() -> None:
             (session_id,),
         )
         stored_preferences, hash_length = hstore_cursor.fetchone()
-        restored_preferences = {
-            key: json.loads(value) for key, value in stored_preferences.items()
-        }
+        restored_preferences = {key: json.loads(value) for key, value in stored_preferences.items()}
         assert restored_preferences == preferences.model_dump(mode="json")
         assert hash_length == 32
         assert asyncio.run(store.is_ready()) is True
