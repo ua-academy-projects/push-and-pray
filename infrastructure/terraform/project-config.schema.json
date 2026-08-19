@@ -1,0 +1,56 @@
+{
+  "title": "Project Configuration",
+  "description": "Terraform configuration contract.",
+  "type": "object",
+  "required": ["config_version", "project_id", "environment", "region", "zone", "name_prefix", "common_labels", "network", "bastion", "vms"],
+  "properties": {
+    "config_version": { "type": "integer", "enum": [1] },
+    "project_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$" },
+    "environment": { "type": "string", "enum": ["dev", "stage", "prod"] },
+    "region": { "type": "string" },
+    "zone": { "type": "string" },
+    "name_prefix": { "type": "string" },
+    "common_labels": { "type": "object", "additionalProperties": { "type": "string" } },
+    "network": {
+      "type": "object",
+      "required": ["management_subnet_cidr", "workload_subnet_cidr"],
+      "properties": {
+        "management_subnet_cidr": { "type": "string" },
+        "workload_subnet_cidr": { "type": "string" }
+      }
+    },
+    "bastion": {
+      "type": "object",
+      "required": ["bastion_allowed_cidrs", "ssh_port", "machine_type", "image", "disk_size_gb"],
+      "properties": {
+        "bastion_allowed_cidrs": { "type": "array", "items": { "type": "string" } },
+        "ssh_port": { "type": "integer" },
+        "machine_type": { "type": "string" },
+        "image": { "type": "string" },
+        "disk_size_gb": { "type": "integer", "minimum": 10 },
+        "preemptible": { "type": "boolean" }
+      }
+    },
+    "vms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "role", "machine_type", "internal_ip", "assign_public_ip", "network_tags", "boot_image", "boot_disk_size_gb", "boot_disk_type", "automation_role", "secret_ids"],
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string", "enum": ["infra", "history", "fetcher", "ui"] },
+          "machine_type": { "type": "string" },
+          "internal_ip": { "type": "string" },
+          "assign_public_ip": { "type": "boolean" },
+          "network_tags": { "type": "array", "items": { "type": "string" } },
+          "boot_image": { "type": "string" },
+          "boot_disk_size_gb": { "type": "integer", "minimum": 10 },
+          "boot_disk_type": { "type": "string" },
+          "automation_role": { "type": "string", "enum": ["none"] },
+          "image_tag": { "type": "string" },
+          "secret_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
