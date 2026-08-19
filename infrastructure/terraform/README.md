@@ -63,61 +63,71 @@ the same deployment.
 
 ## Configuration
 
-Copy the example and replace its placeholder values:
+All non-secret, environment-specific configuration is supplied through a
+single external JSON file — not through `terraform.tfvars`. The file is
+**never committed to this repository**; keep it in a separate,
+access-controlled location (e.g. a private configs directory, a secrets
+manager, or a CI-provided temp file).
 
-```bash
-cp terraform.tfvars.example terraform.tfvars
-```
+The full contract — every field, its type, and its allowed values — is
+documented in
+[`schema/project-config.schema.json`](./schema/project-config.schema.json).
+It covers: project ID, environment, region/zone, naming and labels, network
+and subnet CIDRs, bastion settings, and the full list of workload VM
+definitions (machine type, image, disk, internal IP, public-IP policy,
+network tags, automation role, application image tag, and Secret Manager
+secret IDs — never secret values).
 
-Active root inputs are:
+Two Terraform inputs remain outside the JSON contract:
 
 | Input | Purpose |
 | --- | --- |
-| `project_id` | Target GCP project |
-| `region`, `zone` | Resource location |
-| `name_prefix`, `environment` | Resource names and labels |
-| `common_labels` | Additional GCP labels |
-| `management_subnet_cidr` | Bastion subnet; default `10.10.0.0/24` |
-| `workload_subnet_cidr` | Application VM subnet; default `10.10.1.0/24` |
-| `ssh_port` | Non-default bastion SSH port |
-| `bastion_allowed_cidrs` | Approved office or VPN source ranges |
-| `ssh_users` | Public SSH keys keyed by Linux username |
-| `machine_types` | Workload VM sizes keyed by role |
-| `internal_addresses` | Static workload IPs keyed by role |
-| `boot_image_*`, `boot_disk_*` | Workload boot disk settings |
+| `project_config_path` | Absolute path to the environment-specific JSON configuration file |
+| `ssh_users` | Public SSH keys keyed by Linux username — not environment-specific, supplied separately |
 
-Before the first plan, manually set or confirm:
+Before the first plan, prepare a JSON file for your environment (e.g.
+`dev.json`) following the schema, and confirm:
 
 - `project_id`, `region` and a `zone` in that region;
 - management and workload subnet CIDRs that do not overlap existing VPC, VPN,
   peering or on-premises routes;
-- `bastion_allowed_cidrs`, preferably the operator's current public `/32` or a
-  controlled VPN/office egress range. `0.0.0.0/0` is allowed for temporary
-  testing, but is not recommended for a permanent deployment;
-- `ssh_users`, containing Linux usernames and public OpenSSH keys only;
-- workload internal addresses, which must remain inside the workload subnet and
+- `bastion.bastion_allowed_cidrs`, preferably the operator's current public
+  `/32` or a controlled VPN/office egress range. `0.0.0.0/0` is allowed for
+  temporary testing, but is not recommended for a permanent deployment;
+- each VM's `internal_ip`, which must remain inside the workload subnet and
   must not already be allocated.
 
-No domain, application credential, database password, RabbitMQ credential,
-Redis credential or container image input is required by the current root.
+Terraform validates the loaded configuration — required fields, supported
+`config_version`, region/zone consistency, CIDR validity, unique internal
+IPs, supported VM and automation roles, valid disk sizes/machine types, and
+network tags — before any resource is created.
+
+No domain, application credential, database password, external message
+broker credential, Redis credential or container image input is required by
+the current root.
 
 ## First plan
 
-Run from this directory after preparing the ignored `terraform.tfvars` file:
+Run from this directory, passing the absolute path to your environment's
+JSON configuration file and your SSH users:
 
 ```bash
 terraform fmt -recursive
 terraform init
 terraform validate
-terraform plan -var-file=terraform.tfvars -out=tfplan
+terraform plan \
+  -var="project_config_path=/absolute/path/to/dev.json" \
+  -var='ssh_users={ alice = "ssh-ed25519 AAAA... alice@laptop" }' \
+  -out=tfplan
 terraform show tfplan
 terraform apply tfplan
 ```
 
-Review the complete saved plan before applying it. The apply creates only the
-Terraform-managed infrastructure described below; it does not run Docker,
-Compose or application deployment. For CI or isolated syntax checking, use
-`terraform init -backend=false`.
+Switching environments means pointing at a different JSON file — no `.tf`
+file is ever edited or generated. Review the complete saved plan before
+applying it. The apply creates only the Terraform-managed infrastructure
+described below; it does not run Docker, Compose or application deployment.
+For CI or isolated syntax checking, use `terraform init -backend=false`.
 
 ## Outputs
 
@@ -130,5 +140,5 @@ accounts.
 The workload VMs boot the selected Ubuntu image with no application cloud-init
 metadata. Terraform does not install Docker, pull images, retrieve application
 secrets, initialize PostgreSQL, start
-RabbitMQ or Redis, configure Traefik, run Compose, or apply database migrations.
+external message broker or Redis, configure Traefik, run Compose, or apply database migrations.
 Those actions require a separate reviewed integration stage.

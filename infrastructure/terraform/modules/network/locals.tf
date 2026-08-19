@@ -1,6 +1,5 @@
 locals {
   prefix = var.name_prefix
-
   # Network tags are the handle firewall rules use to select instances.
   # Nothing is reachable unless it carries the right tag.
   tag_bastion = "${local.prefix}-bastion"

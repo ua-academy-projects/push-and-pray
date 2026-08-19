@@ -14,7 +14,7 @@ if [[ -z "${VAGRANT_BIN}" ]]; then
   exit 1
 fi
 
-required_credentials=(DB_PASSWORD REDIS_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD)
+required_credentials=(DB_PASSWORD RABBITMQ_USER RABBITMQ_PASSWORD)
 for variable in "${required_credentials[@]}"; do
   if [[ -z "${!variable:-}" ]]; then
     printf '%s must be set in infrastructure/vagrant/config/vagrant.env.\n' "${variable}" >&2
@@ -41,7 +41,7 @@ if ! ssh-keygen -l -f "${ssh_identity}.pub" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "${DB_PASSWORD:-}" == "change-me" || "${REDIS_PASSWORD:-}" == "change-me" || "${RABBITMQ_PASSWORD:-}" == "change-me" ]]; then
+if [[ "${DB_PASSWORD:-}" == "change-me" || "${RABBITMQ_PASSWORD:-}" == "change-me" ]]; then
   printf 'Replace all change-me passwords in infrastructure/vagrant/config/vagrant.env before deployment.\n' >&2
   exit 1
 fi

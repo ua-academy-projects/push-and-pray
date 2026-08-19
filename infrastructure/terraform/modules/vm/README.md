@@ -10,7 +10,7 @@ scheduling.
 
 It intentionally contains no application-service knowledge. It does not
 install Docker, read secrets, initialize databases or start PostgreSQL,
-RabbitMQ, Redis, Traefik or application containers.
+message brokers, caches, reverse proxies or application containers.
 
 ```hcl
 module "vm" {

@@ -25,16 +25,12 @@ case "${1:-}" in
     ssh_target=fetcher
     tag=petroscope/fetcher
     ;;
-  redis)
-    ssh_target=app
-    tag=petroscope/redis
-    ;;
   ui)
     ssh_target=app
     tag=petroscope/ui
     ;;
   *)
-    printf 'Usage: %s {database|rabbitmq|history|fetcher|redis|ui} [--follow] [lines]\n' "$0" >&2
+    printf 'Usage: %s {database|rabbitmq|history|fetcher|ui} [--follow] [lines]\n' "$0" >&2
     exit 2
     ;;
 esac

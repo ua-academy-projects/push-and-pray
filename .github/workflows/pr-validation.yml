@@ -1,12 +1,5 @@
 name: PR Validation
 
-# Validates code, configuration, tests and Docker image builds for every pull
-# request targeting develop or main. Nothing is published from this workflow —
-# images are built and thrown away. Publishing lives in a separate workflow.
-#
-# Job names below are stable and unique so they can be selected as required
-# status checks in branch protection. See docs/ci-required-checks.md.
-
 on:
   pull_request:
     branches:
@@ -28,6 +21,7 @@ jobs:
   yaml:
     name: YAML
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +40,7 @@ jobs:
   python:
     name: Python
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,9 +69,11 @@ jobs:
   go:
     name: Go
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: services/fetcher
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -96,6 +93,7 @@ jobs:
             echo "Run: gofmt -w ${unformatted}"
             exit 1
           fi
+
           echo "All Go files are correctly formatted."
 
       - name: Vet
@@ -104,12 +102,118 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+  integration:
+    name: PostgreSQL PGMQ Integration
+    runs-on: ubuntu-latest
+
+    env:
+      DB_PASSWORD: ci-validation
+      DB_LAN_IP: 127.0.0.1
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
+      PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
+      PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start PostgreSQL with PGMQ and pg_cron
+        run: |
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            up -d --build
+
+          for attempt in {1..30}; do
+            if docker compose \
+              -f infrastructure/docker/compose.database.yaml \
+              exec -T postgres \
+              pg_isready -U oil_tracker -d oil_tracker; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            logs postgres
+
+          exit 1
+
+      - name: Apply database migrations
+        run: |
+          for migration in database/migrations/*.sql; do
+            echo "Applying ${migration}"
+
+            docker compose \
+              -f infrastructure/docker/compose.database.yaml \
+              exec -T postgres \
+              psql \
+                -v ON_ERROR_STOP=1 \
+                -U oil_tracker \
+                -d oil_tracker < "${migration}"
+          done
+
+      - name: Verify PGMQ extension and queue
+        run: |
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            exec -T postgres \
+            psql \
+              -v ON_ERROR_STOP=1 \
+              -U oil_tracker \
+              -d oil_tracker \
+              -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'pgmq';"
+
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            exec -T postgres \
+            psql \
+              -v ON_ERROR_STOP=1 \
+              -U oil_tracker \
+              -d oil_tracker \
+              -c "SELECT * FROM pgmq.list_queues();"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Run History PGMQ integration tests
+        run: uv run pytest services/history/tests/integration -v
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/fetcher/go.mod
+          cache-dependency-path: services/fetcher/go.sum
+
+      - name: Run Fetcher PGMQ integration tests
+        working-directory: services/fetcher
+        run: go test ./internal/pgmq -v
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: |
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            down -v
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: services/ui/frontend
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -133,19 +237,15 @@ jobs:
   compose:
     name: Docker Compose
     runs-on: ubuntu-latest
+
     env:
-      # Every Compose file uses ${VAR:?message} for required settings, so
-      # `docker compose config` fails unless they are defined. These are
-      # throwaway values used only to prove the files parse and interpolate.
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
       OILPRICEAPI_KEY: ci-validation
-      RABBITMQ_USER: ci-validation
-      RABBITMQ_PASSWORD: ci-validation
-      REDIS_PASSWORD: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
       UI_LAN_IP: 127.0.0.1
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -154,28 +254,35 @@ jobs:
         working-directory: infrastructure/docker
         run: |
           status=0
+
           for file in compose.*.yaml; do
             echo "::group::${file}"
+
             if docker compose -f "${file}" config --quiet; then
               echo "${file}: OK"
             else
               echo "${file}: INVALID"
               status=1
             fi
+
             echo "::endgroup::"
           done
+
           exit "${status}"
 
   image:
     name: Docker image (${{ matrix.service }})
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
+
       matrix:
         service:
           - fetcher
           - history
           - ui
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -196,22 +303,23 @@ jobs:
   terraform:
     name: Terraform
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Keep the job itself unconditional so the required check always reports
-      # a result. Only the expensive Terraform steps depend on path changes.
       - name: Detect Terraform changes
         id: changes
+
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BASE_SHA: ${{ github.event.before }}
           PUSH_HEAD_SHA: ${{ github.sha }}
+
         run: |
           changed=false
 
@@ -236,6 +344,7 @@ jobs:
             echo "No Terraform changes detected."
           else
             status=$?
+
             if [ "${status}" -ne 1 ]; then
               echo "Failed to detect Terraform changes."
               exit "${status}"
@@ -264,4 +373,5 @@ jobs:
           terraform -chdir=infrastructure/terraform init \
             -backend=false \
             -input=false
+
           terraform -chdir=infrastructure/terraform validate

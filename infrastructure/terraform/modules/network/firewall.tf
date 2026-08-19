@@ -69,9 +69,9 @@ resource "google_compute_firewall" "ui_public_ingress" {
     precondition {
       condition = length(setintersection(
         toset(var.ui_public_ports),
-        toset([tostring(var.history_api_port), tostring(var.rabbitmq_port), tostring(var.db_port)])
+        toset([tostring(var.history_api_port), tostring(var.db_port)])
       )) == 0
-      error_message = "ui_public_ports must not contain History API, RabbitMQ or PostgreSQL ports."
+      error_message = "ui_public_ports must not contain History API or PostgreSQL ports."
     }
   }
 }
@@ -133,40 +133,12 @@ resource "google_compute_firewall" "history_api_from_ui" {
 
 }
 
-# PostgreSQL on Infra is used directly by History.
+# PostgreSQL on Infra is used directly by Fetcher and History.
 
 resource "google_compute_firewall" "postgresql_to_infra" {
   project     = var.project_id
   name        = "${local.prefix}-allow-postgresql-to-infra"
-  description = "Ingress to PostgreSQL on Infra from History only."
-
-  network   = google_compute_network.vpc.id
-  direction = "INGRESS"
-  priority  = 1000
-
-  source_tags = [local.tag_history]
-  target_tags = [local.tag_infra]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(var.db_port)]
-  }
-
-  dynamic "log_config" {
-    for_each = local.firewall_log_config
-
-    content {
-      metadata = "INCLUDE_ALL_METADATA"
-    }
-  }
-}
-
-# Fetcher publishes to RabbitMQ on Infra and History consumes from it.
-
-resource "google_compute_firewall" "rabbitmq_to_infra" {
-  project     = var.project_id
-  name        = "${local.prefix}-allow-rabbitmq-to-infra"
-  description = "Ingress to RabbitMQ on Infra from Fetcher and History only."
+  description = "Ingress to PostgreSQL on Infra from Fetcher and History only."
 
   network   = google_compute_network.vpc.id
   direction = "INGRESS"
@@ -177,7 +149,7 @@ resource "google_compute_firewall" "rabbitmq_to_infra" {
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.rabbitmq_port)]
+    ports    = [tostring(var.db_port)]
   }
 
   dynamic "log_config" {

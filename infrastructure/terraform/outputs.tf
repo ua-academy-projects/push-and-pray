@@ -74,7 +74,7 @@ output "bastion_service_account" {
 
 output "ssh_port" {
   description = "Team-approved non-default SSH port. Port 22 is closed everywhere."
-  value       = var.ssh_port
+  value       = local.config.bastion.ssh_port
 }
 
 output "ssh_users" {

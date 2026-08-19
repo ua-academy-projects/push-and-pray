@@ -1,43 +1,28 @@
 locals {
-  name_prefix = "${var.name_prefix}-${var.environment}"
-
+  name_prefix = "${local.config.name_prefix}-${local.config.environment}"
+  config      = jsondecode(file(var.project_config_path))
   common_labels = merge(
     {
       application = "oil-price-tracker"
-      environment = var.environment
+      environment = local.config.environment
       managed_by  = "terraform"
     },
-    var.common_labels
+    local.config.common_labels
   )
 
   workloads = {
-    infra = {
-      machine_type       = var.machine_types.infra
-      internal_ip        = var.internal_addresses.infra
-      network_tag        = module.network.network_tags.infra
-      subnetwork_id      = module.network.workload_subnet.id
-      assign_external_ip = false
-    }
-    history = {
-      machine_type       = var.machine_types.history
-      internal_ip        = var.internal_addresses.history
-      network_tag        = module.network.network_tags.history
-      subnetwork_id      = module.network.workload_subnet.id
-      assign_external_ip = false
-    }
-    fetcher = {
-      machine_type       = var.machine_types.fetcher
-      internal_ip        = var.internal_addresses.fetcher
-      network_tag        = module.network.network_tags.fetcher
-      subnetwork_id      = module.network.workload_subnet.id
-      assign_external_ip = false
-    }
-    ui = {
-      machine_type       = var.machine_types.ui
-      internal_ip        = var.internal_addresses.ui
-      network_tag        = module.network.network_tags.ui
-      subnetwork_id      = module.network.workload_subnet.id
-      assign_external_ip = true
-    }
+    for vm in local.config.vms : vm.name => merge(vm, {
+      subnetwork_id = module.network.workload_subnet.id
+    })
   }
+
+  vm_secret_pairs = flatten([
+    for vm_name, vm in local.workloads : [
+      for secret_id in vm.secret_ids : {
+        vm_name   = vm_name
+        secret_id = secret_id
+      }
+    ]
+  ])
+
 }

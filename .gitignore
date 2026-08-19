@@ -25,7 +25,8 @@ infrastructure/terraform/legacy
 **/tfplan
 crash.log
 crash.*.log
-
+*.json
+!infrastructure/terraform/*.json
 # Credentials and private keys
 *.pem
 *.key

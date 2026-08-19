@@ -172,16 +172,6 @@ variable "db_port" {
   }
 }
 
-variable "rabbitmq_port" {
-  description = "RabbitMQ AMQP port on Infra, reachable from Fetcher and History."
-  type        = number
-  default     = 5672
-
-  validation {
-    condition     = var.rabbitmq_port >= 1 && var.rabbitmq_port <= 65535
-    error_message = "rabbitmq_port must be between 1 and 65535."
-  }
-}
 
 variable "enable_ui_public_ingress" {
   description = "Create the public HTTP/HTTPS ingress rule for instances tagged <name_prefix>-ui."
