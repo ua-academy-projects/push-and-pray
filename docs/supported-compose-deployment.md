@@ -55,6 +55,7 @@ the token in Compose, this repository, or a shell argument.
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` when HTTPS terminates at the application host |
 | `LOG_LEVEL` | `INFO` | History and UI log level |
 | `APPLICATION_PLATFORM` | `linux/amd64` | Application image platform |
+| `POSTGRES_PLATFORM` | `linux/amd64` | PostgreSQL image platform |
 | `APPLICATION_PULL_POLICY` | `always` | Application image pull policy |
 | `POSTGRES_PULL_POLICY` | `always` | PostgreSQL image pull policy |
 

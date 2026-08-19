@@ -3,6 +3,7 @@ name: petroscope
 services:
   postgres:
     image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
     pull_policy: ${POSTGRES_PULL_POLICY:-always}
     restart: unless-stopped
     environment:
@@ -36,6 +37,7 @@ services:
 
   migrate:
     image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
     pull_policy: ${POSTGRES_PULL_POLICY:-always}
     restart: "no"
     command: ["petroscope-migrate"]
