@@ -71,7 +71,7 @@ manager, or a CI-provided temp file).
 
 The full contract — every field, its type, and its allowed values — is
 documented in
-[`schema/project-config.schema.json`](./schema/project-config.schema.json).
+[`project-config.schema.json`](./project-config.schema.json).
 It covers: project ID, environment, region/zone, naming and labels, network
 and subnet CIDRs, bastion settings, and the full list of workload VM
 definitions (machine type, image, disk, internal IP, public-IP policy,
@@ -84,6 +84,7 @@ Two Terraform inputs remain outside the JSON contract:
 | --- | --- |
 | `project_config_path` | Absolute path to the environment-specific JSON configuration file |
 | `ssh_users` | Public SSH keys keyed by Linux username — not environment-specific, supplied separately |
+| `secret_version_managers` | IAM principals allowed to store new secret values. Identities only; never values |
 
 Before the first plan, prepare a JSON file for your environment (e.g.
 `dev.json`) following the schema, and confirm:
@@ -105,6 +106,23 @@ network tags — before any resource is created.
 No domain, application credential, database password, external message
 broker credential, Redis credential or container image input is required by
 the current root.
+
+## Secret Manager
+
+The root creates one Secret Manager container per distinct entry in the
+`secret_ids` field of the VM definitions, and grants each VM's service account
+`roles/secretmanager.secretAccessor` on exactly the secrets it lists — per
+secret, never at project scope. `secretmanager.googleapis.com` is enabled by
+Terraform itself in `apis.tf`, with `disable_on_destroy = false` so a destroy
+cannot break other workloads in the project.
+
+Secret *values* are not managed here: there is no
+`google_secret_manager_secret_version` resource and no input that accepts a
+credential, so no payload reaches Terraform state. Values are added out of band
+and consumed at service start.
+
+See [`docs/secrets.md`](../../docs/secrets.md) for the access map, how to grant
+and revoke, how to store a value, and the rotation procedure.
 
 ## First plan
 

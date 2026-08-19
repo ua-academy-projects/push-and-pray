@@ -16,7 +16,7 @@ resource "google_project_iam_member" "workload_automation" {
 resource "google_secret_manager_secret_iam_member" "workload_secret_access" {
   for_each  = { for pair in local.vm_secret_pairs : "${pair.vm_name}-${pair.secret_id}" => pair }
   project   = local.config.project_id
-  secret_id = each.value.secret_id
+  secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.workload[each.value.vm_name].email}"
 }

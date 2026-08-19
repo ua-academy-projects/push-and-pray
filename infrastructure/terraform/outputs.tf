@@ -121,3 +121,28 @@ output "workload_service_accounts" {
     for role, account in google_service_account.workload : role => account.email
   }
 }
+
+# secrets
+
+output "secret_ids" {
+  description = "Secret Manager secret IDs created from the project configuration. Secret values are never exposed by this configuration."
+  value       = sort([for secret in google_secret_manager_secret.this : secret.secret_id])
+}
+
+output "secret_resource_names" {
+  description = "Fully qualified Secret Manager resource names (projects/*/secrets/*) keyed by secret ID."
+  value = {
+    for id, secret in google_secret_manager_secret.this : id => secret.name
+  }
+}
+
+output "secret_access_map" {
+  description = "Which workload service accounts may read which secret. Use this to review least privilege without opening the console."
+  value = {
+    for secret_id in local.secret_ids : secret_id => sort([
+      for pair in local.vm_secret_pairs :
+      google_service_account.workload[pair.vm_name].email
+      if pair.secret_id == secret_id
+    ])
+  }
+}
