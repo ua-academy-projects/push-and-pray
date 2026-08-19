@@ -145,7 +145,13 @@ extension.
 
 ## Docker deployment details
 
-Each VM runs one independent Docker Compose project:
+The supported production-style deployment pulls prebuilt GHCR images through
+`infrastructure/docker/compose.deployment.yaml`. See
+[the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
+required parent-process environment, the one-command startup, independent VM roles,
+shutdown, and smoke test.
+
+The older role-specific files below remain for the Vagrant development topology:
 
 | Compose file | Project | Services |
 |---|---|---|

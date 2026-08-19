@@ -48,7 +48,7 @@ still finishes green. The moment someone adds Terraform, `fmt -check` and
 * YAML: `yamllint -c .yamllint.yml .`
 * Compose files use `${VAR:?...}` for required settings, so `docker compose
   config` needs those variables defined. The workflow supplies throwaway values;
-  locally, source your own `.env`.
+  locally, export the required values in the parent shell.
 
 ## Deliberately not here
 

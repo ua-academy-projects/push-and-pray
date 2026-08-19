@@ -7,6 +7,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-18-cron \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --chown=postgres:postgres database/migrations /opt/petroscope/migrations
+COPY --chmod=0755 infrastructure/docker/migrate.sh /usr/local/bin/petroscope-migrate
+
 USER postgres
 
 HEALTHCHECK --interval=5s --timeout=5s --start-period=15s --retries=20 \

@@ -239,8 +239,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      APP_IMAGE_TAG: f4bd2d001dd4ad7abcf04af967dca8e8a0f6d891
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+      POSTGRES_PASSWORD: ci-validation
       OILPRICEAPI_KEY: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
@@ -279,6 +282,7 @@ jobs:
 
       matrix:
         service:
+          - database
           - fetcher
           - history
           - ui
