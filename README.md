@@ -55,7 +55,7 @@ have already been persisted in PostgreSQL.
 | UI frontend | React 19, TypeScript, Vite, Apache ECharts |
 | Messaging | PGMQ (PostgreSQL extension) |
 | Persistence | PostgreSQL 18 |
-| UI sessions | PostgreSQL 18, pgcrypto, pg_cron |
+| UI sessions | PostgreSQL 18, hstore, pgcrypto, pg_cron |
 | Packaging | Docker Engine and Docker Compose |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64 |
 
@@ -187,7 +187,7 @@ or pass the token as a Docker build argument.
 ## Local development
 
 Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with
-pgcrypto, pg_cron, and PGMQ.
+hstore, pgcrypto, pg_cron, and PGMQ.
 
 Install Python dependencies and build the frontend:
 
@@ -289,12 +289,14 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
-The `ui_sessions` table stores validated preferences as JSONB, a 30-day expiration
-timestamp, and only the SHA-256 digest of the browser session ID. The digest is calculated
-inside PostgreSQL by pgcrypto for every lookup and write. Atomic UPSERTs refresh the
-expiration on reads and updates, while expired rows are replaced with defaults immediately.
-The pg_cron background worker deletes expired rows every minute; its named job and
-both extensions are created idempotently by migration `003_create_ui_sessions.sql`.
+The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
+expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
+value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
+strings retain the existing API representation. The digest is calculated inside PostgreSQL
+by pgcrypto for every lookup and write. Atomic UPSERTs refresh the expiration on reads and
+updates, while expired rows are replaced with defaults immediately. The pg_cron background
+worker deletes expired rows every minute; its named job and the hstore, pgcrypto, and pg_cron
+extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 
 ## Configuration
 

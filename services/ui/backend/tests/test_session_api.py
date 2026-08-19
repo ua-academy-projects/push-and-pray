@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from datetime import timedelta
 from time import monotonic
@@ -6,7 +7,8 @@ from time import monotonic
 import httpx
 import psycopg
 import pytest
-from psycopg.types.json import Jsonb
+from psycopg.types import TypeInfo
+from psycopg.types.hstore import register_hstore
 
 from ui_service.main import SESSION_TTL_SECONDS, app
 from ui_service.session_store import PostgreSQLSessionStore
@@ -30,22 +32,36 @@ def reset_sessions() -> None:
         cursor.execute("TRUNCATE ui_sessions")
 
 
-def test_extensions_and_postgresql_hashing_are_active() -> None:
+def test_hstore_extensions_and_postgresql_hashing_are_active() -> None:
     reset_sessions()
     store = PostgreSQLSessionStore(database_url(), SESSION_TTL_SECONDS)
     session_id = "a" * 43
     preferences = SessionPreferences()
     asyncio.run(store.update(session_id, preferences))
 
-    with psycopg.connect(database_url()) as connection, connection.cursor() as cursor:
+    with psycopg.connect(database_url()) as connection:
+        hstore_info = TypeInfo.fetch(connection, "hstore")
+        assert hstore_info is not None
+        register_hstore(hstore_info, connection)
+        cursor = connection.cursor()
         cursor.execute(
             """
             SELECT array_agg(extname ORDER BY extname)
             FROM pg_extension
-            WHERE extname IN ('pg_cron', 'pgcrypto')
+            WHERE extname IN ('hstore', 'pg_cron', 'pgcrypto')
             """
         )
-        assert cursor.fetchone()[0] == ["pg_cron", "pgcrypto"]
+        assert cursor.fetchone()[0] == ["hstore", "pg_cron", "pgcrypto"]
+        cursor.execute(
+            """
+            SELECT udt_name, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'ui_sessions'
+              AND column_name = 'preferences'
+            """
+        )
+        assert cursor.fetchone() == ("hstore", "NO")
         cursor.execute(
             """
             SELECT schedule, active, command
@@ -58,7 +74,8 @@ def test_extensions_and_postgresql_hashing_are_active() -> None:
         assert schedule == "* * * * *"
         assert active is True
         assert "DELETE FROM public.ui_sessions" in command
-        cursor.execute(
+        hstore_cursor = connection.cursor(binary=True)
+        hstore_cursor.execute(
             """
             SELECT preferences, octet_length(session_hash)
             FROM ui_sessions
@@ -66,9 +83,13 @@ def test_extensions_and_postgresql_hashing_are_active() -> None:
             """,
             (session_id,),
         )
-        stored_preferences, hash_length = cursor.fetchone()
-        assert stored_preferences == preferences.model_dump(mode="json")
+        stored_preferences, hash_length = hstore_cursor.fetchone()
+        restored_preferences = {
+            key: json.loads(value) for key, value in stored_preferences.items()
+        }
+        assert restored_preferences == preferences.model_dump(mode="json")
         assert hash_length == 32
+        assert asyncio.run(store.is_ready()) is True
 
 
 def test_session_persistence_and_sliding_expiration() -> None:
@@ -81,6 +102,18 @@ def test_session_persistence_and_sliding_expiration() -> None:
             assert initial.status_code == 200
             assert initial.json()["selected"] is None
             session_id = initial.cookies["petroscope_session"]
+
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                cookies={"petroscope_session": "invalid-cookie"},
+            ) as invalid_cookie_client:
+                invalid_cookie_response = await invalid_cookie_client.get(
+                    "/api/session/preferences"
+                )
+            assert invalid_cookie_response.status_code == 200
+            assert invalid_cookie_response.json() == initial.json()
+            assert invalid_cookie_response.cookies["petroscope_session"] != "invalid-cookie"
 
             payloads = [
                 {**initial.json(), "selected": ["WTI_USD_BBL"], "range": "7"},
@@ -129,7 +162,11 @@ def test_expired_sessions_are_invalid_and_cleaned_by_pg_cron() -> None:
         app.state.session_store = PostgreSQLSessionStore(database_url(), SESSION_TTL_SECONDS)
         expired_session_id = "e" * 43
         cleanup_session_id = "c" * 43
-        expired_preferences = {**SessionPreferences().model_dump(), "range": "365"}
+        expired_preferences = SessionPreferences(range="365")
+
+        store = PostgreSQLSessionStore(database_url(), SESSION_TTL_SECONDS)
+        await store.update(expired_session_id, expired_preferences)
+        await store.update(cleanup_session_id, expired_preferences)
 
         with psycopg.connect(database_url()) as connection, connection.cursor() as cursor:
             cursor.execute(
@@ -140,15 +177,13 @@ def test_expired_sessions_are_invalid_and_cleaned_by_pg_cron() -> None:
                   AND database = current_database()
                 """
             )
-            cursor.executemany(
+            cursor.execute(
                 """
-                INSERT INTO ui_sessions (session_hash, preferences, expires_at)
-                VALUES (digest(%s, 'sha256'), %s, CURRENT_TIMESTAMP - interval '1 minute')
+                UPDATE ui_sessions
+                SET expires_at = CURRENT_TIMESTAMP - interval '1 minute'
+                WHERE session_hash IN (digest(%s, 'sha256'), digest(%s, 'sha256'))
                 """,
-                [
-                    (expired_session_id, Jsonb(expired_preferences)),
-                    (cleanup_session_id, Jsonb(expired_preferences)),
-                ],
+                (expired_session_id, cleanup_session_id),
             )
 
         transport = httpx.ASGITransport(app=app)

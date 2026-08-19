@@ -193,12 +193,15 @@ session_extensions="$(run_vagrant ssh database -c \
     --project-name petroscope-database \
     exec -T postgres \
     psql -U oil_tracker -d oil_tracker -Atc \
-    "SELECT count(*) FROM pg_extension WHERE extname IN ('\''pg_cron'\'', '\''pgcrypto'\''); \
-     SELECT count(*) FROM cron.job WHERE jobname = '\''delete-expired-ui-sessions'\'' AND active"' \
+    "SELECT count(*) FROM pg_extension WHERE extname IN ('\''hstore'\'', '\''pg_cron'\'', '\''pgcrypto'\''); \
+     SELECT count(*) FROM cron.job WHERE jobname = '\''delete-expired-ui-sessions'\'' AND active; \
+     SELECT count(*) FROM information_schema.columns \
+       WHERE table_schema = '\''public'\'' AND table_name = '\''ui_sessions'\'' \
+       AND column_name = '\''preferences'\'' AND udt_name = '\''hstore'\''"' \
   2>/dev/null || true)"
 session_extensions="${session_extensions//$'\r'/}"
-if [[ "${session_extensions}" == $'2\n1' ]]; then
-  printf 'PASS  PostgreSQL session extensions and cleanup job are active\n'
+if [[ "${session_extensions}" == $'3\n1\n1' ]]; then
+  printf 'PASS  PostgreSQL hstore sessions, extensions and cleanup job are active\n'
 else
   printf 'FAIL  PostgreSQL session extension check returned: %s\n' \
     "${session_extensions:-empty}" >&2

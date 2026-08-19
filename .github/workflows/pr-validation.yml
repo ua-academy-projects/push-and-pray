@@ -103,7 +103,7 @@ jobs:
         run: go test ./...
 
   integration:
-    name: PostgreSQL PGMQ Integration
+    name: PostgreSQL Integration
     runs-on: ubuntu-latest
 
     env:
@@ -112,6 +112,7 @@ jobs:
       POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
       PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
       PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+      TEST_DATABASE_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
 
     steps:
       - name: Checkout
@@ -188,6 +189,9 @@ jobs:
 
       - name: Run History PGMQ integration tests
         run: uv run pytest services/history/tests/integration -v
+
+      - name: Run UI PostgreSQL session integration tests
+        run: uv run pytest services/ui/backend/tests/test_session_api.py -v
 
       - name: Set up Go
         uses: actions/setup-go@v5

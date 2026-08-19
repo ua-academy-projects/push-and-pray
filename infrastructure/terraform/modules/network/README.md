@@ -49,11 +49,7 @@ This matrix follows the current deployment configuration:
 - UI calls the History API;
 - History connects directly to PostgreSQL on Infra;
 - Fetcher and History connect directly to PostgreSQL on Infra;
-- UI still uses Redis for session preferences, but the working Vagrant
-  deployment co-locates Redis with UI on a Docker network, so it is not an
-  inter-VM firewall dependency;
-- the cloud deployment Compose currently supplies unused `DATABASE_URL`
-  values to Fetcher and UI and omits the Redis service required by UI code;
+- UI connects directly to PostgreSQL on Infra for hstore-backed session preferences;
 - Fetcher port `8002` is used by its local container healthcheck only;
 - UI port `8080` remains inside the UI VM's Docker network behind Traefik.
 
