@@ -18,9 +18,10 @@ network_tags = {
 }
 ```
 
-The bastion module consumes `network_tags.bastion`. Future workload compute
-must attach the tag matching its role. The firewall contract does not use
-generic `app` or `db` tags.
+The bastion module consumes `network_tags.bastion`. Root workload compute
+derives the matching tag from each VM's JSON `role` and appends it to any
+additional `network_tags`. Firewall selection therefore cannot drift when a
+display name or optional tag changes.
 
 ## Resources
 
@@ -39,26 +40,23 @@ generic `app` or `db` tags.
 | `allow-ssh-to-bastion` | `bastion_allowed_cidrs` | Bastion | `ssh_port` |
 | `allow-ssh-from-bastion` | Bastion | Infra, History, Fetcher, UI | `ssh_port` |
 | `allow-history-api-from-ui` | UI | History | `8001` by default |
-| `allow-postgresql-to-infra` | History | Infra | `5432` by default |
+| `allow-postgresql-to-infra` | Fetcher, History, UI | Infra | `5432` by default |
 | `allow-ui-public` | `ui_source_ranges` | UI | `80`, `443` by default |
 | `allow-internal-icmp` | VPC subnet ranges | All five roles | ICMP |
 | `deny-all-ingress` | `0.0.0.0/0` | All instances | All denied |
 
-This matrix follows the current deployment configuration:
+This matrix follows the PostgreSQL-only deployment configuration:
 
 - UI calls the History API;
-- History connects directly to PostgreSQL on Infra;
-- Fetcher and History connect directly to PostgreSQL on Infra;
-- UI still uses Redis for session preferences, but the working Vagrant
-  deployment co-locates Redis with UI on a Docker network, so it is not an
-  inter-VM firewall dependency;
-- the cloud deployment Compose currently supplies unused `DATABASE_URL`
-  values to Fetcher and UI and omits the Redis service required by UI code;
+- Fetcher publishes queue events through PostgreSQL on Infra;
+- History consumes queue events and stores observations in PostgreSQL;
+- UI stores sessions in PostgreSQL;
 - Fetcher port `8002` is used by its local container healthcheck only;
 - UI port `8080` remains inside the UI VM's Docker network behind Traefik.
 
-Consequently, there are no VPC ingress rules for `6379`, `8002`, `8080` or
-`15672`.
+Consequently, there are no VPC ingress rules for `8002` or `8080`.
+`ui_public_ports` is validated as exactly `80` and `443`, so an internal
+application port cannot be added to the public rule.
 
 ## Egress
 
@@ -77,17 +75,28 @@ role-specific.
 module "network" {
   source = "./modules/network"
 
-  project_id  = var.project_id
-  region      = var.region
+  project_id  = local.config.project_id
+  region      = local.config.region
   name_prefix = local.name_prefix
 
-  ssh_port              = var.ssh_port
-  bastion_allowed_cidrs = var.bastion_allowed_cidrs
+  management_subnet_cidr = local.config.network.management_subnet_cidr
+  workload_subnet_cidr   = local.config.network.workload_subnet_cidr
+
+  postgresql_port     = local.config.network.service_ports.postgresql
+  history_api_port    = local.config.network.service_ports.history_api
+  fetcher_health_port = local.config.network.service_ports.fetcher_health
+  ui_internal_port    = local.config.network.service_ports.ui_internal
+  ui_public_ports     = [for port in local.config.network.ui_public_ports : tostring(port)]
+  ui_source_ranges    = local.config.network.ui_source_ranges
+
+  ssh_port              = local.config.bastion.ssh_port
+  bastion_allowed_cidrs = local.config.bastion.bastion_allowed_cidrs
 }
 ```
 
 Important inputs include subnet CIDRs, `ssh_port`,
-`bastion_allowed_cidrs`, `history_api_port`, `db_port`, UI
+`bastion_allowed_cidrs`, `history_api_port`, `postgresql_port`, internal
+service ports used for public-port validation, UI
 ingress settings, NAT settings and the optional egress restrictions.
 
 Important outputs include VPC/subnet identifiers, `network_tags`, NAT details,
@@ -104,5 +113,5 @@ operator -> bastion -> private workload VM
 private workload VM -> Cloud NAT -> internet
 ```
 
-Public SSH on port 22 is never opened. PostgreSQL and the History API
-have role-tag sources only and are not reachable directly from the internet.
+Public SSH on port 22 is never opened. PostgreSQL and the History API have
+role-tag sources only and are not reachable directly from the internet.

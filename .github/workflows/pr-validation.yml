@@ -375,3 +375,7 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
+
+      - name: Test Terraform networking
+        if: steps.changes.outputs.changed == 'true'
+        run: terraform -chdir=infrastructure/terraform test

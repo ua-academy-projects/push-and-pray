@@ -80,8 +80,9 @@ from. Never send or paste `~/.ssh/oil_bastion`.
 
 ### 2. The infrastructure owner
 
-Add one entry per person to `terraform.tfvars`, and add the source address to
-`bastion_allowed_cidrs` (see the [network module](../network/README.md)):
+Add one `ssh_users` entry per person to the separately supplied Terraform
+input, and add the source address to `bastion.bastion_allowed_cidrs` in the
+external project JSON (see the [network module](../network/README.md)):
 
 ```hcl
 ssh_users = {
@@ -89,10 +90,13 @@ ssh_users = {
 }
 ```
 
-Open a PR, get it reviewed, then apply:
+Review both external inputs, then apply:
 
 ```bash
-terraform plan -out=tfplan
+terraform plan \
+  -var="project_config_path=/absolute/path/to/dev.json" \
+  -var='ssh_users={ tabula = "ssh-ed25519 AAAA... tabula@laptop" }' \
+  -out=tfplan
 terraform apply tfplan
 ```
 

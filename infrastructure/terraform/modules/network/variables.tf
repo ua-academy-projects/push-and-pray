@@ -161,17 +161,38 @@ variable "history_api_port" {
   }
 }
 
-variable "db_port" {
-  description = "PostgreSQL port on Infra, reachable from History only."
+variable "postgresql_port" {
+  description = "PostgreSQL port on Infra, reachable from Fetcher, History and UI only."
   type        = number
   default     = 5432
 
   validation {
-    condition     = var.db_port >= 1 && var.db_port <= 65535
-    error_message = "db_port must be between 1 and 65535."
+    condition     = var.postgresql_port >= 1 && var.postgresql_port <= 65535
+    error_message = "postgresql_port must be between 1 and 65535."
   }
 }
 
+variable "fetcher_health_port" {
+  description = "Fetcher health port used inside the Fetcher VM only; no VPC ingress rule exposes it."
+  type        = number
+  default     = 8002
+
+  validation {
+    condition     = var.fetcher_health_port >= 1 && var.fetcher_health_port <= 65535
+    error_message = "fetcher_health_port must be between 1 and 65535."
+  }
+}
+
+variable "ui_internal_port" {
+  description = "UI application port used behind the local reverse proxy; no VPC ingress rule exposes it."
+  type        = number
+  default     = 8080
+
+  validation {
+    condition     = var.ui_internal_port >= 1 && var.ui_internal_port <= 65535
+    error_message = "ui_internal_port must be between 1 and 65535."
+  }
+}
 
 variable "enable_ui_public_ingress" {
   description = "Create the public HTTP/HTTPS ingress rule for instances tagged <name_prefix>-ui."
@@ -189,8 +210,8 @@ variable "ui_public_ports" {
   default     = ["80", "443"]
 
   validation {
-    condition     = !var.enable_ui_public_ingress || length(var.ui_public_ports) > 0
-    error_message = "ui_public_ports must not be empty when enable_ui_public_ingress is true."
+    condition     = !var.enable_ui_public_ingress || toset(var.ui_public_ports) == toset(["80", "443"])
+    error_message = "ui_public_ports must contain exactly ports 80 and 443 when public UI ingress is enabled."
   }
 }
 

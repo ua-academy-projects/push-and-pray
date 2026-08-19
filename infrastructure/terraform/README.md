@@ -71,12 +71,12 @@ manager, or a CI-provided temp file).
 
 The full contract — every field, its type, and its allowed values — is
 documented in
-[`schema/project-config.schema.json`](./schema/project-config.schema.json).
+[`project-config.schema.json`](./project-config.schema.json).
 It covers: project ID, environment, region/zone, naming and labels, network
-and subnet CIDRs, bastion settings, and the full list of workload VM
-definitions (machine type, image, disk, internal IP, public-IP policy,
-network tags, automation role, application image tag, and Secret Manager
-secret IDs — never secret values).
+and subnet CIDRs, service and public UI ports, bastion settings, and the full
+list of workload VM definitions (machine type, image, disk, internal IP,
+public-IP policy, network tags, automation role, application image tag, and
+Secret Manager secret IDs — never secret values).
 
 Two Terraform inputs remain outside the JSON contract:
 
@@ -84,6 +84,25 @@ Two Terraform inputs remain outside the JSON contract:
 | --- | --- |
 | `project_config_path` | Absolute path to the environment-specific JSON configuration file |
 | `ssh_users` | Public SSH keys keyed by Linux username — not environment-specific, supplied separately |
+
+The networking section of each external configuration uses this shape:
+
+```json
+{
+  "network": {
+    "management_subnet_cidr": "10.10.0.0/24",
+    "workload_subnet_cidr": "10.10.1.0/24",
+    "service_ports": {
+      "postgresql": 5432,
+      "history_api": 8001,
+      "fetcher_health": 8002,
+      "ui_internal": 8080
+    },
+    "ui_public_ports": [80, 443],
+    "ui_source_ranges": ["0.0.0.0/0"]
+  }
+}
+```
 
 Before the first plan, prepare a JSON file for your environment (e.g.
 `dev.json`) following the schema, and confirm:
@@ -94,17 +113,19 @@ Before the first plan, prepare a JSON file for your environment (e.g.
 - `bastion.bastion_allowed_cidrs`, preferably the operator's current public
   `/32` or a controlled VPN/office egress range. `0.0.0.0/0` is allowed for
   temporary testing, but is not recommended for a permanent deployment;
+- `network.ui_public_ports`, which must contain exactly `80` and `443`;
 - each VM's `internal_ip`, which must remain inside the workload subnet and
   must not already be allocated.
 
 Terraform validates the loaded configuration — required fields, supported
 `config_version`, region/zone consistency, CIDR validity, unique internal
 IPs, supported VM and automation roles, valid disk sizes/machine types, and
-network tags — before any resource is created.
+network tags — before any resource is created. Each VM also receives the
+stable `<name-prefix>-<environment>-<role>` network tag used by firewall rules;
+JSON `network_tags` are additional tags only.
 
-No domain, application credential, database password, external message
-broker credential, Redis credential or container image input is required by
-the current root.
+No domain, application credential, database password or container image input
+is required by the current root.
 
 ## First plan
 
@@ -139,6 +160,6 @@ accounts.
 
 The workload VMs boot the selected Ubuntu image with no application cloud-init
 metadata. Terraform does not install Docker, pull images, retrieve application
-secrets, initialize PostgreSQL, start
-external message broker or Redis, configure Traefik, run Compose, or apply database migrations.
-Those actions require a separate reviewed integration stage.
+secrets, initialize PostgreSQL, configure Traefik, run Compose, or apply
+database migrations. Those actions require a separate reviewed integration
+stage.

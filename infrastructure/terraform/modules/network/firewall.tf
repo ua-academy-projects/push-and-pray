@@ -69,9 +69,14 @@ resource "google_compute_firewall" "ui_public_ingress" {
     precondition {
       condition = length(setintersection(
         toset(var.ui_public_ports),
-        toset([tostring(var.history_api_port), tostring(var.db_port)])
+        toset([
+          tostring(var.postgresql_port),
+          tostring(var.history_api_port),
+          tostring(var.fetcher_health_port),
+          tostring(var.ui_internal_port),
+        ])
       )) == 0
-      error_message = "ui_public_ports must not contain History API or PostgreSQL ports."
+      error_message = "ui_public_ports must not contain PostgreSQL, History API, Fetcher health or UI internal ports."
     }
   }
 }
@@ -133,23 +138,23 @@ resource "google_compute_firewall" "history_api_from_ui" {
 
 }
 
-# PostgreSQL on Infra is used directly by Fetcher and History.
+# PostgreSQL on Infra is used directly by Fetcher, History and UI.
 
 resource "google_compute_firewall" "postgresql_to_infra" {
   project     = var.project_id
   name        = "${local.prefix}-allow-postgresql-to-infra"
-  description = "Ingress to PostgreSQL on Infra from Fetcher and History only."
+  description = "Ingress to PostgreSQL on Infra from Fetcher, History and UI only."
 
   network   = google_compute_network.vpc.id
   direction = "INGRESS"
   priority  = 1000
 
-  source_tags = [local.tag_fetcher, local.tag_history]
+  source_tags = [local.tag_fetcher, local.tag_history, local.tag_ui]
   target_tags = [local.tag_infra]
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.db_port)]
+    ports    = [tostring(var.postgresql_port)]
   }
 
   dynamic "log_config" {

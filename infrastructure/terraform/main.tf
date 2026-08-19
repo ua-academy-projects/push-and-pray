@@ -11,6 +11,13 @@ module "network" {
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
 
+  postgresql_port     = local.config.network.service_ports.postgresql
+  history_api_port    = local.config.network.service_ports.history_api
+  fetcher_health_port = local.config.network.service_ports.fetcher_health
+  ui_internal_port    = local.config.network.service_ports.ui_internal
+  ui_public_ports     = [for port in local.config.network.ui_public_ports : tostring(port)]
+  ui_source_ranges    = local.config.network.ui_source_ranges
+
   ssh_port              = local.config.bastion.ssh_port
   bastion_allowed_cidrs = local.config.bastion.bastion_allowed_cidrs
 }

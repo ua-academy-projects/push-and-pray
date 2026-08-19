@@ -33,7 +33,7 @@ check "unique_internal_ips" {
 check "supported_vm_roles" {
   assert {
     condition = alltrue([
-      for vm in local.config.vms : contains(["database", "history", "fetcher", "ui"], vm.role)
+      for vm in local.config.vms : contains(["infra", "history", "fetcher", "ui"], vm.role)
     ])
     error_message = "Every vm.role must be one of: infra, history, fetcher, ui."
   }
@@ -75,10 +75,10 @@ check "network_tags_valid" {
   assert {
     condition = alltrue([
       for vm in local.config.vms : alltrue([
-        for tag in vm.network_tags : contains(["infra", "history", "fetcher", "ui"], tag)
+        for tag in vm.network_tags : can(regex("^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", tag))
       ])
     ])
-    error_message = "Every network tag must be one of: infra, history, fetcher, ui."
+    error_message = "Every additional network tag must be a valid lowercase GCP network tag of at most 63 characters."
   }
 }
 

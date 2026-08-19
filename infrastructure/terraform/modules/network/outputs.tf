@@ -103,7 +103,7 @@ output "history_api_port" {
   value       = var.history_api_port
 }
 
-output "db_port" {
-  description = "PostgreSQL port on Infra, reachable from History."
-  value       = var.db_port
+output "postgresql_port" {
+  description = "PostgreSQL port on Infra, reachable from Fetcher, History and UI."
+  value       = var.postgresql_port
 }

@@ -13,10 +13,33 @@
     "common_labels": { "type": "object", "additionalProperties": { "type": "string" } },
     "network": {
       "type": "object",
-      "required": ["management_subnet_cidr", "workload_subnet_cidr"],
+      "required": ["management_subnet_cidr", "workload_subnet_cidr", "service_ports", "ui_public_ports", "ui_source_ranges"],
       "properties": {
         "management_subnet_cidr": { "type": "string" },
-        "workload_subnet_cidr": { "type": "string" }
+        "workload_subnet_cidr": { "type": "string" },
+        "service_ports": {
+          "type": "object",
+          "required": ["postgresql", "history_api", "fetcher_health", "ui_internal"],
+          "properties": {
+            "postgresql": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "history_api": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "fetcher_health": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "ui_internal": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "ui_public_ports": {
+          "type": "array",
+          "items": { "type": "integer", "enum": [80, 443] },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "ui_source_ranges": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
       }
     },
     "bastion": {
@@ -42,7 +65,15 @@
           "machine_type": { "type": "string" },
           "internal_ip": { "type": "string" },
           "assign_public_ip": { "type": "boolean" },
-          "network_tags": { "type": "array", "items": { "type": "string" } },
+          "network_tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 63,
+              "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?$"
+            },
+            "uniqueItems": true
+          },
           "boot_image": { "type": "string" },
           "boot_disk_size_gb": { "type": "integer", "minimum": 10 },
           "boot_disk_type": { "type": "string" },

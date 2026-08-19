@@ -23,6 +23,8 @@ infrastructure/terraform/legacy
 *.tfvars.json
 *.tfplan
 **/tfplan
+**/tfplan*
+**/tfdestroyplan*
 crash.log
 crash.*.log
 *.json
