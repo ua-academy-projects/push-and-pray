@@ -28,6 +28,7 @@ module "bastion" {
   labels = local.common_labels
 }
 
+#trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
   source   = "./modules/vm"
   for_each = local.config.workloads

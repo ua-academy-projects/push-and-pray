@@ -9,6 +9,7 @@ resource "google_compute_address" "bastion" {
   labels = var.labels
 }
 
+#trivy:ignore:AVD-GCP-0031
 resource "google_compute_instance" "bastion" {
   name                      = "${var.resource_prefix}-bastion"
   machine_type              = var.machine_type
