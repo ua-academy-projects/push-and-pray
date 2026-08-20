@@ -1,0 +1,21 @@
+[Unit]
+Description=OilScope Docker Compose deployment
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=900
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/oilscope-deploy
+ExecReload=/usr/local/sbin/oilscope-deploy
+ExecStop=/usr/local/sbin/oilscope-stop
+Restart=on-failure
+RestartSec=60s
+TimeoutStartSec=15min
+TimeoutStopSec=2min
+
+[Install]
+WantedBy=multi-user.target

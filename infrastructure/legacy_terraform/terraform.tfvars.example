@@ -1,0 +1,57 @@
+project_id  = "your-gcp-project-id"
+region      = "us-east1"
+zone        = "us-east1-b"
+name_prefix = "oilscope"
+environment = "dev"
+
+common_labels = {
+  project = "oil-price-tracker"
+  team    = "ua-academy"
+}
+
+# Review both ranges before the first plan. They must not overlap each other,
+# existing VPC ranges, VPN routes or networks connected through peering.
+management_subnet_cidr = "10.10.0.0/24"
+workload_subnet_cidr   = "10.10.1.0/24"
+
+# Non-default SSH port. Port 22 is closed everywhere.
+ssh_port = 18832
+
+# Office or VPN egress addresses allowed to reach the bastion.
+# 0.0.0.0/0 is allowed for temporary testing, but is not recommended for a
+# permanent deployment.
+bastion_allowed_cidrs = [
+#  "203.0.113.10/32",
+  "0.0.0.0/0",
+]
+
+# One public key per person. Never place private keys in Terraform variables.
+ssh_users = {
+  tabula = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexampleexampleexampleexampleexample tabula@laptop"
+  rasa   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIanotherkeyanotherkeyanotherkeyanoth rasa@laptop"
+}
+
+# All workload VMs use the workload subnet (10.10.1.0/24). UI still receives a
+# static external IP for public HTTP/HTTPS ingress.
+machine_types = {
+  infra   = "e2-micro"
+  history = "e2-micro"
+  fetcher = "e2-micro"
+  ui      = "e2-micro"
+}
+
+internal_addresses = {
+  infra   = "10.10.1.12"
+  history = "10.10.1.11"
+  fetcher = "10.10.1.10"
+  ui      = "10.10.1.14"
+}
+
+boot_image_project       = "ubuntu-os-cloud"
+boot_image_family        = "ubuntu-2404-lts-amd64"
+boot_disk_size_gb        = 20
+boot_disk_type           = "pd-balanced"
+
+# Subnet CIDRs, firewall ports, NAT settings and egress restrictions currently
+# use defaults declared by modules/network. Override them in main.tf only when
+# the active network design needs to change.

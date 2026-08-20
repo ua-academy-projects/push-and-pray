@@ -1,0 +1,63 @@
+#!/bin/bash
+# Rendered by Terraform. Moves sshd to the team-approved non-default port and
+# hardens it. Idempotent: safe to re-run on every boot.
+set -euo pipefail
+
+SSH_PORT="${ssh_port}"
+DROPIN_DIR=/etc/ssh/sshd_config.d
+DROPIN_FILE="$DROPIN_DIR/10-team-hardening.conf"
+
+mkdir -p "$DROPIN_DIR"
+
+cat >"$DROPIN_FILE" <<EOF
+# Managed by Terraform - do not edit by hand.
+Port $SSH_PORT
+Protocol 2
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitEmptyPasswords no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+X11Forwarding no
+AllowAgentForwarding no
+PermitTunnel no
+GatewayPorts no
+MaxAuthTries 3
+MaxSessions 10
+LoginGraceTime 30
+ClientAliveInterval 300
+ClientAliveCountMax 2
+LogLevel VERBOSE
+# Required for ProxyJump / -J and for port forwarding through the bastion.
+AllowTcpForwarding yes
+EOF
+
+chmod 0644 "$DROPIN_FILE"
+
+# Debian/Ubuntu images include the drop-in directory by default; make sure of it.
+if ! grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config; then
+  sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+fi
+
+# Any stray "Port 22" earlier in the main config would win, because sshd keeps the
+# first occurrence of a keyword.
+sed -i -E 's/^[[:space:]]*Port[[:space:]]+22[[:space:]]*$/# Port 22 (replaced by 10-team-hardening.conf)/' /etc/ssh/sshd_config
+
+# Newer images start sshd through socket activation, where the listening port comes
+# from the unit rather than from sshd_config.
+if systemctl list-unit-files 'ssh.socket' 2>/dev/null | grep -q 'ssh.socket'; then
+  mkdir -p /etc/systemd/system/ssh.socket.d
+  printf '[Socket]\nListenStream=\nListenStream=%s\n' "$SSH_PORT" \
+    >/etc/systemd/system/ssh.socket.d/10-port.conf
+  systemctl daemon-reload
+  systemctl restart ssh.socket || true
+fi
+
+# Validate before restarting: a broken config would lock everyone out.
+/usr/sbin/sshd -t
+
+systemctl restart ssh 2>/dev/null || systemctl restart sshd
+
+logger -t terraform-bootstrap "sshd now listening on port $SSH_PORT"
