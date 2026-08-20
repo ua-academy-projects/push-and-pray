@@ -20,6 +20,7 @@ terraform.tfvars
 infrastructure/terraform/terraform.tfvars
 infrastructure/terraform/legacy
 infrastructure/legacy_terraform
+infrastructure/docker/deployment
 *.tfvars
 *.tfvars.json
 *.tfplan
