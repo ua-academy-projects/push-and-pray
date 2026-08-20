@@ -48,3 +48,4 @@ jobs:
       dockerfile: infrastructure/docker/Dockerfile.database
       context: .
       description: Petroscope database
+
