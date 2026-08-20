@@ -57,6 +57,16 @@
         "workload_subnet_cidr": {
           "type": "string",
           "minLength": 1
+        },
+        "ui_public_ports": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [80, 443]
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
         }
       }
     },

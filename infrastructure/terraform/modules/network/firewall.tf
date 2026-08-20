@@ -38,7 +38,7 @@ resource "google_compute_firewall" "ui_web" {
 
   allow {
     protocol = "tcp"
-    ports    = ["80", "443"]
+    ports    = var.ui_public_ports
   }
 }
 

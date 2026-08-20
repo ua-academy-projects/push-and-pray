@@ -6,6 +6,10 @@ module "network" {
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
 
+  ui_public_ports = [
+    for port in local.config.network.ui_public_ports : tostring(port)
+  ]
+
   bastion_ssh_port      = local.config.bastion.ssh_port
   bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
 
