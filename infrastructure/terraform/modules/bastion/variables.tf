@@ -13,9 +13,14 @@ variable "subnetwork_id" {
   type        = string
 }
 
-variable "network_tag" {
-  description = "Network tag used by bastion firewall rules."
-  type        = string
+variable "network_tags" {
+  description = "Effective network tags attached to the bastion VM."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.network_tags) > 0 && length(var.network_tags) == length(distinct(var.network_tags))
+    error_message = "network_tags must contain at least one unique tag."
+  }
 }
 
 variable "machine_type" {
@@ -56,4 +61,9 @@ variable "boot_disk_type" {
 variable "labels" {
   description = "Labels applied to bastion resources that support them."
   type        = map(string)
+}
+
+variable "preemptible" {
+  description = "Whether to run the bastion as a Spot VM."
+  type        = bool
 }

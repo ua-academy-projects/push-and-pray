@@ -1,56 +1,264 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Terraform configuration contract.",
+  "description": "Versioned contract for non-secret Terraform project configuration.",
   "type": "object",
-  "required": ["config_version", "project_id", "environment", "region", "zone", "name_prefix", "common_labels", "network", "bastion", "vms"],
+  "additionalProperties": false,
+  "required": [
+    "config_version",
+    "project_id",
+    "environment",
+    "region",
+    "zone",
+    "name_prefix",
+    "common_labels",
+    "network",
+    "service_ports",
+    "bastion",
+    "workloads"
+  ],
   "properties": {
-    "config_version": { "type": "integer", "enum": [1] },
-    "project_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$" },
-    "environment": { "type": "string", "enum": ["dev", "stage", "prod"] },
-    "region": { "type": "string" },
-    "zone": { "type": "string" },
-    "name_prefix": { "type": "string" },
-    "common_labels": { "type": "object", "additionalProperties": { "type": "string" } },
+    "config_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["dev", "stage", "prod"]
+    },
+    "region": {
+      "type": "string",
+      "minLength": 1
+    },
+    "zone": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name_prefix": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+    },
+    "common_labels": {
+      "$ref": "#/$defs/labels"
+    },
     "network": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["management_subnet_cidr", "workload_subnet_cidr"],
       "properties": {
-        "management_subnet_cidr": { "type": "string" },
-        "workload_subnet_cidr": { "type": "string" }
+        "management_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "service_ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["history_api", "postgresql"],
+      "properties": {
+        "history_api": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "postgresql": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
     "bastion": {
       "type": "object",
-      "required": ["bastion_allowed_cidrs", "ssh_port", "machine_type", "image", "disk_size_gb"],
+      "additionalProperties": false,
+      "required": [
+        "machine_type",
+        "image",
+        "boot_disk",
+        "ssh_port",
+        "allowed_cidrs",
+        "network_tags",
+        "preemptible"
+      ],
       "properties": {
-        "bastion_allowed_cidrs": { "type": "array", "items": { "type": "string" } },
-        "ssh_port": { "type": "integer" },
-        "machine_type": { "type": "string" },
-        "image": { "type": "string" },
-        "disk_size_gb": { "type": "integer", "minimum": 10 },
-        "preemptible": { "type": "boolean" }
-      }
-    },
-    "vms": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name", "role", "machine_type", "internal_ip", "assign_public_ip", "network_tags", "boot_image", "boot_disk_size_gb", "boot_disk_type", "automation_role", "secret_ids"],
-        "properties": {
-          "name": { "type": "string" },
-          "role": { "type": "string", "enum": ["infra", "history", "fetcher", "ui"] },
-          "machine_type": { "type": "string" },
-          "internal_ip": { "type": "string" },
-          "assign_public_ip": { "type": "boolean" },
-          "network_tags": { "type": "array", "items": { "type": "string" } },
-          "boot_image": { "type": "string" },
-          "boot_disk_size_gb": { "type": "integer", "minimum": 10 },
-          "boot_disk_type": { "type": "string" },
-          "automation_role": { "type": "string", "enum": ["none"] },
-          "image_tag": { "type": "string" },
-          "secret_ids": { "type": "array", "items": { "type": "string" } }
+        "machine_type": {
+          "$ref": "#/$defs/machine_type"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "boot_disk": {
+          "$ref": "#/$defs/boot_disk"
+        },
+        "ssh_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "allowed_cidrs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "network_tags": {
+          "$ref": "#/$defs/bastion_network_tags"
+        },
+        "labels": {
+          "$ref": "#/$defs/labels"
+        },
+        "preemptible": {
+          "type": "boolean"
         }
       }
+    },
+    "workloads": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/workload"
+      }
+    }
+  },
+  "$defs": {
+    "boot_disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size_gb", "type"],
+      "properties": {
+        "size_gb": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "type": {
+          "type": "string",
+          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "machine_type": {
+      "type": "string",
+      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
+    },
+    "bastion_network_tags": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["bastion"]
+      }
+    },
+    "workload_network_tags": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["infra", "history", "fetcher", "ui"]
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "machine_type",
+        "image",
+        "internal_ip",
+        "boot_disk",
+        "assign_public_ip",
+        "network_tags",
+        "automation_role",
+        "image_tag",
+        "secret_ids"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["database", "history", "fetcher", "ui"]
+        },
+        "machine_type": {
+          "$ref": "#/$defs/machine_type"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "internal_ip": {
+          "type": "string",
+          "minLength": 1
+        },
+        "boot_disk": {
+          "$ref": "#/$defs/boot_disk"
+        },
+        "assign_public_ip": {
+          "type": "boolean"
+        },
+        "network_tags": {
+          "$ref": "#/$defs/workload_network_tags"
+        },
+        "automation_role": {
+          "type": "string",
+          "enum": ["none"]
+        },
+        "labels": {
+          "$ref": "#/$defs/labels"
+        },
+        "image_tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "secret_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "assign_public_ip": {
+                "const": true
+              }
+            },
+            "required": ["assign_public_ip"]
+          },
+          "then": {
+            "properties": {
+              "role": {
+                "const": "ui"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }
