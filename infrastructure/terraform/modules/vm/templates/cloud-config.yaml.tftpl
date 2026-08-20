@@ -1,0 +1,87 @@
+#cloud-config
+#
+# OS + Docker runtime bootstrap for OilScope workload VMs. Scope is
+# deliberately limited to what the machine needs before any application
+# deployment: this file never pulls an application image, runs Compose, or
+# reads a secret VALUE (only the automation_role and Secret Manager IDs are
+# non-secret and safe to template in). Starting the application itself is a
+# separate, later automation step - see oilscope-deploy.service below.
+#
+# NOT YET ATTACHED to any VM. This file is not referenced by any .tf file in
+# this module yet (see modules/vm/README.md for the current status). It exists
+# so its cloud-init syntax and content can be reviewed and CI-validated on
+# their own, before the metadata wiring lands in a follow-up change.
+#
+# Template variables (supplied by the eventual templatefile() call):
+#   automation_role - the VM's non-secret automation role (e.g. infra, history,
+#                      fetcher, ui). Delivered as an Environment= line in the
+#                      oilscope-deploy.service unit below, never logged.
+#   docker_version   - exact Docker Engine apt version to pin, e.g.
+#                      "5:27.3.1-1~ubuntu.24.04~noble". Re-verify with
+#                      `apt-cache madison docker-ce` before this template is
+#                      attached to any VM - do not trust this file's own
+#                      history for a current value.
+
+users:
+  - name: deploy
+    system: true
+    groups: [docker]
+    shell: /usr/sbin/nologin
+    lock_passwd: true
+
+write_files:
+  - path: /etc/systemd/system/oilscope-deploy.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=OilScope role-specific deployment automation
+      After=network-online.target docker.service
+      Wants=network-online.target
+      # Absent until the deployment-automation ticket delivers it: the unit
+      # is enabled below but stays a no-op (reported as "condition failed",
+      # not "failed") until that script exists.
+      ConditionPathExists=/opt/oilscope/deploy/run.sh
+
+      [Service]
+      Type=oneshot
+      User=deploy
+      Group=docker
+      Environment=AUTOMATION_ROLE=${automation_role}
+      WorkingDirectory=/opt/oilscope/deploy
+      ExecStart=/opt/oilscope/deploy/run.sh
+
+runcmd:
+  # --- Prerequisites: curl/ca-certificates are needed before the Docker repo
+  # --- key can be fetched; jq is for later health-check / Secret Manager
+  # --- response parsing. Nothing here pulls an application image.
+  - [ apt-get, update ]
+  - [ apt-get, install, -y, --no-install-recommends, ca-certificates, curl, jq ]
+
+  # --- Docker Engine: add the official repo, install a pinned version, hold
+  # --- it. The key is fetched from Docker's own stable URL at boot time
+  # --- rather than embedded in this file, so nothing here depends on a
+  # --- hand-copied key blob staying correct.
+  - [ install, -m, "0755", -d, /etc/apt/keyrings ]
+  - [ sh, -c, "test -f /etc/apt/keyrings/docker.asc || curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc" ]
+  - [ chmod, "a+r", /etc/apt/keyrings/docker.asc ]
+  - [ sh, -c, ". /etc/os-release && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $${UBUNTU_CODENAME} stable\" > /etc/apt/sources.list.d/docker.list" ]
+  - [ apt-get, update ]
+  - [ sh, -c, "apt-get install -y --no-install-recommends docker-ce=${docker_version} docker-ce-cli=${docker_version} containerd.io docker-buildx-plugin docker-compose-plugin" ]
+  - [ apt-mark, hold, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin ]
+  - [ systemctl, enable, --now, docker.service ]
+
+  # --- Application and deployment directories: owned by the deploy user,
+  # --- unreadable to anyone else on the box.
+  - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/app ]
+  - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/deploy ]
+  - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /var/lib/oilscope ]
+
+  # --- Role-specific deployment automation unit: enabled now, starts doing
+  # --- real work once run.sh exists (see ConditionPathExists above).
+  - [ systemctl, daemon-reload ]
+  - [ systemctl, enable, oilscope-deploy.service ]
+
+  # --- Readiness marker, written only after Docker is confirmed to actually
+  # --- answer. Documented check: test -f /var/lib/oilscope/bootstrap-ready
+  - [ sh, -c, "docker info >/dev/null && date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/oilscope/bootstrap-ready" ]
