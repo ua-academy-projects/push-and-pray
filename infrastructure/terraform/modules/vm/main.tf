@@ -61,5 +61,6 @@ resource "google_compute_instance" "workload" {
     }
   }
 
+  #TODO: Add workload cloud-init when guest provisioning
   metadata = {}
 }

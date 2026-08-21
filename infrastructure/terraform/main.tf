@@ -1,6 +1,8 @@
 module "network" {
   source = "./modules/network"
 
+  depends_on = [terraform_data.validate_secret_bindings]
+
   resource_prefix = local.resource_prefix
 
   management_subnet_cidr = local.config.network.management_subnet_cidr
@@ -19,6 +21,8 @@ module "network" {
 
 module "bastion" {
   source = "./modules/bastion"
+
+  depends_on = [terraform_data.validate_secret_bindings]
 
   resource_prefix = local.resource_prefix
   subnetwork_id   = module.network.management_subnet_id
@@ -43,6 +47,8 @@ module "bastion" {
 module "vm" {
   source   = "./modules/vm"
   for_each = local.config.workloads
+
+  depends_on = [terraform_data.validate_secret_bindings]
 
   name          = "${local.resource_prefix}-${each.key}"
   subnetwork_id = module.network.workload_subnet_id
@@ -72,12 +78,27 @@ module "vm" {
 
 locals {
   secret_ids = toset(flatten([
-    for workload in values(local.config.workloads) : concat(
-      workload.secret_ids,
-      values(try(workload.secret_bindings, {})),
-    )
+    for workload in values(local.config.workloads) : workload.secret_ids
   ]))
 
+  invalid_secret_bindings = flatten([
+    for workload_name, workload in local.config.workloads : [
+      for environment_name, secret_id in try(workload.secret_bindings, {}) :
+      "${workload_name}.${environment_name}=${secret_id}"
+      if !contains(workload.secret_ids, secret_id)
+    ]
+  ])
+}
+
+resource "terraform_data" "validate_secret_bindings" {
+  input = local.invalid_secret_bindings
+
+  lifecycle {
+    precondition {
+      condition     = length(local.invalid_secret_bindings) == 0
+      error_message = "Every workload.secret_bindings secret ID must be declared in that workload's secret_ids. Invalid bindings: ${join(", ", local.invalid_secret_bindings)}"
+    }
+  }
 }
 
 module "secret_publisher_iam" {
@@ -85,4 +106,6 @@ module "secret_publisher_iam" {
 
   secret_ids                = local.secret_ids
   publisher_service_account = local.config.deployment_identity
+
+  depends_on = [terraform_data.validate_secret_bindings]
 }

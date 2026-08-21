@@ -255,6 +255,7 @@
           }
         },
         "secret_bindings": {
+          "$comment": "Every secret_bindings value must also appear in this workload's secret_ids; Terraform enforces this cross-field constraint before provisioning.",
           "type": "object",
           "propertyNames": {
             "pattern": "^[A-Z][A-Z0-9_]*$"
