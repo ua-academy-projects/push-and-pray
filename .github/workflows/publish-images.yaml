@@ -41,10 +41,10 @@ jobs:
       description: Petroscope web UI and backend service
 
   database:
-    name: Publish PostgreSQL image
+    name: Publish database image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
       image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/database
       dockerfile: infrastructure/docker/Dockerfile.database
       context: .
-      description: Petroscope PostgreSQL 18 with PGMQ, pgcrypto, and pg_cron
+      description: Petroscope database

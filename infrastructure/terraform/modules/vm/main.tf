@@ -1,40 +1,29 @@
-resource "google_compute_address" "internal" {
-  project      = var.project_id
-  name         = "${var.name}-internal-ip"
-  region       = var.region
-  address_type = "INTERNAL"
-  subnetwork   = var.subnetwork_id
-  address      = var.internal_ip
+resource "google_service_account" "workload" {
+  account_id   = var.name
+  display_name = var.name
+  description  = "Runtime identity for the ${var.name} workload VM"
 }
 
-resource "google_compute_address" "external" {
-  count = var.assign_external_ip ? 1 : 0
+resource "google_compute_address" "public" {
+  count = var.assign_public_ip ? 1 : 0
 
-  project      = var.project_id
-  name         = "${var.name}-external-ip"
-  region       = var.region
-  address_type = "EXTERNAL"
-  network_tier = "PREMIUM"
-  labels       = var.labels
+  name   = "${var.name}-ip"
+  labels = var.labels
 }
 
-resource "google_compute_instance" "this" {
-  project                   = var.project_id
+resource "google_compute_instance" "workload" {
   name                      = var.name
-  zone                      = var.zone
   machine_type              = var.machine_type
   allow_stopping_for_update = true
-  can_ip_forward            = false
-  tags                      = var.network_tags
-  labels                    = var.labels
-  metadata                  = var.metadata
+
+  tags   = var.network_tags
+  labels = var.labels
 
   boot_disk {
     auto_delete = true
-    device_name = "${var.name}-boot"
 
     initialize_params {
-      image  = var.boot_image
+      image  = var.image
       size   = var.boot_disk_size_gb
       type   = var.boot_disk_type
       labels = var.labels
@@ -43,21 +32,20 @@ resource "google_compute_instance" "this" {
 
   network_interface {
     subnetwork = var.subnetwork_id
-    network_ip = google_compute_address.internal.address
+    network_ip = var.internal_ip
 
     dynamic "access_config" {
-      for_each = var.assign_external_ip ? [1] : []
+      for_each = var.assign_public_ip ? [1] : []
 
       content {
-        nat_ip       = google_compute_address.external[0].address
-        network_tier = "PREMIUM"
+        nat_ip = google_compute_address.public[0].address
       }
     }
   }
 
   service_account {
-    email  = var.service_account_email
-    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+    email  = google_service_account.workload.email
+    scopes = ["cloud-platform"]
   }
 
   shielded_instance_config {
@@ -66,9 +54,13 @@ resource "google_compute_instance" "this" {
     enable_integrity_monitoring = true
   }
 
-  scheduling {
-    automatic_restart   = true
-    on_host_maintenance = "MIGRATE"
-    provisioning_model  = "STANDARD"
+  lifecycle {
+    precondition {
+      condition     = !var.assign_public_ip || var.role == "ui"
+      error_message = "Only workloads with role ui may receive a public IP."
+    }
   }
+
+  #TODO: Add workload cloud-init when guest provisioning
+  metadata = {}
 }

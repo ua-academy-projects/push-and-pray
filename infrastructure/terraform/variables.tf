@@ -1,12 +1,15 @@
 variable "project_config_path" {
-  description = "path to the JSON configuration file"
+  description = "Path to the external JSON file containing project-specific configuration."
   type        = string
-}
+  nullable    = false
 
-variable "ssh_users" {
-  description = <<-EOT
-    One PUBLIC SSH key per person, keyed by the Linux username.
-    Private keys are never generated, accepted or stored by this configuration.
-  EOT
-  type        = map(string)
+  validation {
+    condition     = fileexists(var.project_config_path)
+    error_message = "project_config_path must point to an existing file."
+  }
+
+  validation {
+    condition     = try(jsondecode(file(var.project_config_path)).config_version == 2, false)
+    error_message = "project_config_path must contain valid JSON using config_version 2."
+  }
 }

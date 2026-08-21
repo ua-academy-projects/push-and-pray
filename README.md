@@ -323,6 +323,63 @@ both extensions are created idempotently by migration `003_create_ui_sessions.sq
 | `LISTEN_ADDRESS` | `:8002` | Fetcher diagnostic API address |
 | `LOG_LEVEL` | `INFO` | Python service log level |
 
+## Pre-commit hooks
+
+Local checks that run at `git commit`, so a leaked credential is caught while it
+is still only in your working copy. Once a secret reaches a public repository,
+deleting the commit does not undo it — the value has to be treated as
+compromised and rotated at its source. This is the cheapest place to stop that.
+
+Install `pre-commit` once (any of these):
+
+```bash
+brew install pre-commit          # macOS
+uv tool install pre-commit       # anywhere uv is available
+pipx install pre-commit
+```
+
+Then, once per clone:
+
+```bash
+pre-commit install
+```
+
+Check the current working tree straight away — the first run also downloads the
+hook environments, so it takes a minute:
+
+```bash
+pre-commit run --all-files
+```
+
+What runs on every commit:
+
+| Hook | Catches |
+| --- | --- |
+| `gitleaks` | Credentials in the staged diff, by pattern. Scans only what you are committing, not the whole history |
+| `detect-private-key` | PEM and OpenSSH private key blocks, by structure rather than by pattern |
+| `forbid-secret-files` | Whole file classes that must never be committed: `.env*`, `*.tfvars`, `*.tfstate*`, `*.pem`, `*.key`, `id_rsa`/`id_ed25519`, `*-key.json` |
+
+The last one exists because `.gitignore` is bypassed by `git add -f`, by a path
+nobody thought to add, and by anyone who edits their local copy. `.env.example`
+and `*.pub` are allowed through.
+
+Two honest caveats:
+
+- **These hooks are local and skippable.** `git commit --no-verify` walks past
+  all of them. They are a first line of defence, not the enforcement point —
+  the `Secret scan` job in `.github/workflows/security.yml` is what actually
+  blocks a merge.
+- **If a secret is already committed**, removing it in a later commit is not
+  enough; it stays in the history. Rotate the credential at its source first,
+  then clean up. See [`docs/secrets.md`](docs/secrets.md).
+
+If the `gitleaks` hook fails to build on your machine, swap it for the
+container-based variant in `.pre-commit-config.yaml`:
+
+```yaml
+      - id: gitleaks-docker
+```
+
 ## Tests and checks
 
 ```bash
@@ -334,7 +391,8 @@ uv run ruff check .
 
 ## Security notes
 
-- Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`.
+- Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`. Run
+  `pre-commit install` after cloning so this is enforced locally, not just by review.
 - Replace all example passwords before deployment.
 - Reserve the VM addresses and restrict sensitive LAN ports at the router or firewall when
   the network is not trusted.

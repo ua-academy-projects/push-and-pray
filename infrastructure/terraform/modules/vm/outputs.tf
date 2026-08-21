@@ -1,24 +1,24 @@
 output "name" {
-  description = "Instance name."
-  value       = google_compute_instance.this.name
-}
-
-output "self_link" {
-  description = "Instance self link."
-  value       = google_compute_instance.this.self_link
+  description = "Name of the workload VM."
+  value       = google_compute_instance.workload.name
 }
 
 output "internal_ip" {
-  description = "Reserved internal IPv4 address."
-  value       = google_compute_address.internal.address
+  description = "Internal IP address of the workload VM."
+  value       = google_compute_instance.workload.network_interface[0].network_ip
 }
 
-output "external_ip" {
-  description = "Reserved external IPv4 address, or null when disabled."
-  value       = var.assign_external_ip ? google_compute_address.external[0].address : null
+output "public_ip" {
+  description = "Static external IP address, or null when none is assigned."
+  value       = var.assign_public_ip ? google_compute_address.public[0].address : null
 }
 
 output "network_tags" {
-  description = "Network tags attached to the instance."
-  value       = google_compute_instance.this.tags
+  description = "Effective network tags attached to the workload VM."
+  value       = google_compute_instance.workload.tags
+}
+
+output "service_account_email" {
+  description = "Email of the workload VM's dedicated service account."
+  value       = google_service_account.workload.email
 }
