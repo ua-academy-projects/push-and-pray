@@ -33,6 +33,8 @@ done
 
 [[ -n "${project_id}" && ${#bindings[@]} -gt 0 && $# -gt 0 ]] || usage
 
+export COMPOSE_DISABLE_ENV_FILE=1
+
 metadata_token() {
   curl -fsS -H 'Metadata-Flavor: Google' \
     http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token |

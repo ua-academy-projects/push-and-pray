@@ -79,6 +79,10 @@ if ! grep -q -- 'export.*environment_name' "${RUNTIME_SECRET_WRAPPER}"; then
   printf 'Runtime wrapper must provide retrieved secrets through process environment.\n' >&2
   exit 1
 fi
+if ! grep -q -- 'export COMPOSE_DISABLE_ENV_FILE=1' "${RUNTIME_SECRET_WRAPPER}"; then
+  printf 'Runtime wrapper must disable Docker Compose implicit .env loading.\n' >&2
+  exit 1
+fi
 if ! grep -q 'secretmanager.googleapis.com' "${RUNTIME_SECRET_WRAPPER}"; then
   printf 'Runtime deployment must retrieve secrets from Secret Manager.\n' >&2
   exit 1
