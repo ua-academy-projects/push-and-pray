@@ -1,78 +1,60 @@
-variable "project_id" {
-  description = "GCP project ID."
-  type        = string
-}
-
-variable "region" {
-  description = "Region used by static addresses."
-  type        = string
-}
-
-variable "zone" {
-  description = "Zone used by the instance and disks."
-  type        = string
-}
-
 variable "name" {
-  description = "Instance name and resource-name prefix."
+  description = "Name used for the VM and its service account."
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{0,61}[a-z0-9]$", var.name))
-    error_message = "name must be a valid GCP resource name between 2 and 63 characters."
+    condition     = can(regex("^[a-z][a-z0-9-]*[a-z0-9]$", var.name))
+    error_message = "name must start with a lowercase letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens."
+  }
+}
+
+variable "subnetwork_id" {
+  description = "ID of the subnet where the VM is created."
+  type        = string
+}
+
+variable "network_tags" {
+  description = "Effective network tags attached to the workload VM."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.network_tags) > 0 && length(var.network_tags) == length(distinct(var.network_tags))
+    error_message = "network_tags must contain at least one unique tag."
+  }
+}
+
+variable "role" {
+  description = "Functional role of the workload, independent from its resource name."
+  type        = string
+
+  validation {
+    condition     = contains(["database", "history", "fetcher", "ui"], var.role)
+    error_message = "role must be database, history, fetcher, or ui."
   }
 }
 
 variable "machine_type" {
-  description = "Compute Engine machine type."
+  description = "Compute Engine machine type for the workload VM."
   type        = string
 }
 
-variable "subnetwork_id" {
-  description = "Subnetwork where the instance and its static internal address are created."
+variable "image" {
+  description = "Boot image used by the VM."
   type        = string
 }
 
 variable "internal_ip" {
-  description = "Static internal IPv4 address."
+  description = "Static internal IPv4 address assigned to the VM."
   type        = string
 
   validation {
-    condition     = can(regex("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$", var.internal_ip))
-    error_message = "internal_ip must be an IPv4 address."
+    condition     = can(cidrhost("${var.internal_ip}/32", 0))
+    error_message = "internal_ip must be a valid IPv4 address."
   }
 }
 
-variable "assign_external_ip" {
-  description = "Reserve and attach a static external IPv4 address."
-  type        = bool
-  default     = false
-}
-
-variable "network_tags" {
-  description = "Network tags consumed by firewall rules."
-  type        = list(string)
-}
-
-variable "labels" {
-  description = "Labels applied to resources that support them."
-  type        = map(string)
-  default     = {}
-}
-
-variable "metadata" {
-  description = "Non-sensitive instance metadata. Application deployment is intentionally not embedded here."
-  type        = map(string)
-  default     = {}
-}
-
-variable "boot_image" {
-  description = "Boot image URI or family path."
-  type        = string
-}
-
 variable "boot_disk_size_gb" {
-  description = "Boot disk size in GiB."
+  description = "Size of the boot disk in GiB."
   type        = number
 
   validation {
@@ -82,16 +64,38 @@ variable "boot_disk_size_gb" {
 }
 
 variable "boot_disk_type" {
-  description = "Boot persistent-disk type."
+  description = "Persistent Disk type used by the boot disk."
   type        = string
 
   validation {
-    condition     = contains(["pd-standard", "pd-balanced", "pd-ssd"], var.boot_disk_type)
-    error_message = "boot_disk_type must be pd-standard, pd-balanced or pd-ssd."
+    condition = contains([
+      "pd-standard",
+      "pd-balanced",
+      "pd-ssd",
+    ], var.boot_disk_type)
+
+    error_message = "boot_disk_type must be pd-standard, pd-balanced, or pd-ssd."
   }
 }
 
-variable "service_account_email" {
-  description = "Dedicated service account attached to the instance."
+variable "assign_public_ip" {
+  description = "Whether to create and assign a static external IP address."
+  type        = bool
+  default     = false
+}
+
+variable "automation_role" {
+  description = "Non-secret automation role passed to the cloud-init bootstrap process."
   type        = string
+}
+
+variable "docker_version" {
+  description = "Exact Docker Engine apt version pinned by the cloud-init bootstrap. Verify with `apt-cache madison docker-ce` before bumping."
+  type        = string
+  default     = "5:29.7.2-1~ubuntu.26.04~resolute"
+}
+
+variable "labels" {
+  description = "Labels applied to resources that support them."
+  type        = map(string)
 }

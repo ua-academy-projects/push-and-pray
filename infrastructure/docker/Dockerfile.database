@@ -1,4 +1,4 @@
-ARG POSTGRES_IMAGE=ghcr.io/pgmq/pg18-pgmq:v1.12.0
+ARG POSTGRES_IMAGE=ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
 FROM ${POSTGRES_IMAGE}
 
 USER root
@@ -6,6 +6,9 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-18-cron \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --chown=postgres:postgres database/migrations /opt/petroscope/migrations
+COPY --chmod=0755 infrastructure/docker/migrate.sh /usr/local/bin/petroscope-migrate
 
 USER postgres
 

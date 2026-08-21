@@ -1,8 +1,8 @@
 # Network module
 
-Creates the OilScope VPC foundation: management and workload subnets, explicit
-routing, Cloud NAT and role-based firewall rules for Bastion, Infra, History,
-Fetcher and UI.
+Creates the OilScope VPC foundation: management and workload subnets, Cloud
+NAT, and role-based firewall rules for Bastion, Infra, History, Fetcher, and
+UI.
 
 ## Network tags
 
@@ -18,54 +18,42 @@ network_tags = {
 }
 ```
 
-The bastion module consumes `network_tags.bastion`. Future workload compute
-must attach the tag matching its role. The firewall contract does not use
-generic `app` or `db` tags.
+The bastion and workload modules must attach the tag matching each VM's role.
+The firewall contract does not use generic `app` or `db` tags.
 
 ## Resources
 
 | Resource | Purpose |
 | --- | --- |
-| `<prefix>-vpc` | Custom-mode VPC without automatic subnets |
-| `<prefix>-subnet-public` | Management subnet used by the bastion; GCP name retained for state compatibility |
-| `<prefix>-subnet-private` | Application workload subnet; GCP name retained for state compatibility |
-| `<prefix>-rt-default-internet` | Optional explicitly managed default route |
+| `<prefix>-vpc` | Custom-mode regional VPC without automatic subnets |
+| `<prefix>-management` | Management subnet used by the bastion |
+| `<prefix>-workload` | Application workload subnet with Private Google Access enabled |
 | `<prefix>-router`, `<prefix>-nat` | Outbound internet access for the workload subnet |
 
 ## Ingress firewall contract
 
 | Rule | Source | Destination | TCP ports |
 | --- | --- | --- | --- |
-| `allow-ssh-to-bastion` | `bastion_allowed_cidrs` | Bastion | `ssh_port` |
-| `allow-ssh-from-bastion` | Bastion | Infra, History, Fetcher, UI | `ssh_port` |
-| `allow-history-api-from-ui` | UI | History | `8001` by default |
-| `allow-postgresql-to-infra` | History | Infra | `5432` by default |
-| `allow-ui-public` | `ui_source_ranges` | UI | `80`, `443` by default |
-| `allow-internal-icmp` | VPC subnet ranges | All five roles | ICMP |
-| `deny-all-ingress` | `0.0.0.0/0` | All instances | All denied |
+| `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `bastion_ssh_port` |
+| `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
+| `<prefix>-allow-history-api` | UI | History | `history_api_port` |
+| `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `postgresql_port` |
+| `<prefix>-allow-ui-web` | `0.0.0.0/0` | UI | `ui_public_ports` (`80` and `443`) |
 
 This matrix follows the current deployment configuration:
 
 - UI calls the History API;
-- History connects directly to PostgreSQL on Infra;
-- Fetcher and History connect directly to PostgreSQL on Infra;
-- UI connects directly to PostgreSQL on Infra for hstore-backed session preferences;
-- Fetcher port `8002` is used by its local container healthcheck only;
+- Fetcher, History, and UI connect directly to PostgreSQL on Infra;
+- Fetcher port `8002` is used by its local container health check only;
 - UI port `8080` remains inside the UI VM's Docker network behind Traefik.
 
-Consequently, there are no VPC ingress rules for `6379`, `8002`, `8080` or
-`15672`.
+Consequently, there are no VPC ingress rules for `6379`, `8002`, `8080`, or
+`15672`. Other ingress is blocked by Google Cloud's implied deny-ingress rule.
 
 ## Egress
 
-Cloud NAT applies to the workload subnet and is unchanged by the role-based
-ingress contract. Egress remains permissive through GCP's implied rule by
-default.
-
-When `restrict_egress = true`, the module adds the existing allow rules for
-in-VPC traffic, metadata, DNS/NTP and configured internet TCP ports, followed
-by an explicit deny-all egress rule. This opt-in behavior is intentionally not
-role-specific.
+Cloud NAT applies to the workload subnet. Egress remains permissive through
+Google Cloud's implied allow-egress rule.
 
 ## Usage
 
@@ -73,32 +61,33 @@ role-specific.
 module "network" {
   source = "./modules/network"
 
-  project_id  = var.project_id
-  region      = var.region
-  name_prefix = local.name_prefix
+  resource_prefix = local.resource_prefix
 
-  ssh_port              = var.ssh_port
-  bastion_allowed_cidrs = var.bastion_allowed_cidrs
+  management_subnet_cidr = local.config.network.management_subnet_cidr
+  workload_subnet_cidr   = local.config.network.workload_subnet_cidr
+  ui_public_ports        = ["80", "443"]
+
+  bastion_ssh_port      = local.config.bastion.ssh_port
+  bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
+
+  history_api_port = local.config.service_ports.history_api
+  postgresql_port  = local.config.service_ports.postgresql
 }
 ```
 
-Important inputs include subnet CIDRs, `ssh_port`,
-`bastion_allowed_cidrs`, `history_api_port`, `db_port`, UI
-ingress settings, NAT settings and the optional egress restrictions.
-
-Important outputs include VPC/subnet identifiers, `network_tags`, NAT details,
-firewall rule names and the configured service ports.
+The module outputs the management and workload subnet IDs and the role-based
+`network_tags` map.
 
 ## Access procedure
 
-Add an operator's office or VPN CIDR to `bastion_allowed_cidrs` and their
-public key to the bastion module's `ssh_users`. The resulting administration
-path is:
+Add an operator's office or VPN CIDR to `bastion_allowed_cidrs`. The resulting
+administration path is:
 
 ```text
 operator -> bastion -> private workload VM
 private workload VM -> Cloud NAT -> internet
 ```
 
-Public SSH on port 22 is never opened. PostgreSQL and the History API
-have role-tag sources only and are not reachable directly from the internet.
+Workload SSH is accepted only from instances carrying the bastion network tag.
+PostgreSQL and the History API have role-tag sources and are not reachable
+directly from the internet.
