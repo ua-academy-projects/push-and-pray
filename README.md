@@ -18,7 +18,7 @@ have already been persisted in PostgreSQL.
   smoothing, and moving-average controls.
 - PostgreSQL-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
-- Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
+- Legacy four-machine Vagrant files are retained but unsupported for production secrets.
 - Passwordless project-specific SSH access and journald-based container logging.
 
 ## Screenshots
@@ -143,10 +143,12 @@ currently supported PGMQ deployment path. The current application architecture i
 validated through Docker and cloud-oriented deployments using PostgreSQL with the PGMQ
 extension.
 
-Production deployment does not load repository `.env` files. Deployment secrets are
-published to Google Secret Manager from the current process environment and fetched by
-the workload VM immediately before its role-specific Compose project starts. See
-`docs/secret-rotation.md` for rotation instructions.
+Vagrant deployment is formally unsupported for the Secret Manager workflow. Production
+deployment does not load repository `.env` files. Deployment secrets are published to
+Google Secret Manager from the current process environment, then the role-specific
+deployment owned by issue #56 must invoke the reusable runtime secret wrapper immediately
+before starting its Compose project. See `docs/secret-rotation.md` for rotation
+instructions.
 
 ## Docker deployment details
 
@@ -370,7 +372,7 @@ Two honest caveats:
   blocks a merge.
 - **If a secret is already committed**, removing it in a later commit is not
   enough; it stays in the history. Rotate the credential at its source first,
-  then clean up. See [`docs/secrets.md`](docs/secrets.md).
+  then clean up. See [`docs/secret-rotation.md`](docs/secret-rotation.md).
 
 If the `gitleaks` hook fails to build on your machine, swap it for the
 container-based variant in `.pre-commit-config.yaml`:

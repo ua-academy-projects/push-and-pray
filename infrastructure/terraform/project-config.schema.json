@@ -11,9 +11,7 @@
     "region",
     "zone",
     "name_prefix",
-    "image_repository",
-    "compose_repository_url",
-    "docker_engine_version",
+    "deployment_identity",
     "common_labels",
     "network",
     "service_ports",
@@ -48,17 +46,9 @@
     "common_labels": {
       "$ref": "#/$defs/labels"
     },
-    "image_repository": {
+    "deployment_identity": {
       "type": "string",
-      "pattern": "^ghcr.io/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-    },
-    "compose_repository_url": {
-      "type": "string",
-      "pattern": "^https://"
-    },
-    "docker_engine_version": {
-      "type": "string",
-      "minLength": 1
+      "pattern": "^[^@]+@[^@]+\\.iam\\.gserviceaccount\\.com$"
     },
     "network": {
       "type": "object",

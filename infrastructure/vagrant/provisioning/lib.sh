@@ -14,6 +14,9 @@ log() {
 }
 
 load_project_config() {
+  log "Vagrant provisioning is unsupported for issue #58; use the cloud deployment path with Secret Manager."
+  exit 1
+
   if [[ ! -f "${DEPLOY_CONFIG}" ]]; then
     log "Missing ${DEPLOY_CONFIG}. Create this untracked local configuration first."
     exit 1

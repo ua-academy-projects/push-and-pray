@@ -2,6 +2,9 @@
 
 set -Eeuo pipefail
 
+printf 'Vagrant deployment is unsupported for issue #58. Use the cloud deployment path with Secret Manager.\n' >&2
+exit 1
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 # shellcheck source=infrastructure/vagrant/commands/host-lib.sh

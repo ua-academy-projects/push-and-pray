@@ -161,15 +161,7 @@ Vagrant.configure("2") do |config|
         name: "logging",
         path: "infrastructure/vagrant/provisioning/logging.sh"
       role = File.basename(machine[:provisioner], ".sh")
-      node.vm.provision "shell",
-        name: role,
-        path: machine[:provisioner],
-        env: {
-          "DB_PASSWORD" => ENV.fetch("DB_PASSWORD", ""),
-          "OILPRICEAPI_KEY" => ENV.fetch("OILPRICEAPI_KEY", ""),
-          "RABBITMQ_USER" => ENV.fetch("RABBITMQ_USER", ""),
-          "RABBITMQ_PASSWORD" => ENV.fetch("RABBITMQ_PASSWORD", "")
-        }
+      node.vm.provision "shell", name: role, path: machine[:provisioner]
     end
   end
 end

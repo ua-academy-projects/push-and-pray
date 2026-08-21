@@ -2,7 +2,7 @@ name: petroscope-database
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-ghcr.io/pgmq/pg18-pgmq:v1.12.0}
+    image: petroscope-postgres:local
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.database

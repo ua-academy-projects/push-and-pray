@@ -36,8 +36,11 @@ publish_secret() {
   local secret_id="$1"
   local secret_value="$2"
 
-  printf '%s' "${secret_value}" |
-    gcloud secrets versions add "${secret_id}" --data-file=- --quiet >/dev/null
+  if ! printf '%s' "${secret_value}" |
+    gcloud secrets versions add "${secret_id}" --data-file=- --quiet >/dev/null 2>&1; then
+    printf 'Failed to publish a Secret Manager version for %s.\n' "${secret_id}" >&2
+    return 1
+  fi
 }
 
 publish_secret "${DB_PASSWORD_SECRET_ID}" "${DB_PASSWORD}"
