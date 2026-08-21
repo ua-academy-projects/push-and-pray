@@ -4,7 +4,6 @@ set -Eeuo pipefail
 
 PROJECT_SHARE="/vagrant"
 DEPLOY_CONFIG="${PROJECT_SHARE}/infrastructure/vagrant/config/vagrant.env"
-LOCAL_APP_ENV="/tmp/oil-price-tracker-host.env"
 APP_ROOT="/opt/oil-price-tracker"
 DOCKER_PROJECT_ROOT="${APP_ROOT}/source"
 CONFIG_ROOT="/etc/oil-price-tracker"
@@ -16,17 +15,13 @@ log() {
 
 load_project_config() {
   if [[ ! -f "${DEPLOY_CONFIG}" ]]; then
-    log "Missing ${DEPLOY_CONFIG}. Copy infrastructure/vagrant/config/vagrant.env.example first."
+    log "Missing ${DEPLOY_CONFIG}. Create this untracked local configuration first."
     exit 1
   fi
 
   set -a
   # shellcheck disable=SC1090
   source "${DEPLOY_CONFIG}"
-  if [[ -f "${LOCAL_APP_ENV}" ]]; then
-    # shellcheck disable=SC1090
-    source "${LOCAL_APP_ENV}"
-  fi
   set +a
 
   : "${DB_PASSWORD:?DB_PASSWORD is required in infrastructure/vagrant/config/vagrant.env}"
@@ -105,9 +100,9 @@ write_compose_env() {
     printf 'GO_RUNTIME_IMAGE=%s\n' "${GO_RUNTIME_IMAGE:-debian:bookworm-slim}"
     printf 'NODE_IMAGE=%s\n' "${NODE_IMAGE:-node:24.13.0-bookworm-slim}"
     if [[ "${include_api_key}" == "true" ]]; then
-      : "${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required in the project root .env}"
+      : "${OILPRICEAPI_KEY:?OILPRICEAPI_KEY must be supplied in the current process environment}"
       if [[ "${OILPRICEAPI_KEY}" == "replace-me" ]]; then
-        log "Replace OILPRICEAPI_KEY in the project root .env"
+        log "Replace OILPRICEAPI_KEY in the current process environment"
         return 1
       fi
       printf 'OILPRICEAPI_KEY=%s\n' "${OILPRICEAPI_KEY}"

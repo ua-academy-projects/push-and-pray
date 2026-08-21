@@ -2,7 +2,7 @@ name: petroscope-ui
 
 services:
   ui:
-    image: petroscope-ui:local
+    image: ${UI_IMAGE:-petroscope-ui:local}
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.ui

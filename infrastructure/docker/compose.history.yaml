@@ -2,7 +2,7 @@ name: petroscope-history
 
 services:
   history:
-    image: petroscope-history:local
+    image: ${HISTORY_IMAGE:-petroscope-history:local}
 
     build:
       context: ../..

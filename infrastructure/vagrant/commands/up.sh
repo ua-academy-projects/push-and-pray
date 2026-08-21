@@ -9,22 +9,24 @@ source "${SCRIPT_DIR}/host-lib.sh"
 cd "${PROJECT_ROOT}"
 
 if [[ ! -f infrastructure/vagrant/config/vagrant.env ]]; then
-  cp infrastructure/vagrant/config/vagrant.env.example infrastructure/vagrant/config/vagrant.env
-  printf 'Created infrastructure/vagrant/config/vagrant.env. Review QEMU_VMNET_INTERFACE, LAN_CIDR and static IPs, then run this script again.\n'
-  exit 1
-fi
-
-if [[ ! -f .env ]]; then
-  printf 'Missing .env. Copy .env.example and set OILPRICEAPI_KEY first.\n' >&2
-  exit 1
-fi
-
-if ! awk -F= '$1 == "OILPRICEAPI_KEY" && $2 != "" && $2 != "replace-me" { found=1 } END { exit !found }' .env; then
-  printf 'OILPRICEAPI_KEY is not configured in .env.\n' >&2
+  printf 'Missing infrastructure/vagrant/config/vagrant.env. Create this untracked local configuration, then run this script again.\n' >&2
   exit 1
 fi
 
 load_host_config
+
+for variable in DB_PASSWORD OILPRICEAPI_KEY RABBITMQ_USER RABBITMQ_PASSWORD; do
+  if [[ -z "${!variable:-}" ]]; then
+    printf '%s must be set in the current process environment.\n' "${variable}" >&2
+    exit 1
+  fi
+done
+
+if [[ "${DB_PASSWORD}" == "change-me" || "${RABBITMQ_PASSWORD}" == "change-me" || "${OILPRICEAPI_KEY}" == "replace-me" ]]; then
+  printf 'Replace default deployment secrets in the current process environment.\n' >&2
+  exit 1
+fi
+
 "${SCRIPT_DIR}/ssh-setup.sh"
 "${SCRIPT_DIR}/preflight.sh"
 

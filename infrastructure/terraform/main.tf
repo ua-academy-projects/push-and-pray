@@ -1,3 +1,8 @@
+resource "google_project_service" "secret_manager" {
+  service            = "secretmanager.googleapis.com"
+  disable_on_destroy = false
+}
+
 module "network" {
   source = "./modules/network"
 
@@ -35,18 +40,55 @@ module "vm" {
 
   name          = "${local.resource_prefix}-${each.key}"
   subnetwork_id = module.network.workload_subnet_id
-  network_tag   = module.network.network_tags[each.key]
+  network_tag   = module.network.network_tags[each.value.role]
+  network_tags  = distinct(concat(each.value.network_tags, [module.network.network_tags[each.value.role]]))
 
   machine_type = each.value.machine_type
-  image        = each.value.image
+  image        = each.value.boot_image
   internal_ip  = each.value.internal_ip
 
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.boot_disk.type
 
-  assign_public_ip = each.key == "ui"
+  assign_public_ip = each.value.assign_public_ip
+
+  automation_role = each.value.automation_role
+  image_tag       = each.value.image_tag
+  secret_bindings = try(each.value.secret_bindings, {})
+  image_repository = local.config.image_repository
+  compose_repository_url = local.config.compose_repository_url
+  docker_engine_version = local.config.docker_engine_version
+  service_ips = {
+    for workload in values(local.config.workloads) : workload.role => workload.internal_ip
+  }
 
   labels = merge(local.common_labels, {
-    role = each.key
+    role = each.value.role
   })
+}
+
+locals {
+  secret_ids = toset(flatten([
+    for workload in values(local.config.workloads) : concat(
+      try(workload.secret_ids, []),
+      values(try(workload.secret_bindings, {}))
+    )
+  ]))
+
+  secret_accessors = {
+    for secret_id in local.secret_ids : secret_id => toset([
+      for workload_name, workload in local.config.workloads : module.vm[workload_name].service_account_email
+      if contains(concat(try(workload.secret_ids, []), values(try(workload.secret_bindings, {}))), secret_id)
+    ])
+  }
+}
+
+module "secret_manager" {
+  source = "./modules/secret-manager"
+
+  secret_ids = local.secret_ids
+  accessors  = local.secret_accessors
+  labels     = local.common_labels
+
+  depends_on = [google_project_service.secret_manager]
 }

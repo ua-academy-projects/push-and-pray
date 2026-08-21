@@ -18,6 +18,17 @@ variable "network_tag" {
   type        = string
 }
 
+variable "network_tags" {
+  description = "Effective network tags, including the mandatory role tag."
+  type        = list(string)
+  nullable    = false
+
+  validation {
+    condition     = length(var.network_tags) > 0 && alltrue([for tag in var.network_tags : can(regex("^[a-z][a-z0-9-]*$", tag))])
+    error_message = "network_tags must contain at least one valid lowercase network tag."
+  }
+}
+
 variable "machine_type" {
   description = "Compute Engine machine type for the workload VM."
   type        = string
@@ -67,6 +78,51 @@ variable "assign_public_ip" {
   description = "Whether to create and assign a static external IP address."
   type        = bool
   default     = false
+}
+
+variable "automation_role" {
+  description = "Role consumed by the VM deployment entry point."
+  type        = string
+
+  validation {
+    condition     = contains(["none", "database", "fetcher", "history", "ui"], var.automation_role)
+    error_message = "automation_role must be none, database, fetcher, history, or ui."
+  }
+}
+
+variable "image_tag" {
+  description = "Immutable application image tag selected by deployment configuration."
+  type        = string
+  default     = ""
+}
+
+variable "secret_bindings" {
+  description = "Mapping of runtime environment variable names to Secret Manager IDs."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+}
+
+variable "image_repository" {
+  description = "GHCR repository prefix containing published application images."
+  type        = string
+}
+
+variable "compose_repository_url" {
+  description = "Base URL from which supported role Compose files are retrieved."
+  type        = string
+}
+
+variable "docker_engine_version" {
+  description = "Pinned distribution Docker package version installed during bootstrap."
+  type        = string
+}
+
+variable "service_ips" {
+  description = "Internal service addresses keyed by application role."
+  type        = map(string)
+  default     = {}
+  nullable    = false
 }
 
 variable "labels" {

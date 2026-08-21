@@ -2,7 +2,7 @@ name: petroscope-fetcher
 
 services:
   fetcher:
-    image: petroscope-fetcher:local
+    image: ${FETCHER_IMAGE:-petroscope-fetcher:local}
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.fetcher

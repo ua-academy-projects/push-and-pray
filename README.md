@@ -143,6 +143,11 @@ currently supported PGMQ deployment path. The current application architecture i
 validated through Docker and cloud-oriented deployments using PostgreSQL with the PGMQ
 extension.
 
+Production deployment does not load repository `.env` files. Deployment secrets are
+published to Google Secret Manager from the current process environment and fetched by
+the workload VM immediately before its role-specific Compose project starts. See
+`docs/secret-rotation.md` for rotation instructions.
+
 ## Docker deployment details
 
 Each VM runs one independent Docker Compose project:
@@ -328,7 +333,7 @@ uv run ruff check .
 
 ## Security notes
 
-- Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`.
+- Never commit `.env` or the untracked `infrastructure/vagrant/config/vagrant.env`.
 - Replace all example passwords before deployment.
 - Reserve the VM addresses and restrict sensitive LAN ports at the router or firewall when
   the network is not trusted.

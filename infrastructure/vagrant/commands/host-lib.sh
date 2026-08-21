@@ -7,14 +7,24 @@ VAGRANT_BIN="$(command -v vagrant 2>/dev/null || true)"
 
 load_host_config() {
   local config_file="${HOST_PROJECT_ROOT}/infrastructure/vagrant/config/vagrant.env"
+  local process_db_password="${DB_PASSWORD:-}"
+  local process_oilpriceapi_key="${OILPRICEAPI_KEY:-}"
+  local process_rabbitmq_user="${RABBITMQ_USER:-}"
+  local process_rabbitmq_password="${RABBITMQ_PASSWORD:-}"
   if [[ ! -f "${config_file}" ]]; then
-    printf 'Missing %s. Copy infrastructure/vagrant/config/vagrant.env.example first.\n' "${config_file}" >&2
+    printf 'Missing %s. Create this untracked local configuration before deployment.\n' "${config_file}" >&2
     return 1
   fi
   set -a
   # shellcheck disable=SC1090
   source "${config_file}"
   set +a
+
+  DB_PASSWORD="${process_db_password}"
+  OILPRICEAPI_KEY="${process_oilpriceapi_key}"
+  RABBITMQ_USER="${process_rabbitmq_user}"
+  RABBITMQ_PASSWORD="${process_rabbitmq_password}"
+  export DB_PASSWORD OILPRICEAPI_KEY RABBITMQ_USER RABBITMQ_PASSWORD
 }
 
 repair_vagrant_ownership() {

@@ -16,7 +16,7 @@ resource "google_compute_instance" "workload" {
   machine_type              = var.machine_type
   allow_stopping_for_update = true
 
-  tags   = [var.network_tag]
+  tags   = var.network_tags
   labels = var.labels
 
   boot_disk {
@@ -54,6 +54,16 @@ resource "google_compute_instance" "workload" {
     enable_integrity_monitoring = true
   }
 
-  #TODO: Add workload cloud-init when guest provisioning
-  metadata = {}
+  metadata = {
+    user-data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
+      automation_role      = var.automation_role
+      compose_repository_url = var.compose_repository_url
+      docker_engine_version = var.docker_engine_version
+      image_repository      = var.image_repository
+      image_tag             = var.image_tag
+      project_id            = data.google_client_config.current.project
+      secret_bindings       = var.secret_bindings
+      service_ips           = var.service_ips
+    })
+  }
 }

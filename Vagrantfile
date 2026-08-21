@@ -160,13 +160,16 @@ Vagrant.configure("2") do |config|
       node.vm.provision "shell",
         name: "logging",
         path: "infrastructure/vagrant/provisioning/logging.sh"
-      if name == "fetcher"
-        node.vm.provision "file",
-          source: ".env",
-          destination: "/tmp/oil-price-tracker-host.env"
-      end
       role = File.basename(machine[:provisioner], ".sh")
-      node.vm.provision "shell", name: role, path: machine[:provisioner]
+      node.vm.provision "shell",
+        name: role,
+        path: machine[:provisioner],
+        env: {
+          "DB_PASSWORD" => ENV.fetch("DB_PASSWORD", ""),
+          "OILPRICEAPI_KEY" => ENV.fetch("OILPRICEAPI_KEY", ""),
+          "RABBITMQ_USER" => ENV.fetch("RABBITMQ_USER", ""),
+          "RABBITMQ_PASSWORD" => ENV.fetch("RABBITMQ_PASSWORD", "")
+        }
     end
   end
 end

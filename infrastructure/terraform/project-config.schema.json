@@ -2,14 +2,17 @@
   "title": "Project Configuration",
   "description": "Terraform configuration contract.",
   "type": "object",
-  "required": ["config_version", "project_id", "environment", "region", "zone", "name_prefix", "common_labels", "network", "bastion", "vms"],
+  "required": ["config_version", "project_id", "environment", "region", "zone", "name_prefix", "image_repository", "compose_repository_url", "docker_engine_version", "common_labels", "network", "bastion", "service_ports", "workloads"],
   "properties": {
     "config_version": { "type": "integer", "enum": [1] },
     "project_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$" },
     "environment": { "type": "string", "enum": ["dev", "stage", "prod"] },
-    "region": { "type": "string" },
-    "zone": { "type": "string" },
-    "name_prefix": { "type": "string" },
+    "region": { "type": "string", "minLength": 1 },
+    "zone": { "type": "string", "minLength": 1 },
+    "name_prefix": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "image_repository": { "type": "string", "pattern": "^ghcr.io/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+    "compose_repository_url": { "type": "string", "pattern": "^https://" },
+    "docker_engine_version": { "type": "string", "minLength": 1 },
     "common_labels": { "type": "object", "additionalProperties": { "type": "string" } },
     "network": {
       "type": "object",
@@ -21,35 +24,62 @@
     },
     "bastion": {
       "type": "object",
-      "required": ["bastion_allowed_cidrs", "ssh_port", "machine_type", "image", "disk_size_gb"],
+      "required": ["allowed_cidrs", "ssh_port", "machine_type", "image", "boot_disk"],
       "properties": {
-        "bastion_allowed_cidrs": { "type": "array", "items": { "type": "string" } },
-        "ssh_port": { "type": "integer" },
-        "machine_type": { "type": "string" },
-        "image": { "type": "string" },
-        "disk_size_gb": { "type": "integer", "minimum": 10 },
-        "preemptible": { "type": "boolean" }
+        "allowed_cidrs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "ssh_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "machine_type": { "type": "string", "minLength": 1 },
+        "image": { "type": "string", "minLength": 1 },
+        "boot_disk": {
+          "type": "object",
+          "required": ["size_gb", "type"],
+          "properties": {
+            "size_gb": { "type": "integer", "minimum": 10 },
+            "type": { "type": "string", "enum": ["pd-standard", "pd-balanced", "pd-ssd"] }
+          }
+        }
       }
     },
-    "vms": {
-      "type": "array",
-      "items": {
+    "service_ports": {
+      "type": "object",
+      "required": ["history_api", "postgresql"],
+      "properties": {
+        "history_api": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "postgresql": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "workloads": {
+      "type": "object",
+      "additionalProperties": {
         "type": "object",
-        "required": ["name", "role", "machine_type", "internal_ip", "assign_public_ip", "network_tags", "boot_image", "boot_disk_size_gb", "boot_disk_type", "automation_role", "secret_ids"],
+        "required": ["role", "machine_type", "internal_ip", "assign_public_ip", "network_tags", "boot_image", "boot_disk", "automation_role", "image_tag", "secret_ids"],
         "properties": {
-          "name": { "type": "string" },
           "role": { "type": "string", "enum": ["infra", "history", "fetcher", "ui"] },
-          "machine_type": { "type": "string" },
+          "machine_type": { "type": "string", "minLength": 1 },
           "internal_ip": { "type": "string" },
           "assign_public_ip": { "type": "boolean" },
-          "network_tags": { "type": "array", "items": { "type": "string" } },
-          "boot_image": { "type": "string" },
-          "boot_disk_size_gb": { "type": "integer", "minimum": 10 },
-          "boot_disk_type": { "type": "string" },
-          "automation_role": { "type": "string", "enum": ["none"] },
-          "image_tag": { "type": "string" },
-          "secret_ids": { "type": "array", "items": { "type": "string" } }
-        }
+          "network_tags": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "boot_image": { "type": "string", "minLength": 1 },
+          "boot_disk": {
+            "type": "object",
+            "required": ["size_gb", "type"],
+            "properties": {
+              "size_gb": { "type": "integer", "minimum": 10 },
+              "type": { "type": "string", "enum": ["pd-standard", "pd-balanced", "pd-ssd"] }
+            }
+          },
+          "automation_role": { "type": "string", "enum": ["none", "database", "fetcher", "history", "ui"] },
+          "image_tag": { "type": "string", "minLength": 1 },
+          "secret_ids": { "type": "array", "items": { "type": "string" } },
+          "secret_bindings": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "role": { "const": "ui" } } },
+            "then": {},
+            "else": { "properties": { "assign_public_ip": { "const": false } } }
+          }
+        ]
       }
     }
   }

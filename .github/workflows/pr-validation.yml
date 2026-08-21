@@ -18,6 +18,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  deployment-contract:
+    name: Deployment contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate secret and runtime deployment contract
+        run: bash infrastructure/terraform/scripts/test-deployment-contract.sh
+
   yaml:
     name: YAML
     runs-on: ubuntu-latest
