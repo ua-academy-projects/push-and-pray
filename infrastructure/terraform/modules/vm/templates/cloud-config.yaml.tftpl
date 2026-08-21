@@ -5,14 +5,9 @@
 # deployment: this file never pulls an application image, runs Compose, or
 # reads a secret VALUE (only the automation_role and Secret Manager IDs are
 # non-secret and safe to template in). Starting the application itself is a
-# separate, later automation step - see oilscope-deploy.service below.
+# separate, later automation step (#56) - see oilscope-deploy.service below.
 #
-# NOT YET ATTACHED to any VM. This file is not referenced by any .tf file in
-# this module yet (see modules/vm/README.md for the current status). It exists
-# so its cloud-init syntax and content can be reviewed and CI-validated on
-# their own, before the metadata wiring lands in a follow-up change.
-#
-# Template variables (supplied by the eventual templatefile() call):
+# Template variables (supplied by modules/vm/locals.tf's templatefile() call):
 #   automation_role - the VM's non-secret automation role (e.g. infra, history,
 #                      fetcher, ui). Delivered as an Environment= line in the
 #                      oilscope-deploy.service unit below, never logged.
@@ -38,9 +33,8 @@ write_files:
       Description=OilScope role-specific deployment automation
       After=network-online.target docker.service
       Wants=network-online.target
-      # Absent until the deployment-automation ticket delivers it: the unit
-      # is enabled below but stays a no-op (reported as "condition failed",
-      # not "failed") until that script exists.
+      # Absent until #56 delivers it: the condition fails (reported as
+      # "condition failed", not "failed") until that script exists.
       ConditionPathExists=/opt/oilscope/deploy/run.sh
 
       [Service]
@@ -50,6 +44,9 @@ write_files:
       Environment=AUTOMATION_ROLE=${automation_role}
       WorkingDirectory=/opt/oilscope/deploy
       ExecStart=/opt/oilscope/deploy/run.sh
+
+      [Install]
+      WantedBy=multi-user.target
 
 runcmd:
   # --- Prerequisites: curl/ca-certificates are needed before the Docker repo
@@ -77,10 +74,10 @@ runcmd:
   - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/deploy ]
   - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /var/lib/oilscope ]
 
-  # --- Role-specific deployment automation unit: enabled now, starts doing
-  # --- real work once run.sh exists (see ConditionPathExists above).
+  # --- Pick up the deployment-automation unit file written above. Not
+  # --- enabled here on purpose: #56 owns enabling/starting it once run.sh
+  # --- actually exists - this ticket only prepares the entry point.
   - [ systemctl, daemon-reload ]
-  - [ systemctl, enable, oilscope-deploy.service ]
 
   # --- Readiness marker, written only after Docker is confirmed to actually
   # --- answer. Documented check: test -f /var/lib/oilscope/bootstrap-ready

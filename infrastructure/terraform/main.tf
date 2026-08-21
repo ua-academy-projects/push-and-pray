@@ -44,9 +44,10 @@ module "vm" {
   source   = "./modules/vm"
   for_each = local.config.workloads
 
-  name          = "${local.resource_prefix}-${each.key}"
-  subnetwork_id = module.network.workload_subnet_id
-  role          = each.value.role
+  name            = "${local.resource_prefix}-${each.key}"
+  subnetwork_id   = module.network.workload_subnet_id
+  role            = each.value.role
+  automation_role = each.value.automation_role
   network_tags = [
     for tag in each.value.network_tags :
     "${local.resource_prefix}-${tag}"

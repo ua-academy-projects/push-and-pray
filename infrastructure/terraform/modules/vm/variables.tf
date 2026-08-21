@@ -84,6 +84,17 @@ variable "assign_public_ip" {
   default     = false
 }
 
+variable "automation_role" {
+  description = "Non-secret automation role passed to the cloud-init bootstrap process."
+  type        = string
+}
+
+variable "docker_version" {
+  description = "Exact Docker Engine apt version pinned by the cloud-init bootstrap. Verify with `apt-cache madison docker-ce` before bumping."
+  type        = string
+  default     = "5:27.3.1-1~ubuntu.24.04~noble"
+}
+
 variable "labels" {
   description = "Labels applied to resources that support them."
   type        = map(string)

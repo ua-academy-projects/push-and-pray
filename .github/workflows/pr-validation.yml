@@ -375,3 +375,9 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
+
+      - name: Validate cloud-init syntax
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
+          cloud-init schema --config-file infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl
