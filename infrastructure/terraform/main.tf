@@ -11,6 +11,10 @@ module "network" {
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
 
+  ui_public_ports = [
+    for port in local.config.network.ui_public_ports : tostring(port)
+  ]
+
   bastion_ssh_port      = local.config.bastion.ssh_port
   bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
 
@@ -23,14 +27,21 @@ module "bastion" {
 
   resource_prefix = local.resource_prefix
   subnetwork_id   = module.network.management_subnet_id
-  network_tag     = module.network.network_tags.bastion
+  network_tags = distinct(concat(
+    [module.network.network_tags.bastion],
+    [
+      for tag in local.config.bastion.network_tags :
+      "${local.resource_prefix}-${tag}"
+    ],
+  ))
 
   machine_type      = local.config.bastion.machine_type
   image             = local.config.bastion.image
   boot_disk_size_gb = local.config.bastion.boot_disk.size_gb
   boot_disk_type    = local.config.bastion.boot_disk.type
+  preemptible       = local.config.bastion.preemptible
 
-  labels = local.common_labels
+  labels = merge(local.common_labels, try(local.config.bastion.labels, {}))
 }
 
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
@@ -40,11 +51,14 @@ module "vm" {
 
   name          = "${local.resource_prefix}-${each.key}"
   subnetwork_id = module.network.workload_subnet_id
-  network_tag   = module.network.network_tags[each.value.role]
-  network_tags  = distinct(concat(each.value.network_tags, [module.network.network_tags[each.value.role]]))
+  role          = each.value.role
+  network_tags = [
+    for tag in each.value.network_tags :
+    "${local.resource_prefix}-${tag}"
+  ]
 
   machine_type = each.value.machine_type
-  image        = each.value.boot_image
+  image        = each.value.image
   internal_ip  = each.value.internal_ip
 
   boot_disk_size_gb = each.value.boot_disk.size_gb
@@ -52,33 +66,40 @@ module "vm" {
 
   assign_public_ip = each.value.assign_public_ip
 
-  automation_role = each.value.automation_role
-  image_tag       = each.value.image_tag
-  secret_bindings = try(each.value.secret_bindings, {})
-  image_repository = local.config.image_repository
+  automation_role        = each.value.automation_role
+  image_tag              = each.value.image_tag
+  secret_bindings        = try(each.value.secret_bindings, {})
+  image_repository       = local.config.image_repository
   compose_repository_url = local.config.compose_repository_url
-  docker_engine_version = local.config.docker_engine_version
+  docker_engine_version  = local.config.docker_engine_version
   service_ips = {
     for workload in values(local.config.workloads) : workload.role => workload.internal_ip
   }
 
-  labels = merge(local.common_labels, {
-    role = each.value.role
-  })
+  labels = merge(
+    local.common_labels,
+    try(each.value.labels, {}),
+    {
+      role = each.value.role
+    },
+  )
 }
 
 locals {
   secret_ids = toset(flatten([
     for workload in values(local.config.workloads) : concat(
-      try(workload.secret_ids, []),
-      values(try(workload.secret_bindings, {}))
+      workload.secret_ids,
+      values(try(workload.secret_bindings, {})),
     )
   ]))
 
   secret_accessors = {
     for secret_id in local.secret_ids : secret_id => toset([
       for workload_name, workload in local.config.workloads : module.vm[workload_name].service_account_email
-      if contains(concat(try(workload.secret_ids, []), values(try(workload.secret_bindings, {}))), secret_id)
+      if contains(
+        concat(workload.secret_ids, values(try(workload.secret_bindings, {}))),
+        secret_id,
+      )
     ])
   }
 }

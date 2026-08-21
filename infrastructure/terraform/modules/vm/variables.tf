@@ -13,19 +13,23 @@ variable "subnetwork_id" {
   type        = string
 }
 
-variable "network_tag" {
-  description = "Network tag used by firewall rules for this VM."
-  type        = string
-}
-
 variable "network_tags" {
-  description = "Effective network tags, including the mandatory role tag."
+  description = "Effective network tags attached to the workload VM."
   type        = list(string)
-  nullable    = false
 
   validation {
-    condition     = length(var.network_tags) > 0 && alltrue([for tag in var.network_tags : can(regex("^[a-z][a-z0-9-]*$", tag))])
-    error_message = "network_tags must contain at least one valid lowercase network tag."
+    condition     = length(var.network_tags) > 0 && length(var.network_tags) == length(distinct(var.network_tags))
+    error_message = "network_tags must contain at least one unique tag."
+  }
+}
+
+variable "role" {
+  description = "Functional role of the workload, independent from its resource name."
+  type        = string
+
+  validation {
+    condition     = contains(["database", "history", "fetcher", "ui"], var.role)
+    error_message = "role must be database, history, fetcher, or ui."
   }
 }
 

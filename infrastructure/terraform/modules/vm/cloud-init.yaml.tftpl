@@ -23,6 +23,10 @@ write_files:
       compose_file="$${runtime_dir}/compose.$${role}.yaml"
       [[ "$${role}" == "none" ]] && exit 0
 
+      docker_config="$(mktemp -d)"
+      trap 'rm -rf "$${docker_config}"' EXIT
+      export DOCKER_CONFIG="$${docker_config}"
+
       install -d -o root -g root -m 0750 "$${runtime_dir}"
       curl -fsSL "$${compose_repository_url}/infrastructure/docker/compose.$${role}.yaml" -o "$${compose_file}.tmp"
       mv -f "$${compose_file}.tmp" "$${compose_file}"
