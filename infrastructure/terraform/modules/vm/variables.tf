@@ -92,7 +92,7 @@ variable "automation_role" {
 variable "docker_version" {
   description = "Exact Docker Engine apt version pinned by the cloud-init bootstrap. Verify with `apt-cache madison docker-ce` before bumping."
   type        = string
-  default     = "5:27.3.1-1~ubuntu.24.04~noble"
+  default     = "5:29.7.2-1~ubuntu.26.04~resolute"
 }
 
 variable "labels" {
