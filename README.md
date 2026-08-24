@@ -151,6 +151,12 @@ The supported production-style deployment pulls prebuilt GHCR images through
 required parent-process environment, the one-command startup, independent VM roles,
 shutdown, and smoke test.
 
+Workload VMs run this automatically through a cloud-init-installed systemd unit
+(`oilscope-deploy.service`) and its `run.sh` script, selecting which service(s) to
+start from each VM's `automation_role`. See
+[VM deployment operations](docs/vm-deployment-operations.md) for checking status,
+reading logs, and restarting or stopping a role on a running VM.
+
 The older role-specific files below remain for the Vagrant development topology:
 
 | Compose file | Project | Services |
