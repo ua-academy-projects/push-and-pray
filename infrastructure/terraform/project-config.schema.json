@@ -267,6 +267,42 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": { "role": { "const": "database" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": { "automation_role": { "enum": ["database", "none"] } }
+          }
+        },
+         {
+          "if": {
+            "properties": { "role": { "const": "fetcher" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": { "automation_role": { "enum": ["fetcher", "none"] } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "role": { "const": "history" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": { "automation_role": { "enum": ["history", "none"] } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "role": { "const": "ui" } },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": { "automation_role": { "enum": ["ui", "none"] } }
+          }
         }
       ]
     }
