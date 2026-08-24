@@ -262,7 +262,8 @@ jobs:
         run: |
           status=0
 
-          for file in compose.*.yaml; do
+          for file in compose.*.yaml \
+            ../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2; do
             echo "::group::${file}"
 
             if docker compose -f "${file}" config --quiet; then

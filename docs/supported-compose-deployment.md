@@ -1,20 +1,22 @@
 # Supported Docker Compose deployment
 
 This deployment pulls prebuilt application and PostgreSQL images. It does not
-build application images on the target machine and it does not require or load
-a `.env` file. Export every setting in the parent process environment before
-running Compose. Secret retrieval and injection are handled outside Compose.
+build application images on the target machine. The Ansible role installs a
+non-secret `deployment.env` file containing the application image SHA from the
+external project configuration JSON. Secret retrieval and injection are handled
+outside Compose through the parent process environment.
 
-The supported configuration is
-`infrastructure/docker/compose.deployment.yaml`. The older role-specific Compose
-files are retained for the Vagrant development environment; they are not the
-supported GHCR deployment configuration.
+The canonical configuration is the `compose_project` role template at
+`infrastructure/ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2`.
+The role installs it as `/opt/oilscope/app/compose.yaml`. The older role-specific
+Compose files are retained for the Vagrant development environment; they are not
+the supported GHCR deployment configuration.
 
 ## Required settings
 
 | Variable | Description |
 | --- | --- |
-| `APP_IMAGE_TAG` | Immutable Git commit SHA shared by the Fetcher, History and UI GHCR images. Do not use `latest`. |
+| `APP_IMAGE_TAG` | Immutable Git commit SHA installed from the external JSON by the Ansible role. Do not use `latest`. |
 | `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include PGMQ, `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
 | `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
 | `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
@@ -61,10 +63,11 @@ the token in Compose, this repository, or a shell argument.
 
 ## Complete stack on one machine
 
-After exporting the required variables, use this single startup command:
+After exporting the required secret variables, use this single startup command:
 
 ```sh
-docker compose -f infrastructure/docker/compose.deployment.yaml pull && docker compose -f infrastructure/docker/compose.deployment.yaml up -d --wait
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml pull && \
+  docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --wait
 ```
 
 Compose starts PostgreSQL, waits for it to become healthy, applies every
@@ -81,7 +84,7 @@ infrastructure/docker/smoke-test.sh
 Stop the deployment without deleting PostgreSQL data:
 
 ```sh
-docker compose -f infrastructure/docker/compose.deployment.yaml down
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml down
 ```
 
 ## Independent VM roles
@@ -92,11 +95,11 @@ then start the application roles. Use `--no-deps` so a role does not try to
 start its same-file dependencies on that VM:
 
 ```sh
-docker compose -f infrastructure/docker/compose.deployment.yaml up -d --no-deps postgres
-docker compose -f infrastructure/docker/compose.deployment.yaml run --rm --no-deps migrate
-docker compose -f infrastructure/docker/compose.deployment.yaml up -d --no-deps history
-docker compose -f infrastructure/docker/compose.deployment.yaml up -d --no-deps fetcher
-docker compose -f infrastructure/docker/compose.deployment.yaml up -d --no-deps ui
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps postgres
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml run --rm --no-deps migrate
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps history
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps fetcher
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps ui
 ```
 
 Run `docker compose ... pull SERVICE` before each role command. On application

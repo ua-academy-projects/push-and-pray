@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Validate required Compose project variables
+  ansible.builtin.assert:
+    that:
+      - compose_project_config_path | length > 0
+      - compose_project_workload | length > 0
+    fail_msg: >-
+      compose_project_config_path and compose_project_workload are required.
+
+- name: Load non-secret project configuration
+  ansible.builtin.include_vars:
+    file: "{{ compose_project_config_path }}"
+    name: compose_project_config
+
+- name: Validate configured workload
+  ansible.builtin.assert:
+    that:
+      - compose_project_config.workloads is mapping
+      - compose_project_workload in compose_project_config.workloads
+    fail_msg: >-
+      workloads.{{ compose_project_workload }} is missing from the project
+      configuration.
+
+- name: Select image SHA from project configuration
+  ansible.builtin.set_fact:
+    compose_project_image_sha: >-
+      {{ compose_project_config.workloads[compose_project_workload].image_tag
+         | default('') }}
+
+- name: Validate image SHA
+  ansible.builtin.assert:
+    that:
+      - compose_project_image_sha is match('^[0-9a-f]{40}$')
+    fail_msg: >-
+      workloads.{{ compose_project_workload }}.image_tag must contain a full
+      40-character Git SHA.
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: "{{ compose_project_dir }}"
+    state: directory
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0750"
+
+- name: Install Compose definition
+  ansible.builtin.template:
+    src: compose.deployment.yaml.j2
+    dest: "{{ compose_project_dir }}/compose.yaml"
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0644"
+
+- name: Install non-secret deployment configuration
+  ansible.builtin.template:
+    src: deployment-config.j2
+    dest: "{{ compose_project_dir }}/deployment.env"
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0640"

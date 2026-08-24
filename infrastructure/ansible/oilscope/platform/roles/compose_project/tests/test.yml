@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Test the Compose project role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_dir: /tmp/oilscope-compose-project-test
+        compose_project_owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
+        compose_project_group: "{{ lookup('ansible.builtin.pipe', 'id -gn') }}"
+        compose_project_config_path: >-
+          {{ playbook_dir }}/project-config.json.example
+        compose_project_workload: history

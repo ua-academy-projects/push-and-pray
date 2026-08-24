@@ -146,7 +146,7 @@ extension.
 ## Docker deployment details
 
 The supported production-style deployment pulls prebuilt GHCR images through
-`infrastructure/docker/compose.deployment.yaml`. See
+the `oilscope.platform.compose_project` Ansible role. See
 [the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
 required parent-process environment, the one-command startup, independent VM roles,
 shutdown, and smoke test.
