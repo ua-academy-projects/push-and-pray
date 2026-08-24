@@ -232,7 +232,7 @@
         },
         "automation_role": {
           "type": "string",
-          "enum": ["none"]
+          "enum": ["none", "database", "fetcher", "history", "ui"]
         },
         "labels": {
           "$ref": "#/$defs/labels"
