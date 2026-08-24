@@ -48,6 +48,17 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  - path: /opt/oilscope/deploy/run.sh
+    owner: deploy:deploy
+    permissions: "0755"
+    content: |
+      ${indent(6, run_script)}
+  - path: /opt/oilscope/deploy/compose.deployment.yaml
+    owner: deploy:deploy
+    permissions: "0644"
+    content: |
+      ${indent(6, compose_deployment)}
+
 runcmd:
   # --- Prerequisites: curl/ca-certificates are needed before the Docker repo
   # --- key can be fetched; jq is for later health-check / Secret Manager

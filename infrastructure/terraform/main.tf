@@ -48,6 +48,7 @@ module "vm" {
   subnetwork_id   = module.network.workload_subnet_id
   role            = each.value.role
   automation_role = each.value.automation_role
+  image_tag       = each.value.image_tag
   network_tags = [
     for tag in each.value.network_tags :
     "${local.resource_prefix}-${tag}"
