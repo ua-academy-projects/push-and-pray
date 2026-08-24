@@ -8,14 +8,21 @@
 # separate, later automation step (#56) - see oilscope-deploy.service below.
 #
 # Template variables (supplied by modules/vm/locals.tf's templatefile() call):
-#   automation_role - the VM's non-secret automation role (e.g. infra, history,
-#                      fetcher, ui). Delivered as an Environment= line in the
-#                      oilscope-deploy.service unit below, never logged.
-#   docker_version   - exact Docker Engine apt version to pin, e.g.
-#                      "5:29.7.2-1~ubuntu.26.04~resolute". Re-verify with
-#                      `apt-cache madison docker-ce` before this template is
-#                      attached to any VM - do not trust this file's own
-#                      history for a current value.
+#   automation_role    - the VM's non-secret automation role (e.g. infra, history,
+#                         fetcher, ui). Delivered as an Environment= line in the
+#                         oilscope-deploy.service unit below, never logged.
+#   docker_version     - exact Docker Engine apt version to pin, e.g.
+#                         "5:29.7.2-1~ubuntu.26.04~resolute". Re-verify with
+#                         `apt-cache madison docker-ce` before this template is
+#                         attached to any VM - do not trust this file's own
+#                         history for a current value.
+#   image_tag          - immutable GHCR image tag for this VM's application
+#                         containers. Delivered as an Environment= line, same
+#                         as automation_role.
+#   run_script         - full contents of modules/vm/templates/run.sh, written
+#                         to /opt/oilscope/deploy/run.sh below.
+#   compose_deployment - full contents of infrastructure/docker/compose.deployment.yaml,
+#                         written to /opt/oilscope/deploy/compose.deployment.yaml below.
 
 users:
   - name: deploy
@@ -42,6 +49,7 @@ write_files:
       User=deploy
       Group=docker
       Environment=AUTOMATION_ROLE=${automation_role}
+      Environment=APP_IMAGE_TAG=${image_tag}
       WorkingDirectory=/opt/oilscope/deploy
       ExecStart=/opt/oilscope/deploy/run.sh
 
@@ -85,11 +93,14 @@ runcmd:
   - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/deploy ]
   - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /var/lib/oilscope ]
 
-  # --- Pick up the deployment-automation unit file written above. Not
-  # --- enabled here on purpose: #56 owns enabling/starting it once run.sh
-  # --- actually exists - this ticket only prepares the entry point.
+  # --- Pick up the deployment-automation unit file written above, so the
+  # --- enable/start step below can find it.
   - [ systemctl, daemon-reload ]
 
   # --- Readiness marker, written only after Docker is confirmed to actually
   # --- answer. Documented check: test -f /var/lib/oilscope/bootstrap-ready
   - [ sh, -c, "docker info >/dev/null && date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/oilscope/bootstrap-ready" ]
+
+  # --- Enable and start the deployment automation now that run.sh and
+  # --- compose.deployment.yaml are actually delivered above.
+  - [ systemctl, enable, --now, oilscope-deploy.service ]

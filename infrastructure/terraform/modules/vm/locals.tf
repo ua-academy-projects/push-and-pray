@@ -4,5 +4,6 @@ locals {
     docker_version     = var.docker_version
     run_script         = file("${path.module}/templates/run.sh")
     compose_deployment = file("${path.module}/../../../docker/compose.deployment.yaml")
+    image_tag          = var.image_tag
   })
 }

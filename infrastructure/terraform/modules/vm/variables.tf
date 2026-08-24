@@ -103,3 +103,8 @@ variable "labels" {
   description = "Labels applied to resources that support them."
   type        = map(string)
 }
+
+variable "image_tag" {
+  description = "Immutable GHCR image tag applied to this VM's application containers."
+  type        = string
+}
