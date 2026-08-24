@@ -10,11 +10,6 @@ locals {
   ])
 }
 
-resource "google_project_service" "secretmanager" {
-  service            = "secretmanager.googleapis.com"
-  disable_on_destroy = false
-}
-
 resource "google_secret_manager_secret" "this" {
   for_each  = toset(local.all_secret_ids)
   secret_id = each.value
@@ -24,7 +19,7 @@ resource "google_secret_manager_secret" "this" {
     auto {}
   }
 
-  depends_on = [google_project_service.secretmanager]
+  depends_on = [google_project_service.required]
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {

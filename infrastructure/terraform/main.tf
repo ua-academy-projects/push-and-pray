@@ -15,6 +15,8 @@ module "network" {
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
+
+  depends_on = [google_project_service.required]
 }
 
 module "bastion" {
@@ -37,6 +39,8 @@ module "bastion" {
   preemptible       = local.config.bastion.preemptible
 
   labels = merge(local.common_labels, try(local.config.bastion.labels, {}))
+
+  depends_on = [google_project_service.required]
 }
 
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
@@ -69,4 +73,6 @@ module "vm" {
       role = each.value.role
     },
   )
+
+  depends_on = [google_project_service.required]
 }
