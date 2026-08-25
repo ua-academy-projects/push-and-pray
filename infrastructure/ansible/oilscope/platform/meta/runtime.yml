@@ -3,4 +3,4 @@
 # The oldest ansible-core this collection is tested against. The file must
 # contain at least one key: an all-comment runtime.yml parses as null, which
 # fails the collection schema.
-requires_ansible: ">=2.15"
+requires_ansible: ">=2.15.0"
