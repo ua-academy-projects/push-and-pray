@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_compose_project_dir: /opt/oilscope/app
+database_compose_file: "{{ database_compose_project_dir }}/compose.yaml"
+database_compose_project_name: petroscope
+database_postgres_service: postgres
+database_migration_service: migrate
+database_postgres_image: ""
+database_application_image_tag: ""
+database_postgres_password: ""
+database_postgres_user: oil_tracker
+database_postgres_name: oil_tracker
+database_bind_address: 0.0.0.0
+database_host_port: 5432
+database_health_retries: 30
+database_health_delay: 2
+database_compose_environment: {}

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the database role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include the role with an invalid mutable image reference
+      ansible.builtin.include_role:
+        name: database
+      vars:
+        database_postgres_image: postgres:18
+        database_application_image_tag: 0123456789abcdef0123456789abcdef01234567
+        database_postgres_password: test-only
+      register: database_invalid_image
+      ignore_errors: true
+
+    - name: Verify mutable image references are rejected
+      ansible.builtin.assert:
+        that:
+          - database_invalid_image is failed

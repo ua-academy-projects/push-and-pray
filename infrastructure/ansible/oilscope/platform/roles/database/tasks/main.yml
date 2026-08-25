@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate database deployment variables
+  ansible.builtin.assert:
+    that:
+      - database_compose_file | length > 0
+      - database_postgres_image is match('^.+@sha256:[0-9a-f]{64}$')
+      - database_application_image_tag is match('^[0-9a-f]{40}$')
+      - database_postgres_password | length > 0
+      - database_health_retries | int > 0
+      - database_health_delay | int >= 0
+    fail_msg: >-
+      database_compose_file and database_postgres_password are required, and
+      database_postgres_image must be pinned to a sha256 digest. The
+      database_application_image_tag must be a full 40-character Git SHA so
+      the shared Compose definition can be rendered.
+  no_log: true
+
+- name: Check the Compose definition
+  ansible.builtin.stat:
+    path: "{{ database_compose_file }}"
+  register: database_compose_definition
+
+- name: Require the Compose definition
+  ansible.builtin.assert:
+    that:
+      - database_compose_definition.stat.isreg | default(false)
+    fail_msg: "Compose definition not found at {{ database_compose_file }}."
+
+- name: Pull the exact PostgreSQL image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - pull
+      - "{{ database_postgres_image }}"
+  register: database_image_pull
+  changed_when: >-
+    'Downloaded newer image' in database_image_pull.stdout or
+    'Pull complete' in database_image_pull.stdout
+
+- name: Start the PostgreSQL service
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ database_postgres_service }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_compose_up
+  changed_when: >-
+    'Created' in database_compose_up.stderr or
+    'Started' in database_compose_up.stderr or
+    'Recreated' in database_compose_up.stderr
+  no_log: true
+
+- name: Get the PostgreSQL container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ database_postgres_service }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_container
+  changed_when: false
+  failed_when: database_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for PostgreSQL to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ database_container.stdout | trim }}"
+  register: database_health
+  changed_when: false
+  retries: "{{ database_health_retries }}"
+  delay: "{{ database_health_delay }}"
+  until: database_health.stdout | trim == 'healthy'
+
+- name: Apply database migrations
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - "{{ database_migration_service }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_migrations
+  changed_when: "'Applying ' in database_migrations.stdout"
+  no_log: true
