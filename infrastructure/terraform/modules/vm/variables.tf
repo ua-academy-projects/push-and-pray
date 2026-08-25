@@ -13,9 +13,24 @@ variable "subnetwork_id" {
   type        = string
 }
 
-variable "network_tag" {
-  description = "Network tag used by firewall rules for this VM."
+variable "network_tags" {
+  description = "Effective network tags attached to the workload VM."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.network_tags) > 0 && length(var.network_tags) == length(distinct(var.network_tags))
+    error_message = "network_tags must contain at least one unique tag."
+  }
+}
+
+variable "role" {
+  description = "Functional role of the workload, independent from its resource name."
   type        = string
+
+  validation {
+    condition     = contains(["database", "history", "fetcher", "ui"], var.role)
+    error_message = "role must be database, history, fetcher, or ui."
+  }
 }
 
 variable "machine_type" {
@@ -67,6 +82,17 @@ variable "assign_public_ip" {
   description = "Whether to create and assign a static external IP address."
   type        = bool
   default     = false
+}
+
+variable "automation_role" {
+  description = "Non-secret automation role passed to the cloud-init bootstrap process."
+  type        = string
+}
+
+variable "docker_version" {
+  description = "Exact Docker Engine apt version pinned by the cloud-init bootstrap. Verify with `apt-cache madison docker-ce` before bumping."
+  type        = string
+  default     = "5:29.7.2-1~ubuntu.26.04~resolute"
 }
 
 variable "labels" {

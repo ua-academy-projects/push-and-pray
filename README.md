@@ -55,7 +55,7 @@ have already been persisted in PostgreSQL.
 | UI frontend | React 19, TypeScript, Vite, Apache ECharts |
 | Messaging | PGMQ (PostgreSQL extension) |
 | Persistence | PostgreSQL 18 |
-| UI sessions | PostgreSQL 18, pgcrypto, pg_cron |
+| UI sessions | PostgreSQL 18, hstore, pgcrypto, pg_cron |
 | Packaging | Docker Engine and Docker Compose |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64 |
 
@@ -145,7 +145,13 @@ extension.
 
 ## Docker deployment details
 
-Each VM runs one independent Docker Compose project:
+The supported production-style deployment pulls prebuilt GHCR images through
+`infrastructure/docker/compose.deployment.yaml`. See
+[the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
+required parent-process environment, the one-command startup, independent VM roles,
+shutdown, and smoke test.
+
+The older role-specific files below remain for the Vagrant development topology:
 
 | Compose file | Project | Services |
 |---|---|---|
@@ -187,7 +193,7 @@ or pass the token as a Docker build argument.
 ## Local development
 
 Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with
-pgcrypto, pg_cron, and PGMQ.
+hstore, pgcrypto, pg_cron, and PGMQ.
 
 Install Python dependencies and build the frontend:
 
@@ -289,12 +295,14 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
-The `ui_sessions` table stores validated preferences as JSONB, a 30-day expiration
-timestamp, and only the SHA-256 digest of the browser session ID. The digest is calculated
-inside PostgreSQL by pgcrypto for every lookup and write. Atomic UPSERTs refresh the
-expiration on reads and updates, while expired rows are replaced with defaults immediately.
-The pg_cron background worker deletes expired rows every minute; its named job and
-both extensions are created idempotently by migration `003_create_ui_sessions.sql`.
+The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
+expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
+value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
+strings retain the existing API representation. The digest is calculated inside PostgreSQL
+by pgcrypto for every lookup and write. Atomic UPSERTs refresh the expiration on reads and
+updates, while expired rows are replaced with defaults immediately. The pg_cron background
+worker deletes expired rows every minute; its named job and the hstore, pgcrypto, and pg_cron
+extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 
 ## Configuration
 
@@ -317,6 +325,63 @@ both extensions are created idempotently by migration `003_create_ui_sessions.sq
 | `LISTEN_ADDRESS` | `:8002` | Fetcher diagnostic API address |
 | `LOG_LEVEL` | `INFO` | Python service log level |
 
+## Pre-commit hooks
+
+Local checks that run at `git commit`, so a leaked credential is caught while it
+is still only in your working copy. Once a secret reaches a public repository,
+deleting the commit does not undo it — the value has to be treated as
+compromised and rotated at its source. This is the cheapest place to stop that.
+
+Install `pre-commit` once (any of these):
+
+```bash
+brew install pre-commit          # macOS
+uv tool install pre-commit       # anywhere uv is available
+pipx install pre-commit
+```
+
+Then, once per clone:
+
+```bash
+pre-commit install
+```
+
+Check the current working tree straight away — the first run also downloads the
+hook environments, so it takes a minute:
+
+```bash
+pre-commit run --all-files
+```
+
+What runs on every commit:
+
+| Hook | Catches |
+| --- | --- |
+| `gitleaks` | Credentials in the staged diff, by pattern. Scans only what you are committing, not the whole history |
+| `detect-private-key` | PEM and OpenSSH private key blocks, by structure rather than by pattern |
+| `forbid-secret-files` | Whole file classes that must never be committed: `.env*`, `*.tfvars`, `*.tfstate*`, `*.pem`, `*.key`, `id_rsa`/`id_ed25519`, `*-key.json` |
+
+The last one exists because `.gitignore` is bypassed by `git add -f`, by a path
+nobody thought to add, and by anyone who edits their local copy. `.env.example`
+and `*.pub` are allowed through.
+
+Two honest caveats:
+
+- **These hooks are local and skippable.** `git commit --no-verify` walks past
+  all of them. They are a first line of defence, not the enforcement point —
+  the `Secret scan` job in `.github/workflows/security.yml` is what actually
+  blocks a merge.
+- **If a secret is already committed**, removing it in a later commit is not
+  enough; it stays in the history. Rotate the credential at its source first,
+  then clean up. See [`docs/secrets.md`](docs/secrets.md).
+
+If the `gitleaks` hook fails to build on your machine, swap it for the
+container-based variant in `.pre-commit-config.yaml`:
+
+```yaml
+      - id: gitleaks-docker
+```
+
 ## Tests and checks
 
 ```bash
@@ -328,7 +393,8 @@ uv run ruff check .
 
 ## Security notes
 
-- Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`.
+- Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`. Run
+  `pre-commit install` after cloning so this is enforced locally, not just by review.
 - Replace all example passwords before deployment.
 - Reserve the VM addresses and restrict sensitive LAN ports at the router or firewall when
   the network is not trusted.

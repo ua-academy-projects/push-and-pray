@@ -103,7 +103,7 @@ jobs:
         run: go test ./...
 
   integration:
-    name: PostgreSQL PGMQ Integration
+    name: PostgreSQL Integration
     runs-on: ubuntu-latest
 
     env:
@@ -112,6 +112,7 @@ jobs:
       POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
       PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
       PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+      TEST_DATABASE_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
 
     steps:
       - name: Checkout
@@ -189,6 +190,9 @@ jobs:
       - name: Run History PGMQ integration tests
         run: uv run pytest services/history/tests/integration -v
 
+      - name: Run UI PostgreSQL session integration tests
+        run: uv run pytest services/ui/backend/tests/test_session_api.py -v
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -239,8 +243,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      APP_IMAGE_TAG: f4bd2d001dd4ad7abcf04af967dca8e8a0f6d891
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+      POSTGRES_PASSWORD: ci-validation
       OILPRICEAPI_KEY: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
@@ -279,6 +286,7 @@ jobs:
 
       matrix:
         service:
+          - database
           - fetcher
           - history
           - ui
@@ -375,3 +383,9 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
+
+      - name: Validate cloud-init syntax
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
+          cloud-init schema --config-file infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl

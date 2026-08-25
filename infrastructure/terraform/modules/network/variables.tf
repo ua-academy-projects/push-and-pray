@@ -75,3 +75,16 @@ variable "postgresql_port" {
     error_message = "postgresql_port must be between 1 and 65535."
   }
 }
+variable "ui_public_ports" {
+  description = "Public TCP ports exposed on the UI VM"
+  type        = list(string)
+  default     = ["80", "443"]
+
+  validation {
+    condition = (
+      length(var.ui_public_ports) == 2 &&
+      toset(var.ui_public_ports) == toset(["80", "443"])
+    )
+    error_message = "ui_public_ports must contain exactly ports 80 and 443"
+  }
+}

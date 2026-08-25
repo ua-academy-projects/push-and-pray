@@ -16,7 +16,7 @@ resource "google_compute_instance" "workload" {
   machine_type              = var.machine_type
   allow_stopping_for_update = true
 
-  tags   = [var.network_tag]
+  tags   = var.network_tags
   labels = var.labels
 
   boot_disk {
@@ -54,6 +54,14 @@ resource "google_compute_instance" "workload" {
     enable_integrity_monitoring = true
   }
 
-  #TODO: Add workload cloud-init when guest provisioning
-  metadata = {}
+  lifecycle {
+    precondition {
+      condition     = !var.assign_public_ip || var.role == "ui"
+      error_message = "Only workloads with role ui may receive a public IP."
+    }
+  }
+
+  metadata = {
+    "user-data" = local.cloud_config
+  }
 }

@@ -6,6 +6,10 @@ module "network" {
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
 
+  ui_public_ports = [
+    for port in local.config.network.ui_public_ports : tostring(port)
+  ]
+
   bastion_ssh_port      = local.config.bastion.ssh_port
   bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
 
@@ -18,14 +22,21 @@ module "bastion" {
 
   resource_prefix = local.resource_prefix
   subnetwork_id   = module.network.management_subnet_id
-  network_tag     = module.network.network_tags.bastion
+  network_tags = distinct(concat(
+    [module.network.network_tags.bastion],
+    [
+      for tag in local.config.bastion.network_tags :
+      "${local.resource_prefix}-${tag}"
+    ],
+  ))
 
   machine_type      = local.config.bastion.machine_type
   image             = local.config.bastion.image
   boot_disk_size_gb = local.config.bastion.boot_disk.size_gb
   boot_disk_type    = local.config.bastion.boot_disk.type
+  preemptible       = local.config.bastion.preemptible
 
-  labels = local.common_labels
+  labels = merge(local.common_labels, try(local.config.bastion.labels, {}))
 }
 
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
@@ -33,9 +44,14 @@ module "vm" {
   source   = "./modules/vm"
   for_each = local.config.workloads
 
-  name          = "${local.resource_prefix}-${each.key}"
-  subnetwork_id = module.network.workload_subnet_id
-  network_tag   = module.network.network_tags[each.key]
+  name            = "${local.resource_prefix}-${each.key}"
+  subnetwork_id   = module.network.workload_subnet_id
+  role            = each.value.role
+  automation_role = each.value.automation_role
+  network_tags = [
+    for tag in each.value.network_tags :
+    "${local.resource_prefix}-${tag}"
+  ]
 
   machine_type = each.value.machine_type
   image        = each.value.image
@@ -44,9 +60,13 @@ module "vm" {
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.boot_disk.type
 
-  assign_public_ip = each.key == "ui"
+  assign_public_ip = each.value.assign_public_ip
 
-  labels = merge(local.common_labels, {
-    role = each.key
-  })
+  labels = merge(
+    local.common_labels,
+    try(each.value.labels, {}),
+    {
+      role = each.value.role
+    },
+  )
 }

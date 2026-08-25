@@ -15,7 +15,11 @@ resource "google_compute_instance" "bastion" {
   machine_type              = var.machine_type
   allow_stopping_for_update = true
 
+<<<<<<< HEAD
   tags   = [var.network_tag]
+=======
+  tags   = var.network_tags
+>>>>>>> origin/develop
   labels = var.labels
 
   boot_disk {
@@ -48,6 +52,19 @@ resource "google_compute_instance" "bastion" {
     enable_integrity_monitoring = true
   }
 
+<<<<<<< HEAD
   # TODO: Configure SSH access, install ssh_users, and switch sshd to the configured port.
   metadata = {}
 }
+=======
+  scheduling {
+    preemptible         = var.preemptible
+    automatic_restart   = !var.preemptible
+    on_host_maintenance = var.preemptible ? "TERMINATE" : "MIGRATE"
+    provisioning_model  = var.preemptible ? "SPOT" : "STANDARD"
+  }
+
+  # TODO: Configure SSH access, install ssh_users, and switch sshd to the configured port.
+  metadata = {}
+}
+>>>>>>> origin/develop
