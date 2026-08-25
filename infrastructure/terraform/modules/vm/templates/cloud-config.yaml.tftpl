@@ -11,6 +11,8 @@
 #   automation_role - the VM's non-secret automation role (e.g. infra, history,
 #                      fetcher, ui). Delivered as an Environment= line in the
 #                      oilscope-deploy.service unit below, never logged.
+#   registry_repository - non-secret registry path shared by application images.
+#   image_sha           - immutable Git commit SHA used as the image tag.
 #   docker_version   - exact Docker Engine apt version to pin, e.g.
 #                      "5:29.7.2-1~ubuntu.26.04~resolute". Re-verify with
 #                      `apt-cache madison docker-ce` before this template is
@@ -42,6 +44,8 @@ write_files:
       User=deploy
       Group=docker
       Environment=AUTOMATION_ROLE=${automation_role}
+      Environment=APP_IMAGE_REPOSITORY=${registry_repository}
+      Environment=APP_IMAGE_TAG=${image_sha}
       WorkingDirectory=/opt/oilscope/deploy
       ExecStart=/opt/oilscope/deploy/run.sh
 

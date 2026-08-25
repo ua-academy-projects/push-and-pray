@@ -33,6 +33,16 @@ variable "image" {
   type        = string
 }
 
+variable "internal_ip" {
+  description = "Static internal IPv4 address assigned to the bastion VM."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost("${var.internal_ip}/32", 0))
+    error_message = "internal_ip must be a valid IPv4 address."
+  }
+}
+
 variable "boot_disk_size_gb" {
   description = "Size of the bastion boot disk in GiB."
   type        = number

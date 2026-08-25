@@ -84,9 +84,37 @@ variable "assign_public_ip" {
   default     = false
 }
 
+variable "preemptible" {
+  description = "Whether to run the workload as a Spot VM."
+  type        = bool
+}
+
 variable "automation_role" {
   description = "Non-secret automation role passed to the cloud-init bootstrap process."
   type        = string
+}
+
+variable "registry_repository" {
+  description = "Non-secret container registry repository used by deployment automation."
+  type        = string
+
+  validation {
+    condition = (
+      length(trimspace(var.registry_repository)) > 0 &&
+      !can(regex("\\s", var.registry_repository))
+    )
+    error_message = "registry_repository must be non-empty and contain no whitespace."
+  }
+}
+
+variable "image_sha" {
+  description = "Immutable 40-character Git commit SHA used as the application image tag."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.image_sha))
+    error_message = "image_sha must be a 40-character lowercase hexadecimal Git commit SHA."
+  }
 }
 
 variable "docker_version" {
