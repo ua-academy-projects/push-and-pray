@@ -9,12 +9,6 @@
     "project": "example-oil-price-tracker",
     "team": "example-team"
   },
-  "terraform": {
-    "backend": {
-      "bucket": "example-project-12345-tfstate",
-      "prefix": "oilscope/dev"
-    }
-  },
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
@@ -47,8 +41,7 @@
       "ssh_port": 2222,
       "allowed_cidrs": [
         "192.0.2.10/32"
-      ],
-      "preemptible": false
+      ]
     },
     "infra": {
       "role": "database",
@@ -66,8 +59,7 @@
       "automation_role": "database",
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password"
-      },
-      "preemptible": false
+      }
     },
     "history": {
       "role": "history",
@@ -85,8 +77,7 @@
       "automation_role": "history",
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password"
-      },
-      "preemptible": false
+      }
     },
     "fetcher": {
       "role": "fetcher",
@@ -105,8 +96,7 @@
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "OILPRICEAPI_KEY": "example-api-key"
-      },
-      "preemptible": false
+      }
     },
     "ui": {
       "role": "ui",
@@ -124,8 +114,7 @@
       "automation_role": "ui",
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password"
-      },
-      "preemptible": false
+      }
     }
   }
 }

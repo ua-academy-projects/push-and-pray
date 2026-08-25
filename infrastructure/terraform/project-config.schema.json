@@ -12,7 +12,6 @@
     "zone",
     "name_prefix",
     "common_labels",
-    "terraform",
     "registry",
     "network",
     "service_ports",
@@ -45,32 +44,6 @@
     },
     "common_labels": {
       "$ref": "#/$defs/labels"
-    },
-    "terraform": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["backend"],
-      "properties": {
-        "backend": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["bucket", "prefix"],
-          "properties": {
-            "bucket": {
-              "type": "string",
-              "minLength": 3,
-              "maxLength": 63,
-              "pattern": "^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$"
-            },
-            "prefix": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$"
-            }
-          }
-        }
-      }
     },
     "registry": {
       "type": "object",
@@ -216,8 +189,7 @@
         "assign_public_ip",
         "network_tags",
         "automation_role",
-        "secret_mappings",
-        "preemptible"
+        "secret_mappings"
       ],
       "properties": {
         "role": {
@@ -253,9 +225,6 @@
         },
         "secret_mappings": {
           "$ref": "#/$defs/secret_mappings"
-        },
-        "preemptible": {
-          "type": "boolean"
         },
         "ssh_port": {
           "type": "integer",

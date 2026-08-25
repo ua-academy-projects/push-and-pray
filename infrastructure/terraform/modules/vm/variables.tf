@@ -84,11 +84,6 @@ variable "assign_public_ip" {
   default     = false
 }
 
-variable "preemptible" {
-  description = "Whether to run the workload as a Spot VM."
-  type        = bool
-}
-
 variable "automation_role" {
   description = "Non-secret automation role passed to the cloud-init bootstrap process."
   type        = string
