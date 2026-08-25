@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: MIT-0
+---
+# tasks file for host_baseline
+- name: Install baseline packages
+  become: true
+  ansible.builtin.apt:
+    name: "{{ host_baseline_packages }}"
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+
+- name: Create deployment group
+  become: true
+  ansible.builtin.group:
+    name: "{{ host_baseline_deploy_group }}"
+    system: true
+    state: present
+
+- name: Create locked deployment user
+  become: true
+  ansible.builtin.user:
+    name: "{{ host_baseline_deploy_user }}"
+    group: "{{ host_baseline_deploy_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+    state: present
+
+- name: Create OilScope directories
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+    state: directory
+  loop: "{{ host_baseline_directories }}"
+  loop_control:
+    label: "{{ item.path }}"

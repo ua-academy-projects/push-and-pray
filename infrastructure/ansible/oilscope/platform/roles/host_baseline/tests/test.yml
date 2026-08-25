@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Test the host_baseline role
+  hosts: host_baseline_test
+  become: true
+  roles:
+    - oilscope.platform.host_baseline
