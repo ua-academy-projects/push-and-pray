@@ -13,3 +13,17 @@ variable "project_config_path" {
     error_message = "project_config_path must contain valid JSON using config_version 3."
   }
 }
+
+variable "secret_version_managers" {
+  description = "IAM members allowed to add new versions to every secret. Adding a version does not grant reading one."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for member in var.secret_version_managers :
+      can(regex("^(user|group|serviceAccount|principal|principalSet):.+$", member))
+    ])
+    error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
+  }
+}

@@ -11,6 +11,14 @@ locals {
       }
     ]
   ])
+
+  secret_version_writers = {
+    for pair in setproduct(sort(local.all_secret_ids), var.secret_version_managers) :
+    "${pair[0]}/${pair[1]}" => {
+      secret_id = pair[0]
+      member    = pair[1]
+    }
+  }
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -26,9 +34,17 @@ resource "google_secret_manager_secret" "this" {
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {
-  for_each = { for pair in local.workload_secret_pairs : "${pair.vm_name}-${pair.secret_id}" => pair }
+  for_each = { for pair in local.workload_secret_pairs : "${pair.vm_name}/${pair.secret_id}" => pair }
 
   secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${module.vm[each.value.vm_name].service_account_email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "version_adder" {
+  for_each = local.secret_version_writers
+
+  secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
+  role      = "roles/secretmanager.secretVersionAdder"
+  member    = each.value.member
 }
