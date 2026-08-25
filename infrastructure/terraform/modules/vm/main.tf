@@ -54,6 +54,13 @@ resource "google_compute_instance" "workload" {
     enable_integrity_monitoring = true
   }
 
+  scheduling {
+    preemptible         = var.preemptible
+    automatic_restart   = !var.preemptible
+    on_host_maintenance = var.preemptible ? "TERMINATE" : "MIGRATE"
+    provisioning_model  = var.preemptible ? "SPOT" : "STANDARD"
+  }
+
   lifecycle {
     precondition {
       condition     = !var.assign_public_ip || var.role == "ui"

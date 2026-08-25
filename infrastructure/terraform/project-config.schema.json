@@ -12,15 +12,16 @@
     "zone",
     "name_prefix",
     "common_labels",
+    "terraform",
+    "registry",
     "network",
     "service_ports",
-    "bastion",
-    "workloads"
+    "vms"
   ],
   "properties": {
     "config_version": {
       "type": "integer",
-      "const": 2
+      "const": 3
     },
     "project_id": {
       "type": "string",
@@ -45,10 +46,51 @@
     "common_labels": {
       "$ref": "#/$defs/labels"
     },
+    "terraform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend"],
+      "properties": {
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bucket", "prefix"],
+          "properties": {
+            "bucket": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 63,
+              "pattern": "^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$"
+            },
+            "prefix": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$"
+            }
+          }
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "image_sha"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
     "network": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["management_subnet_cidr", "workload_subnet_cidr"],
+      "required": ["management_subnet_cidr", "workload_subnet_cidr", "ui_public_ports"],
       "properties": {
         "management_subnet_cidr": {
           "type": "string",
@@ -87,62 +129,32 @@
         }
       }
     },
-    "bastion": {
+    "vms": {
       "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "machine_type",
-        "image",
-        "boot_disk",
-        "ssh_port",
-        "allowed_cidrs",
-        "network_tags",
-        "preemptible"
-      ],
-      "properties": {
-        "machine_type": {
-          "$ref": "#/$defs/machine_type"
-        },
-        "image": {
-          "type": "string",
-          "minLength": 1
-        },
-        "boot_disk": {
-          "$ref": "#/$defs/boot_disk"
-        },
-        "ssh_port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "allowed_cidrs": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "network_tags": {
-          "$ref": "#/$defs/bastion_network_tags"
-        },
-        "labels": {
-          "$ref": "#/$defs/labels"
-        },
-        "preemptible": {
-          "type": "boolean"
-        }
-      }
-    },
-    "workloads": {
-      "type": "object",
-      "minProperties": 1,
+      "minProperties": 2,
+      "required": ["bastion"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
+      "properties": {
+        "bastion": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/vm"
+            },
+            {
+              "properties": {
+                "role": {
+                  "const": "bastion"
+                }
+              },
+              "required": ["role"]
+            }
+          ]
+        }
+      },
       "additionalProperties": {
-        "$ref": "#/$defs/workload"
+        "$ref": "#/$defs/vm"
       }
     }
   },
@@ -172,25 +184,27 @@
       "type": "string",
       "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
     },
-    "bastion_network_tags": {
+    "vm_network_tags": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["bastion"]
+        "enum": ["bastion", "infra", "history", "fetcher", "ui"]
       }
     },
-    "workload_network_tags": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
+    "secret_mappings": {
+      "$comment": "Maps application environment variable names to non-secret Secret Manager IDs.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
         "type": "string",
-        "enum": ["infra", "history", "fetcher", "ui"]
+        "pattern": "^[A-Za-z0-9_-]+$"
       }
     },
-    "workload": {
+    "vm": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -202,13 +216,13 @@
         "assign_public_ip",
         "network_tags",
         "automation_role",
-        "image_tag",
-        "secret_ids"
+        "secret_mappings",
+        "preemptible"
       ],
       "properties": {
         "role": {
           "type": "string",
-          "enum": ["database", "history", "fetcher", "ui"]
+          "enum": ["bastion", "database", "history", "fetcher", "ui"]
         },
         "machine_type": {
           "$ref": "#/$defs/machine_type"
@@ -228,25 +242,33 @@
           "type": "boolean"
         },
         "network_tags": {
-          "$ref": "#/$defs/workload_network_tags"
+          "$ref": "#/$defs/vm_network_tags"
         },
         "automation_role": {
           "type": "string",
-          "enum": ["none"]
+          "enum": ["none", "database", "history", "fetcher", "ui"]
         },
         "labels": {
           "$ref": "#/$defs/labels"
         },
-        "image_tag": {
-          "type": "string",
-          "minLength": 1
+        "secret_mappings": {
+          "$ref": "#/$defs/secret_mappings"
         },
-        "secret_ids": {
+        "preemptible": {
+          "type": "boolean"
+        },
+        "ssh_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "allowed_cidrs": {
           "type": "array",
+          "minItems": 1,
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9_-]+$"
+            "minLength": 1
           }
         }
       },
@@ -263,7 +285,136 @@
           "then": {
             "properties": {
               "role": {
+                "enum": ["bastion", "ui"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "bastion"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "required": ["ssh_port", "allowed_cidrs"],
+            "properties": {
+              "assign_public_ip": {
+                "const": true
+              },
+              "automation_role": {
+                "const": "none"
+              },
+              "network_tags": {
+                "contains": {
+                  "const": "bastion"
+                }
+              },
+              "secret_mappings": {
+                "maxProperties": 0
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["ssh_port"]
+                },
+                {
+                  "required": ["allowed_cidrs"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "database"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "automation_role": {
+                "enum": ["none", "database"]
+              },
+              "network_tags": {
+                "contains": {
+                  "const": "infra"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "history"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "automation_role": {
+                "enum": ["none", "history"]
+              },
+              "network_tags": {
+                "contains": {
+                  "const": "history"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "fetcher"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "automation_role": {
+                "enum": ["none", "fetcher"]
+              },
+              "network_tags": {
+                "contains": {
+                  "const": "fetcher"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
                 "const": "ui"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "properties": {
+              "automation_role": {
+                "enum": ["none", "ui"]
+              },
+              "network_tags": {
+                "contains": {
+                  "const": "ui"
+                }
               }
             }
           }
