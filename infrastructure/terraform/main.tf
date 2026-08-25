@@ -10,8 +10,8 @@ module "network" {
     for port in local.config.network.ui_public_ports : tostring(port)
   ]
 
-  bastion_ssh_port      = local.bastion_vm.ssh_port
-  bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
+  bastion_ssh_port      = local.config.bastion.ssh_port
+  bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
@@ -27,19 +27,18 @@ module "bastion" {
   network_tags = distinct(concat(
     [module.network.network_tags.bastion],
     [
-      for tag in local.bastion_vm.network_tags :
+      for tag in local.config.bastion.network_tags :
       "${local.resource_prefix}-${tag}"
     ],
   ))
 
-  machine_type      = local.bastion_vm.machine_type
-  image             = local.bastion_vm.image
-  internal_ip       = local.bastion_vm.internal_ip
-  boot_disk_size_gb = local.bastion_vm.boot_disk.size_gb
-  boot_disk_type    = local.bastion_vm.boot_disk.type
-  preemptible       = local.bastion_vm.preemptible
+  machine_type      = local.config.bastion.machine_type
+  image             = local.config.bastion.image
+  boot_disk_size_gb = local.config.bastion.boot_disk.size_gb
+  boot_disk_type    = local.config.bastion.boot_disk.type
+  preemptible       = local.config.bastion.preemptible
 
-  labels = merge(local.common_labels, try(local.bastion_vm.labels, {}))
+  labels = merge(local.common_labels, try(local.config.bastion.labels, {}))
 
   depends_on = [google_project_service.required]
 }
@@ -47,14 +46,12 @@ module "bastion" {
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.workload_vms
+  for_each = local.config.workloads
 
-  name                = "${local.resource_prefix}-${each.key}"
-  subnetwork_id       = module.network.workload_subnet_id
-  role                = each.value.role
-  automation_role     = each.value.automation_role
-  registry_repository = local.config.registry.repository
-  image_sha           = local.config.registry.image_sha
+  name            = "${local.resource_prefix}-${each.key}"
+  subnetwork_id   = module.network.workload_subnet_id
+  role            = each.value.role
+  automation_role = each.value.automation_role
   network_tags = [
     for tag in each.value.network_tags :
     "${local.resource_prefix}-${tag}"
@@ -68,7 +65,6 @@ module "vm" {
   boot_disk_type    = each.value.boot_disk.type
 
   assign_public_ip = each.value.assign_public_ip
-  preemptible      = each.value.preemptible
 
   labels = merge(
     local.common_labels,

@@ -67,8 +67,8 @@ module "network" {
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
   ui_public_ports        = ["80", "443"]
 
-  bastion_ssh_port      = local.bastion_vm.ssh_port
-  bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
+  bastion_ssh_port      = local.config.bastion.ssh_port
+  bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql

@@ -9,7 +9,7 @@ variable "project_config_path" {
   }
 
   validation {
-    condition     = try(jsondecode(file(var.project_config_path)).config_version == 3, false)
-    error_message = "project_config_path must contain valid JSON using config_version 3."
+    condition     = try(jsondecode(file(var.project_config_path)).config_version == 2, false)
+    error_message = "project_config_path must contain valid JSON using config_version 2."
   }
 }

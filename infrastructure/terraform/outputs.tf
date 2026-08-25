@@ -13,7 +13,7 @@ output "workload_vm_names" {
 output "workload_roles" {
   description = "Roles by workload."
   value = {
-    for name, workload in local.workload_vms : name => workload.role
+    for name, workload in local.config.workloads : name => workload.role
   }
 }
 
@@ -41,7 +41,7 @@ output "workload_network_tags" {
 output "workload_automation_roles" {
   description = "Automation roles by workload."
   value = {
-    for name, workload in local.workload_vms : name => workload.automation_role
+    for name, workload in local.config.workloads : name => workload.automation_role
   }
 }
 

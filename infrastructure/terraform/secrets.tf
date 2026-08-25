@@ -1,14 +1,11 @@
 locals {
   all_secret_ids = distinct(flatten([
-    for workload in values(local.workload_vms) : values(workload.secret_mappings)
+    for name, workload in local.config.workloads : workload.secret_ids
   ]))
 
   workload_secret_pairs = flatten([
-    for name, workload in local.workload_vms : [
-      for secret_id in distinct(values(workload.secret_mappings)) : {
-        vm_name   = name
-        secret_id = secret_id
-      }
+    for name, workload in local.config.workloads : [
+      for secret_id in workload.secret_ids : { vm_name = name, secret_id = secret_id }
     ]
   ])
 }
