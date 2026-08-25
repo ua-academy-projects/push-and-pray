@@ -34,9 +34,9 @@ module "bastion" {
 
   machine_type      = local.bastion_vm.machine_type
   image             = local.bastion_vm.image
+  internal_ip       = local.bastion_vm.internal_ip
   boot_disk_size_gb = local.bastion_vm.boot_disk.size_gb
   boot_disk_type    = local.bastion_vm.boot_disk.type
-  preemptible       = local.bastion_vm.preemptible
 
   labels = merge(local.common_labels, try(local.bastion_vm.labels, {}))
 
