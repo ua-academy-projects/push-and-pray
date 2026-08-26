@@ -1,38 +1,64 @@
-Role Name
-=========
+# Fetcher role
 
-A brief description of the role goes here.
+Pulls the OilScope Fetcher image, starts the Fetcher service, and waits for
+its Docker health check.
 
-Requirements
-------------
+## Requirements
 
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+The target must have Docker with the Compose plugin installed. The supported
+Compose definition must already be installed on the target; use the
+`oilscope.platform.compose_project` role for that step.
 
-Role Variables
---------------
+A reachable PostgreSQL instance is required: the Fetcher process pings it at
+startup and exits immediately if the connection fails, before its HTTP
+server (and therefore its health check) ever starts.
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
+## Required variables
 
-Dependencies
-------------
+- `fetcher_postgres_password`: database password supplied by the deployment
+  secret mechanism. The role marks tasks receiving it with `no_log` and does
+  not write it to disk.
+- `fetcher_oilpriceapi_key`: price data provider API key supplied by the
+  deployment secret mechanism. Same `no_log` handling as the password.
 
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+## Optional variables
 
-Example Playbook
-----------------
+- `fetcher_compose_project_dir`: Compose directory; defaults to
+  `/opt/oilscope/app`.
+- `fetcher_compose_file`: Compose file; defaults to `compose.yaml` in that
+  directory.
+- `fetcher_compose_project_name`: Compose project name; defaults to
+  `petroscope`.
+- `fetcher_service`: Compose service name; defaults to `fetcher`.
+- `fetcher_postgres_user` and `fetcher_postgres_name`: both default to
+  `oil_tracker`.
+- `fetcher_database_host`: defaults to `postgres`; override to the database
+  VM's address when Fetcher and the database run on separate hosts.
+- `fetcher_bind_address`: defaults to `0.0.0.0`.
+- `fetcher_host_port`: defaults to `8002`.
+- `fetcher_health_retries` and `fetcher_health_delay`: health polling
+  controls, defaulting to 30 attempts every 2 seconds.
+- `fetcher_compose_environment`: additional non-secret Compose environment.
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
+## Example playbook
 
-    - hosts: servers
-      roles:
-         - { role: username.rolename, x: 42 }
+```yaml
+---
+- name: Deploy the Fetcher service
+  hosts: fetcher
+  become: true
+  roles:
+    - role: oilscope.platform.fetcher
+      vars:
+        fetcher_postgres_password: "{{ vault_database_password }}"
+        fetcher_oilpriceapi_key: "{{ vault_oilpriceapi_key }}"
+        fetcher_database_host: 10.0.1.2
+```
 
-License
--------
+Running the role again is safe: Compose reconciles the existing Fetcher
+container, and the health wait re-confirms it is running before the role
+finishes.
 
-BSD
+## License
 
-Author Information
-------------------
-
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+GPL-2.0-or-later
