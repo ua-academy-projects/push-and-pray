@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Check the Compose definition
-  ansible.builtin.stat:
-    path: "{{ fetcher_compose_file }}"
-  register: fetcher_compose_definition
-
-- name: Require the Compose definition
-  ansible.builtin.assert:
-    that:
-      - fetcher_compose_definition.stat.isreg | default(false)
-    fail_msg: "Compose definition not found at {{ fetcher_compose_file }}."
-
 - name: Pull the Fetcher image
   ansible.builtin.command:
     argv:
