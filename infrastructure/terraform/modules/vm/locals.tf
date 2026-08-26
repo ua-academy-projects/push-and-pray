@@ -5,6 +5,9 @@ locals {
     image_sha           = var.image_sha
     docker_version      = var.docker_version
     run_script          = file("${path.module}/templates/run.sh")
-    compose_deployment  = file("${path.module}/../../../docker/compose.deployment.yaml")
+    # Single source of truth for the deployment Compose file. It moved into the
+    # compose_project role in #106; the name ends in .j2 by role convention, but
+    # the file holds no Jinja - only the shell interpolation Compose expands.
+    compose_deployment = file("${path.module}/../../../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2")
   })
 }
