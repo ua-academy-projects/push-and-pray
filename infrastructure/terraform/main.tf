@@ -19,37 +19,13 @@ module "network" {
   depends_on = [google_project_service.required]
 }
 
-module "bastion" {
-  source = "./modules/bastion"
-
-  resource_prefix = local.resource_prefix
-  subnetwork_id   = module.network.management_subnet_id
-  network_tags = distinct(concat(
-    [module.network.network_tags.bastion],
-    [
-      for tag in local.bastion_vm.network_tags :
-      "${local.resource_prefix}-${tag}"
-    ],
-  ))
-
-  machine_type      = local.bastion_vm.machine_type
-  image             = local.bastion_vm.image
-  internal_ip       = local.bastion_vm.internal_ip
-  boot_disk_size_gb = local.bastion_vm.boot_disk.size_gb
-  boot_disk_type    = local.bastion_vm.boot_disk.type
-
-  labels = merge(local.common_labels, try(local.bastion_vm.labels, {}))
-
-  depends_on = [google_project_service.required]
-}
-
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.workload_vms
+  for_each = local.config.vms
 
   name                = "${local.resource_prefix}-${each.key}"
-  subnetwork_id       = module.network.workload_subnet_id
+  subnetwork_id       = each.value.role == "bastion" ? module.network.management_subnet_id : module.network.workload_subnet_id
   role                = each.value.role
   automation_role     = each.value.automation_role
   registry_repository = local.config.registry.repository
