@@ -121,3 +121,15 @@ variable "labels" {
   description = "Labels applied to resources that support them."
   type        = map(string)
 }
+
+variable "admin_ssh_user" {
+  description = "Admin SSH username injected into instance metadata."
+  type        = string
+  default     = null
+}
+
+variable "ssh_public_key" {
+  description = "SSH public key injected into instance metadata."
+  type        = string
+  default     = null
+}

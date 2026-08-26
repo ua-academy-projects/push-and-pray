@@ -44,6 +44,8 @@ module "vm" {
 
   assign_public_ip = each.value.assign_public_ip
 
+  admin_ssh_user = try(local.config.admin_ssh_user, null)
+  ssh_public_key = try(local.config.admin_ssh_public_key, local.config.ssh_public_key, null)
 
   labels = merge(
     local.common_labels,

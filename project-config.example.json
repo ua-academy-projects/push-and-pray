@@ -1,5 +1,7 @@
 {
   "config_version": 3,
+  "admin_ssh_user": "ubuntu",
+  "ssh_public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyPlaceholder user@example.com",
   "project_id": "example-project-12345",
   "environment": "dev",
   "region": "europe-west1",

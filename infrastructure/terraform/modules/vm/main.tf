@@ -61,7 +61,13 @@ resource "google_compute_instance" "workload" {
     }
   }
 
-  metadata = var.role == "bastion" ? {} : {
-    "user-data" = local.cloud_config
-  }
+  metadata = merge(
+    var.role == "bastion" ? {} : {
+      "user-data" = local.cloud_config
+    },
+    var.admin_ssh_user != null && var.ssh_public_key != null ? {
+      "ssh-keys"       = "${var.admin_ssh_user}:${var.ssh_public_key}"
+      "enable-oslogin" = "FALSE"
+    } : {}
+  )
 }
