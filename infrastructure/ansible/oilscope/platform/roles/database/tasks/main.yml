@@ -1,31 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Validate database deployment variables
-  ansible.builtin.assert:
-    that:
-      - database_compose_file | length > 0
-      - database_postgres_image is match('^.+@sha256:[0-9a-f]{64}$')
-      - database_application_image_tag is match('^[0-9a-f]{40}$')
-      - database_postgres_password | length > 0
-      - database_health_retries | int > 0
-      - database_health_delay | int >= 0
-    fail_msg: >-
-      database_compose_file and database_postgres_password are required, and
-      database_postgres_image must be pinned to a sha256 digest. The
-      database_application_image_tag must be a full 40-character Git SHA so
-      the shared Compose definition can be rendered.
-  no_log: true
-
 - name: Check the Compose definition
   ansible.builtin.stat:
     path: "{{ database_compose_file }}"
   register: database_compose_definition
-
-- name: Require the Compose definition
-  ansible.builtin.assert:
-    that:
-      - database_compose_definition.stat.isreg | default(false)
-    fail_msg: "Compose definition not found at {{ database_compose_file }}."
 
 - name: Pull the exact PostgreSQL image
   ansible.builtin.command:

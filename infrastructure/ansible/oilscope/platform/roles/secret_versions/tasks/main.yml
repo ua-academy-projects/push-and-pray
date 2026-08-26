@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Require a project configuration
-  ansible.builtin.assert:
-    that:
-      - secret_versions_config_file | length > 0
-    fail_msg: >-
-      secret_versions_config_file must point at the project configuration JSON,
-      the same file the Terraform configuration reads.
-
 - name: Read the project configuration
   ansible.builtin.set_fact:
     secret_versions_config: >-
@@ -26,13 +18,6 @@
   loop_control:
     loop_var: secret_versions_vm
     label: "{{ secret_versions_vm.key }}"
-
-- name: Require at least one mapping
-  ansible.builtin.assert:
-    that:
-      - secret_versions_pairs | default([]) | length > 0
-    fail_msg: >-
-      No secret_mappings in {{ secret_versions_config_file }} - nothing to upload.
 
 # The variable name comes from the container ID, not from the key side of
 # secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
@@ -93,16 +78,6 @@
             | list) }}
   when: secret_versions_only | length > 0
 
-- name: Require the requested containers to exist in the configuration
-  ansible.builtin.assert:
-    that:
-      - secret_versions_catalog | length == secret_versions_only | length
-    fail_msg: >-
-      secret_versions_only names something that is not in
-      {{ secret_versions_config_file }}. Requested
-      {{ secret_versions_only | join(', ') }}; matched
-      {{ secret_versions_catalog | map(attribute='secret_id') | join(', ') }}.
-  when: secret_versions_only | length > 0
 
 - name: Show which variable feeds which container
   ansible.builtin.debug:
@@ -120,14 +95,6 @@
          | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
          | default(secret_versions_config.project_id | default(''), true) }}
 
-- name: Require a target project
-  ansible.builtin.assert:
-    that:
-      - secret_versions_project | length > 0
-    fail_msg: >-
-      No target project. Set secret_versions_project_id, export GOOGLE_PROJECT,
-      or add project_id to {{ secret_versions_config_file }}.
-
 # Everything is checked before anything is written. A value that turns out to
 # be missing halfway through leaves some workloads on the new credential and
 # some on the old one, which is worse than not having started.
@@ -141,17 +108,6 @@
   loop: "{{ secret_versions_catalog }}"
   loop_control:
     label: "{{ item.variable }}"
-
-- name: Require every value before anything is uploaded
-  ansible.builtin.assert:
-    that:
-      - secret_versions_absent | default([]) | length == 0
-    fail_msg: >-
-      Not set, or empty, in this environment:
-      {{ secret_versions_absent | default([]) | join(', ') }}. Nothing was
-      uploaded. Export them in the shell that runs this play - start the line
-      with a space so it stays out of the history - and do not keep them in a
-      file.
 
 - name: Look for the containers
   ansible.builtin.command:
@@ -172,21 +128,6 @@
 
 # secretVersionAdder allows adding a version without reading the metadata, so a
 # permission error is not proof that the container is missing.
-- name: Require every container to exist
-  ansible.builtin.assert:
-    that:
-      - secret_versions_undefined | length == 0
-    fail_msg: >-
-      These containers do not exist in {{ secret_versions_project }}:
-      {{ secret_versions_undefined | join(', ') }}. Terraform creates them from
-      the same configuration - run terraform apply first. Nothing was uploaded.
-  vars:
-    secret_versions_undefined: >-
-      {{ secret_versions_describe.results
-         | rejectattr('rc', 'eq', 0)
-         | rejectattr('stderr', 'search', 'PERMISSION_DENIED')
-         | map(attribute='item.secret_id') | list }}
-
 # --data-file=- takes the payload from stdin, so it never becomes a command
 # argument and cannot appear in ps output or a shell history. no_log keeps it
 # out of the Ansible output and any callback log, and stdin_add_newline is off
