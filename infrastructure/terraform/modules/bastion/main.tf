@@ -31,6 +31,7 @@ resource "google_compute_instance" "bastion" {
 
   network_interface {
     subnetwork = var.subnetwork_id
+    network_ip = var.internal_ip
 
     access_config {
       nat_ip = google_compute_address.bastion.address
@@ -46,13 +47,6 @@ resource "google_compute_instance" "bastion" {
     enable_secure_boot          = true
     enable_vtpm                 = true
     enable_integrity_monitoring = true
-  }
-
-  scheduling {
-    preemptible         = var.preemptible
-    automatic_restart   = !var.preemptible
-    on_host_maintenance = var.preemptible ? "TERMINATE" : "MIGRATE"
-    provisioning_model  = var.preemptible ? "SPOT" : "STANDARD"
   }
 
   # TODO: Configure SSH access, install ssh_users, and switch sshd to the configured port.

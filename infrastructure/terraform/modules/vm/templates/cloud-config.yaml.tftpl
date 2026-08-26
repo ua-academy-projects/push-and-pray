@@ -8,20 +8,19 @@
 # separate, later automation step (#56) - see oilscope-deploy.service below.
 #
 # Template variables (supplied by modules/vm/locals.tf's templatefile() call):
-#   automation_role    - the VM's non-secret automation role (e.g. infra, history,
+#   automation_role     - the VM's non-secret automation role (e.g. infra, history,
 #                         fetcher, ui). Delivered as an Environment= line in the
 #                         oilscope-deploy.service unit below, never logged.
-#   docker_version     - exact Docker Engine apt version to pin, e.g.
+#   registry_repository - non-secret registry path shared by application images.
+#   image_sha           - immutable Git commit SHA used as the image tag.
+#   docker_version      - exact Docker Engine apt version to pin, e.g.
 #                         "5:29.7.2-1~ubuntu.26.04~resolute". Re-verify with
 #                         `apt-cache madison docker-ce` before this template is
 #                         attached to any VM - do not trust this file's own
 #                         history for a current value.
-#   image_tag          - immutable GHCR image tag for this VM's application
-#                         containers. Delivered as an Environment= line, same
-#                         as automation_role.
-#   run_script         - full contents of modules/vm/templates/run.sh, written
+#   run_script          - full contents of modules/vm/templates/run.sh, written
 #                         to /opt/oilscope/deploy/run.sh below.
-#   compose_deployment - full contents of infrastructure/docker/compose.deployment.yaml,
+#   compose_deployment  - full contents of infrastructure/docker/compose.deployment.yaml,
 #                         written to /opt/oilscope/deploy/compose.deployment.yaml below.
 
 users:
@@ -49,7 +48,8 @@ write_files:
       User=deploy
       Group=docker
       Environment=AUTOMATION_ROLE=${automation_role}
-      Environment=APP_IMAGE_TAG=${image_tag}
+      Environment=APP_IMAGE_REPOSITORY=${registry_repository}
+      Environment=APP_IMAGE_TAG=${image_sha}
       WorkingDirectory=/opt/oilscope/deploy
       ExecStart=/opt/oilscope/deploy/run.sh
 

@@ -389,3 +389,18 @@ jobs:
         run: |
           command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
           cloud-init schema --config-file infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl
+
+  ansible:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: run ansible-lint
+        uses: ansible/ansible-lint@main
+        with:
+          args: ""
+          setup_python: "true"
+          python-version: "3.14"
+          working-directory: infrastructure/ansible
+          requirements_file: ""

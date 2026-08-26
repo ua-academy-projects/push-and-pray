@@ -1,18 +1,16 @@
 locals {
   all_secret_ids = distinct(flatten([
-    for name, workload in local.config.workloads : workload.secret_ids
+    for workload in values(local.workload_vms) : values(workload.secret_mappings)
   ]))
 
   workload_secret_pairs = flatten([
-    for name, workload in local.config.workloads : [
-      for secret_id in workload.secret_ids : { vm_name = name, secret_id = secret_id }
+    for name, workload in local.workload_vms : [
+      for secret_id in distinct(values(workload.secret_mappings)) : {
+        vm_name   = name
+        secret_id = secret_id
+      }
     ]
   ])
-}
-
-resource "google_project_service" "secretmanager" {
-  service            = "secretmanager.googleapis.com"
-  disable_on_destroy = false
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -24,7 +22,7 @@ resource "google_secret_manager_secret" "this" {
     auto {}
   }
 
-  depends_on = [google_project_service.secretmanager]
+  depends_on = [google_project_service.required]
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {
