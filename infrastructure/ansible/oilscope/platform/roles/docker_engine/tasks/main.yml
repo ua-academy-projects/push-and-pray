@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate Docker Engine role variables
+  ansible.builtin.assert:
+    that:
+      - docker_engine_version | length > 0
+      - docker_engine_pinned_packages | length > 0
+      - docker_engine_keyring_path | length > 0
+      - docker_engine_repository_path | length > 0
+    fail_msg: >-
+      docker_engine_version must name an exact apt version, and
+      docker_engine_pinned_packages, docker_engine_keyring_path and
+      docker_engine_repository_path must not be empty.
+
+- name: Validate the target distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Debian'
+      - ansible_facts['distribution_release'] | length > 0
+    fail_msg: >-
+      docker_engine supports Debian-family hosts only. This host reports
+      os_family {{ ansible_facts['os_family'] | default('unknown') }}.
+
+- name: Validate the pinned version against the host release
+  ansible.builtin.assert:
+    that:
+      - >-
+        docker_engine_version
+        is search('~' ~ ansible_facts['distribution_release'] ~ '$')
+    fail_msg: >-
+      docker_engine_version {{ docker_engine_version }} was built for another
+      Ubuntu release; this host runs
+      {{ ansible_facts['distribution_release'] }}. Confirm the available
+      versions with `apt-cache madison docker-ce` before changing the pin.
+  when: docker_engine_validate_release | bool
+
+- name: Create the apt keyring directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ docker_engine_keyring_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Docker repository signing key
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ docker_engine_gpg_url }}"
+    dest: "{{ docker_engine_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Docker apt repository
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ docker_engine_repository_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: {{ docker_engine_repository_url }}
+      Suites: {{ ansible_facts['distribution_release'] }}
+      Components: {{ docker_engine_repository_component }}
+      Architectures: {{ docker_engine_architecture }}
+      Signed-By: {{ docker_engine_keyring_path }}
+  notify: Refresh the apt cache
+
+# The cache must be current before the install task below, and handlers would
+# otherwise not run until the end of the play.
+- name: Apply a pending apt cache refresh
+  ansible.builtin.meta: flush_handlers
+
+- name: Install Docker Engine and the Compose plugin
+  become: true
+  ansible.builtin.apt:
+    name: "{{ docker_engine_package_specs }}"
+    state: present
+    install_recommends: false
+
+- name: Hold the pinned Docker packages
+  become: true
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ docker_engine_held_packages }}"
+  when: docker_engine_hold | bool
+
+- name: Enable and start the Docker service
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ docker_engine_service }}"
+    enabled: "{{ docker_engine_service_enabled }}"
+    state: "{{ docker_engine_service_state }}"
+
+- name: Read the local account database
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Grant Docker socket access to service accounts
+  become: true
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: "{{ docker_engine_group }}"
+    append: true
+  loop: "{{ docker_engine_group_members }}"
+  when: item in ansible_facts['getent_passwd']

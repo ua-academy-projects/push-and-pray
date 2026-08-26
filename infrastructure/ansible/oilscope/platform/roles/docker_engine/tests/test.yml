@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the Docker Engine role
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Include the role with a version pinned to another release
+      ansible.builtin.include_role:
+        name: docker_engine
+      vars:
+        docker_engine_version: "5:0.0.0-0~ubuntu.00.00~nonexistent"
+      register: docker_engine_wrong_release
+      ignore_errors: true
+
+    - name: Verify a mismatched release pin is rejected
+      ansible.builtin.assert:
+        that:
+          - docker_engine_wrong_release is failed
+        fail_msg: >-
+          The role must refuse a docker_engine_version built for a release
+          other than the one the host runs.
