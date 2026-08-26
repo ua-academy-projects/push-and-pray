@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the UI role
+  hosts: ui
+  gather_facts: false
+  tasks:
+    - name: Initialize validation result
+      ansible.builtin.set_fact:
+        ui_invalid_image_tag_rejected: false
+
+    - name: Exercise immutable image tag validation
+      block:
+        - name: Include the role with an invalid mutable image tag
+          ansible.builtin.include_role:
+            name: ui
+          vars:
+            ui_application_image_tag: latest
+            ui_postgres_image: >-
+              example.invalid/database@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            ui_postgres_password: test-only
+            ui_health_host: test-ui-public-address
+      rescue:
+        - name: Record that the invalid tag was rejected
+          ansible.builtin.set_fact:
+            ui_invalid_image_tag_rejected: true
+
+    - name: Verify mutable image tags are rejected
+      ansible.builtin.assert:
+        that:
+          - ui_invalid_image_tag_rejected
+          - ui_database_address == 'database-private-address'
+          - ui_history_address == 'history-private-address'
+          - >-
+            ui_history_service_url ==
+            'http://history-private-address:8001'

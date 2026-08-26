@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+ui_compose_service: ui
+ui_runtime_environment: >-
+  {{
+    ui_compose_environment
+    | combine({
+      'APP_IMAGE_TAG': ui_application_image_tag,
+      'POSTGRES_IMAGE': ui_postgres_image,
+      'POSTGRES_PASSWORD': ui_postgres_password,
+      'POSTGRES_USER': ui_postgres_user,
+      'POSTGRES_DB': ui_postgres_name,
+      'DATABASE_HOST': ui_database_address,
+      'DATABASE_PORT': ui_database_port | string,
+      'DATABASE_SSLMODE': ui_database_sslmode,
+      'HISTORY_SERVICE_URL': ui_history_service_url,
+      'UI_BIND_ADDRESS': ui_bind_address | string,
+      'UI_HTTP_PORT': ui_http_port | string,
+      'SESSION_TTL_SECONDS': ui_session_ttl_seconds | string,
+      'SESSION_COOKIE_SECURE': ui_session_cookie_secure | ternary('true', 'false'),
+      'LOG_LEVEL': ui_log_level
+    })
+  }}

@@ -1,0 +1,171 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate UI inventory group names
+  ansible.builtin.assert:
+    that:
+      - ui_database_inventory_group | length > 0
+      - ui_history_inventory_group | length > 0
+      - ui_database_inventory_group in groups
+      - ui_history_inventory_group in groups
+    fail_msg: >-
+      Inventory groups named by ui_database_inventory_group and
+      ui_history_inventory_group must exist.
+
+- name: Validate UI inventory group membership
+  ansible.builtin.assert:
+    that:
+      - groups[ui_database_inventory_group] | length == 1
+      - groups[ui_history_inventory_group] | length == 1
+    fail_msg: >-
+      The {{ ui_database_inventory_group }} and
+      {{ ui_history_inventory_group }} inventory groups must each contain
+      exactly one host.
+
+- name: Select the Database and History inventory hosts
+  ansible.builtin.set_fact:
+    ui_database_inventory_host: "{{ groups[ui_database_inventory_group][0] }}"
+    ui_history_inventory_host: "{{ groups[ui_history_inventory_group][0] }}"
+
+- name: Validate private service addresses in inventory
+  ansible.builtin.assert:
+    that:
+      - >-
+        ui_inventory_private_address_var in
+        hostvars[ui_database_inventory_host]
+      - >-
+        hostvars[ui_database_inventory_host]
+        [ui_inventory_private_address_var] | string | length > 0
+      - >-
+        ui_inventory_private_address_var in
+        hostvars[ui_history_inventory_host]
+      - >-
+        hostvars[ui_history_inventory_host]
+        [ui_inventory_private_address_var] | string | length > 0
+    fail_msg: >-
+      Database host {{ ui_database_inventory_host }} and History host
+      {{ ui_history_inventory_host }} must each define the private address
+      variable {{ ui_inventory_private_address_var }}.
+
+- name: Resolve private service endpoints from inventory
+  ansible.builtin.set_fact:
+    ui_database_address: >-
+      {{ hostvars[ui_database_inventory_host]
+         [ui_inventory_private_address_var] }}
+    ui_history_address: >-
+      {{ hostvars[ui_history_inventory_host]
+         [ui_inventory_private_address_var] }}
+    ui_history_service_url: >-
+      http://{{ hostvars[ui_history_inventory_host]
+                [ui_inventory_private_address_var] }}:{{ ui_history_port }}
+
+- name: Validate UI deployment variables
+  ansible.builtin.assert:
+    that:
+      - ui_compose_project_dir | length > 0
+      - ui_compose_file | length > 0
+      - ui_compose_project_name | length > 0
+      - ui_application_image_tag is match('^[0-9a-f]{40}$')
+      - ui_postgres_image is match('^.+@sha256:[0-9a-f]{64}$')
+      - ui_postgres_user | length > 0
+      - ui_postgres_name | length > 0
+      - ui_database_sslmode | length > 0
+      - ui_database_port | int > 0
+      - ui_database_port | int <= 65535
+      - ui_history_port | int > 0
+      - ui_history_port | int <= 65535
+      - ui_bind_address | string | length > 0
+      - ui_http_port | int > 0
+      - ui_http_port | int <= 65535
+      - ui_health_scheme in ['http', 'https']
+      - ui_health_host | length > 0
+      - ui_health_path is match('^/')
+      - ui_health_status_code | int >= 100
+      - ui_health_status_code | int <= 599
+      - ui_health_retries | int > 0
+      - ui_health_delay | int >= 0
+    fail_msg: >-
+      UI deployment requires a full 40-character application image SHA, a
+      PostgreSQL image pinned to a sha256 digest, valid service ports, and
+      valid Compose and database settings. ui_health_host must be the public
+      UI address reachable from ui_health_delegate_to.
+
+- name: Require an injected PostgreSQL password
+  ansible.builtin.fail:
+    msg: >-
+      ui_postgres_password is required and must be supplied by the runtime
+      secret mechanism.
+  when: ui_postgres_password | length == 0
+
+- name: Check the shared Compose definition
+  ansible.builtin.stat:
+    path: "{{ ui_compose_file }}"
+  register: ui_compose_definition
+
+- name: Require the shared Compose definition
+  ansible.builtin.assert:
+    that:
+      - ui_compose_definition.stat.isreg | default(false)
+    fail_msg: "Shared Compose definition not found at {{ ui_compose_file }}."
+
+- name: Pull only the UI image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ ui_compose_project_name }}"
+      - --file
+      - "{{ ui_compose_file }}"
+      - pull
+      - "{{ ui_compose_service }}"
+  args:
+    chdir: "{{ ui_compose_project_dir }}"
+  environment: "{{ ui_runtime_environment }}"
+  register: ui_compose_pull
+  changed_when: >-
+    'Downloaded newer image' in ui_compose_pull.stdout or
+    'Downloaded newer image' in ui_compose_pull.stderr or
+    'Pull complete' in ui_compose_pull.stdout or
+    'Pull complete' in ui_compose_pull.stderr
+  no_log: true
+
+- name: Start only the UI service without dependencies
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ ui_compose_project_name }}"
+      - --file
+      - "{{ ui_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ ui_compose_service }}"
+  args:
+    chdir: "{{ ui_compose_project_dir }}"
+  environment: "{{ ui_runtime_environment }}"
+  register: ui_compose_up
+  changed_when: >-
+    'Created' in ui_compose_up.stderr or
+    'Started' in ui_compose_up.stderr or
+    'Recreated' in ui_compose_up.stderr
+  no_log: true
+
+- name: Wait for the public UI health endpoint
+  become: false
+  ansible.builtin.uri:
+    url: >-
+      {{ ui_health_scheme }}://{{ ui_health_host }}:{{ ui_http_port
+      }}{{ ui_health_path }}
+    method: GET
+    status_code: "{{ ui_health_status_code }}"
+    validate_certs: "{{ ui_health_validate_certs }}"
+    return_content: false
+  delegate_to: "{{ ui_health_delegate_to }}"
+  register: ui_public_health
+  changed_when: false
+  retries: "{{ ui_health_retries }}"
+  delay: "{{ ui_health_delay }}"
+  until: >-
+    ui_public_health.status | default(0) == ui_health_status_code | int

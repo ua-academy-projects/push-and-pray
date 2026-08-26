@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+ui_compose_project_dir: /opt/oilscope/app
+ui_compose_file: "{{ ui_compose_project_dir }}/compose.yaml"
+ui_compose_project_name: petroscope
+
+ui_application_image_tag: ""
+ui_postgres_image: ""
+ui_postgres_password: ""
+ui_postgres_user: oil_tracker
+ui_postgres_name: oil_tracker
+ui_database_sslmode: disable
+ui_compose_environment: {}
+
+ui_database_inventory_group: database
+ui_history_inventory_group: history
+ui_inventory_private_address_var: internal_ip
+ui_database_port: 5432
+ui_history_port: 8001
+
+ui_bind_address: 0.0.0.0
+ui_http_port: 80
+ui_session_ttl_seconds: 2592000
+ui_session_cookie_secure: false
+ui_log_level: INFO
+
+ui_health_scheme: http
+ui_health_host: ""
+ui_health_path: /health
+ui_health_status_code: 200
+ui_health_retries: 30
+ui_health_delay: 2
+ui_health_validate_certs: true
+ui_health_delegate_to: localhost

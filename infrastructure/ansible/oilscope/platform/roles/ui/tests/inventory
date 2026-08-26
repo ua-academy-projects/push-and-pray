@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+[ui]
+ui-test ansible_connection=local internal_ip=ui-private-address
+
+[database]
+database-test internal_ip=database-private-address
+
+[history]
+history-test internal_ip=history-private-address
