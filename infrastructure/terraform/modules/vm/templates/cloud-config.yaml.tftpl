@@ -46,8 +46,7 @@ write_files:
       [Service]
       Type=oneshot
       User=deploy
-      Group=docker
-      Environment=AUTOMATION_ROLE=${automation_role}
+      Group=docker      
       Environment=APP_IMAGE_REPOSITORY=${registry_repository}
       Environment=APP_IMAGE_TAG=${image_sha}
       WorkingDirectory=/opt/oilscope/deploy
