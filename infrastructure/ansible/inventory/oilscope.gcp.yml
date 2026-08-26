@@ -1,25 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Dynamic inventory of the OilScope VMs, built from live Compute Engine state.
-#
-# "Dynamic" means the inventory is rebuilt every time a playbook runs. Nothing
-# polls in the background; the cache below only avoids repeating the same API
-# call within its timeout.
-#
-# The filename must end in gcp.yml, gcp.yaml, gcp_compute.yml or
-# gcp_compute.yaml, otherwise google.cloud.gcp_compute will not claim it.
 plugin: google.cloud.gcp_compute
 
-# These four settings duplicate the project configuration JSON, because this
-# plugin cannot read it. Jinja is not evaluated in this file either - the
-# literal text would be sent to the API - so environment variables are not an
-# option. Keep the values in step with the JSON for the environment being
-# deployed, or keep one copy of this file per environment.
-#
-#   projects[0]        <- project_id
-#   zones[0]           <- zone
-#   labels.application <- name_prefix
-#   labels.environment <- environment
 projects:
   - example-project-12345
 
@@ -30,56 +12,33 @@ filters:
   - labels.application = oilscope
   - labels.environment = dev
 
-# Application Default Credentials. Run this once on the controller:
-#   gcloud auth application-default login
 auth_kind: application
 
-# Name hosts after the instance. The plugin otherwise prefers public_ip, which
-# would name most hosts after an address they do not have.
 hostnames:
   - name
 
-# The plugin copies every field of the instance JSON into host variables,
-# including "name" and "tags", which Ansible reserves. Without a prefix each
-# run warns about them. The prefix does not affect the expressions below:
-# compose, groups and keyed_groups read the raw API response, not these
-# variables.
 vars_prefix: gcp_
 
-# Terraform labels every VM with role=<role>, which yields the bastion,
-# database, history, fetcher and ui groups the deployment roles expect. The
-# empty prefix and separator keep the group name equal to the label value.
 keyed_groups:
   - key: labels.role
-    prefix: ''
-    separator: ''
+    prefix: ""
+    separator: ""
 
-# Parent group for everything reached through the bastion.
-# group_vars/workloads.yml attaches the ProxyCommand to it.
 groups:
   workloads: labels.role is defined and labels.role != 'bastion'
 
 compose:
-  # internal_ip is part of the contract with the deployment roles: the ui role
-  # resolves its Database and History peers through this exact variable name.
   internal_ip: networkInterfaces[0].networkIP
   public_ip: >-
     networkInterfaces[0].accessConfigs[0].natIP
     if networkInterfaces[0].accessConfigs | default([])
     else ''
 
-  # The bastion is reached on its external address; every workload is reached
-  # on its internal one, through the bastion. The ui VM also has an external
-  # address, but that one is for end users, not for SSH.
   ansible_host: >-
     networkInterfaces[0].accessConfigs[0].natIP
     if labels.role | default('') == 'bastion'
     else networkInterfaces[0].networkIP
 
-  # Only the bastion moves off port 22. The Terraform workload firewall rule
-  # opens 22 and nothing else, so setting a non-default port globally would
-  # break every workload connection. Keep this in step with the bastion's
-  # ssh_port in the project configuration JSON.
   ansible_port: 2222 if labels.role | default('') == 'bastion' else 22
 
   oilscope_role: labels.role | default('')

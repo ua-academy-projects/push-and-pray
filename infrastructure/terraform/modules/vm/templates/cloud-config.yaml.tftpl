@@ -71,36 +71,59 @@ runcmd:
   # --- Prerequisites: curl/ca-certificates are needed before the Docker repo
   # --- key can be fetched; jq is for later health-check / Secret Manager
   # --- response parsing. Nothing here pulls an application image.
-  - [ apt-get, update ]
-  - [ apt-get, install, -y, --no-install-recommends, ca-certificates, curl, jq ]
+  - [apt-get, update]
+  - [apt-get, install, -y, --no-install-recommends, ca-certificates, curl, jq]
 
   # --- Docker Engine: add the official repo, install a pinned version, hold
   # --- it. The key is fetched from Docker's own stable URL at boot time
   # --- rather than embedded in this file, so nothing here depends on a
   # --- hand-copied key blob staying correct.
-  - [ install, -m, "0755", -d, /etc/apt/keyrings ]
-  - [ sh, -c, "test -f /etc/apt/keyrings/docker.asc || curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc" ]
-  - [ chmod, "a+r", /etc/apt/keyrings/docker.asc ]
-  - [ sh, -c, ". /etc/os-release && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $${UBUNTU_CODENAME} stable\" > /etc/apt/sources.list.d/docker.list" ]
-  - [ apt-get, update ]
-  - [ sh, -c, "apt-get install -y --no-install-recommends docker-ce=${docker_version} docker-ce-cli=${docker_version} containerd.io docker-buildx-plugin docker-compose-plugin" ]
-  - [ apt-mark, hold, docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin ]
-  - [ systemctl, enable, --now, docker.service ]
+  - [install, -m, "0755", -d, /etc/apt/keyrings]
+  - [
+      sh,
+      -c,
+      "test -f /etc/apt/keyrings/docker.asc || curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc",
+    ]
+  - [chmod, "a+r", /etc/apt/keyrings/docker.asc]
+  - [
+      sh,
+      -c,
+      '. /etc/os-release && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $${UBUNTU_CODENAME} stable" > /etc/apt/sources.list.d/docker.list',
+    ]
+  - [apt-get, update]
+  - [
+      sh,
+      -c,
+      "apt-get install -y --no-install-recommends docker-ce=${docker_version} docker-ce-cli=${docker_version} containerd.io docker-buildx-plugin docker-compose-plugin",
+    ]
+  - [
+      apt-mark,
+      hold,
+      docker-ce,
+      docker-ce-cli,
+      containerd.io,
+      docker-compose-plugin,
+    ]
+  - [systemctl, enable, --now, docker.service]
 
   # --- Application and deployment directories: owned by the deploy user,
   # --- unreadable to anyone else on the box.
-  - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/app ]
-  - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/deploy ]
-  - [ install, -d, -m, "0750", -o, deploy, -g, deploy, /var/lib/oilscope ]
+  - [install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/app]
+  - [install, -d, -m, "0750", -o, deploy, -g, deploy, /opt/oilscope/deploy]
+  - [install, -d, -m, "0750", -o, deploy, -g, deploy, /var/lib/oilscope]
 
   # --- Pick up the deployment-automation unit file written above, so the
   # --- enable/start step below can find it.
-  - [ systemctl, daemon-reload ]
+  - [systemctl, daemon-reload]
 
   # --- Readiness marker, written only after Docker is confirmed to actually
   # --- answer. Documented check: test -f /var/lib/oilscope/bootstrap-ready
-  - [ sh, -c, "docker info >/dev/null && date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/oilscope/bootstrap-ready" ]
+  - [
+      sh,
+      -c,
+      "docker info >/dev/null && date -u +%Y-%m-%dT%H:%M:%SZ > /var/lib/oilscope/bootstrap-ready",
+    ]
 
   # --- Enable and start the deployment automation now that run.sh and
   # --- compose.deployment.yaml are actually delivered above.
-  - [ systemctl, enable, --now, oilscope-deploy.service ]
+  - [systemctl, enable, --now, oilscope-deploy.service]

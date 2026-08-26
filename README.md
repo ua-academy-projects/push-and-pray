@@ -37,8 +37,8 @@ have already been persisted in PostgreSQL.
 
 ### Individual benchmark charts
 
-| WTI Crude Oil | Brent Crude Oil |
-|---|---|
+| WTI Crude Oil                                                        | Brent Crude Oil                                                          |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | ![WTI Crude Oil price chart](assets/screenshots/wti-price-chart.png) | ![Brent Crude Oil price chart](assets/screenshots/brent-price-chart.png) |
 
 ### Persisted observation ledger
@@ -47,30 +47,30 @@ have already been persisted in PostgreSQL.
 
 ## Technology stack
 
-| Area | Technology |
-|---|---|
-| Fetcher | Go 1.24 |
-| History API | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
-| UI backend | Python 3.12, FastAPI, httpx, psycopg, uv |
-| UI frontend | React 19, TypeScript, Vite, Apache ECharts |
-| Messaging | PGMQ (PostgreSQL extension) |
-| Persistence | PostgreSQL 18 |
-| UI sessions | PostgreSQL 18, hstore, pgcrypto, pg_cron |
-| Packaging | Docker Engine and Docker Compose |
-| Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64 |
+| Area           | Technology                                    |
+| -------------- | --------------------------------------------- |
+| Fetcher        | Go 1.24                                       |
+| History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
+| UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
+| UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
+| Messaging      | PGMQ (PostgreSQL extension)                   |
+| Persistence    | PostgreSQL 18                                 |
+| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| Packaging      | Docker Engine and Docker Compose              |
+| Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
 
 The runtime is divided into three application services and two infrastructure
 components.
 
-| Component | Responsibility | Owns |
-|---|---|---|
-| Go Fetcher | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events | External API integration and collection schedule |
-| History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints | Market history and PostgreSQL access |
-| UI Service | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions |
-| PGMQ | Provides a durable PostgreSQL-backed queue between Fetcher and History | Queue visibility, retries, and message archiving |
-| PostgreSQL | Stores observations and hashed UI sessions; expires sessions through pg_cron | Durable market data and session state |
+| Component       | Responsibility                                                                                    | Owns                                             |
+| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Go Fetcher      | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events      | External API integration and collection schedule |
+| History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
+| UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
+| PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
+| PostgreSQL      | Stores observations and hashed UI sessions; expires sessions through pg_cron                      | Durable market data and session state            |
 
 ### Data flow
 
@@ -94,13 +94,14 @@ PGMQ provides durable queue storage inside PostgreSQL. Messages are archived onl
 successful observation persistence. If processing fails before the archive operation, the
 visibility timeout makes the message available again. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
+
 ## Tracked instruments
 
-| Internal code | OilPriceAPI code | Instrument | Unit |
-|---|---|---|---|
-| `WTI_USD_BBL` | `WTI_USD` | WTI Crude Oil | USD/barrel |
-| `BRENT_USD_BBL` | `BRENT_CRUDE_USD` | Brent Crude Oil | USD/barrel |
-| `RBOB_GASOLINE_USD_GAL` | `GASOLINE_USD` | RBOB Gasoline | USD/gallon |
+| Internal code           | OilPriceAPI code  | Instrument      | Unit       |
+| ----------------------- | ----------------- | --------------- | ---------- |
+| `WTI_USD_BBL`           | `WTI_USD`         | WTI Crude Oil   | USD/barrel |
+| `BRENT_USD_BBL`         | `BRENT_CRUDE_USD` | Brent Crude Oil | USD/barrel |
+| `RBOB_GASOLINE_USD_GAL` | `GASOLINE_USD`    | RBOB Gasoline   | USD/gallon |
 
 RBOB is a wholesale exchange-traded gasoline product, not the retail price at a specific
 fuel station. Source timestamps come from OilPriceAPI; collection timestamps do not imply
@@ -151,20 +152,14 @@ the `oilscope.platform.compose_project` Ansible role. See
 required parent-process environment, the one-command startup, independent VM roles,
 shutdown, and smoke test.
 
-Workload VMs run this automatically through a cloud-init-installed systemd unit
-(`oilscope-deploy.service`) and its `run.sh` script, selecting which service(s) to
-start from each VM's `automation_role`. See
-[VM deployment operations](docs/vm-deployment-operations.md) for checking status,
-reading logs, and restarting or stopping a role on a running VM.
-
 The older role-specific files below remain for the Vagrant development topology:
 
-| Compose file | Project | Services |
-|---|---|---|
+| Compose file            | Project               | Services   |
+| ----------------------- | --------------------- | ---------- |
 | `compose.database.yaml` | `petroscope-database` | `postgres` |
-| `compose.history.yaml` | `petroscope-history` | `history` |
-| `compose.fetcher.yaml` | `petroscope-fetcher` | `fetcher` |
-| `compose.ui.yaml` | `petroscope-ui` | `ui` |
+| `compose.history.yaml`  | `petroscope-history`  | `history`  |
+| `compose.fetcher.yaml`  | `petroscope-fetcher`  | `fetcher`  |
+| `compose.ui.yaml`       | `petroscope-ui`       | `ui`       |
 
 Containers on the same VM use their Compose network and service names. Communication
 between VMs uses the configured bridged LAN addresses. PostgreSQL uses a named Docker volume. All containers use `restart: unless-stopped` and the journald
@@ -177,11 +172,11 @@ not part of this project.
 
 GitHub Actions builds and publishes every application image to GitHub Container Registry:
 
-| Application | Image |
-|---|---|
-| Fetcher | `ghcr.io/<owner>/push-and-pray/fetcher` |
-| History | `ghcr.io/<owner>/push-and-pray/history` |
-| UI | `ghcr.io/<owner>/push-and-pray/ui` |
+| Application | Image                                   |
+| ----------- | --------------------------------------- |
+| Fetcher     | `ghcr.io/<owner>/push-and-pray/fetcher` |
+| History     | `ghcr.io/<owner>/push-and-pray/history` |
+| UI          | `ghcr.io/<owner>/push-and-pray/ui`      |
 
 Replace `<owner>` with the lowercase GitHub account or organization that owns the
 repository. Every published image receives the full commit SHA as an immutable tag.
@@ -257,46 +252,46 @@ run Python tools through `uv run`.
 
 ### Fetcher (`:8002`)
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | Provider, schedule, next run, and last collection status |
-| `POST` | `/v1/fetch` | Run the latest scheduled slot manually |
+| Method | Path        | Purpose                                                  |
+| ------ | ----------- | -------------------------------------------------------- |
+| `GET`  | `/health`   | Provider, schedule, next run, and last collection status |
+| `POST` | `/v1/fetch` | Run the latest scheduled slot manually                   |
 
 ### History Service (`:8001`)
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | PostgreSQL and PGMQ status |
-| `POST` | `/v1/observations/batch` | Direct idempotent batch ingestion |
-| `GET` | `/v1/observations` | Filtered and paginated history |
-| `GET` | `/v1/observations/latest` | Latest observation per instrument |
-| `GET` | `/v1/instruments` | Available instruments |
-| `GET` | `/docs` | OpenAPI documentation |
+| Method | Path                      | Purpose                           |
+| ------ | ------------------------- | --------------------------------- |
+| `GET`  | `/health`                 | PostgreSQL and PGMQ status        |
+| `POST` | `/v1/observations/batch`  | Direct idempotent batch ingestion |
+| `GET`  | `/v1/observations`        | Filtered and paginated history    |
+| `GET`  | `/v1/observations/latest` | Latest observation per instrument |
+| `GET`  | `/v1/instruments`         | Available instruments             |
+| `GET`  | `/docs`                   | OpenAPI documentation             |
 
 ### UI Service (`:8080`)
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/` | React application |
-| `GET` | `/health` | History and PostgreSQL session-persistence status |
-| `GET` | `/api/observations` | Read-only proxy to persisted history |
-| `GET` | `/api/latest` | Read-only proxy to latest persisted values |
-| `GET` | `/api/instruments` | Read-only proxy to instruments |
-| `GET` | `/api/session/preferences` | Read or create UI preferences |
-| `PUT` | `/api/session/preferences` | Update UI preferences |
+| Method | Path                       | Purpose                                           |
+| ------ | -------------------------- | ------------------------------------------------- |
+| `GET`  | `/`                        | React application                                 |
+| `GET`  | `/health`                  | History and PostgreSQL session-persistence status |
+| `GET`  | `/api/observations`        | Read-only proxy to persisted history              |
+| `GET`  | `/api/latest`              | Read-only proxy to latest persisted values        |
+| `GET`  | `/api/instruments`         | Read-only proxy to instruments                    |
+| `GET`  | `/api/session/preferences` | Read or create UI preferences                     |
+| `PUT`  | `/api/session/preferences` | Update UI preferences                             |
 
 ## Data model
 
 The `price_observations` table stores exact decimal prices, normalized instrument data,
 source metadata, and four different time concepts:
 
-| Column | Meaning |
-|---|---|
-| `source_period` | Source calendar date |
-| `source_observed_at` | Exact upstream market timestamp |
-| `scheduled_for` | Fetcher's scheduled UTC slot |
-| `fetched_at` | Actual external HTTP request time |
-| `created_at` | PostgreSQL insertion time |
+| Column               | Meaning                           |
+| -------------------- | --------------------------------- |
+| `source_period`      | Source calendar date              |
+| `source_observed_at` | Exact upstream market timestamp   |
+| `scheduled_for`      | Fetcher's scheduled UTC slot      |
+| `fetched_at`         | Actual external HTTP request time |
+| `created_at`         | PostgreSQL insertion time         |
 
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
@@ -312,24 +307,24 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 
 ## Configuration
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `OILPRICEAPI_KEY` | none | OilPriceAPI token |
-| `DATA_PROVIDER` | `oilpriceapi` | `oilpriceapi` or `mock` |
-| `FETCH_CRON_HOURS` | `0,6,12,18` | Four distinct schedule hours |
-| `FETCH_TIMEZONE` | `UTC` | Schedule timezone |
-| `FETCH_ON_STARTUP` | `true` | Collect the latest slot after startup |
-| `REQUEST_TIMEOUT_SECONDS` | `15` | External HTTP timeout |
-| `DATABASE_URL` | see `.env.example` | History and UI PostgreSQL connection |
-| `PGMQ_QUEUE` | `price_observations` | PostgreSQL queue name |
-| `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60` | Message visibility timeout |
-| `PGMQ_POLL_INTERVAL_SECONDS` | `1` | Consumer polling interval |
-| `PGMQ_MAX_ATTEMPTS` | `5` | Maximum processing attempts |
-| `HISTORY_SERVICE_URL` | `http://127.0.0.1:8001` | UI-to-History base URL |
-| `SESSION_TTL_SECONDS` | `2592000` | Sliding session TTL, 30 days |
-| `SESSION_COOKIE_SECURE` | `false` | Secure-cookie flag for HTTPS deployments |
-| `LISTEN_ADDRESS` | `:8002` | Fetcher diagnostic API address |
-| `LOG_LEVEL` | `INFO` | Python service log level |
+| Variable                          | Default                 | Purpose                                  |
+| --------------------------------- | ----------------------- | ---------------------------------------- |
+| `OILPRICEAPI_KEY`                 | none                    | OilPriceAPI token                        |
+| `DATA_PROVIDER`                   | `oilpriceapi`           | `oilpriceapi` or `mock`                  |
+| `FETCH_CRON_HOURS`                | `0,6,12,18`             | Four distinct schedule hours             |
+| `FETCH_TIMEZONE`                  | `UTC`                   | Schedule timezone                        |
+| `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
+| `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
+| `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
+| `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
+| `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
+| `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |
+| `PGMQ_MAX_ATTEMPTS`               | `5`                     | Maximum processing attempts              |
+| `HISTORY_SERVICE_URL`             | `http://127.0.0.1:8001` | UI-to-History base URL                   |
+| `SESSION_TTL_SECONDS`             | `2592000`               | Sliding session TTL, 30 days             |
+| `SESSION_COOKIE_SECURE`           | `false`                 | Secure-cookie flag for HTTPS deployments |
+| `LISTEN_ADDRESS`                  | `:8002`                 | Fetcher diagnostic API address           |
+| `LOG_LEVEL`                       | `INFO`                  | Python service log level                 |
 
 ## Pre-commit hooks
 
@@ -361,10 +356,10 @@ pre-commit run --all-files
 
 What runs on every commit:
 
-| Hook | Catches |
-| --- | --- |
-| `gitleaks` | Credentials in the staged diff, by pattern. Scans only what you are committing, not the whole history |
-| `detect-private-key` | PEM and OpenSSH private key blocks, by structure rather than by pattern |
+| Hook                  | Catches                                                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `gitleaks`            | Credentials in the staged diff, by pattern. Scans only what you are committing, not the whole history                                     |
+| `detect-private-key`  | PEM and OpenSSH private key blocks, by structure rather than by pattern                                                                   |
 | `forbid-secret-files` | Whole file classes that must never be committed: `.env*`, `*.tfvars`, `*.tfstate*`, `*.pem`, `*.key`, `id_rsa`/`id_ed25519`, `*-key.json` |
 
 The last one exists because `.gitignore` is bypassed by `git add -f`, by a path
@@ -385,7 +380,7 @@ If the `gitleaks` hook fails to build on your machine, swap it for the
 container-based variant in `.pre-commit-config.yaml`:
 
 ```yaml
-      - id: gitleaks-docker
+- id: gitleaks-docker
 ```
 
 ## Tests and checks

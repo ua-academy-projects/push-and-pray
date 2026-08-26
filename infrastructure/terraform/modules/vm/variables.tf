@@ -79,14 +79,6 @@ variable "assign_public_ip" {
   default     = false
 }
 
-variable "automation_role" {
-  description = "Non-secret automation role passed to the cloud-init bootstrap process."
-  type        = string
-  validation {
-    condition     = contains(["none", "database", "history", "fetcher", "ui"], var.automation_role)
-    error_message = "automation_role must be none, database, history, fetcher, or ui."
-  }
-}
 
 variable "registry_repository" {
   description = "Non-secret container registry repository used by deployment automation."

@@ -38,13 +38,6 @@ output "workload_network_tags" {
   }
 }
 
-output "workload_automation_roles" {
-  description = "Automation roles by workload."
-  value = {
-    for name, workload in local.workload_vms : name => workload.automation_role
-  }
-}
-
 output "workload_service_account_emails" {
   description = "Service-account emails by workload."
   value = {

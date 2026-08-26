@@ -1,5 +1,4 @@
 {
-  "config_version": 3,
   "project_id": "example-project-12345",
   "environment": "dev",
   "region": "europe-west1",
@@ -36,15 +35,10 @@
         "type": "pd-balanced"
       },
       "assign_public_ip": true,
-      "network_tags": [
-        "bastion"
-      ],
-      "automation_role": "none",
+      "network_tags": ["bastion"],
       "secret_mappings": {},
       "ssh_port": 2222,
-      "allowed_cidrs": [
-        "192.0.2.10/32"
-      ]
+      "allowed_cidrs": ["192.0.2.10/32"]
     },
     "infra": {
       "role": "database",
@@ -56,10 +50,7 @@
         "type": "pd-balanced"
       },
       "assign_public_ip": false,
-      "network_tags": [
-        "infra"
-      ],
-      "automation_role": "database",
+      "network_tags": ["infra"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password"
       }
@@ -74,10 +65,7 @@
         "type": "pd-balanced"
       },
       "assign_public_ip": false,
-      "network_tags": [
-        "history"
-      ],
-      "automation_role": "history",
+      "network_tags": ["history"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password"
       }
@@ -92,10 +80,7 @@
         "type": "pd-balanced"
       },
       "assign_public_ip": false,
-      "network_tags": [
-        "fetcher"
-      ],
-      "automation_role": "fetcher",
+      "network_tags": ["fetcher"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "OILPRICEAPI_KEY": "example-api-key"
@@ -111,10 +96,7 @@
         "type": "pd-balanced"
       },
       "assign_public_ip": true,
-      "network_tags": [
-        "ui"
-      ],
-      "automation_role": "ui",
+      "network_tags": ["ui"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password"
       }

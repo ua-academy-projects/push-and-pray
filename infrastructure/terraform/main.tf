@@ -27,7 +27,6 @@ module "vm" {
   name                = "${local.resource_prefix}-${each.key}"
   subnetwork_id       = each.value.role == "bastion" ? module.network.management_subnet_id : module.network.workload_subnet_id
   role                = each.value.role
-  automation_role     = each.value.automation_role
   registry_repository = local.config.registry.repository
   image_sha           = local.config.registry.image_sha
   ssh_users           = local.config.ssh_users

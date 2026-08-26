@@ -19,10 +19,6 @@
     "vms"
   ],
   "properties": {
-    "config_version": {
-      "type": "integer",
-      "const": 3
-    },
     "project_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
@@ -67,7 +63,11 @@
     "network": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["management_subnet_cidr", "workload_subnet_cidr", "ui_public_ports"],
+      "required": [
+        "management_subnet_cidr",
+        "workload_subnet_cidr",
+        "ui_public_ports"
+      ],
       "properties": {
         "management_subnet_cidr": {
           "type": "string",
@@ -204,7 +204,6 @@
         "boot_disk",
         "assign_public_ip",
         "network_tags",
-        "automation_role",
         "secret_mappings"
       ],
       "properties": {
@@ -231,10 +230,6 @@
         },
         "network_tags": {
           "$ref": "#/$defs/vm_network_tags"
-        },
-        "automation_role": {
-          "type": "string",
-          "enum": ["none", "database", "history", "fetcher", "ui"]
         },
         "labels": {
           "$ref": "#/$defs/labels"
@@ -290,9 +285,6 @@
               "assign_public_ip": {
                 "const": true
               },
-              "automation_role": {
-                "const": "none"
-              },
               "network_tags": {
                 "contains": {
                   "const": "bastion"
@@ -320,45 +312,12 @@
           "if": {
             "properties": {
               "role": {
-                "const": "database"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {
-            "properties": {
-              "automation_role": {
-                "enum": ["none", "database"]
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "infra"
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
                 "const": "history"
               }
             },
             "required": ["role"]
           },
-          "then": {
-            "properties": {
-              "automation_role": {
-                "enum": ["none", "history"]
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "history"
-                }
-              }
-            }
-          }
+          "then": {}
         },
         {
           "if": {
@@ -369,18 +328,7 @@
             },
             "required": ["role"]
           },
-          "then": {
-            "properties": {
-              "automation_role": {
-                "enum": ["none", "fetcher"]
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "fetcher"
-                }
-              }
-            }
-          }
+          "then": {}
         },
         {
           "if": {
@@ -393,51 +341,12 @@
           },
           "then": {
             "properties": {
-              "automation_role": {
-                "enum": ["none", "ui"]
-              },
               "network_tags": {
                 "contains": {
                   "const": "ui"
                 }
               }
             }
-          }
-        },
-        {
-          "if": {
-            "properties": { "role": { "const": "database" } },
-            "required": ["role"]
-          },
-          "then": {
-            "properties": { "automation_role": { "enum": ["database", "none"] } }
-          }
-        },
-         {
-          "if": {
-            "properties": { "role": { "const": "fetcher" } },
-            "required": ["role"]
-          },
-          "then": {
-            "properties": { "automation_role": { "enum": ["fetcher", "none"] } }
-          }
-        },
-        {
-          "if": {
-            "properties": { "role": { "const": "history" } },
-            "required": ["role"]
-          },
-          "then": {
-            "properties": { "automation_role": { "enum": ["history", "none"] } }
-          }
-        },
-        {
-          "if": {
-            "properties": { "role": { "const": "ui" } },
-            "required": ["role"]
-          },
-          "then": {
-            "properties": { "automation_role": { "enum": ["ui", "none"] } }
           }
         }
       ]
