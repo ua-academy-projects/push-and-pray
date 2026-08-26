@@ -312,6 +312,17 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 
 ## Configuration
 
+Project-specific Terraform configuration is stored in an external JSON file. Validate it
+before running Terraform by using the tracked example as a template:
+
+```bash
+uv run python scripts/validate_project_config.py project-config.example.json
+```
+
+The preflight checks the JSON Schema first, then validates network CIDRs and VM addresses,
+the region/zone relationship, workload roles and network tags, and the public-IP policy.
+CI runs the same command against `project-config.example.json`.
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `OILPRICEAPI_KEY` | none | OilPriceAPI token |

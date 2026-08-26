@@ -1,11 +1,6 @@
 variable "name" {
   description = "Name used for the VM and its service account."
   type        = string
-
-  validation {
-    condition     = can(regex("^[a-z][a-z0-9-]*[a-z0-9]$", var.name))
-    error_message = "name must start with a lowercase letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens."
-  }
 }
 
 variable "subnetwork_id" {
@@ -16,11 +11,6 @@ variable "subnetwork_id" {
 variable "network_tags" {
   description = "Effective network tags attached to the workload VM."
   type        = list(string)
-
-  validation {
-    condition     = length(var.network_tags) > 0 && length(var.network_tags) == length(distinct(var.network_tags))
-    error_message = "network_tags must contain at least one unique tag."
-  }
 }
 
 variable "role" {
@@ -41,36 +31,16 @@ variable "image" {
 variable "internal_ip" {
   description = "Static internal IPv4 address assigned to the VM."
   type        = string
-
-  validation {
-    condition     = can(cidrhost("${var.internal_ip}/32", 0))
-    error_message = "internal_ip must be a valid IPv4 address."
-  }
 }
 
 variable "boot_disk_size_gb" {
   description = "Size of the boot disk in GiB."
   type        = number
-
-  validation {
-    condition     = var.boot_disk_size_gb >= 10
-    error_message = "boot_disk_size_gb must be at least 10 GiB."
-  }
 }
 
 variable "boot_disk_type" {
   description = "Persistent Disk type used by the boot disk."
   type        = string
-
-  validation {
-    condition = contains([
-      "pd-standard",
-      "pd-balanced",
-      "pd-ssd",
-    ], var.boot_disk_type)
-
-    error_message = "boot_disk_type must be pd-standard, pd-balanced, or pd-ssd."
-  }
 }
 
 variable "assign_public_ip" {
@@ -82,33 +52,16 @@ variable "assign_public_ip" {
 variable "automation_role" {
   description = "Non-secret automation role passed to the cloud-init bootstrap process."
   type        = string
-  validation {
-    condition     = contains(["none", "database", "history", "fetcher", "ui"], var.automation_role)
-    error_message = "automation_role must be none, database, history, fetcher, or ui."
-  }
 }
 
 variable "registry_repository" {
   description = "Non-secret container registry repository used by deployment automation."
   type        = string
-
-  validation {
-    condition = (
-      length(trimspace(var.registry_repository)) > 0 &&
-      !can(regex("\\s", var.registry_repository))
-    )
-    error_message = "registry_repository must be non-empty and contain no whitespace."
-  }
 }
 
 variable "image_sha" {
   description = "Immutable 40-character Git commit SHA used as the application image tag."
   type        = string
-
-  validation {
-    condition     = can(regex("^[0-9a-f]{40}$", var.image_sha))
-    error_message = "image_sha must be a 40-character lowercase hexadecimal Git commit SHA."
-  }
 }
 
 variable "docker_version" {

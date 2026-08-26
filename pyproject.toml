@@ -14,6 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "jsonschema>=4.26,<5",
     "pytest>=8.4,<10",
     "ruff>=0.12,<1",
 ]
@@ -23,8 +24,8 @@ package = false
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["services/history/tests", "services/ui/backend/tests"]
-pythonpath = ["services/history/src", "services/ui/backend/src"]
+testpaths = ["scripts/tests", "services/history/tests", "services/ui/backend/tests"]
+pythonpath = [".", "services/history/src", "services/ui/backend/src"]
 
 [tool.ruff]
 line-length = 100

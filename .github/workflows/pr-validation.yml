@@ -57,6 +57,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Validate example project configuration
+        run: uv run python scripts/validate_project_config.py project-config.example.json
+
       - name: Lint
         run: uv run ruff check .
 

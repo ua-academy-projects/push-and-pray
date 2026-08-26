@@ -13,7 +13,7 @@ before merging*). The names below are exactly what GitHub reports:
 | Check name              | What it guards                                        |
 | ----------------------- | ----------------------------------------------------- |
 | `YAML`                  | every versioned YAML file parses and passes yamllint   |
-| `Python`                | ruff lint, ruff format, pytest                         |
+| `Python`                | JSON preflight, ruff lint, ruff format, pytest         |
 | `Go`                    | gofmt, go vet, go test                                 |
 | `Frontend`              | npm ci, typecheck, production build                    |
 | `Docker Compose`        | all Compose files parse and interpolate                |
