@@ -92,9 +92,10 @@ printf '%s' "${DB_PASSWORD_HISTORY}" \
 Note `printf` rather than `echo`: `echo` appends a newline, which becomes part of
 the stored value and then fails an exact comparison somewhere far away from here.
 
-Which environment variable holds which value is not a convention to remember —
-it is the key side of `secret_mappings`. Read it from the configuration rather
-than deriving it from the secret's name.
+Which environment variable the *application* reads is not a convention to
+remember: it is the key side of `secret_mappings`. It is scoped to one VM
+though, so it is not the variable you export when uploading — see
+[Uploading every value at once](#uploading-every-value-at-once).
 
 Generate database passwords with `openssl rand -hex 32`. `-hex` rather than
 `-base64`, because base64 contains `+` and `/`, which have to be percent-encoded
@@ -116,6 +117,83 @@ do, and they hold only `secretAccessor`, only on their own secrets.
 
 Leave the list empty and nobody but a project owner can upload a value, which is
 a reasonable default: it fails closed.
+
+## Uploading every value at once
+
+Doing that by hand for every secret is where a value eventually ends up in the
+wrong place. The `oilscope.platform.secret_versions` role does the whole
+catalog in one pass, taking each value from the environment of the operator who
+runs it. It targets `localhost`: this is an operator task against the Google
+API, not host configuration.
+
+```bash
+ export DB_PASSWORD_ADMIN="$(openssl rand -hex 32)"
+ export DB_PASSWORD_FETCHER="$(openssl rand -hex 32)"
+ export DB_PASSWORD_HISTORY="$(openssl rand -hex 32)"
+ export DB_PASSWORD_UI="$(openssl rand -hex 32)"
+ export OILPRICEAPI_KEY="..."
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file=~/configs/oilscope/dev.json --check
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file=~/configs/oilscope/dev.json
+```
+
+The leading space keeps the export out of the shell history, in a shell
+configured to honour it. `--check` runs every check and uploads nothing; the
+role prints which variable feeds which container before it writes anything.
+
+### Why the variable is not the one the application sees
+
+The unit of upload is the container, so the variable name is derived from the
+container ID with the project prefix dropped — not from the key side of
+`secret_mappings`:
+
+```
+oilscope-dev-db-password-fetcher   ->  DB_PASSWORD_FETCHER
+oilscope-dev-oilpriceapi-key       ->  OILPRICEAPI_KEY
+```
+
+That key is scoped to one VM: `DB_PASSWORD` means the fetcher's password on
+`fetcher` and the history service's password on `history`, and one shell cannot
+hold both under one name. Where dropping the prefix would make two containers
+collide, every container keeps the fully qualified name
+(`OILSCOPE_DEV_DB_PASSWORD_FETCHER`) instead.
+
+### What it guarantees
+
+| | |
+| --- | --- |
+| reads values from | the environment of the process, and nowhere else |
+| passes the payload to gcloud | on stdin, through `--data-file=-` |
+| writes to disk | nothing |
+| prints | container IDs and variable names, never a value |
+
+Every value and every container is checked before the first version is added. A
+missing one fails the play with the full list, before anything is written.
+Half-rotated is the state that costs an evening — one service on the new
+password, three on the old.
+
+The upload task carries `no_log`, so the payload stays out of the Ansible output
+and any callback log at every verbosity, and `stdin_add_newline` is off because
+a trailing newline would become part of the stored value. The task is also
+skipped explicitly in check mode rather than being left to the module: a
+check-mode skip result carries the module arguments, and `-vvv` prints those
+uncensored.
+
+Rotating a single credential:
+
+```bash
+ export DB_PASSWORD_UI="$(openssl rand -hex 32)"
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file=~/configs/oilscope/dev.json \
+  -e '{"secret_versions_only": ["DB_PASSWORD_UI"]}'
+```
+
+Adding a version requires `roles/secretmanager.secretVersionAdder`, so whoever
+runs this does not need to be able to read what is already stored.
 
 ## Rotation
 

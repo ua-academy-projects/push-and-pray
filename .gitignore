@@ -34,3 +34,6 @@ crash.*.log
 *.pem
 *.key
 !project-config.example.json
+
+# Built Ansible collection artifacts
+infrastructure/ansible/**/*.tar.gz

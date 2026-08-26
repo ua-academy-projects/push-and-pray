@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the secret_versions role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include the role without a configuration file
+      ansible.builtin.include_role:
+        name: secret_versions
+      register: secret_versions_no_config
+      ignore_errors: true
+
+    - name: Verify a missing configuration is rejected
+      ansible.builtin.assert:
+        that:
+          - secret_versions_no_config is failed
