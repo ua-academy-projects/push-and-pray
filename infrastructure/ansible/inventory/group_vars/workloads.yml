@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# The ProxyCommand cannot live in the plugin's `compose` block: that is
+# evaluated per host and has no way to read another host's address. group_vars
+# is evaluated later, once the whole inventory exists, so the bastion can be
+# looked up here.
+#
+# Both values are taken from the bastion's own host variables rather than
+# repeated, so the port stays defined in exactly one place - the `compose`
+# block of oilscope.gcp.yml.
+oilscope_bastion_address: "{{ hostvars[groups['bastion'][0]].ansible_host }}"
+oilscope_bastion_ssh_port: "{{ hostvars[groups['bastion'][0]].ansible_port }}"
+
+# The ProxyCommand is a separate ssh process. It inherits neither
+# ansible_ssh_private_key_file nor --private-key, so the identity has to be
+# passed to it explicitly or the jump hop fails with "Permission denied".
+ansible_ssh_common_args: >-
+  {{ oilscope_ssh_base_args }}
+  -o ProxyCommand="ssh -W %h:%p -q
+  -p {{ oilscope_bastion_ssh_port }}
+  -i {{ ansible_ssh_private_key_file }}
+  {{ oilscope_ssh_base_args }}
+  {{ ansible_user }}@{{ oilscope_bastion_address }}"

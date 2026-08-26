@@ -36,3 +36,5 @@ crash.*.log
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz
+
+*.local.gcp.yml

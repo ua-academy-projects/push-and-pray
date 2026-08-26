@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# google.cloud.gcp_compute has no option for the SSH account, so it is resolved
+# here instead.
+#
+# The default is the controller's own login name, because that is the name a
+# public key added through `gcloud compute ssh` is registered under in GCP
+# project metadata. Everyone therefore connects as themselves and no one's
+# name is committed to the repository.
+#
+# Override for a single run with OILSCOPE_SSH_USER, or replace the whole
+# expression with a shared account such as "deploy".
+ansible_user: >-
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_USER')
+     | default(lookup('ansible.builtin.env', 'USER'), true) }}
+
+# The private key whose public half reaches the VMs. Terraform installs the
+# `ssh_users` map from the project configuration JSON as instance metadata, so
+# the account above must appear in that map - or, while project-wide keys are
+# still accepted, be the one `gcloud compute ssh` registered.
+#
+# The default matches the key gcloud generates on first use. Without this
+# setting SSH offers only its own default identities and every host answers
+# "Permission denied (publickey)". Override with OILSCOPE_SSH_KEY.
+ansible_ssh_private_key_file: >-
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_KEY')
+     | default(lookup('ansible.builtin.env', 'HOME')
+               ~ '/.ssh/google_compute_engine', true) }}
+
+# Every VM is created fresh by Terraform, so its host key is new and absent
+# from known_hosts. accept-new records it on first contact but still refuses a
+# key that changed afterwards, unlike StrictHostKeyChecking=no.
+#
+# group_vars/workloads.yml extends this with the ProxyCommand rather than
+# replacing it, so the settings apply to the outer connection as well as to
+# the jump.
+#
+# IdentitiesOnly matches the bastion's sshd hardening, which sets
+# MaxAuthTries: without it SSH offers every key in the agent first and can
+# exhaust the allowed attempts before reaching the one that works.
+oilscope_ssh_base_args: >-
+  -o StrictHostKeyChecking=accept-new
+  -o IdentitiesOnly=yes
+ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"
