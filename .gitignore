@@ -11,6 +11,7 @@ htmlcov/
 infrastructure/vagrant/config/vagrant.env
 node_modules/
 infrastructure/docker/deployment
+bootstrap_gcp
 
 # Terraform
 **/.terraform/
