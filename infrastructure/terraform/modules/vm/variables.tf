@@ -26,11 +26,6 @@ variable "network_tags" {
 variable "role" {
   description = "Functional role of the workload, independent from its resource name."
   type        = string
-
-  validation {
-    condition     = contains(["database", "history", "fetcher", "ui"], var.role)
-    error_message = "role must be database, history, fetcher, or ui."
-  }
 }
 
 variable "machine_type" {

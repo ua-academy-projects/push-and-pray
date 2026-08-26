@@ -56,12 +56,12 @@ resource "google_compute_instance" "workload" {
 
   lifecycle {
     precondition {
-      condition     = !var.assign_public_ip || var.role == "ui"
-      error_message = "Only workloads with role ui may receive a public IP."
+      condition     = !var.assign_public_ip || contains(["ui", "bastion"], var.role)
+      error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }
 
-  metadata = {
+  metadata = var.role == "bastion" ? {} : {
     "user-data" = local.cloud_config
   }
 }
