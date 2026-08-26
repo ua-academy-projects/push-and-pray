@@ -3,5 +3,7 @@
 - name: Test the host_baseline role
   hosts: host_baseline_test
   become: true
-  roles:
-    - oilscope.platform.host_baseline
+  tasks:
+    - name: Include the host_baseline role
+      ansible.builtin.include_role:
+        name: oilscope.platform.host_baseline
