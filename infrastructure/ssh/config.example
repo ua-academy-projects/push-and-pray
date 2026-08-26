@@ -1,0 +1,46 @@
+# Copy the relevant blocks to ~/.ssh/config and replace every <PLACEHOLDER>.
+# Never copy a private key into this repository.
+
+Host oilscope-bastion
+    HostName <BASTION_PUBLIC_IP>
+    User <YOUR_LINUX_USERNAME>
+    Port 8787
+    IdentityFile <YOUR_PRIVATE_KEY_PATH>
+    IdentitiesOnly yes
+    ForwardAgent no
+
+Host oilscope-infra
+    HostName <INFRA_INTERNAL_IP>
+    User <YOUR_LINUX_USERNAME>
+    Port 22
+    IdentityFile <YOUR_PRIVATE_KEY_PATH>
+    IdentitiesOnly yes
+    ForwardAgent no
+    ProxyJump oilscope-bastion
+
+Host oilscope-history
+    HostName <HISTORY_INTERNAL_IP>
+    User <YOUR_LINUX_USERNAME>
+    Port 22
+    IdentityFile <YOUR_PRIVATE_KEY_PATH>
+    IdentitiesOnly yes
+    ForwardAgent no
+    ProxyJump oilscope-bastion
+
+Host oilscope-fetcher
+    HostName <FETCHER_INTERNAL_IP>
+    User <YOUR_LINUX_USERNAME>
+    Port 22
+    IdentityFile <YOUR_PRIVATE_KEY_PATH>
+    IdentitiesOnly yes
+    ForwardAgent no
+    ProxyJump oilscope-bastion
+
+Host oilscope-ui
+    HostName <UI_INTERNAL_IP>
+    User <YOUR_LINUX_USERNAME>
+    Port 22
+    IdentityFile <YOUR_PRIVATE_KEY_PATH>
+    IdentitiesOnly yes
+    ForwardAgent no
+    ProxyJump oilscope-bastion

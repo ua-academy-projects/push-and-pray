@@ -12,6 +12,7 @@
     "zone",
     "name_prefix",
     "common_labels",
+    "ssh_users",
     "registry",
     "network",
     "service_ports",
@@ -44,6 +45,9 @@
     },
     "common_labels": {
       "$ref": "#/$defs/labels"
+    },
+    "ssh_users": {
+      "$ref": "#/$defs/ssh_users"
     },
     "registry": {
       "type": "object",
@@ -151,6 +155,18 @@
       "type": "object",
       "additionalProperties": {
         "type": "string"
+      }
+    },
+    "ssh_users": {
+      "$comment": "Maps Linux usernames to public SSH keys. Private keys and local key-file paths are not accepted.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
     "machine_type": {

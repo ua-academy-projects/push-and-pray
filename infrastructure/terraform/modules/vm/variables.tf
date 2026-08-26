@@ -121,3 +121,18 @@ variable "labels" {
   description = "Labels applied to resources that support them."
   type        = map(string)
 }
+
+variable "ssh_users" {
+  description = "Public SSH keys keyed by Linux username."
+  type        = map(string)
+}
+
+variable "ssh_port" {
+  description = "Initial SSH daemon port."
+  type        = number
+
+  validation {
+    condition     = var.ssh_port >= 1 && var.ssh_port <= 65535
+    error_message = "ssh_port must be between 1 and 65535."
+  }
+}

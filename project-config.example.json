@@ -9,6 +9,9 @@
     "project": "example-oil-price-tracker",
     "team": "example-team"
   },
+  "ssh_users": {
+    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+  },
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "image_sha": "0123456789abcdef0123456789abcdef01234567"

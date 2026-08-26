@@ -30,6 +30,7 @@ module "vm" {
   automation_role     = each.value.automation_role
   registry_repository = local.config.registry.repository
   image_sha           = local.config.registry.image_sha
+  ssh_users           = local.config.ssh_users
   network_tags = [
     for tag in each.value.network_tags :
     "${local.resource_prefix}-${tag}"
@@ -38,6 +39,7 @@ module "vm" {
   machine_type = each.value.machine_type
   image        = each.value.image
   internal_ip  = each.value.internal_ip
+  ssh_port     = lookup(each.value, "ssh_port", 22)
 
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.boot_disk.type

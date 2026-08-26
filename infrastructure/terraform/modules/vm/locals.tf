@@ -1,4 +1,8 @@
 locals {
+  bastion_startup_script = templatefile("${path.module}/templates/bastion-startup.sh.tftpl", {
+    ssh_port = var.ssh_port
+  })
+
   cloud_config = templatefile("${path.module}/templates/cloud-config.yaml.tftpl", {
     automation_role     = var.automation_role
     registry_repository = var.registry_repository
