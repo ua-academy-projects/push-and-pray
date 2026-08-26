@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate fetcher deployment variables
+  ansible.builtin.assert:
+    that:
+      - fetcher_compose_file | length > 0
+      - fetcher_postgres_password | length > 0
+      - fetcher_oilpriceapi_key | length > 0
+      - fetcher_health_retries | int > 0
+      - fetcher_health_delay | int >= 0
+    fail_msg: >-
+      fetcher_postgres_password and fetcher_oilpriceapi_key are required, and
+      fetcher_compose_file must point at the installed Compose definition.
+  no_log: true
+
+- name: Check the Compose definition
+  ansible.builtin.stat:
+    path: "{{ fetcher_compose_file }}"
+  register: fetcher_compose_definition
+
+- name: Require the Compose definition
+  ansible.builtin.assert:
+    that:
+      - fetcher_compose_definition.stat.isreg | default(false)
+    fail_msg: "Compose definition not found at {{ fetcher_compose_file }}."
+
+- name: Pull the Fetcher image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ fetcher_compose_project_name }}"
+      - --file
+      - "{{ fetcher_compose_file }}"
+      - pull
+      - "{{ fetcher_service }}"
+  args:
+    chdir: "{{ fetcher_compose_project_dir }}"
+  environment: "{{ fetcher_runtime_environment }}"
+  register: fetcher_image_pull
+  changed_when: >-
+    'Pulled' in fetcher_image_pull.stderr or
+    'Downloaded newer image' in fetcher_image_pull.stdout
+  no_log: true
+
+- name: Start the Fetcher service
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ fetcher_compose_project_name }}"
+      - --file
+      - "{{ fetcher_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ fetcher_service }}"
+  args:
+    chdir: "{{ fetcher_compose_project_dir }}"
+  environment: "{{ fetcher_runtime_environment }}"
+  register: fetcher_compose_up
+  changed_when: >-
+    'Created' in fetcher_compose_up.stderr or
+    'Started' in fetcher_compose_up.stderr or
+    'Recreated' in fetcher_compose_up.stderr
+  no_log: true
+
+- name: Get the Fetcher container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ fetcher_compose_project_name }}"
+      - --file
+      - "{{ fetcher_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ fetcher_service }}"
+  args:
+    chdir: "{{ fetcher_compose_project_dir }}"
+  environment: "{{ fetcher_runtime_environment }}"
+  register: fetcher_container
+  changed_when: false
+  failed_when: fetcher_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for Fetcher to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ fetcher_container.stdout | trim }}"
+  register: fetcher_health
+  changed_when: false
+  retries: "{{ fetcher_health_retries }}"
+  delay: "{{ fetcher_health_delay }}"
+  until: fetcher_health.stdout | trim == 'healthy'

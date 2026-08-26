@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the fetcher role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Missing database password should be rejected
+      block:
+        - name: Include the role without a database password
+          ansible.builtin.include_role:
+            name: fetcher
+          vars:
+            fetcher_postgres_password: ""
+            fetcher_oilpriceapi_key: test-only
+        - name: Fail if the role did not reject the missing password
+          ansible.builtin.fail:
+            msg: fetcher unexpectedly accepted an empty fetcher_postgres_password.
+      rescue:
+        - name: Confirm the missing password was rejected
+          ansible.builtin.debug:
+            msg: Correctly rejected an empty fetcher_postgres_password.
+
+    - name: Missing provider API key should be rejected
+      block:
+        - name: Include the role without a provider API key
+          ansible.builtin.include_role:
+            name: fetcher
+          vars:
+            fetcher_postgres_password: test-only
+            fetcher_oilpriceapi_key: ""
+        - name: Fail if the role did not reject the missing API key
+          ansible.builtin.fail:
+            msg: fetcher unexpectedly accepted an empty fetcher_oilpriceapi_key.
+      rescue:
+        - name: Confirm the missing API key was rejected
+          ansible.builtin.debug:
+            msg: Correctly rejected an empty fetcher_oilpriceapi_key.
