@@ -8,7 +8,7 @@
 - name: Select image SHA from project configuration
   ansible.builtin.set_fact:
     compose_project_image_sha: >-
-      {{ compose_project_config.workloads[compose_project_workload].image_tag
+      {{ compose_project_config.registry.image_sha
          | default('') }}
 
 - name: Create application directory
