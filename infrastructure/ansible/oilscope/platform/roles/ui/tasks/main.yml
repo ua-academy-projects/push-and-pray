@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate UI inventory groups
+  ansible.builtin.assert:
+    that:
+      - groups.get('database', []) | length > 0
+      - groups.get('history', []) | length > 0
+    fail_msg: >-
+      The dynamic inventory must contain at least one host in both the
+      database and history groups.
+
+- name: Validate UI upstream addresses
+  ansible.builtin.assert:
+    that:
+      - hostvars[groups['database'][0]].internal_ip is defined
+      - hostvars[groups['database'][0]].internal_ip | string | length > 0
+      - hostvars[groups['history'][0]].internal_ip is defined
+      - hostvars[groups['history'][0]].internal_ip | string | length > 0
+    fail_msg: >-
+      The first database and history hosts must define a non-empty
+      internal_ip variable.
+
+- name: Deploy only UI
+  environment:
+    APP_IMAGE_TAG: "{{ ui_application_image_tag }}"
+    POSTGRES_IMAGE: "{{ ui_postgres_image }}"
+    POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
+    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    HISTORY_SERVICE_URL: >-
+      http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
+  no_log: true
+  block:
+    - name: Pull the UI image
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ ui_compose_project_name }}"
+          - --file
+          - "{{ ui_compose_file }}"
+          - pull
+          - ui
+      args:
+        chdir: "{{ ui_compose_project_dir }}"
+      register: ui_compose_pull
+      changed_when: >-
+        'Downloaded newer image' in ui_compose_pull.stdout or
+        'Downloaded newer image' in ui_compose_pull.stderr or
+        'Pull complete' in ui_compose_pull.stdout or
+        'Pull complete' in ui_compose_pull.stderr
+
+    - name: Start only UI
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ ui_compose_project_name }}"
+          - --file
+          - "{{ ui_compose_file }}"
+          - up
+          - --detach
+          - --no-deps
+          - ui
+      args:
+        chdir: "{{ ui_compose_project_dir }}"
+      register: ui_compose_up
+      changed_when: >-
+        'Created' in ui_compose_up.stderr or
+        'Started' in ui_compose_up.stderr or
+        'Recreated' in ui_compose_up.stderr
+
+    - name: Get the UI container ID
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ ui_compose_project_name }}"
+          - --file
+          - "{{ ui_compose_file }}"
+          - ps
+          - --quiet
+          - ui
+      args:
+        chdir: "{{ ui_compose_project_dir }}"
+      register: ui_container
+      changed_when: false
+      failed_when: ui_container.stdout | trim | length == 0
+
+- name: Wait for UI to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ ui_container.stdout | trim }}"
+  register: ui_health
+  changed_when: false
+  retries: "{{ ui_health_retries }}"
+  delay: "{{ ui_health_delay }}"
+  until: ui_health.stdout | trim == 'healthy'
