@@ -1,11 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Versioned contract for non-secret Terraform project configuration.",
+  "description": "Contract for non-secret Terraform project configuration.",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "config_version",
     "project_id",
     "environment",
     "region",
