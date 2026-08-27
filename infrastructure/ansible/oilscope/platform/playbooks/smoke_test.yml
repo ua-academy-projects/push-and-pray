@@ -1,0 +1,172 @@
+---
+- name: Smoke test the OilScope deployment
+  hosts: database
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Get the PostgreSQL container ID
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - name=postgres
+      register: postgres_container
+      changed_when: false
+      failed_when: postgres_container.stdout | trim | length == 0
+    - name: Check PostgreSQL health status
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+          - "{{ postgres_container.stdout | trim }}"
+      register: postgres_health
+      changed_when: false
+      failed_when: postgres_health.stdout | trim != 'healthy'
+
+- name: Smoke test Fetcher
+  hosts: fetcher
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Get the Fetcher container ID
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - name=fetcher
+      register: fetcher_container
+      changed_when: false
+      failed_when: fetcher_container.stdout | trim | length == 0
+
+    - name: Check Fetcher health status
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+          - "{{ fetcher_container.stdout | trim }}"
+      register: fetcher_health
+      changed_when: false
+      failed_when: fetcher_health.stdout | trim != 'healthy'
+    - name: Call the Fetcher health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8002/health
+        return_content: true
+      register: fetcher_health_response
+      changed_when: false
+
+    - name: Verify Fetcher reports pgmq delivery
+      ansible.builtin.assert:
+        that:
+          - "'\"delivery\":\"pgmq\"' in fetcher_health_response.content"
+        fail_msg: "Fetcher health response missing delivery:pgmq: {{ fetcher_health_response.content }}"
+
+- name: Smoke test History
+  hosts: history
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Get the History container ID
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - name=history
+      register: history_container
+      changed_when: false
+      failed_when: history_container.stdout | trim | length == 0
+
+    - name: Check History health status
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+          - "{{ history_container.stdout | trim }}"
+      register: history_health
+      changed_when: false
+      failed_when: history_health.stdout | trim != 'healthy'
+
+    - name: Call the History health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8001/health
+        return_content: true
+      register: history_health_response
+      changed_when: false
+
+    - name: Verify History reports pgmq_consumer ready
+      ansible.builtin.assert:
+        that:
+          - "'\"pgmq_consumer\":\"ready\"' in history_health_response.content"
+        fail_msg: "History health response missing pgmq_consumer:ready: {{ history_health_response.content }}"
+
+
+- name: Smoke test UI
+  hosts: ui
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Get the UI container ID
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - name=ui
+      register: ui_container
+      changed_when: false
+      failed_when: ui_container.stdout | trim | length == 0
+
+    - name: Check UI health status
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+          - "{{ ui_container.stdout | trim }}"
+      register: ui_health
+      changed_when: false
+      failed_when: ui_health.stdout | trim != 'healthy'
+
+    - name: Call the public UI health endpoint
+      become: false
+      ansible.builtin.uri:
+        url: "http://{{ public_ip }}:80/health"
+        return_content: true
+      delegate_to: localhost
+      register: ui_health_response
+      changed_when: false
+
+    - name: Verify UI reports sessions:postgresql
+      ansible.builtin.assert:
+        that:
+          - "'\"sessions\":\"postgresql\"' in ui_health_response.content"
+        fail_msg: "UI health response missing sessions:postgresql: {{ ui_health_response.content }}"
+
+- name: Verify inventory shape
+  hosts: localhost
+  become: false
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Assert each expected group has exactly one host
+      ansible.builtin.assert:
+        that:
+          - groups['bastion'] | length == 1
+          - groups['database'] | length == 1
+          - groups['history'] | length == 1
+          - groups['fetcher'] | length == 1
+          - groups['ui'] | length == 1
+        fail_msg: "Expected exactly one host in each of bastion/database/history/fetcher/ui"
