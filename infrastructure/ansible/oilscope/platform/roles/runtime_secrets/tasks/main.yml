@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Get the workload VM identity token
+  ansible.builtin.uri:
+    url: "{{ runtime_secrets_metadata_token_url }}"
+    headers:
+      Metadata-Flavor: Google
+    return_content: true
+    status_code: 200
+    use_proxy: false
+  register: runtime_secrets_identity_token
+  changed_when: false
+  no_log: true
+
+- name: Read permitted secrets with the workload VM identity
+  ansible.builtin.uri:
+    url: >-
+      {{ runtime_secrets_api_url }}/projects/{{ runtime_secrets_project_id }}/secrets/{{ item.value }}/versions/latest:access
+    headers:
+      Authorization: Bearer {{ runtime_secrets_identity_token.json.access_token }}
+    return_content: true
+    status_code: 200
+    use_proxy: false
+  loop: "{{ runtime_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: runtime_secrets_access_results
+  changed_when: false
+  no_log: true
