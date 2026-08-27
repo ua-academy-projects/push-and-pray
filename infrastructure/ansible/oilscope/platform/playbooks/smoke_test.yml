@@ -170,4 +170,3 @@
           - groups['fetcher'] | length == 1
           - groups['ui'] | length == 1
         fail_msg: "Expected exactly one host in each of bastion/database/history/fetcher/ui"
-        
