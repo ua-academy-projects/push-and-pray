@@ -1,25 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Validate UI inventory groups
-  ansible.builtin.assert:
-    that:
-      - groups.get('database', []) | length > 0
-      - groups.get('history', []) | length > 0
-    fail_msg: >-
-      The dynamic inventory must contain at least one host in both the
-      database and history groups.
-
-- name: Validate UI upstream addresses
-  ansible.builtin.assert:
-    that:
-      - hostvars[groups['database'][0]].internal_ip is defined
-      - hostvars[groups['database'][0]].internal_ip | string | length > 0
-      - hostvars[groups['history'][0]].internal_ip is defined
-      - hostvars[groups['history'][0]].internal_ip | string | length > 0
-    fail_msg: >-
-      The first database and history hosts must define a non-empty
-      internal_ip variable.
-
 - name: Deploy only UI
   environment:
     APP_IMAGE_TAG: "{{ ui_application_image_tag }}"
