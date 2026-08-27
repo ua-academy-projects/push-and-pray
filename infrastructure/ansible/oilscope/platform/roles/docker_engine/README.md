@@ -3,9 +3,7 @@
 Installs a pinned Docker Engine with the Compose plugin from Docker's official
 apt repository, holds the pinned packages, and enables the service.
 
-This role reproduces the Docker portion of the Terraform cloud-init bootstrap
-in `infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl` so
-that bootstrap can eventually be removed.
+This role owns Docker package provisioning for workload VMs.
 
 ## Requirements
 
@@ -22,12 +20,15 @@ though the deployment playbook applies the baseline first regardless.
 ## Role variables
 
 - `docker_engine_version`: exact apt version for the pinned packages; defaults
-  to `5:29.7.2-1~ubuntu.26.04~resolute`. Re-verify with
+  to `5:29.7.2-1~ubuntu.22.04~jammy`. Re-verify with
   `apt-cache madison docker-ce` before bumping.
 - `docker_engine_pinned_packages`: packages installed at that exact version;
   defaults to `docker-ce` and `docker-ce-cli`.
 - `docker_engine_packages`: packages installed unversioned; defaults to
   `containerd.io`, `docker-buildx-plugin` and `docker-compose-plugin`.
+- `docker_engine_conflicting_packages`: distribution-provided Docker packages
+  removed before Docker CE is installed; defaults to `docker.io`,
+  `docker-compose-v2`, `containerd` and `runc`.
 - `docker_engine_hold` and `docker_engine_held_packages`: whether to mark
   packages `hold`, and which ones. Enabled by default.
 - `docker_engine_validate_release`: refuse to run when the pinned version was
@@ -35,8 +36,9 @@ though the deployment playbook applies the baseline first regardless.
 - `docker_engine_keyring_path`, `docker_engine_gpg_url`,
   `docker_engine_repository_url`, `docker_engine_repository_component`,
   `docker_engine_repository_path`: signing key and repository locations.
-- `docker_engine_service`, `docker_engine_service_enabled`,
-  `docker_engine_service_state`: systemd service management.
+- `docker_engine_service`, `docker_engine_socket`,
+  `docker_engine_service_enabled`, `docker_engine_service_state`: systemd
+  socket and service management.
 - `docker_engine_group` and `docker_engine_group_members`: accounts granted
   access to the Docker socket. Members that do not exist on the target are
   skipped rather than created.

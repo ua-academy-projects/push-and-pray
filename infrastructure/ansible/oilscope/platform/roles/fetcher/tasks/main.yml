@@ -16,8 +16,10 @@
   environment: "{{ fetcher_runtime_environment }}"
   register: fetcher_image_pull
   changed_when: >-
-    'Pulled' in fetcher_image_pull.stderr or
-    'Downloaded newer image' in fetcher_image_pull.stdout
+    'Downloaded newer image' in fetcher_image_pull.stdout or
+    'Downloaded newer image' in fetcher_image_pull.stderr or
+    'Pull complete' in fetcher_image_pull.stdout or
+    'Pull complete' in fetcher_image_pull.stderr
   no_log: true
 
 - name: Start the Fetcher service

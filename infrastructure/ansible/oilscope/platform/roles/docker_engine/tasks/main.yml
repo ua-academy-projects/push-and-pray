@@ -39,6 +39,13 @@
 - name: Apply a pending apt cache refresh
   ansible.builtin.meta: flush_handlers
 
+- name: Remove conflicting distribution Docker packages
+  become: true
+  ansible.builtin.apt:
+    name: "{{ docker_engine_conflicting_packages }}"
+    state: absent
+    purge: false
+
 - name: Install Docker Engine and the Compose plugin
   become: true
   ansible.builtin.apt:
@@ -53,6 +60,14 @@
     selection: hold
   loop: "{{ docker_engine_held_packages }}"
   when: docker_engine_hold | bool
+
+- name: Enable and start the Docker socket
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ docker_engine_socket }}"
+    enabled: "{{ docker_engine_service_enabled }}"
+    state: started
+    daemon_reload: true
 
 - name: Enable and start the Docker service
   become: true
