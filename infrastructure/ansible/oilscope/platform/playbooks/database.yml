@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy Database
+  hosts: database
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: oilscope.platform.host_baseline
+
+    - role: oilscope.platform.docker_engine
+
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_workload: "{{ oilscope_role }}"
+
+    - role: oilscope.platform.database
+      vars:
+        database_postgres_image: >-
+          {{
+            compose_project_config.registry.repository
+            ~ '/database:'
+            ~ compose_project_config.registry.image_sha
+          }}
+        database_application_image_tag: >-
+          {{ compose_project_config.registry.image_sha }}
