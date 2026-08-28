@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+plugin: oilscope.platform.oilscope_gcp
+
+project_config_path: ../../terraform/env/dev.json
+
+cache: true
+cache_plugin: ansible.builtin.jsonfile
+cache_connection: ~/.cache/oilscope-inventory
+cache_timeout: 300
