@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the bastion bootstrap inputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require exactly one bastion host
+      ansible.builtin.fail:
+        msg: The inventory must contain exactly one bastion host.
+      when: groups.get('bastion', []) | length != 1
+
+    - name: Require the project configuration path
+      ansible.builtin.fail:
+        msg: >-
+          Pass the absolute project config path with
+          -e project_config_path=/path/project-config.json.
+      when: project_config_path | default('') | length == 0
+
+- name: Configure a fresh bastion through its initial SSH port
+  hosts: bastion
+  serial: 1
+  become: true
+  gather_facts: false
+  vars:
+    ansible_port: 22
+    bootstrap_bastion_initial_ssh_port: 22
+  pre_tasks:
+    - name: Wait for the initial bastion SSH port
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ bootstrap_bastion_initial_ssh_port }}"
+        connect_timeout: 5
+        delay: 2
+        timeout: 180
+        state: started
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Wait for the initial Ansible connection
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 180
+      changed_when: false
+
+  roles:
+    - role: oilscope.platform.bastion
+
+- name: Verify Ansible through the configured bastion port
+  hosts: bastion
+  gather_facts: false
+  tasks:
+    - name: Reset the initial SSH connection
+      ansible.builtin.meta: reset_connection
+
+    - name: Wait for Ansible on the configured SSH port
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 180
+      changed_when: false
+
+    - name: Verify the configured bastion connection
+      ansible.builtin.ping:
+      changed_when: false

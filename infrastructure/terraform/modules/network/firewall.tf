@@ -7,7 +7,10 @@ resource "google_compute_firewall" "bastion_ssh" {
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.bastion_ssh_port)]
+    ports = sort(distinct([
+      "22",
+      tostring(var.bastion_ssh_port),
+    ]))
   }
 }
 

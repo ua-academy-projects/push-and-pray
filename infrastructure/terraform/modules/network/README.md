@@ -34,7 +34,7 @@ The firewall contract does not use generic `app` or `db` tags.
 
 | Rule | Source | Destination | TCP ports |
 | --- | --- | --- | --- |
-| `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `bastion_ssh_port` |
+| `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `22`, `bastion_ssh_port` |
 | `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
 | `<prefix>-allow-history-api` | UI | History | `history_api_port` |
 | `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `postgresql_port` |
@@ -67,8 +67,8 @@ module "network" {
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
   ui_public_ports        = ["80", "443"]
 
-  bastion_ssh_port      = local.config.bastion.ssh_port
-  bastion_allowed_cidrs = local.config.bastion.allowed_cidrs
+  bastion_ssh_port      = local.bastion_vm.ssh_port
+  bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
@@ -91,3 +91,8 @@ private workload VM -> Cloud NAT -> internet
 Workload SSH is accepted only from instances carrying the bastion network tag.
 PostgreSQL and the History API have role-tag sources and are not reachable
 directly from the internet.
+
+Port 22 on the bastion firewall is the bootstrap path for a clean Ubuntu VM.
+After `oilscope.platform.bootstrap_bastion` completes, OpenSSH listens only on
+`bastion_ssh_port`; the firewall permission alone does not create a listener on
+port 22.

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+oilscope_bastion_project_config: >-
+  {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+ansible_port: >-
+  {{ oilscope_bastion_project_config.vms.bastion.ssh_port | int }}
