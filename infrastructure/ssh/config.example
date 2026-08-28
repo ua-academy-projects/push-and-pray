@@ -4,7 +4,7 @@
 Host oilscope-bastion
     HostName <BASTION_PUBLIC_IP>
     User <YOUR_LINUX_USERNAME>
-    Port 8787
+    Port <BASTION_SSH_PORT_FROM_PROJECT_CONFIG>
     IdentityFile <YOUR_PRIVATE_KEY_PATH>
     IdentitiesOnly yes
     ForwardAgent no

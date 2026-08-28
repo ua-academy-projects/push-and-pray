@@ -58,7 +58,10 @@ environment is the usual way to avoid editing it before each run.
 ## Usage
 
 ```sh
-ansible-inventory -i infrastructure/ansible/inventory/oilscope.gcp.yml --graph
+ansible-inventory \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json \
+  --graph
 ```
 
 A misconfigured `projects` or `filters` value produces an **empty inventory and
@@ -84,13 +87,26 @@ name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
 
 ## SSH
 
-The bastion is reached on its external address at the non-default port; every
-workload is reached on its internal address at port 22, through a
-`ProxyCommand` defined in `group_vars/workloads.yml`.
+The bastion is reached on its external address at the port read from
+`vms.bastion.ssh_port` in the project config by `group_vars/bastion.yml`.
+Every workload is reached on its internal address at port 22, through a
+`ProxyCommand` defined in `group_vars/workloads.yml`. Pass the absolute project
+config path on every inventory, ad-hoc and playbook command.
 
 The non-default port belongs to the bastion alone — the Terraform workload
 firewall rule opens 22 and nothing else, so applying that port globally would
 break every workload connection.
+
+A fresh Ubuntu bastion listens on port 22 before Ansible configures it. Run the
+collection bootstrap playbook first; it deliberately overrides the normal
+inventory port for its initial connection and verifies the configured port
+before it exits:
+
+```sh
+ansible-playbook oilscope.platform.bootstrap_bastion \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json
+```
 
 `ansible_user` (in `group_vars/all.yml`) defaults to the controller's own login
 name, because that is the name a key added through `gcloud compute ssh` is
