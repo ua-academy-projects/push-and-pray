@@ -64,6 +64,7 @@
     owner: root
     group: root
     mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
   notify: Restart bastion SSH
 
 - name: Validate the complete SSH daemon configuration
@@ -73,6 +74,35 @@
       - /usr/sbin/sshd
       - -t
   changed_when: false
+
+- name: Read the effective SSH daemon configuration
+  become: true
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/sshd
+      - -T
+  register: bastion_sshd_effective_config
+  changed_when: false
+
+- name: Verify the effective bastion SSH policy
+  ansible.builtin.assert:
+    that:
+      - >-
+        bastion_sshd_effective_config.stdout_lines
+        | select('match', '^port ')
+        | list
+        == ['port ' ~ (bastion_ssh_port | string)]
+      - "'pubkeyauthentication yes' in bastion_sshd_effective_config.stdout_lines"
+      - "'passwordauthentication no' in bastion_sshd_effective_config.stdout_lines"
+      - "'kbdinteractiveauthentication no' in bastion_sshd_effective_config.stdout_lines"
+      - "'permitemptypasswords no' in bastion_sshd_effective_config.stdout_lines"
+      - "'permitrootlogin no' in bastion_sshd_effective_config.stdout_lines"
+      - "'allowtcpforwarding yes' in bastion_sshd_effective_config.stdout_lines"
+      - "'allowagentforwarding no' in bastion_sshd_effective_config.stdout_lines"
+      - "'gatewayports no' in bastion_sshd_effective_config.stdout_lines"
+      - "'x11forwarding no' in bastion_sshd_effective_config.stdout_lines"
+      - "'permittunnel no' in bastion_sshd_effective_config.stdout_lines"
+    fail_msg: The effective SSH daemon policy does not match the bastion role.
 
 - name: Apply pending SSH handlers
   ansible.builtin.meta: flush_handlers
