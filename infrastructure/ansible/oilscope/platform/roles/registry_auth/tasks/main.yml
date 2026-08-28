@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Reject incomplete registry authentication inputs
+  ansible.builtin.fail:
+    msg: Registry, username, probe image and token are required.
+  when: >-
+    registry_auth_registry | length == 0
+    or registry_auth_username | length == 0
+    or registry_auth_probe_image | length == 0
+    or registry_auth_token | length == 0
+  no_log: true
+
+- name: Check existing registry access
+  ansible.builtin.command:
+    argv:
+      - docker
+      - manifest
+      - inspect
+      - "{{ registry_auth_probe_image }}"
+  environment:
+    DOCKER_CONFIG: "{{ registry_auth_config_dir }}"
+  register: registry_auth_existing_access
+  changed_when: false
+  failed_when: false
+
+- name: Create the root Docker configuration directory
+  ansible.builtin.file:
+    path: "{{ registry_auth_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: registry_auth_existing_access.rc != 0
+
+- name: Authenticate Docker to the private registry
+  ansible.builtin.command:
+    argv:
+      - docker
+      - login
+      - "{{ registry_auth_registry }}"
+      - --username
+      - "{{ registry_auth_username }}"
+      - --password-stdin
+    stdin: "{{ registry_auth_token }}"
+    stdin_add_newline: false
+  environment:
+    DOCKER_CONFIG: "{{ registry_auth_config_dir }}"
+  when: registry_auth_existing_access.rc != 0
+  changed_when: true
+  no_log: true
+
+- name: Verify authenticated registry access
+  ansible.builtin.command:
+    argv:
+      - docker
+      - manifest
+      - inspect
+      - "{{ registry_auth_probe_image }}"
+  environment:
+    DOCKER_CONFIG: "{{ registry_auth_config_dir }}"
+  changed_when: false

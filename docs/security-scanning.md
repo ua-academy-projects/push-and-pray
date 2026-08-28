@@ -51,10 +51,21 @@ tab. A second pass with `severity: HIGH,CRITICAL` and `exit-code: 1` decides
 whether the build fails. Without that split, an informational finding fails the
 build.
 
-Today the scan reports three LOW findings, one per Dockerfile: DS-0026, "add a
-HEALTHCHECK instruction". Our health checks are declared in the Compose files
-rather than baked into the images, which is a legitimate choice, so these are
-visible in the Security tab but do not block. The Terraform is clean.
+The Dockerfile scan may report DS-0026, "add a HEALTHCHECK instruction". Our
+runtime health checks are declared in the supported Compose project rather than
+baked into the images, which is a legitimate choice, so these findings are
+visible in the Security tab but do not block.
+
+Both Terraform subnets enable Private Google Access and VPC Flow Logs. Flow
+logs aggregate every ten minutes, sample 50 percent of connections, and include
+all available metadata. This improves network investigation at the cost of
+billable Cloud Logging ingestion and storage.
+
+The workload SSH rule is deliberately tag-scoped to the bastion and has no
+public source range. The custom-mode VPC does not create Google's
+`default-allow-*` rules, and all unlisted ingress is covered by the implied deny
+rule. Inline Trivy exceptions document these two topology-aware false positives;
+they do not suppress other firewall findings.
 
 **Reporting only — `Dependency scan`.** A CVE published upstream overnight would
 otherwise block every unrelated PR the next morning, including the one fixing

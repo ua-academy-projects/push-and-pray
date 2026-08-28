@@ -1,0 +1,256 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Apply the workload host baseline
+  hosts: workloads
+  gather_facts: true
+  roles:
+    - role: oilscope.platform.host_baseline
+      tags:
+        - baseline
+
+- name: Install Docker on workload hosts
+  hosts: workloads
+  gather_facts: true
+  roles:
+    - role: oilscope.platform.docker_engine
+      tags:
+        - docker
+
+- name: Install the non-secret Compose project
+  hosts: workloads
+  become: true
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_workload: "{{ oilscope_role }}"
+      tags:
+        - compose
+
+- name: Authenticate workload hosts to the private registry
+  hosts: workloads
+  become: true
+  gather_facts: false
+  vars:
+    deploy_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+    deploy_workload_config: >-
+      {{
+        deploy_project_config.vms
+        | dict2items
+        | selectattr('value.role', 'equalto', oilscope_role)
+        | map(attribute='value')
+        | first
+      }}
+    deploy_registry_probe_image: >-
+      {{ deploy_project_config.registry.repository }}/database:{{ deploy_project_config.registry.image_sha }}
+  roles:
+    - role: oilscope.platform.runtime_secrets
+      vars:
+        runtime_secrets_project_id: "{{ deploy_project_config.project_id }}"
+        runtime_secrets_mappings: "{{ deploy_workload_config.secret_mappings }}"
+      tags:
+        - registry
+        - database
+        - history
+        - fetcher
+        - ui
+
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_username: "{{ deploy_project_config.registry.username }}"
+        registry_auth_probe_image: "{{ deploy_registry_probe_image }}"
+        registry_auth_token: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'GHCR_TOKEN')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+      tags:
+        - registry
+        - database
+        - history
+        - fetcher
+        - ui
+
+- name: Deploy and migrate the database
+  hosts: database
+  become: true
+  gather_facts: false
+  vars:
+    deploy_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+    deploy_workload_config: >-
+      {{
+        deploy_project_config.vms
+        | dict2items
+        | selectattr('value.role', 'equalto', 'database')
+        | map(attribute='value')
+        | first
+      }}
+    deploy_database_image: >-
+      {{ deploy_project_config.registry.repository }}/database:{{ deploy_project_config.registry.image_sha }}
+  roles:
+    - role: oilscope.platform.runtime_secrets
+      vars:
+        runtime_secrets_project_id: "{{ deploy_project_config.project_id }}"
+        runtime_secrets_mappings: "{{ deploy_workload_config.secret_mappings }}"
+      tags:
+        - database
+
+    - role: oilscope.platform.database
+      vars:
+        database_application_image_tag: >-
+          {{ deploy_project_config.registry.image_sha }}
+        database_host_port: >-
+          {{ deploy_project_config.service_ports.postgresql }}
+        database_postgres_image: "{{ deploy_database_image }}"
+        database_postgres_password: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'POSTGRES_PASSWORD')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+      no_log: true
+      tags:
+        - database
+
+- name: Deploy History
+  hosts: history
+  become: true
+  gather_facts: false
+  vars:
+    deploy_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+    deploy_workload_config: >-
+      {{
+        deploy_project_config.vms
+        | dict2items
+        | selectattr('value.role', 'equalto', 'history')
+        | map(attribute='value')
+        | first
+      }}
+    deploy_database_image: >-
+      {{ deploy_project_config.registry.repository }}/database:{{ deploy_project_config.registry.image_sha }}
+  roles:
+    - role: oilscope.platform.runtime_secrets
+      vars:
+        runtime_secrets_project_id: "{{ deploy_project_config.project_id }}"
+        runtime_secrets_mappings: "{{ deploy_workload_config.secret_mappings }}"
+      tags:
+        - history
+
+    - role: oilscope.platform.history
+      vars:
+        history_application_image_tag: >-
+          {{ deploy_project_config.registry.image_sha }}
+        history_postgres_image: "{{ deploy_database_image }}"
+        history_postgres_password: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'POSTGRES_PASSWORD')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+      no_log: true
+      tags:
+        - history
+
+- name: Deploy Fetcher
+  hosts: fetcher
+  become: true
+  gather_facts: false
+  vars:
+    deploy_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+    deploy_workload_config: >-
+      {{
+        deploy_project_config.vms
+        | dict2items
+        | selectattr('value.role', 'equalto', 'fetcher')
+        | map(attribute='value')
+        | first
+      }}
+    deploy_database_image: >-
+      {{ deploy_project_config.registry.repository }}/database:{{ deploy_project_config.registry.image_sha }}
+  roles:
+    - role: oilscope.platform.runtime_secrets
+      vars:
+        runtime_secrets_project_id: "{{ deploy_project_config.project_id }}"
+        runtime_secrets_mappings: "{{ deploy_workload_config.secret_mappings }}"
+      tags:
+        - fetcher
+
+    - role: oilscope.platform.fetcher
+      vars:
+        fetcher_compose_environment:
+          APP_IMAGE_TAG: "{{ deploy_project_config.registry.image_sha }}"
+          POSTGRES_IMAGE: "{{ deploy_database_image }}"
+        fetcher_database_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+        fetcher_oilpriceapi_key: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'OILPRICEAPI_KEY')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+        fetcher_postgres_password: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'POSTGRES_PASSWORD')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+      no_log: true
+      tags:
+        - fetcher
+
+- name: Deploy UI
+  hosts: ui
+  become: true
+  gather_facts: false
+  vars:
+    deploy_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+    deploy_workload_config: >-
+      {{
+        deploy_project_config.vms
+        | dict2items
+        | selectattr('value.role', 'equalto', 'ui')
+        | map(attribute='value')
+        | first
+      }}
+    deploy_database_image: >-
+      {{ deploy_project_config.registry.repository }}/database:{{ deploy_project_config.registry.image_sha }}
+  roles:
+    - role: oilscope.platform.runtime_secrets
+      vars:
+        runtime_secrets_project_id: "{{ deploy_project_config.project_id }}"
+        runtime_secrets_mappings: "{{ deploy_workload_config.secret_mappings }}"
+      tags:
+        - ui
+
+    - role: oilscope.platform.ui
+      vars:
+        ui_application_image_tag: >-
+          {{ deploy_project_config.registry.image_sha }}
+        ui_postgres_image: "{{ deploy_database_image }}"
+        ui_postgres_password: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'POSTGRES_PASSWORD')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+      no_log: true
+      tags:
+        - ui

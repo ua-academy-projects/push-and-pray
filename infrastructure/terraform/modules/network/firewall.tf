@@ -14,6 +14,10 @@ resource "google_compute_firewall" "bastion_ssh" {
   }
 }
 
+# The rule has no public CIDR source: only instances carrying the bastion tag
+# can initiate workload SSH. The custom VPC also has no default-allow rules.
+#trivy:ignore:AVD-GCP-0071
+#trivy:ignore:AVD-GCP-0073
 resource "google_compute_firewall" "workload_ssh" {
   name    = "${var.resource_prefix}-allow-workload-ssh"
   network = google_compute_network.main.id

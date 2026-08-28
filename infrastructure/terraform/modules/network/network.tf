@@ -6,9 +6,16 @@ resource "google_compute_network" "main" {
 }
 
 resource "google_compute_subnetwork" "management" {
-  name          = "${var.resource_prefix}-management"
-  network       = google_compute_network.main.id
-  ip_cidr_range = var.management_subnet_cidr
+  name                     = "${var.resource_prefix}-management"
+  network                  = google_compute_network.main.id
+  ip_cidr_range            = var.management_subnet_cidr
+  private_ip_google_access = true
+
+  log_config {
+    aggregation_interval = "INTERVAL_10_MIN"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }
 
 resource "google_compute_subnetwork" "workload" {
@@ -17,4 +24,10 @@ resource "google_compute_subnetwork" "workload" {
   ip_cidr_range = var.workload_subnet_cidr
 
   private_ip_google_access = true
+
+  log_config {
+    aggregation_interval = "INTERVAL_10_MIN"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }

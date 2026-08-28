@@ -47,11 +47,16 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "image_sha"],
+      "required": ["repository", "username", "image_sha"],
       "properties": {
         "repository": {
           "type": "string",
           "minLength": 1
+        },
+        "username": {
+          "$comment": "Non-secret GitHub username used for GHCR authentication.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
         },
         "image_sha": {
           "type": "string",

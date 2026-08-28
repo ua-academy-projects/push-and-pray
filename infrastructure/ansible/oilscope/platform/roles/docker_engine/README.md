@@ -20,7 +20,7 @@ though the deployment playbook applies the baseline first regardless.
 ## Role variables
 
 - `docker_engine_version`: exact apt version for the pinned packages; defaults
-  to `5:29.7.2-1~ubuntu.22.04~jammy`. Re-verify with
+  to `5:29.7.2-1~ubuntu.24.04~noble`. Re-verify with
   `apt-cache madison docker-ce` before bumping.
 - `docker_engine_pinned_packages`: packages installed at that exact version;
   defaults to `docker-ce` and `docker-ce-cli`.

@@ -1,99 +1,150 @@
 # VM deployment operations
 
-This describes operating a workload VM's automated deployment — the
-`oilscope-deploy.service` systemd unit that cloud-init installs, and the
-`run.sh` script it runs. This is the automated path; for manually running
-`compose.deployment.yaml` by hand instead, see
-[the supported Compose deployment guide](supported-compose-deployment.md).
+Terraform creates clean OilScope virtual machines, networking, service
+accounts, labels and SSH public-key metadata. It does not install Docker or
+start the application. Bastion SSH configuration and workload deployment are
+owned by the `oilscope.platform` Ansible collection.
 
-Every workload VM runs exactly one role (`database`, `history`, `fetcher`, or
-`ui`), and `oilscope-deploy.service` starts exactly that role's service(s)
-from `/opt/oilscope/deploy/compose.deployment.yaml`. All commands below run
-on the VM itself, over SSH through the bastion.
+## Controller setup
 
-There are two separate things to look at, not one: `oilscope-deploy.service`
-itself (the deploy *attempt* — did `run.sh` finish successfully) and the
-Docker container(s) it started (the *application* — is History/Fetcher/UI/
-Postgres actually running right now). Checking only one gives an incomplete
-picture.
-
-## Checking deployment status
-
-Whether the last deploy attempt succeeded:
+Install the inventory dependencies and build the local collection:
 
 ```sh
-systemctl status oilscope-deploy.service
+pip install -r infrastructure/ansible/requirements.txt
+ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+ansible-galaxy collection build infrastructure/ansible/oilscope/platform
+ansible-galaxy collection install oilscope-platform-*.tar.gz --force
+gcloud auth application-default login
 ```
 
-`active (exited)` with no error means `run.sh` ran to completion, including
-its own health check, on its last invocation. `failed` means it didn't —
-check the logs below for why. Since this is a `Type=oneshot` unit, it has no
-persistent "running" state between invocations; it only ever reports the
-result of its most recent run.
-
-Whether the actual container(s) for this VM's role are up:
+The commands below use these values:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml ps
+inventory=infrastructure/ansible/inventory/oilscope.gcp.yml
+project_config=/absolute/path/project-config.json
 ```
 
-## Reading deployment logs
+Keep the project config outside the repository and pass an absolute path.
 
-**`run.sh`'s own output** — what the deploy script itself printed (which
-step it was on, any error message) — goes through the systemd journal, not
-Docker:
+## Authenticate to private GHCR images
+
+The project configuration keeps the non-secret GitHub username in
+`registry.username`. Every workload maps `GHCR_TOKEN` to the same Secret
+Manager container; the bastion has no access to it. Terraform creates that
+container and grants each workload service account `secretAccessor`, but never
+receives or stores the token value.
+
+Before deployment, export `GHCR_TOKEN` with a GitHub token that has
+`read:packages`, together with the other secret values required by the project
+configuration. Upload them through the collection playbook; the role passes
+each value to `gcloud` on standard input and does not write it to disk:
 
 ```sh
-journalctl -u oilscope-deploy.service          # full history
-journalctl -u oilscope-deploy.service -f       # follow live
-journalctl -u oilscope-deploy.service --since "1 hour ago"
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file="$project_config" --check
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file="$project_config"
 ```
 
-**The application's own logs** — what History/Fetcher/UI/Postgres printed
-while running — go through Docker's own logging, since
-`compose.deployment.yaml` does not configure a `journald` logging driver.
-Do not look for these in `journalctl`:
+During deployment, `oilscope.platform.registry_auth` uses each VM's identity to
+read the token. It first checks the exact database image and runs
+`docker login ghcr.io --password-stdin` only when existing access fails. The
+secret-bearing task uses `no_log`, and Docker stores the resulting credential
+under the root-only `/root/.docker` directory because image pulls run with
+`become`.
+
+For a manual deployment, make sure the configured GHCR secret already has a
+version before running `oilscope.platform.deploy`. A successful repeated run
+skips login after the manifest access check succeeds.
+
+## Bootstrap a fresh bastion
+
+A fresh Ubuntu bastion initially accepts SSH on port 22. Terraform permits
+that bootstrap port and the configured port only from
+`vms.bastion.allowed_cidrs`. The bootstrap playbook connects through port 22,
+applies `oilscope.platform.bastion`, and verifies a new Ansible connection on
+`vms.bastion.ssh_port`:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml logs <service>
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml logs -f <service>
+ansible-playbook oilscope.platform.bootstrap_bastion \
+  -i "$inventory" \
+  -e project_config_path="$project_config"
 ```
 
-Replace `<service>` with whichever this VM's role actually runs
-(`postgres`/`migrate` on the `database` VM, otherwise the role name itself —
-`history`, `fetcher`, or `ui`).
+Run this playbook once for a fresh bastion. Normal inventory connections read
+the configured bastion port from the same project config.
 
-## Restarting a role
+## Verify management connectivity
 
-`run.sh` is idempotent and safe to re-run — see the idempotency notes for
-why. To redeploy (for example, after a new `APP_IMAGE_TAG` is published),
-re-run the whole deploy script through systemd rather than calling
-`docker compose` directly:
+Verify the bastion first, then all private workload hosts through its
+`ProxyCommand`:
 
 ```sh
-sudo systemctl restart oilscope-deploy.service
+ansible bastion -i "$inventory" \
+  -e project_config_path="$project_config" \
+  -m ansible.builtin.ping
+
+ansible workloads -i "$inventory" \
+  -e project_config_path="$project_config" \
+  -m ansible.builtin.ping
 ```
 
-This re-authenticates to GHCR, re-pulls images, and re-applies the correct
-`up`/`run` sequence for this VM's role — it will only actually recreate a
-container if something about it changed (a newer image, for instance);
-otherwise it's a fast no-op.
+## Deploy the application
 
-## Stopping a role
-
-There is no running process behind `oilscope-deploy.service` to stop — it
-already exited after its last successful run. What you actually want to stop
-is the application container(s) it started:
+The collection deployment playbook applies the host baseline, installs Docker
+and the non-secret Compose project, authenticates every workload to private
+GHCR images, then deploys Database and migrations before History, Fetcher and
+UI:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml stop <service>
+ansible-playbook oilscope.platform.deploy \
+  -i "$inventory" \
+  -e project_config_path="$project_config"
 ```
 
-This stops the container(s) without removing them, so a later
-`systemctl restart oilscope-deploy.service` (or a VM reboot) brings them
-back. To also disable automatic restart on the next boot, additionally stop
-and disable the unit itself:
+Runtime secret values are read on each workload VM with its own service account
+and are passed directly to the service roles. They are not stored in Terraform
+metadata or deployment files.
+
+Run the deployment smoke test after every fresh deployment:
 
 ```sh
-sudo systemctl disable --now oilscope-deploy.service
+ansible-playbook oilscope.platform.smoke_test \
+  -i "$inventory" \
+  -e project_config_path="$project_config"
 ```
+
+The smoke test requires one host in each of `bastion`, `database`, `history`,
+`fetcher` and `ui`. It verifies PostgreSQL and the three application service
+health contracts.
+
+## Confirm idempotency
+
+Run `oilscope.platform.deploy` a second time with the same inventory, project
+config and image SHA. Review the play recap and every changed task. Health
+checks, secret reads, unchanged files and already-running containers must not
+report changes. A container recreation is expected only when its image or
+effective configuration changed.
+
+## Inspect and operate containers
+
+Each workload uses `/opt/oilscope/app/compose.yaml` and the Compose project name
+`petroscope`:
+
+```sh
+sudo docker compose \
+  --project-name petroscope \
+  --file /opt/oilscope/app/compose.yaml \
+  ps
+
+sudo docker compose \
+  --project-name petroscope \
+  --file /opt/oilscope/app/compose.yaml \
+  logs <service>
+```
+
+Use `postgres` and `migrate` on the Database VM, or `history`, `fetcher` and
+`ui` on their corresponding hosts. Re-run the collection deployment playbook
+for normal deployment or recovery instead of relying on a boot-time systemd
+deployment unit.

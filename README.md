@@ -191,6 +191,30 @@ Images are pushed only after a successful Buildx build. The registry login uses 
 workflow-scoped `GITHUB_TOKEN`, which GitHub Actions masks in logs; workflows do not print
 or pass the token as a Docker build argument.
 
+## Manual Google Cloud deployment
+
+The complete project can be deployed manually. Prepare the GCP project, enabled APIs and
+GCS Terraform backend, then create an external project configuration from
+`project-config.example.json`. Keep credentials, Terraform backend settings, secret
+values and the completed project configuration outside the repository.
+
+Apply Terraform first. It creates the network, five VMs, service accounts, IAM grants and
+empty Secret Manager containers. Then upload the secret versions and run the Ansible
+playbooks in this order:
+
+1. `oilscope.platform.upload_secret_versions`
+2. `oilscope.platform.bootstrap_bastion`
+3. `oilscope.platform.deploy`
+4. `oilscope.platform.smoke_test`
+
+`oilscope.platform.deploy` applies the workload baseline, installs Docker and Compose,
+authenticates the private GHCR images, migrates PostgreSQL, and deploys History, Fetcher
+and UI. See [VM deployment operations](docs/vm-deployment-operations.md) for the exact
+commands and [Secrets](docs/secrets.md) for safe secret upload and rotation.
+
+The resulting infrastructure includes billable Compute Engine, persistent disk,
+external IP, Cloud NAT, Secret Manager and Cloud Storage resources.
+
 ## Local development
 
 Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with

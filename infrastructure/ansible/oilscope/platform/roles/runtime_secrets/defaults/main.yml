@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+runtime_secrets_project_id: ""
+runtime_secrets_mappings: {}
+runtime_secrets_metadata_token_url: >-
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+runtime_secrets_api_url: https://secretmanager.googleapis.com/v1
