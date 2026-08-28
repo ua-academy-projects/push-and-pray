@@ -4,6 +4,16 @@ Deployment credentials live in Google Secret Manager. Terraform creates the
 containers and decides who may read them; it never sees, stores or transports a
 value.
 
+This includes the private GHCR token. The GitHub username is non-secret registry
+configuration, while `GHCR_TOKEN` maps to one Secret Manager container shared
+by the four workload service accounts. The deployment reads it with each VM's
+identity and sends it to `docker login --password-stdin`; Ansible suppresses the
+secret-bearing task output.
+
+After rotating the GHCR token, rerun the deployment. The registry role checks
+the exact private image first and logs in again when the stored Docker
+credential no longer grants access.
+
 ## Where the catalog comes from
 
 There is no hand-written list of secrets. Every container is derived from

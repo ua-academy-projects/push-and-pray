@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the registry_auth role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Include the role without credentials
+      ansible.builtin.include_role:
+        name: registry_auth
+      register: registry_auth_missing_credentials
+      ignore_errors: true
+
+    - name: Verify missing credentials are rejected
+      ansible.builtin.assert:
+        that:
+          - registry_auth_missing_credentials is failed

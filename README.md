@@ -191,6 +191,39 @@ Images are pushed only after a successful Buildx build. The registry login uses 
 workflow-scoped `GITHUB_TOKEN`, which GitHub Actions masks in logs; workflows do not print
 or pass the token as a Docker build argument.
 
+## One-command Google Cloud deployment
+
+The no-argument deployment script creates or reuses a GCP project, configures a private
+GCS Terraform backend, provisions the five VMs, uploads runtime secrets, deploys the
+services with Ansible, and runs the complete smoke test:
+
+```bash
+./infrastructure/terraform/scripts/deploy-gcp.sh
+```
+
+Before the first run, authenticate with `gcloud auth login`, put a real
+`OILPRICEAPI_KEY` in the ignored local `.env` file, and authenticate Docker to
+the private registry with `docker login ghcr.io`. `GHCR_USERNAME` and a token
+with `read:packages` may instead be set in `.env`; Docker's credential helper is
+used when those values are omitted. The script auto-selects the billing account
+only when exactly one open account is visible, and auto-detects the caller's
+public IPv4 address for bastion SSH. If either choice must be pinned, edit the
+user settings at the top of the script; it deliberately accepts no command-line
+arguments.
+
+Credentials, generated passwords, Terraform inputs, state configuration, inventory, and
+the isolated Ansible environment are stored under
+`~/.push-and-pray-gcp/<project-id>/`, outside the repository. The script prints the public
+UI URL and the matching `terraform destroy` command after a successful deployment.
+
+The GHCR token value is uploaded directly to Secret Manager and is never placed
+in the project configuration or Terraform state. Workload service accounts read
+it at deployment time, and Ansible passes it to `docker login` on standard input
+with secret-bearing output suppressed.
+
+This command creates billable Compute Engine, persistent disk, external IP, Cloud NAT,
+Secret Manager, and Cloud Storage resources.
+
 ## Local development
 
 Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with

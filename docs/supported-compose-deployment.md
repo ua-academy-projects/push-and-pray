@@ -21,9 +21,19 @@ the supported GHCR deployment configuration.
 | `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
 | `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
 
-Authenticate to the private registry before deployment. Supply a GitHub token
-with `read:packages` to `docker login ghcr.io` through standard input; do not put
-the token in Compose, this repository, or a shell argument.
+Authenticate to the private registry before deployment. The GCP deployment
+stores a GitHub token with `read:packages` in Secret Manager, grants each
+workload service account access to that secret, and runs `docker login ghcr.io`
+through standard input before pulling images. Do not put the token in Compose,
+the project configuration, Terraform state, or a shell argument.
+
+For a non-GCP manual deployment, authenticate through standard input before
+running Compose:
+
+```sh
+printf '%s' "$GHCR_TOKEN" |
+  docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+```
 
 ## Optional settings
 

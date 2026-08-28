@@ -28,6 +28,54 @@
       tags:
         - compose
 
+- name: Authenticate workload hosts to the private registry
+  hosts: workloads
+  become: true
+  gather_facts: false
+  vars:
+    deploy_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+    deploy_workload_config: >-
+      {{
+        deploy_project_config.vms
+        | dict2items
+        | selectattr('value.role', 'equalto', oilscope_role)
+        | map(attribute='value')
+        | first
+      }}
+    deploy_registry_probe_image: >-
+      {{ deploy_project_config.registry.repository }}/database:{{ deploy_project_config.registry.image_sha }}
+  roles:
+    - role: oilscope.platform.runtime_secrets
+      vars:
+        runtime_secrets_project_id: "{{ deploy_project_config.project_id }}"
+        runtime_secrets_mappings: "{{ deploy_workload_config.secret_mappings }}"
+      tags:
+        - registry
+        - database
+        - history
+        - fetcher
+        - ui
+
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_username: "{{ deploy_project_config.registry.username }}"
+        registry_auth_probe_image: "{{ deploy_registry_probe_image }}"
+        registry_auth_token: >-
+          {{
+            runtime_secrets_access_results.results
+            | selectattr('item.key', 'equalto', 'GHCR_TOKEN')
+            | map(attribute='json.payload.data')
+            | first
+            | b64decode
+          }}
+      tags:
+        - registry
+        - database
+        - history
+        - fetcher
+        - ui
+
 - name: Deploy and migrate the database
   hosts: database
   become: true

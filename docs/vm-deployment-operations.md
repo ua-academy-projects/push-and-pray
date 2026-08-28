@@ -26,6 +26,30 @@ project_config=/absolute/path/project-config.json
 
 Keep the project config outside the repository and pass an absolute path.
 
+## Authenticate to private GHCR images
+
+The project configuration keeps the non-secret GitHub username in
+`registry.username`. Every workload maps `GHCR_TOKEN` to the same Secret
+Manager container; the bastion has no access to it. Terraform creates that
+container and grants each workload service account `secretAccessor`, but never
+receives or stores the token value.
+
+The no-argument GCP deployment reads `GHCR_USERNAME` and `GHCR_TOKEN` from the
+ignored `.env` file. When they are absent, it reads the existing `ghcr.io`
+login through Docker's configured credential helper. It uploads the token to
+Secret Manager through standard input before Ansible starts.
+
+During deployment, `oilscope.platform.registry_auth` uses each VM's identity to
+read the token. It first checks the exact database image and runs
+`docker login ghcr.io --password-stdin` only when existing access fails. The
+secret-bearing task uses `no_log`, and Docker stores the resulting credential
+under the root-only `/root/.docker` directory because image pulls run with
+`become`.
+
+For a manual deployment, make sure the configured GHCR secret already has a
+version before running `oilscope.platform.deploy`. A successful repeated run
+skips login after the manifest access check succeeds.
+
 ## Bootstrap a fresh bastion
 
 A fresh Ubuntu bastion initially accepts SSH on port 22. Terraform permits
@@ -61,8 +85,9 @@ ansible workloads -i "$inventory" \
 ## Deploy the application
 
 The collection deployment playbook applies the host baseline, installs Docker
-and the non-secret Compose project, then deploys Database and migrations before
-History, Fetcher and UI:
+and the non-secret Compose project, authenticates every workload to private
+GHCR images, then deploys Database and migrations before History, Fetcher and
+UI:
 
 ```sh
 ansible-playbook oilscope.platform.deploy \

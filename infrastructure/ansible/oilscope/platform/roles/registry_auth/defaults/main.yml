@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+registry_auth_registry: ghcr.io
+registry_auth_username: ""
+registry_auth_token: ""
+registry_auth_probe_image: ""
+registry_auth_config_dir: /root/.docker
