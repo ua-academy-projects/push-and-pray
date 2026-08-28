@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the bastion bootstrap inputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require exactly one bastion host
+      ansible.builtin.assert:
+        that:
+          - groups.get('bastion', []) | length == 1
+        fail_msg: The inventory must contain exactly one bastion host.
+
+    - name: Require the project configuration path
+      ansible.builtin.assert:
+        that:
+          - project_config_path is defined
+          - project_config_path | length > 0
+        fail_msg: >-
+          Pass the absolute project config path with
+          -e project_config_path=/path/project-config.json.
+
+    - name: Read the bastion bootstrap configuration
+      ansible.builtin.set_fact:
+        bootstrap_bastion_project_config: >-
+          {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+    - name: Require a bastion VM configuration
+      ansible.builtin.assert:
+        that:
+          - bootstrap_bastion_project_config.vms is defined
+          - bootstrap_bastion_project_config.vms.bastion is defined
+        fail_msg: vms.bastion is required in the project configuration.
+
+    - name: Validate the configured bastion SSH port
+      ansible.builtin.assert:
+        that:
+          - >-
+            bootstrap_bastion_project_config.vms.bastion.role
+            | default('') == 'bastion'
+          - >-
+            bootstrap_bastion_project_config.vms.bastion.ssh_port
+            | type_debug == 'int'
+          - >-
+            bootstrap_bastion_project_config.vms.bastion.ssh_port | int >= 1
+          - >-
+            bootstrap_bastion_project_config.vms.bastion.ssh_port
+            | int <= 65535
+        fail_msg: >-
+          vms.bastion must declare role bastion and an integer ssh_port from 1
+          to 65535.
+
+- name: Configure a fresh bastion through its initial SSH port
+  hosts: bastion
+  serial: 1
+  become: true
+  gather_facts: false
+  vars:
+    ansible_port: 22
+    bootstrap_bastion_initial_ssh_port: 22
+  pre_tasks:
+    - name: Wait for the initial bastion SSH port
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ bootstrap_bastion_initial_ssh_port }}"
+        connect_timeout: 5
+        delay: 2
+        timeout: 180
+        state: started
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Wait for the initial Ansible connection
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 180
+      changed_when: false
+
+  roles:
+    - role: oilscope.platform.bastion
+
+- name: Verify Ansible through the configured bastion port
+  hosts: bastion
+  gather_facts: false
+  tasks:
+    - name: Reset the initial SSH connection
+      ansible.builtin.meta: reset_connection
+
+    - name: Wait for Ansible on the configured SSH port
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        sleep: 5
+        timeout: 180
+      changed_when: false
+
+    - name: Verify the configured bastion connection
+      ansible.builtin.ping:
+      changed_when: false

@@ -39,8 +39,6 @@ compose:
     if labels.role | default('') == 'bastion'
     else networkInterfaces[0].networkIP
 
-  ansible_port: 2222 if labels.role | default('') == 'bastion' else 22
-
   oilscope_role: labels.role | default('')
 
 cache: true
