@@ -34,10 +34,18 @@ Manager container; the bastion has no access to it. Terraform creates that
 container and grants each workload service account `secretAccessor`, but never
 receives or stores the token value.
 
-The no-argument GCP deployment reads `GHCR_USERNAME` and `GHCR_TOKEN` from the
-ignored `.env` file. When they are absent, it reads the existing `ghcr.io`
-login through Docker's configured credential helper. It uploads the token to
-Secret Manager through standard input before Ansible starts.
+Before deployment, export `GHCR_TOKEN` with a GitHub token that has
+`read:packages`, together with the other secret values required by the project
+configuration. Upload them through the collection playbook; the role passes
+each value to `gcloud` on standard input and does not write it to disk:
+
+```sh
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file="$project_config" --check
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file="$project_config"
+```
 
 During deployment, `oilscope.platform.registry_auth` uses each VM's identity to
 read the token. It first checks the exact database image and runs
