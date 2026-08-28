@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Reload systemd for the SSH socket
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  listen: Restart bastion SSH
+
+- name: Restart the SSH socket
+  become: true
+  ansible.builtin.systemd_service:
+    name: ssh.socket
+    state: restarted
+  when: bastion_ssh_socket.rc == 0
+  listen: Restart bastion SSH
+
+- name: Restart the SSH service
+  become: true
+  ansible.builtin.systemd_service:
+    name: ssh.service
+    state: restarted
+  when: bastion_ssh_socket.rc != 0
+  listen: Restart bastion SSH

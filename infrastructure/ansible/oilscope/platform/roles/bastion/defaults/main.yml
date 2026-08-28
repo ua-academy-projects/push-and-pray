@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+bastion_project_config_path: "{{ project_config_path | default('') }}"
+bastion_sshd_drop_in_dir: /etc/ssh/sshd_config.d
+bastion_sshd_drop_in_path: >-
+  {{ bastion_sshd_drop_in_dir }}/00-oilscope-bastion.conf
+bastion_ssh_connect_timeout: 5
+bastion_ssh_connect_retries: 12
+bastion_ssh_connect_delay: 5

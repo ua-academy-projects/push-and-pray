@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Test the bastion role
+  hosts: bastion_test
+  become: true
+  roles:
+    - role: oilscope.platform.bastion
+      vars:
+        bastion_project_config_path: >-
+          {{ playbook_dir }}/project-config.json.example

@@ -1,0 +1,8 @@
+{
+  "vms": {
+    "bastion": {
+      "role": "bastion",
+      "ssh_port": 2222
+    }
+  }
+}
