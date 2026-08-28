@@ -6,10 +6,7 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-# DOCUMENTATION is executable configuration, not commentary: Ansible builds the
-# plugin's option definitions from it. Removing it does not merely lose the
-# help text - every option below stops existing, and the plugin fails with
-# "No config definition exists for 'project_config_path'".
+# DO NOT DELETE BECAUSE PLUGIN WILL FAIL
 DOCUMENTATION = r"""
 name: oilscope_gcp
 short_description: OilScope inventory derived from the project configuration
