@@ -2,9 +2,21 @@
 # Copyright (c) Push and Pray team
 """Derive gcp_compute settings from the shared project configuration JSON."""
 
-from __future__ import absolute_import, division, print_function
+import hashlib
+import json
+import os
+import tempfile
 
-__metaclass__ = type
+from ansible.errors import AnsibleError, AnsibleParserError
+from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
+from ansible.utils.display import Display
+
+try:
+    import yaml
+
+    HAS_YAML = True
+except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
+    HAS_YAML = False
 
 # DO NOT DELETE BECAUSE PLUGIN WILL FAIL
 DOCUMENTATION = r"""
@@ -86,23 +98,8 @@ cache_connection: ~/.cache/oilscope-inventory
 cache_timeout: 300
 """
 
-import hashlib
-import json
-import os
-import tempfile
-
-from ansible.errors import AnsibleParserError
-from ansible.module_utils.common.text.converters import to_native
-from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
-
-try:
-    import yaml
-
-    HAS_YAML = True
-except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
-    HAS_YAML = False
-
 DELEGATE = "google.cloud.gcp_compute"
+display = Display()
 
 
 def plain(value):
@@ -113,13 +110,13 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     NAME = "oilscope.platform.oilscope_gcp"
 
     def verify_file(self, path):
-        if not super(InventoryModule, self).verify_file(path):
+        if not super().verify_file(path):
             return False
 
         return path.endswith(("oilscope.yml", "oilscope.yaml"))
 
     def parse(self, inventory, loader, path, cache=True):
-        super(InventoryModule, self).parse(inventory, loader, path, cache=cache)
+        super().parse(inventory, loader, path, cache=cache)
         self._read_config_data(path)
 
         if not HAS_YAML:
@@ -134,37 +131,32 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         finally:
             try:
                 os.unlink(generated)
-            except OSError:
-                pass
+            except OSError as cleanup_error:
+                display.vvv(f"could not remove {generated}: {cleanup_error}")
 
     def _load_project_config(self, path):
         config_path = self.get_option("project_config_path")
 
         if not os.path.isabs(config_path):
-            config_path = os.path.join(
-                os.path.dirname(os.path.abspath(path)), config_path
-            )
+            config_path = os.path.join(os.path.dirname(os.path.abspath(path)), config_path)
 
         config_path = os.path.normpath(config_path)
 
         try:
             with open(config_path, "rb") as handle:
                 config = json.load(handle)
-        except (OSError, IOError) as read_error:
+        except OSError as read_error:
             raise AnsibleParserError(
-                "could not read the project configuration at %s: %s"
-                % (config_path, to_native(read_error))
-            )
+                f"could not read the project configuration at {config_path}: {read_error}"
+            ) from read_error
         except ValueError as decode_error:
             raise AnsibleParserError(
-                "the project configuration at %s is not valid JSON: %s"
-                % (config_path, to_native(decode_error))
-            )
+                f"the project configuration at {config_path} is not valid JSON: {decode_error}"
+            ) from decode_error
 
         if not isinstance(config, dict):
             raise AnsibleParserError(
-                "the project configuration at %s must contain a JSON object"
-                % config_path
+                f"the project configuration at {config_path} must contain a JSON object"
             )
 
         return config
@@ -174,7 +166,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         if not value or not isinstance(value, str):
             raise AnsibleParserError(
-                "the project configuration must define a non-empty string %r" % key
+                f"the project configuration must define a non-empty string {key!r}"
             )
 
         return value
@@ -184,9 +176,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         vms = config.get("vms")
 
         if not isinstance(vms, dict):
-            raise AnsibleParserError(
-                "the project configuration must define a 'vms' object"
-            )
+            raise AnsibleParserError("the project configuration must define a 'vms' object")
 
         ports = [
             vm.get("ssh_port")
@@ -196,21 +186,21 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         if not ports:
             raise AnsibleParserError(
-                "the project configuration defines no VM with role %r" % bastion_role
+                f"the project configuration defines no VM with role {bastion_role!r}"
             )
 
         if len(ports) > 1:
             raise AnsibleParserError(
-                "the project configuration defines %d VMs with role %r; expected one"
-                % (len(ports), bastion_role)
+                f"the project configuration defines {len(ports)} VMs with role "
+                f"{bastion_role!r}; expected one"
             )
 
         try:
             return int(ports[0])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as port_error:
             raise AnsibleParserError(
-                "the %r VM must define an integer ssh_port" % bastion_role
-            )
+                f"the {bastion_role!r} VM must define an integer ssh_port"
+            ) from port_error
 
     def _build_settings(self, config):
         project_id = self._require(config, "project_id")
@@ -224,7 +214,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         bastion_port = self._bastion_ssh_port(config)
         workload_port = int(self.get_option("workload_ssh_port"))
 
-        is_bastion = "labels.role | default('') == '%s'" % bastion_role
+        is_bastion = f"labels.role | default('') == '{bastion_role}'"
         has_public = "networkInterfaces[0].accessConfigs | default([])"
         public = "networkInterfaces[0].accessConfigs[0].natIP"
         private = "networkInterfaces[0].networkIP"
@@ -234,43 +224,34 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "projects": [plain(project_id)],
             "zones": [plain(zone)],
             "filters": [
-                "labels.application = %s" % plain(name_prefix),
-                "labels.environment = %s" % plain(environment),
+                f"labels.application = {plain(name_prefix)}",
+                f"labels.environment = {plain(environment)}",
             ],
             "auth_kind": auth_kind,
             "hostnames": ["name"],
             "vars_prefix": vars_prefix,
             "keyed_groups": [{"key": "labels.role", "prefix": "", "separator": ""}],
-            "groups": {
-                "workloads": "labels.role is defined and labels.role != '%s'"
-                % bastion_role
-            },
+            "groups": {"workloads": f"labels.role is defined and labels.role != '{bastion_role}'"},
             "compose": {
                 "internal_ip": private,
-                "public_ip": "%s if %s else ''" % (public, has_public),
-                "ansible_host": "%s if %s else %s" % (public, is_bastion, private),
-                "ansible_port": "%d if %s else %d"
-                % (bastion_port, is_bastion, workload_port),
+                "public_ip": f"{public} if {has_public} else ''",
+                "ansible_host": f"{public} if {is_bastion} else {private}",
+                "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
                 "oilscope_role": "labels.role | default('')",
             },
         }
 
     def _write_settings(self, settings):
-        digest = hashlib.sha256(
-            json.dumps(settings, sort_keys=True).encode("utf-8")
-        ).hexdigest()[:16]
-        generated = os.path.join(
-            tempfile.gettempdir(), "oilscope-%s.gcp.yml" % digest
-        )
+        digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
+        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.gcp.yml")
 
         try:
             with open(generated, "w") as handle:
                 yaml.safe_dump(settings, handle, default_flow_style=False)
-        except (OSError, IOError) as write_error:
+        except OSError as write_error:
             raise AnsibleParserError(
-                "could not write the generated gcp_compute settings to %s: %s"
-                % (generated, to_native(write_error))
-            )
+                f"could not write the generated gcp_compute settings to {generated}: {write_error}"
+            ) from write_error
 
         return generated
 
@@ -281,14 +262,14 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         if delegate is None:
             raise AnsibleParserError(
-                "the %s inventory plugin is unavailable; install the "
-                "google.cloud collection" % DELEGATE
+                f"the {DELEGATE} inventory plugin is unavailable; "
+                "install the google.cloud collection"
             )
 
         for option in ("cache", "cache_plugin", "cache_connection", "cache_timeout"):
             try:
                 delegate.set_option(option, self.get_option(option))
-            except Exception:
-                pass
+            except (AnsibleError, KeyError) as option_error:
+                display.vvv(f"{DELEGATE} rejected the {option} option: {option_error}")
 
         delegate.parse(inventory, loader, generated, cache=cache)
