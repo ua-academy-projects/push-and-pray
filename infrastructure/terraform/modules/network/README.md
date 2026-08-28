@@ -26,9 +26,18 @@ The firewall contract does not use generic `app` or `db` tags.
 | Resource | Purpose |
 | --- | --- |
 | `<prefix>-vpc` | Custom-mode regional VPC without automatic subnets |
-| `<prefix>-management` | Management subnet used by the bastion |
-| `<prefix>-workload` | Application workload subnet with Private Google Access enabled |
+| `<prefix>-management` | Bastion subnet with Private Google Access and VPC Flow Logs enabled |
+| `<prefix>-workload` | Application workload subnet with Private Google Access and VPC Flow Logs enabled |
 | `<prefix>-router`, `<prefix>-nat` | Outbound internet access for the workload subnet |
+
+Both subnets aggregate flow logs every ten minutes, sample 50 percent of
+connections, and include all available metadata. This provides enough evidence
+for access investigations without logging every packet. Enabling flow logs
+creates billable Cloud Logging ingestion and storage; adjust retention in the
+target GCP project when longer history is not required.
+
+Private Google Access is enabled on both subnets so instances can reach Google
+APIs over Google's network even when a workload has no external address.
 
 ## Ingress firewall contract
 
@@ -91,6 +100,12 @@ private workload VM -> Cloud NAT -> internet
 Workload SSH is accepted only from instances carrying the bastion network tag.
 PostgreSQL and the History API have role-tag sources and are not reachable
 directly from the internet.
+
+The VPC is custom mode (`auto_create_subnetworks = false`), so it does not
+create the `default-allow-*` firewall rules. Google Cloud's implied deny-ingress
+rule blocks traffic not explicitly listed above. Static scanners that interpret
+the tag-scoped workload SSH rule as public access or require removal of default
+rules are reporting false positives for this topology.
 
 Port 22 on the bastion firewall is the bootstrap path for a clean Ubuntu VM.
 After `oilscope.platform.bootstrap_bastion` completes, OpenSSH listens only on
