@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Test the resolve_secrets role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include the role without a configuration file
+      ansible.builtin.include_role:
+        name: resolve_secrets
+      vars:
+        resolve_secrets_config_path: /nonexistent/project-config.json
+        resolve_secrets_workload: history
+      register: resolve_secrets_no_config
+      ignore_errors: true
+
+    - name: Verify a missing configuration is rejected
+      ansible.builtin.assert:
+        that:
+          - resolve_secrets_no_config is failed
+
+    - name: Include the role for a host with no secret mappings
+      ansible.builtin.include_role:
+        name: resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ playbook_dir }}/project-config.json.example"
+        resolve_secrets_workload: bastion
+
+    - name: Verify a host with no secret mappings resolves nothing
+      ansible.builtin.assert:
+        that:
+          - resolve_secrets_result == {}

@@ -1,0 +1,14 @@
+{
+  "project_id": "oilscope-dev",
+  "vms": {
+    "mgmt": {
+      "role": "bastion"
+    },
+    "infra": {
+      "role": "history",
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "oilscope-dev-db-password-history"
+      }
+    }
+  }
+}

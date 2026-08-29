@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+resolve_secrets_config_path: ""
+resolve_secrets_workload: ""
+resolve_secrets_project_id: ""
+resolve_secrets_metadata_url: >-
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+resolve_secrets_secretmanager_url: https://secretmanager.googleapis.com/v1
