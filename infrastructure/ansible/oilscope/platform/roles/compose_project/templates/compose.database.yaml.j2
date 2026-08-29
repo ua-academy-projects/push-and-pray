@@ -1,0 +1,55 @@
+name: petroscope
+
+services:
+  postgres:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oil_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-oil_tracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PGDATA: /var/lib/postgresql/18/docker
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_cron
+      - -c
+      - cron.database_name=${POSTGRES_DB:-oil_tracker}
+      - -c
+      - cron.use_background_workers=on
+    ports:
+      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:${DATABASE_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+
+  migrate:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: "no"
+    command: ["petroscope-migrate"]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-oil_tracker}
+      PGDATABASE: ${POSTGRES_DB:-oil_tracker}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

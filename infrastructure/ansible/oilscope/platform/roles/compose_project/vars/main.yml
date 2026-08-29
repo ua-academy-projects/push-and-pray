@@ -1,3 +1,7 @@
 # SPDX-License-Identifier: MIT-0
 ---
-# vars file for roles/compose_project
+compose_project_templates:
+  database: compose.database.yaml.j2
+  history: compose.history.yaml.j2
+  fetcher: compose.fetcher.yaml.j2
+  ui: compose.ui.yaml.j2

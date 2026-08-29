@@ -16,9 +16,6 @@ The deployment workflow retrieves `POSTGRES_PASSWORD` and passes it as
 
 ## Variables
 
-- `ui_application_image_tag`: UI image Git SHA.
-- `ui_postgres_image`: PostgreSQL image required to parse the shared Compose
-  file.
 - `ui_postgres_password`: password injected by the deployment workflow.
 - `ui_health_retries` and `ui_health_delay`: Docker health-check polling
   controls, defaulting to 30 attempts every 2 seconds.
@@ -32,8 +29,6 @@ The deployment workflow retrieves `POSTGRES_PASSWORD` and passes it as
   roles:
     - role: oilscope.platform.ui
       vars:
-        ui_application_image_tag: "0123456789abcdef0123456789abcdef01234567"
-        ui_postgres_image: "ghcr.io/example/database@sha256:..."
         ui_postgres_password: "{{ resolved_secrets.POSTGRES_PASSWORD }}"
 ```
 

@@ -1,0 +1,33 @@
+name: petroscope
+
+services:
+  ui:
+    image: "{{ compose_project_config.registry.repository }}/ui:{{ compose_project_config.registry.image_sha }}"
+    platform: ${APPLICATION_PLATFORM:-linux/amd64}
+    pull_policy: ${APPLICATION_PULL_POLICY:-always}
+    restart: unless-stopped
+    init: true
+    environment:
+      HISTORY_SERVICE_URL: ${HISTORY_SERVICE_URL:?HISTORY_SERVICE_URL is required}
+      # yamllint disable rule:line-length
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      # yamllint enable rule:line-length
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: UTC
+    ports:
+      - "${UI_BIND_ADDRESS:-0.0.0.0}:${UI_HTTP_PORT:-80}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true

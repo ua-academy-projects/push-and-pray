@@ -4,12 +4,41 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  roles:
-    - role: oilscope.platform.compose_project
+  tasks:
+    - name: Render the Compose definition for each workload role
+      ansible.builtin.include_role:
+        name: oilscope.platform.compose_project
       vars:
-        compose_project_dir: /tmp/oilscope-compose-project-test
+        compose_project_dir: >-
+          /tmp/oilscope-compose-project-test/{{ compose_project_workload }}
         compose_project_owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
         compose_project_group: "{{ lookup('ansible.builtin.pipe', 'id -gn') }}"
-        compose_project_config_path: >-
-          {{ playbook_dir }}/project-config.json.example
-        compose_project_workload: history
+        compose_project_config_path: "{{ project_config_path }}"
+      loop:
+        - database
+        - history
+        - fetcher
+        - ui
+      loop_control:
+        loop_var: compose_project_workload
+
+    - name: Validate each rendered Compose definition
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --file
+          - /tmp/oilscope-compose-project-test/{{ item }}/compose.yaml
+          - config
+          - --quiet
+      environment:
+        DATABASE_HOST: 127.0.0.1
+        HISTORY_SERVICE_URL: http://127.0.0.1:8001
+        OILPRICEAPI_KEY: test-only
+        POSTGRES_PASSWORD: test-only
+      changed_when: false
+      loop:
+        - database
+        - history
+        - fetcher
+        - ui

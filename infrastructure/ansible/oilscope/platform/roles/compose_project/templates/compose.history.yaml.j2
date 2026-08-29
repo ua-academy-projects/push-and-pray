@@ -1,0 +1,40 @@
+name: petroscope
+
+services:
+  history:
+    image: "{{ compose_project_config.registry.repository }}/history:{{ compose_project_config.registry.image_sha }}"
+    platform: ${APPLICATION_PLATFORM:-linux/amd64}
+    pull_policy: ${APPLICATION_PULL_POLICY:-always}
+    restart: unless-stopped
+    init: true
+    environment:
+      # yamllint disable rule:line-length
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      # yamllint enable rule:line-length
+      PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
+      PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
+      PGMQ_POLL_INTERVAL_SECONDS: ${PGMQ_POLL_INTERVAL_SECONDS:-1}
+      PGMQ_MAX_ATTEMPTS: ${PGMQ_MAX_ATTEMPTS:-5}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: UTC
+    ports:
+      - "${HISTORY_BIND_ADDRESS:-0.0.0.0}:${HISTORY_HOST_PORT:-8001}:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
+          assert data["status"] == "ok";
+          assert data["database"] == "connected";
+          assert data["pgmq_extension"] == "installed";
+          assert data["pgmq_consumer"] == "ready"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true

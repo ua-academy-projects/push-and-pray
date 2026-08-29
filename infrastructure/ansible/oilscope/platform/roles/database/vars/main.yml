@@ -4,8 +4,6 @@ database_runtime_environment: >-
   {{
     database_compose_environment
     | combine({
-      'POSTGRES_IMAGE': database_postgres_image,
-      'APP_IMAGE_TAG': database_application_image_tag,
       'POSTGRES_PASSWORD': database_postgres_password,
       'POSTGRES_USER': database_postgres_user,
       'POSTGRES_DB': database_postgres_name,

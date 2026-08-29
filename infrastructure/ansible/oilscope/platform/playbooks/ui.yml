@@ -17,16 +17,7 @@
     - role: oilscope.platform.resolve_secrets
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
-        resolve_secrets_workload: "{{ oilscope_role }}"
 
     - role: oilscope.platform.ui
       vars:
-        ui_application_image_tag: >-
-          {{ compose_project_config.registry.image_sha }}
-        ui_postgres_image: >-
-          {{
-            compose_project_config.registry.repository
-            ~ '/database:'
-            ~ compose_project_config.registry.image_sha
-          }}
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

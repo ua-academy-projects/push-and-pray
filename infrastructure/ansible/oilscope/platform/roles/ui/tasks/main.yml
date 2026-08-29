@@ -2,8 +2,6 @@
 ---
 - name: Deploy only UI
   environment:
-    APP_IMAGE_TAG: "{{ ui_application_image_tag }}"
-    POSTGRES_IMAGE: "{{ ui_postgres_image }}"
     POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
     DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
     HISTORY_SERVICE_URL: >-

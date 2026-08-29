@@ -2,8 +2,6 @@
 ---
 - name: Deploy only History
   environment:
-    APP_IMAGE_TAG: "{{ history_application_image_tag }}"
-    POSTGRES_IMAGE: "{{ history_postgres_image }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
     DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
   no_log: true

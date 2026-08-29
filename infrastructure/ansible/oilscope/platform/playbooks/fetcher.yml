@@ -17,18 +17,9 @@
     - role: oilscope.platform.resolve_secrets
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
-        resolve_secrets_workload: "{{ oilscope_role }}"
 
     - role: oilscope.platform.fetcher
       vars:
-        fetcher_compose_environment:
-          APP_IMAGE_TAG: "{{ compose_project_config.registry.image_sha }}"
-          POSTGRES_IMAGE: >-
-            {{
-              compose_project_config.registry.repository
-              ~ '/database:'
-              ~ compose_project_config.registry.image_sha
-            }}
         fetcher_database_host: >-
           {{ hostvars[groups['database'][0]].internal_ip }}
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

@@ -1,0 +1,33 @@
+name: petroscope
+
+services:
+  fetcher:
+    image: "{{ compose_project_config.registry.repository }}/fetcher:{{ compose_project_config.registry.image_sha }}"
+    platform: ${APPLICATION_PLATFORM:-linux/amd64}
+    pull_policy: ${APPLICATION_PULL_POLICY:-always}
+    restart: unless-stopped
+    init: true
+    environment:
+      OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
+      DATA_PROVIDER: ${DATA_PROVIDER:-oilpriceapi}
+      # yamllint disable rule:line-length
+      DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      # yamllint enable rule:line-length
+      PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
+      FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}
+      FETCH_TIMEZONE: ${FETCH_TIMEZONE:-UTC}
+      FETCH_ON_STARTUP: ${FETCH_ON_STARTUP:-true}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-15}
+      LISTEN_ADDRESS: ${FETCHER_LISTEN_ADDRESS:-0.0.0.0:8002}
+      TZ: UTC
+    ports:
+      - "${FETCHER_BIND_ADDRESS:-0.0.0.0}:${FETCHER_HOST_PORT:-8002}:8002"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
