@@ -15,7 +15,8 @@ containers.
 ## What it guarantees
 
 - Only the secrets listed in the current host's own `secret_mappings` are
-  ever requested — never another workload's.
+  ever requested — never another workload's, and never a sibling VM that
+  happens to share the same `role`.
 - Authentication is the instance's attached service account, obtained from
   the metadata server. No credential is supplied by the operator or stored
   on the host.
@@ -33,17 +34,24 @@ The host must be a GCE instance with a service account attached, granted
 `secret_mappings` — this is what `infrastructure/terraform/secrets.tf`
 grants automatically.
 
+The role identifies which `vms` entry is "this host" from `inventory_hostname`
+itself, not from a role or group name. Terraform names every instance
+`<name_prefix>-<environment>-<vms key>` (`main.tf`), and the dynamic
+inventory's `hostnames: - name` setting makes `inventory_hostname` exactly
+that instance name — so stripping the known `<name_prefix>-<environment>-`
+prefix recovers the literal `vms` dict key, the same key Terraform itself
+uses for `for_each`. This matters because a VM's `role` is not always its
+`vms` key (the database VM's key is `infra`, its role is `database`), and the
+schema does not require `role` to be unique across `vms` — two VMs could
+share one. Matching by the exact key, rather than by role, means a host can
+never resolve to a sibling's secrets even in that case.
+
 ## Required variables
 
 - `resolve_secrets_config_path`: path to the project configuration JSON —
-  the same file `project_config_path` points at in Terraform.
-- `resolve_secrets_workload`: the `role` of this VM in that configuration
-  (e.g. `history`, `fetcher`) — the same value `oilscope_role` holds, and
-  what `compose_project_workload` is already set to in every playbook. This
-  is matched against each entry's `role` field, not its `vms` dict key: the
-  two are not always the same (the database VM's key is `infra`, its role is
-  `database`), and `role` is the identifier Terraform and the inventory
-  plugin both treat as authoritative.
+  the same file `project_config_path` points at in Terraform. It must
+  include `name_prefix` and `environment` at the top level, and a `vms`
+  entry whose key matches this host's derived key.
 
 ## Optional variables
 

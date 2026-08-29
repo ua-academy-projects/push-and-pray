@@ -12,13 +12,27 @@
         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
         | default(resolve_secrets_config.project_id | default(''), true) }}
 
+- name: Derive this VM's configuration key
+  ansible.builtin.set_fact:
+    resolve_secrets_vm_key: >-
+      {{ inventory_hostname
+         | regex_replace('^' ~ (resolve_secrets_config.name_prefix
+                                 ~ '-' ~ resolve_secrets_config.environment
+                                 ~ '-') | regex_escape, '') }}
+
+- name: Verify this VM has a matching configuration entry
+  ansible.builtin.assert:
+    that:
+      - resolve_secrets_vm_key in resolve_secrets_config.vms
+    fail_msg: >-
+      No vms entry named '{{ resolve_secrets_vm_key }}' in the project
+      configuration for host '{{ inventory_hostname }}'.
+
 - name: Select the host's secret mappings
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
-      {{ resolve_secrets_config.vms.values()
-         | selectattr('role', 'equalto', resolve_secrets_workload)
-         | map(attribute='secret_mappings', default={})
-         | first | default({}) }}
+      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
+         | default({}) }}
 
 - name: Fetch an access token from the instance metadata server
   ansible.builtin.uri:
@@ -66,3 +80,4 @@
 - name: Default to an empty result when there is nothing to resolve
   ansible.builtin.set_fact:
     resolve_secrets_result: "{{ resolve_secrets_result | default({}) }}"
+  no_log: true
