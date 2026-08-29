@@ -20,14 +20,6 @@
                                  ~ '-' ~ resolve_secrets_config.environment
                                  ~ '-') | regex_escape, '') }}
 
-- name: Verify this VM has a matching configuration entry
-  ansible.builtin.assert:
-    that:
-      - resolve_secrets_vm_key in resolve_secrets_config.vms
-    fail_msg: >-
-      No vms entry named '{{ resolve_secrets_vm_key }}' in the project
-      configuration for host '{{ inventory_hostname }}'.
-
 - name: Select the host's secret mappings
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
