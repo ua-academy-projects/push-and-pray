@@ -37,7 +37,7 @@
       "assign_public_ip": true,
       "network_tags": ["bastion"],
       "secret_mappings": {},
-      "ssh_port": 2222,
+      "ssh_port": 8787,
       "allowed_cidrs": ["192.0.2.10/32"]
     },
     "infra": {

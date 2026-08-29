@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure the bastion
+  hosts: bastion
+  become: true
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.bastion
+  post_tasks:
+    - name: Check the SSH connection
+      ansible.builtin.ping:
+      changed_when: false

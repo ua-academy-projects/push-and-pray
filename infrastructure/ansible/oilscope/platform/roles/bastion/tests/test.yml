@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Test the bastion role
+  hosts: bastion_test
+  become: true
+  roles:
+    - role: oilscope.platform.bastion
+      vars:
+        bastion_ssh_port: >-
+          {{ (lookup('ansible.builtin.file', playbook_dir
+             ~ '/../../../../../../../project-config.example.json') | from_json)
+             .vms.bastion.ssh_port | int }}
