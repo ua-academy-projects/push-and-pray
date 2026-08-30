@@ -25,10 +25,12 @@ module "vm" {
   source   = "./modules/vm"
   for_each = local.config.vms
 
-  name          = "${local.resource_prefix}-${each.key}"
-  subnetwork_id = each.value.role == "bastion" ? module.network.management_subnet_id : module.network.workload_subnet_id
-  role          = each.value.role
-  ssh_users     = local.config.ssh_users
+  name                = "${local.resource_prefix}-${each.key}"
+  subnetwork_id       = each.value.role == "bastion" ? module.network.management_subnet_id : module.network.workload_subnet_id
+  role                = each.value.role
+  registry_repository = local.config.registry.repository
+  image_sha           = local.config.registry.image_sha
+  ssh_users           = local.config.ssh_users
   network_tags = [
     for tag in each.value.network_tags :
     "${local.resource_prefix}-${tag}"
@@ -37,6 +39,7 @@ module "vm" {
   machine_type = each.value.machine_type
   image        = each.value.image
   internal_ip  = each.value.internal_ip
+  ssh_port     = lookup(each.value, "ssh_port", 22)
 
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.boot_disk.type
