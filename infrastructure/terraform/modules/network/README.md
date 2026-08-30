@@ -35,6 +35,7 @@ The firewall contract does not use generic `app` or `db` tags.
 | Rule | Source | Destination | TCP ports |
 | --- | --- | --- | --- |
 | `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `bastion_ssh_port` |
+| `<prefix>-allow-bastion-ssh-bootstrap` | `bastion_allowed_cidrs` | Bastion | `22` (temporary and opt-in) |
 | `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
 | `<prefix>-allow-history-api` | UI | History | `history_api_port` |
 | `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `postgresql_port` |
@@ -69,6 +70,7 @@ module "network" {
 
   bastion_ssh_port      = local.bastion_vm.ssh_port
   bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
+  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
@@ -91,3 +93,9 @@ private workload VM -> Cloud NAT -> internet
 Workload SSH is accepted only from instances carrying the bastion network tag.
 PostgreSQL and the History API have role-tag sources and are not reachable
 directly from the internet.
+
+The bootstrap rule is disabled by default. When
+`enable_bastion_ssh_bootstrap` is true, it is created only if the final
+`bastion_ssh_port` is not already `22`. It uses the same operator CIDRs and
+bastion target tag as the final SSH rule. Remove it immediately after Ansible
+has configured and verified the final bastion port.

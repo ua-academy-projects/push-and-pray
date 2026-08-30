@@ -55,6 +55,12 @@ variable "bastion_allowed_cidrs" {
   }
 }
 
+variable "enable_bastion_ssh_bootstrap" {
+  description = "Whether to temporarily allow direct bastion SSH on port 22 when the final SSH port differs."
+  type        = bool
+  default     = false
+}
+
 variable "history_api_port" {
   description = "Port used by UI to connect to the History API."
   type        = number

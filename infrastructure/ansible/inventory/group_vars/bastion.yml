@@ -4,4 +4,6 @@ bastion_ssh_port: >-
   {{ (lookup('ansible.builtin.file', project_config_path) | from_json)
      .vms.bastion.ssh_port | int }}
 
-ansible_port: "{{ bastion_ssh_port }}"
+ansible_port: >-
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_BASTION_CONNECT_PORT')
+     | default(bastion_ssh_port, true) | int }}

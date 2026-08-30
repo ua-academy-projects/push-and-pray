@@ -61,18 +61,11 @@ resource "google_compute_instance" "workload" {
     }
   }
 
-  metadata = merge(
-    {
-      "enable-oslogin" = "FALSE"
-      "ssh-keys" = join("\n", [
-        for username, public_key in var.ssh_users :
-        "${username}:${trimspace(public_key)}"
-      ])
-    },
-    var.role == "bastion" ? {
-      "startup-script" = local.bastion_startup_script
-      } : {
-      "user-data" = local.cloud_config
-    }
-  )
+  metadata = {
+    "enable-oslogin" = "FALSE"
+    "ssh-keys" = join("\n", [
+      for username, public_key in var.ssh_users :
+      "${username}:${trimspace(public_key)}"
+    ])
+  }
 }
