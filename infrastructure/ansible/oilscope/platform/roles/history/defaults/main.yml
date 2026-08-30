@@ -7,3 +7,4 @@ history_compose_project_name: petroscope
 history_postgres_password: ""
 history_health_retries: 30
 history_health_delay: 2
+history_docker_config_dir: /run/oilscope/docker-auth

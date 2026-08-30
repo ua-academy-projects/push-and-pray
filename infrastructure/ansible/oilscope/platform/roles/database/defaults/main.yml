@@ -13,4 +13,5 @@ database_bind_address: 0.0.0.0
 database_host_port: 5432
 database_health_retries: 30
 database_health_delay: 2
+database_docker_config_dir: /run/oilscope/docker-auth
 database_compose_environment: {}

@@ -2,6 +2,7 @@
 ---
 - name: Deploy only History
   environment:
+    DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
     DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
   no_log: true

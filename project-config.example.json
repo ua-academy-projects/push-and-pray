@@ -13,6 +13,7 @@
   },
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
+    "username": "example-operator",
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
   "network": {
@@ -52,7 +53,8 @@
       "assign_public_ip": false,
       "network_tags": ["infra"],
       "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password"
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
       }
     },
     "history": {
@@ -67,7 +69,8 @@
       "assign_public_ip": false,
       "network_tags": ["history"],
       "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password"
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
       }
     },
     "fetcher": {
@@ -83,7 +86,8 @@
       "network_tags": ["fetcher"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
-        "OILPRICEAPI_KEY": "example-api-key"
+        "OILPRICEAPI_KEY": "example-api-key",
+        "GHCR_TOKEN": "example-ghcr-token"
       }
     },
     "ui": {
@@ -98,7 +102,8 @@
       "assign_public_ip": true,
       "network_tags": ["ui"],
       "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password"
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
       }
     }
   }

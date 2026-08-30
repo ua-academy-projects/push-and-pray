@@ -47,11 +47,15 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "image_sha"],
+      "required": ["repository", "username", "image_sha"],
       "properties": {
         "repository": {
           "type": "string",
           "minLength": 1
+        },
+        "username": {
+          "type": "string",
+          "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
         "image_sha": {
           "type": "string",

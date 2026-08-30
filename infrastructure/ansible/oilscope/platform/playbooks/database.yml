@@ -4,6 +4,7 @@
   hosts: database
   become: true
   gather_facts: true
+  force_handlers: true
 
   roles:
     - role: oilscope.platform.host_baseline
@@ -18,6 +19,16 @@
     - role: oilscope.platform.resolve_secrets
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_registry: >-
+          {{ compose_project_config.registry.repository
+             | regex_replace('/.*$', '') }}
+        registry_auth_username: >-
+          {{ compose_project_config.registry.username | default('') }}
+        registry_auth_token: >-
+          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
     - role: oilscope.platform.database
       vars:

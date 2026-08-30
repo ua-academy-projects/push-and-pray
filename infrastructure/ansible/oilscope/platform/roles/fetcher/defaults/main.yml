@@ -13,4 +13,5 @@ fetcher_bind_address: 0.0.0.0
 fetcher_host_port: 8002
 fetcher_health_retries: 30
 fetcher_health_delay: 2
+fetcher_docker_config_dir: /run/oilscope/docker-auth
 fetcher_compose_environment: {}

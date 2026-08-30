@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Remove transient Docker registry credentials
+  become: true
+  ansible.builtin.file:
+    path: "{{ registry_auth_docker_config_dir }}"
+    state: absent

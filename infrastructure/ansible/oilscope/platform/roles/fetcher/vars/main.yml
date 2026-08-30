@@ -4,6 +4,7 @@ fetcher_runtime_environment: >-
   {{
     fetcher_compose_environment
     | combine({
+      'DOCKER_CONFIG': fetcher_docker_config_dir,
       'POSTGRES_PASSWORD': fetcher_postgres_password,
       'POSTGRES_USER': fetcher_postgres_user,
       'POSTGRES_DB': fetcher_postgres_name,
