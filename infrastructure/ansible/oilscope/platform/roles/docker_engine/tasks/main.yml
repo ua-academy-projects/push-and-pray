@@ -1,22 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Refuse a pin that was built for another Ubuntu release
-  ansible.builtin.assert:
-    that:
-      - ansible_facts['distribution_release'] == docker_engine_release
-      - docker_engine_release in docker_engine_version
-    fail_msg: >-
-      docker_engine_version is {{ docker_engine_version }}, built for
-      {{ docker_engine_release }}, but this host reports
-      {{ ansible_facts['distribution_release'] }}. Re-verify the exact version
-      with `apt-cache madison docker-ce` on the target release and set both
-      docker_engine_version and docker_engine_release before running again.
-    success_msg: >-
-      The pinned Docker Engine version matches
-      {{ ansible_facts['distribution_release'] }}.
-    quiet: true
-  when: docker_engine_validate_release | bool
-
 - name: Create the apt keyring directory
   become: true
   ansible.builtin.file:

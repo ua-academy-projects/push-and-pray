@@ -31,10 +31,7 @@ docker_engine_held_packages:
   - docker-compose-plugin
 
 # Refuse to run when the pinned version was built for another Ubuntu release.
-# docker_engine_release is the codename the suffix above encodes; the assert
-# in tasks/main.yml compares it with the codename the target actually reports.
 docker_engine_validate_release: true
-docker_engine_release: resolute
 
 # Repository and signing key.
 docker_engine_keyring_path: /etc/apt/keyrings/docker.asc

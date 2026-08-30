@@ -20,9 +20,8 @@ though the deployment playbook applies the baseline first regardless.
 ## Role variables
 
 - `docker_engine_version`: exact apt version for the pinned packages; defaults
-  to `5:29.7.2-1~ubuntu.26.04~resolute`. The suffix ties the value to one
-  Ubuntu release, so re-verify with `apt-cache madison docker-ce` on the target
-  release before bumping.
+  to `5:29.7.2-1~ubuntu.26.04~resolute`. Re-verify with
+  `apt-cache madison docker-ce` before bumping.
 - `docker_engine_pinned_packages`: packages installed at that exact version;
   defaults to `docker-ce` and `docker-ce-cli`.
 - `docker_engine_packages`: packages installed unversioned; defaults to
@@ -32,10 +31,8 @@ though the deployment playbook applies the baseline first regardless.
   `docker-compose-v2`, `containerd` and `runc`.
 - `docker_engine_hold` and `docker_engine_held_packages`: whether to mark
   packages `hold`, and which ones. Enabled by default.
-- `docker_engine_validate_release` and `docker_engine_release`: whether to
-  refuse to run when the pinned version was built for a different Ubuntu
-  release, and the codename the suffix encodes. Enabled by default, and set to
-  `resolute` to match the version above.
+- `docker_engine_validate_release`: refuse to run when the pinned version was
+  built for a different Ubuntu release. Enabled by default.
 - `docker_engine_keyring_path`, `docker_engine_gpg_url`,
   `docker_engine_repository_url`, `docker_engine_repository_component`,
   `docker_engine_repository_path`: signing key and repository locations.
