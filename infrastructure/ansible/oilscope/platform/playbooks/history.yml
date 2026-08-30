@@ -5,7 +5,7 @@
   become: true
   gather_facts: true
   force_handlers: true
-
+  any_errors_fatal: true
   roles:
     - role: oilscope.platform.host_baseline
 
