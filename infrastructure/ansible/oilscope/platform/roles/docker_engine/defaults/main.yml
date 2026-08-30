@@ -28,6 +28,7 @@ docker_engine_held_packages:
   - docker-ce
   - docker-ce-cli
   - containerd.io
+  - docker-buildx-plugin
   - docker-compose-plugin
 
 # Refuse to run when the pinned version was built for another Ubuntu release.
