@@ -1,0 +1,9 @@
+
+---
+galaxy_info:
+  author: Push and Pray team
+  description: Install and run Traefik as the UI VM's edge HTTPS proxy
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+
+dependencies: []
