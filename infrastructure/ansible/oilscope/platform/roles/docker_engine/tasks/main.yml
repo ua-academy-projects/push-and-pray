@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create the apt keyring directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ docker_engine_keyring_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Docker repository signing key
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ docker_engine_gpg_url }}"
+    dest: "{{ docker_engine_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Docker apt repository
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ docker_engine_repository_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: {{ docker_engine_repository_url }}
+      Suites: {{ ansible_facts['distribution_release'] }}
+      Components: {{ docker_engine_repository_component }}
+      Architectures: {{ docker_engine_architecture }}
+      Signed-By: {{ docker_engine_keyring_path }}
+  notify: Refresh the apt cache
+
+# The cache must be current before the install task below, and handlers would
+# otherwise not run until the end of the play.
+- name: Apply a pending apt cache refresh
+  ansible.builtin.meta: flush_handlers
+
+- name: Remove conflicting distribution Docker packages
+  become: true
+  ansible.builtin.apt:
+    name: "{{ docker_engine_conflicting_packages }}"
+    state: absent
+    purge: false
+
+- name: Install Docker Engine and the Compose plugin
+  become: true
+  ansible.builtin.apt:
+    name: "{{ docker_engine_package_specs }}"
+    state: present
+    install_recommends: false
+
+- name: Hold the pinned Docker packages
+  become: true
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ docker_engine_held_packages }}"
+  when: docker_engine_hold | bool
+
+- name: Enable and start the Docker socket
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ docker_engine_socket }}"
+    enabled: "{{ docker_engine_service_enabled }}"
+    state: started
+    daemon_reload: true
+
+- name: Enable and start the Docker service
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ docker_engine_service }}"
+    enabled: "{{ docker_engine_service_enabled }}"
+    state: "{{ docker_engine_service_state }}"
+
+- name: Read the local account database
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Grant Docker socket access to service accounts
+  become: true
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: "{{ docker_engine_group }}"
+    append: true
+  loop: "{{ docker_engine_group_members }}"
+  when: item in ansible_facts['getent_passwd']

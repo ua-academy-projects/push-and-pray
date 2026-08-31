@@ -51,9 +51,7 @@ class PriceObservation(Base):
     source: Mapped[str] = mapped_column(String(80), nullable=False)
     source_series_id: Mapped[str] = mapped_column(String(160), nullable=False)
     source_period: Mapped[date] = mapped_column(Date, nullable=False)
-    source_observed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    source_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)

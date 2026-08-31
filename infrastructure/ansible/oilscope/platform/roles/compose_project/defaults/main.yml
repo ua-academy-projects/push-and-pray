@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: MIT-0
+---
+compose_project_dir: /opt/oilscope/app
+compose_project_owner: deploy
+compose_project_group: deploy
+compose_project_config_path: ""
+compose_project_workload: ""

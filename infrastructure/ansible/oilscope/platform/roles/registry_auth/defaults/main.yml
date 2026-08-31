@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+registry_auth_registry: ghcr.io
+registry_auth_username: ""
+registry_auth_token: ""
+registry_auth_docker_config_dir: /run/oilscope/docker-auth

@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the Compose definition
+  ansible.builtin.stat:
+    path: "{{ database_compose_file }}"
+  register: database_compose_definition
+
+- name: Pull the exact PostgreSQL image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - pull
+      - "{{ database_postgres_image }}"
+  environment:
+    DOCKER_CONFIG: "{{ database_docker_config_dir }}"
+  register: database_image_pull
+  changed_when: >-
+    'Downloaded newer image' in database_image_pull.stdout or
+    'Pull complete' in database_image_pull.stdout
+
+- name: Start the PostgreSQL service
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ database_postgres_service }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_compose_up
+  changed_when: >-
+    'Created' in database_compose_up.stderr or
+    'Started' in database_compose_up.stderr or
+    'Recreated' in database_compose_up.stderr
+  no_log: true
+
+- name: Get the PostgreSQL container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ database_postgres_service }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_container
+  changed_when: false
+  failed_when: database_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for PostgreSQL to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ database_container.stdout | trim }}"
+  register: database_health
+  changed_when: false
+  retries: "{{ database_health_retries }}"
+  delay: "{{ database_health_delay }}"
+  until: database_health.stdout | trim == 'healthy'
+
+- name: Apply database migrations
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - "{{ database_migration_service }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_migrations
+  changed_when: "'Applying ' in database_migrations.stdout"
+  no_log: true

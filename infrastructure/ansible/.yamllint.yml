@@ -1,0 +1,27 @@
+# yamllint configuration for the Ansible tree only.
+#
+# ansible-lint runs yamllint with its own expectations and refuses to enable
+# fix mode when they are not met. The repository-root .yamllint.yml is tuned
+# for Compose files and GitHub Actions instead, so the two are kept separate
+# rather than compromising either.
+
+extends: default
+
+rules:
+  braces:
+    max-spaces-inside: 1
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: false
+
+  # Matches the repository-root config: "---" at the top of every file adds
+  # nothing here, and the scaffold ansible-galaxy generates omits it.
+  document-start: disable
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+  line-length:
+    max: 200
+    level: error
+  truthy:
+    check-keys: false

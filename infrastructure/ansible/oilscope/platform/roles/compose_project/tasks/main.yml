@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Load non-secret project configuration
+  ansible.builtin.include_vars:
+    file: "{{ compose_project_config_path }}"
+    name: compose_project_config
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: "{{ compose_project_dir }}"
+    state: directory
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0750"
+
+- name: Install Compose definition
+  ansible.builtin.template:
+    src: "{{ compose_project_templates[compose_project_workload] }}"
+    dest: "{{ compose_project_dir }}/compose.yaml"
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0644"
+
+- name: Remove the obsolete shared deployment configuration
+  ansible.builtin.file:
+    path: "{{ compose_project_dir }}/deployment.env"
+    state: absent

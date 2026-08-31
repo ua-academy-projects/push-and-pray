@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT-0
+---
+# defaults file for host_baseline
+host_baseline_deploy_user: deploy
+host_baseline_deploy_group: deploy
+
+host_baseline_packages:
+  - ca-certificates
+  - curl
+  - jq
+
+host_baseline_directories:
+  - path: /opt/oilscope
+    owner: root
+    group: root
+    mode: "0755"
+
+  - path: /opt/oilscope/app
+    owner: "{{ host_baseline_deploy_user }}"
+    group: "{{ host_baseline_deploy_group }}"
+    mode: "0750"
+
+  - path: /opt/oilscope/deploy
+    owner: "{{ host_baseline_deploy_user }}"
+    group: "{{ host_baseline_deploy_group }}"
+    mode: "0750"
+
+  - path: /var/lib/oilscope
+    owner: "{{ host_baseline_deploy_user }}"
+    group: "{{ host_baseline_deploy_group }}"
+    mode: "0750"

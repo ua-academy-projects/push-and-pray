@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Pull the Fetcher image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ fetcher_compose_project_name }}"
+      - --file
+      - "{{ fetcher_compose_file }}"
+      - pull
+      - "{{ fetcher_service }}"
+  args:
+    chdir: "{{ fetcher_compose_project_dir }}"
+  environment: "{{ fetcher_runtime_environment }}"
+  register: fetcher_image_pull
+  changed_when: >-
+    'Downloaded newer image' in fetcher_image_pull.stdout or
+    'Downloaded newer image' in fetcher_image_pull.stderr or
+    'Pull complete' in fetcher_image_pull.stdout or
+    'Pull complete' in fetcher_image_pull.stderr
+  no_log: true
+
+- name: Start the Fetcher service
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ fetcher_compose_project_name }}"
+      - --file
+      - "{{ fetcher_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ fetcher_service }}"
+  args:
+    chdir: "{{ fetcher_compose_project_dir }}"
+  environment: "{{ fetcher_runtime_environment }}"
+  register: fetcher_compose_up
+  changed_when: >-
+    'Created' in fetcher_compose_up.stderr or
+    'Started' in fetcher_compose_up.stderr or
+    'Recreated' in fetcher_compose_up.stderr
+  no_log: true
+
+- name: Get the Fetcher container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ fetcher_compose_project_name }}"
+      - --file
+      - "{{ fetcher_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ fetcher_service }}"
+  args:
+    chdir: "{{ fetcher_compose_project_dir }}"
+  environment: "{{ fetcher_runtime_environment }}"
+  register: fetcher_container
+  changed_when: false
+  failed_when: fetcher_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for Fetcher to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ fetcher_container.stdout | trim }}"
+  register: fetcher_health
+  changed_when: false
+  retries: "{{ fetcher_health_retries }}"
+  delay: "{{ fetcher_health_delay }}"
+  until: fetcher_health.stdout | trim == 'healthy'

@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy UI
+  hosts: ui
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.host_baseline
+
+    - role: oilscope.platform.docker_engine
+
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_workload: "{{ oilscope_role }}"
+
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_registry: >-
+          {{ compose_project_config.registry.repository
+             | regex_replace('/.*$', '') }}
+        registry_auth_username: >-
+          {{ compose_project_config.registry.username | default('') }}
+        registry_auth_token: >-
+          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
+
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_dir: /opt/oilscope/proxy
+        compose_project_workload: proxy
+
+    - role: oilscope.platform.edge_proxy
+
+    - role: oilscope.platform.ui
+      vars:
+        ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

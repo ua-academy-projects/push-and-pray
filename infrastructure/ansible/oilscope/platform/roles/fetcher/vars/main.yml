@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+fetcher_runtime_environment: >-
+  {{
+    fetcher_compose_environment
+    | combine({
+      'DOCKER_CONFIG': fetcher_docker_config_dir,
+      'POSTGRES_PASSWORD': fetcher_postgres_password,
+      'POSTGRES_USER': fetcher_postgres_user,
+      'POSTGRES_DB': fetcher_postgres_name,
+      'DATABASE_HOST': fetcher_database_host,
+      'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
+      'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
+      'FETCHER_HOST_PORT': fetcher_host_port | string
+    })
+  }}

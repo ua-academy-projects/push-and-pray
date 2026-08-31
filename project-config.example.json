@@ -1,0 +1,114 @@
+{
+  "project_id": "example-project-12345",
+  "environment": "dev",
+  "region": "europe-west1",
+  "zone": "europe-west1-b",
+  "name_prefix": "oilscope",
+  "common_labels": {
+    "project": "example-oil-price-tracker",
+    "team": "example-team"
+  },
+  "ssh_users": {
+    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+  },
+  "registry": {
+    "repository": "ghcr.io/example-org/example-project",
+    "username": "example-operator",
+    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "network": {
+    "management_subnet_cidr": "10.0.0.0/29",
+    "workload_subnet_cidr": "10.0.1.0/26",
+    "ui_public_ports": [80, 443]
+  },
+  "service_ports": {
+    "history_api": 8001,
+    "postgresql": 5432
+  },
+  "vms": {
+    "bastion": {
+      "role": "bastion",
+      "machine_type": "e2-micro",
+      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "internal_ip": "10.0.0.2",
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "pd-balanced"
+      },
+      "assign_public_ip": true,
+      "network_tags": ["bastion"],
+      "secret_mappings": {},
+      "ssh_port": 8787,
+      "allowed_cidrs": ["192.0.2.10/32"]
+    },
+    "infra": {
+      "role": "database",
+      "machine_type": "e2-micro",
+      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "internal_ip": "10.0.1.2",
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "pd-balanced"
+      },
+      "assign_public_ip": false,
+      "network_tags": ["infra"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      }
+    },
+    "history": {
+      "role": "history",
+      "machine_type": "e2-small",
+      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "internal_ip": "10.0.1.3",
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "pd-balanced"
+      },
+      "assign_public_ip": false,
+      "network_tags": ["history"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      }
+    },
+    "fetcher": {
+      "role": "fetcher",
+      "machine_type": "e2-micro",
+      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "internal_ip": "10.0.1.4",
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "pd-balanced"
+      },
+      "assign_public_ip": false,
+      "network_tags": ["fetcher"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "OILPRICEAPI_KEY": "example-api-key",
+        "GHCR_TOKEN": "example-ghcr-token"
+      }
+    },
+    "ui": {
+      "role": "ui",
+      "machine_type": "e2-micro",
+      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "internal_ip": "10.0.1.5",
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "pd-balanced"
+      },
+      "assign_public_ip": true,
+      "network_tags": ["ui"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "public_endpoint": {
+        "hostname": "oilscope.example.com",
+        "acme_email": "example-operator@example.com"
+      }
+    }
+  }
+}

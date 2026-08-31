@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MIT-0
+---
+galaxy_info:
+  author: Push and Pray team
+  description: Install the supported OilScope Compose project
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+  galaxy_tags:
+    - deployment
+    - docker
+
+dependencies: []

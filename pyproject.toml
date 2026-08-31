@@ -4,12 +4,10 @@ version = "0.1.0"
 description = "Research application for collecting and visualizing daily oil and gasoline prices"
 requires-python = ">=3.12"
 dependencies = [
-    "aio-pika>=9.6,<11",
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",
     "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.9,<3",
-    "redis>=8,<9",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.34,<1",
 ]
@@ -34,4 +32,21 @@ target-version = "py312"
 src = ["services/history/src", "services/ui/backend/src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# "S" is flake8-bandit: hardcoded credentials, shell=True, weak crypto, etc.
+select = ["E", "F", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are called in argument defaults by
+# design; B008 is a false positive for them.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# assert is the whole point of a test; S101 only makes sense in production code.
+"**/tests/**" = ["S101"]

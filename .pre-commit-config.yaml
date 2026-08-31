@@ -1,0 +1,36 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: forbid-secret-files
+        name: Refuse files that carry credentials
+        language: fail
+        entry: >-
+          This kind of file must never be committed. Runtime secrets belong in
+          Google Secret Manager (see docs/secrets.md); Terraform variables and
+          state stay on your machine. If it is already staged, remove it with
+          `git rm --cached <file>`.
+        files: |
+          (?x)^(
+            .*\.env(\..*)?
+            |.*\.tfvars(\.json)?
+            |.*\.tfstate(\..*)?
+            |.*\.(pem|key|p12|pfx)
+            |(.*/)?id_(rsa|dsa|ecdsa|ed25519)
+            |.*-key\.json
+          )$
+        exclude: |
+          (?x)^(
+            .*\.env\.example
+            |.*\.tfvars\.example
+            |.*\.pub
+          )$

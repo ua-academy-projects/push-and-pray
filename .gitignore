@@ -10,3 +10,32 @@ htmlcov/
 .vagrant/
 infrastructure/vagrant/config/vagrant.env
 node_modules/
+infrastructure/docker/deployment
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+infrastructure/terraform/terraform.tfvars
+infrastructure/terraform/legacy
+infrastructure/legacy_terraform
+infrastructure/docker/deployment
+*.tfvars
+*.tfvars.json
+*.tfplan
+**/tfplan
+crash.log
+crash.*.log
+*.json
+!infrastructure/terraform/*.json
+# Credentials and private keys
+*.pem
+*.key
+!project-config.example.json
+
+# Built Ansible collection artifacts
+infrastructure/ansible/**/*.tar.gz
+infrastructure/ansible/inventory/oilscope.gcp.yml
+
+*.local.gcp.yml

@@ -1,0 +1,425 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  yaml:
+    name: YAML
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install yamllint
+        run: pip install yamllint==1.35.1
+
+      - name: Lint versioned YAML files
+        run: yamllint -c .yamllint.yml .
+
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run pytest
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: services/fetcher
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/fetcher/go.mod
+          cache-dependency-path: services/fetcher/go.sum
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "${unformatted}" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "${unformatted}"
+            echo "Run: gofmt -w ${unformatted}"
+            exit 1
+          fi
+
+          echo "All Go files are correctly formatted."
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test ./...
+
+  integration:
+    name: PostgreSQL Integration
+    runs-on: ubuntu-latest
+
+    env:
+      DB_PASSWORD: ci-validation
+      DB_LAN_IP: 127.0.0.1
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
+      PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
+      PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+      TEST_DATABASE_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start PostgreSQL with PGMQ and pg_cron
+        run: |
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            up -d --build
+
+          for attempt in {1..30}; do
+            if docker compose \
+              -f infrastructure/docker/compose.database.yaml \
+              exec -T postgres \
+              pg_isready -U oil_tracker -d oil_tracker; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            logs postgres
+
+          exit 1
+
+      - name: Apply database migrations
+        run: |
+          for migration in database/migrations/*.sql; do
+            echo "Applying ${migration}"
+
+            docker compose \
+              -f infrastructure/docker/compose.database.yaml \
+              exec -T postgres \
+              psql \
+                -v ON_ERROR_STOP=1 \
+                -U oil_tracker \
+                -d oil_tracker < "${migration}"
+          done
+
+      - name: Verify PGMQ extension and queue
+        run: |
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            exec -T postgres \
+            psql \
+              -v ON_ERROR_STOP=1 \
+              -U oil_tracker \
+              -d oil_tracker \
+              -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'pgmq';"
+
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            exec -T postgres \
+            psql \
+              -v ON_ERROR_STOP=1 \
+              -U oil_tracker \
+              -d oil_tracker \
+              -c "SELECT * FROM pgmq.list_queues();"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Run History PGMQ integration tests
+        run: uv run pytest services/history/tests/integration -v
+
+      - name: Run UI PostgreSQL session integration tests
+        run: uv run pytest services/ui/backend/tests/test_session_api.py -v
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/fetcher/go.mod
+          cache-dependency-path: services/fetcher/go.sum
+
+      - name: Run Fetcher PGMQ integration tests
+        working-directory: services/fetcher
+        run: go test ./internal/pgmq -v
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: |
+          docker compose \
+            -f infrastructure/docker/compose.database.yaml \
+            down -v
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: services/ui/frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: services/ui/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+  compose:
+    name: Docker Compose
+    runs-on: ubuntu-latest
+
+    env:
+      APP_IMAGE_TAG: f4bd2d001dd4ad7abcf04af967dca8e8a0f6d891
+      DB_PASSWORD: ci-validation
+      DB_LAN_IP: 127.0.0.1
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+      POSTGRES_PASSWORD: ci-validation
+      OILPRICEAPI_KEY: ci-validation
+      HISTORY_LAN_IP: 127.0.0.1
+      FETCHER_LAN_IP: 127.0.0.1
+      UI_LAN_IP: 127.0.0.1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        working-directory: infrastructure/docker
+        run: |
+          status=0
+
+          for file in compose.*.yaml \
+            ../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2; do
+            echo "::group::${file}"
+
+            if docker compose -f "${file}" config --quiet; then
+              echo "${file}: OK"
+            else
+              echo "${file}: INVALID"
+              status=1
+            fi
+
+            echo "::endgroup::"
+          done
+
+          exit "${status}"
+
+  image:
+    name: Docker image (${{ matrix.service }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        service:
+          - database
+          - fetcher
+          - history
+          - ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.${{ matrix.service }}
+          push: false
+          load: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Terraform changes
+        id: changes
+
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+
+        run: |
+          changed=false
+
+          case "${EVENT_NAME}" in
+            pull_request)
+              base_sha="${PR_BASE_SHA}"
+              head_sha="${PR_HEAD_SHA}"
+              ;;
+            push)
+              base_sha="${PUSH_BASE_SHA}"
+              head_sha="${PUSH_HEAD_SHA}"
+              ;;
+            *)
+              echo "Terraform checks are disabled for ${EVENT_NAME}."
+              echo "changed=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+              ;;
+          esac
+
+          if git diff --quiet "${base_sha}" "${head_sha}" \
+            -- infrastructure/terraform/; then
+            echo "No Terraform changes detected."
+          else
+            status=$?
+
+            if [ "${status}" -ne 1 ]; then
+              echo "Failed to detect Terraform changes."
+              exit "${status}"
+            fi
+
+            changed=true
+            echo "Terraform changes detected."
+          fi
+
+          echo "changed=${changed}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Terraform
+        if: steps.changes.outputs.changed == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.1"
+          terraform_wrapper: false
+
+      - name: Check formatting
+        if: steps.changes.outputs.changed == 'true'
+        run: terraform -chdir=infrastructure/terraform fmt -check -recursive
+
+      - name: Validate
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          terraform -chdir=infrastructure/terraform init \
+            -backend=false \
+            -input=false
+
+          terraform -chdir=infrastructure/terraform validate
+
+      - name: Validate cloud-init syntax
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
+          cloud-init schema --config-file infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl
+
+  ansible:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Build collection
+        working-directory: infrastructure/ansible/oilscope/platform
+        run: ansible-galaxy collection build
+
+      - name: Install collection
+        working-directory: infrastructure/ansible/oilscope/platform
+        run: |
+          ansible-galaxy collection install oilscope-platform-*.tar.gz
+
+      - name: Run ansible-lint
+        uses: ansible/ansible-lint@main
+        with:
+          args: ""
+          setup_python: "true"
+          python-version: "3.14"
+          working-directory: infrastructure/ansible
+          requirements_file: ""

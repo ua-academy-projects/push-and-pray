@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+history_compose_project_dir: /opt/oilscope/app
+history_compose_file: "{{ history_compose_project_dir }}/compose.yaml"
+history_compose_project_name: petroscope
+
+history_postgres_password: ""
+history_health_retries: 30
+history_health_delay: 2
+history_docker_config_dir: /run/oilscope/docker-auth

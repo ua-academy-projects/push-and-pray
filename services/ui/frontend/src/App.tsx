@@ -224,7 +224,7 @@ function App() {
           <span><i className={loadState === "ready" ? "online" : "pending"} />History / PostgreSQL</span>
           <span>
             {sessionState === "saved" ? <Check size={13} /> : sessionState === "local" ? <CloudOff size={13} /> : <Activity size={13} />}
-            {sessionState === "saved" ? "Redis session saved" : sessionState === "local" ? "Local defaults" : "Saving session"}
+            {sessionState === "saved" ? "PostgreSQL session saved" : sessionState === "local" ? "Local defaults" : "Saving session"}
           </span>
           <time>{lastRead ? `${formatDateTime(lastRead)} UTC` : "Waiting for data"}</time>
         </div>
@@ -478,7 +478,7 @@ function App() {
 
       <footer className="site-footer">
         <div><Database size={15} /><span>PostgreSQL is the market-data source of truth</span></div>
-        <span>OilPriceAPI → Go Fetcher → RabbitMQ → History → PostgreSQL → UI</span>
+        <span>OilPriceAPI → Go Fetcher → PGMQ → History → PostgreSQL → UI</span>
         <b>PS / 03</b>
       </footer>
     </div>

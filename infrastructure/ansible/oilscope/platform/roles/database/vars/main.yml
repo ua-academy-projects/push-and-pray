@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_runtime_environment: >-
+  {{
+    database_compose_environment
+    | combine({
+      'DOCKER_CONFIG': database_docker_config_dir,
+      'POSTGRES_PASSWORD': database_postgres_password,
+      'POSTGRES_USER': database_postgres_user,
+      'POSTGRES_DB': database_postgres_name,
+      'DATABASE_BIND_ADDRESS': database_bind_address | string,
+      'DATABASE_HOST_PORT': database_host_port | string
+    })
+  }}
