@@ -253,6 +253,21 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "public_endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hostname", "acme_email"],
+          "properties": {
+            "hostname": {
+              "type": "string",
+              "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
+            },
+            "acme_email": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+            }
+          }
         }
       },
       "allOf": [
@@ -343,6 +358,7 @@
             "required": ["role"]
           },
           "then": {
+            "required": ["public_endpoint"],
             "properties": {
               "network_tags": {
                 "contains": {

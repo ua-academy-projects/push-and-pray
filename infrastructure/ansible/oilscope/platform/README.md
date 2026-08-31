@@ -2,6 +2,16 @@
 
 Documentation for the collection.
 
+## Validate configuration
+
+Before deploying, validate your project configuration file against the schema:
+
+​```bash
+uvx check-jsonschema \
+  --schemafile infrastructure/terraform/project-config.schema.json \
+  /absolute/path/project-config.json
+​```
+
 ## Deploy all workloads
 
 Deploy the application workloads in dependency order:
