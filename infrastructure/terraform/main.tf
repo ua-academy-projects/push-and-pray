@@ -10,8 +10,9 @@ module "network" {
     for port in local.config.network.ui_public_ports : tostring(port)
   ]
 
-  bastion_ssh_port      = local.bastion_vm.ssh_port
-  bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
+  bastion_ssh_port             = local.bastion_vm.ssh_port
+  bastion_allowed_cidrs        = local.bastion_vm.allowed_cidrs
+  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql

@@ -1,7 +1,12 @@
 # Compose project
 
-Installs the supported OilScope Compose definition and its non-secret deployment
-configuration.
+Installs the Compose definition for one OilScope workload VM. Each target gets
+only the services assigned to its role:
+
+- `database`: PostgreSQL and the one-shot migration service;
+- `history`: History only;
+- `fetcher`: Fetcher only;
+- `ui`: UI only.
 
 ## Requirements
 
@@ -12,14 +17,15 @@ The controller must have access to the external project configuration JSON.
 
 - `compose_project_config_path`: required controller-side path to the non-secret
   project configuration JSON.
-- `compose_project_workload`: required key in the JSON `workloads` object.
+- `compose_project_workload`: required host role: `database`, `history`,
+  `fetcher`, or `ui`.
 - `compose_project_dir`: installation directory; defaults to `/opt/oilscope/app`.
 - `compose_project_owner` and `compose_project_group`: installed file ownership;
   both default to `deploy`.
 
-The selected workload's `image_tag` must be a full 40-character Git SHA. The
-role writes it as `APP_IMAGE_TAG` in `deployment.env`. Secret values are not
-handled by this role.
+Image references are rendered from `registry.repository` and
+`registry.image_sha` in the project configuration. Secret values and private
+registry authentication are not handled by this role.
 
 ## Example playbook
 
@@ -32,11 +38,24 @@ handled by this role.
     - role: oilscope.platform.compose_project
       vars:
         compose_project_config_path: /srv/oilscope/project-config.json
-        compose_project_workload: history
+        compose_project_workload: "{{ oilscope_role }}"
 ```
 
-The installed files are `/opt/oilscope/app/compose.yaml` and
-`/opt/oilscope/app/deployment.env` by default.
+The installed file is `/opt/oilscope/app/compose.yaml`.
+
+`compose.deployment.yaml.j2` remains temporarily as input to the legacy
+Terraform cloud-init path. The Ansible role does not install it.
+
+## Test
+
+From the collection directory, render and validate all four definitions with:
+
+```sh
+ansible-playbook \
+  -i roles/compose_project/tests/inventory \
+  roles/compose_project/tests/test.yml \
+  -e project_config_path=/absolute/path/to/project-config.json
+```
 
 ## License
 

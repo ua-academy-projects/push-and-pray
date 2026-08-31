@@ -93,7 +93,10 @@ for the plugin to claim it, and `local.oilscope.yml` is already ignored by git.
 ## Usage
 
 ```sh
-ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
+ansible-inventory \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json \
+  --graph
 ```
 
 Hosts appear only after `terraform apply`: the inventory reports what exists in
@@ -114,21 +117,86 @@ configuration: `vms.infra` has `role: database` and therefore lands in the
 `internal_ip` is set on every host. This is a contract, not a convenience: the
 `ui` role resolves its Database and History peers through that exact variable
 name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
+For the bastion, `bastion_ssh_port` is always the final port from
+`vms.bastion.ssh_port`. `ansible_port` normally uses that value, but can use
+`OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
 
 Raw instance fields from the API are prefixed with `gcp_`, because two of them
 — `name` and `tags` — collide with names Ansible reserves.
 
 ## SSH
 
-The bastion is reached on its external address at the port from the project
-configuration. Workloads are reached on their internal address at port 22 —
-the only port the Terraform workload firewall rule opens — through a
-`ProxyCommand` defined in `group_vars/workloads.yml`.
+The bastion is normally reached on its external address at the final port read
+from `vms.bastion.ssh_port` in the project config by
+`group_vars/bastion.yml`. Every workload is reached on its internal address at
+port 22, through a `ProxyCommand` defined in `group_vars/workloads.yml`. The
+ProxyCommand always uses the bastion's final port; the bootstrap connection
+override applies only to the bastion itself. Pass the absolute project config
+path on every inventory, ad-hoc and playbook command.
 
 The non-default port belongs to the bastion alone; applying it globally would
 break every workload connection.
 
-`ansible_user` (`group_vars/all.yml`) defaults to the controller's own login
+Terraform does not configure `sshd`. A newly created bastion therefore starts
+on port 22, and Ansible changes it to the final configured port. Use this
+bootstrap sequence whenever the bastion has not yet been configured.
+
+1. Apply Terraform with the temporary port-22 rule enabled. The rule is
+   restricted to `vms.bastion.allowed_cidrs`, targets only the bastion, and is
+   not created when the final port is already 22.
+
+```sh
+terraform -chdir=infrastructure/terraform apply \
+  -var=project_config_path=/absolute/path/project-config.json \
+  -var=enable_bastion_ssh_bootstrap=true
+```
+
+2. Connect through port 22 and run the bastion playbook. The role validates the
+   generated `sshd` configuration before installing it, restarts SSH, waits for
+   the final port from the controller, resets the bootstrap connection, and
+   verifies Ansible connectivity on the final port.
+
+```sh
+export OILSCOPE_BASTION_CONNECT_PORT=22
+ansible-playbook oilscope.platform.bootstrap_bastion \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json
+unset OILSCOPE_BASTION_CONNECT_PORT
+```
+
+3. Confirm a new Ansible connection works on the final configured port.
+
+```sh
+ansible bastion \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json \
+  -m ansible.builtin.ping
+```
+
+4. Apply Terraform again without the bootstrap variable. Its default is
+   `false`, so Terraform removes the temporary port-22 rule without changing
+   any VM.
+
+```sh
+terraform -chdir=infrastructure/terraform apply \
+  -var=project_config_path=/absolute/path/project-config.json
+```
+
+5. Confirm the temporary firewall rule no longer exists and port 22 is not
+   reachable from an allowed operator address. The exact rule name ends in
+   `-allow-bastion-ssh-bootstrap`.
+
+```sh
+gcloud compute firewall-rules list \
+  --filter='name~allow-bastion-ssh-bootstrap' \
+  --format='value(name)'
+```
+
+The command must return no rule. Workload playbooks do not use the bootstrap
+override; their existing ProxyCommand connects to the bastion through the
+final configured port and then reaches workload SSH on port 22.
+
+`ansible_user` (in `group_vars/all.yml`) defaults to the controller's own login
 name, because that is the name a key added through `gcloud compute ssh` is
 registered under in GCP project metadata. Everyone connects as themselves and
 no name is committed. Override for one run with `OILSCOPE_SSH_USER`, and the

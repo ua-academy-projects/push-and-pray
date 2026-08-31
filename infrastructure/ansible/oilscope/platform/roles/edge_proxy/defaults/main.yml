@@ -1,0 +1,4 @@
+edge_proxy_dir: /opt/oilscope/proxy
+edge_proxy_compose_file: "{{ edge_proxy_dir }}/compose.yaml"
+edge_proxy_compose_project_name: oilscope-proxy
+edge_proxy_network_name: oilscope-edge

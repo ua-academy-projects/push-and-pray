@@ -9,7 +9,6 @@
         name: database
       vars:
         database_postgres_image: postgres:18
-        database_application_image_tag: 0123456789abcdef0123456789abcdef01234567
         database_postgres_password: test-only
       register: database_invalid_image
       ignore_errors: true

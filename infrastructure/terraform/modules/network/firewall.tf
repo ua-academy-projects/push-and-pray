@@ -11,6 +11,23 @@ resource "google_compute_firewall" "bastion_ssh" {
   }
 }
 
+resource "google_compute_firewall" "bastion_ssh_bootstrap" {
+  # A fresh bastion listens on 22 until Ansible installs the final sshd policy.
+  # This rule must be explicitly enabled and removed immediately after bootstrap.
+  count = var.enable_bastion_ssh_bootstrap && var.bastion_ssh_port != 22 ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-bastion-ssh-bootstrap"
+  network = google_compute_network.main.id
+
+  source_ranges = var.bastion_allowed_cidrs
+  target_tags   = [local.network_tags.bastion]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+}
+
 resource "google_compute_firewall" "workload_ssh" {
   name    = "${var.resource_prefix}-allow-workload-ssh"
   network = google_compute_network.main.id

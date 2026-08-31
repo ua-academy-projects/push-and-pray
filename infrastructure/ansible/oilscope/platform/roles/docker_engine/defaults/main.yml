@@ -3,7 +3,7 @@
 # Exact apt version of Docker Engine to install. The release suffix ties the
 # value to one Ubuntu release, so re-verify with `apt-cache madison docker-ce`
 # before bumping it. Docker package provisioning is owned by this Ansible role.
-docker_engine_version: "5:29.7.2-1~ubuntu.22.04~jammy"
+docker_engine_version: "5:29.7.2-1~ubuntu.26.04~resolute"
 
 # Packages installed at the pinned version above.
 docker_engine_pinned_packages:
@@ -28,6 +28,7 @@ docker_engine_held_packages:
   - docker-ce
   - docker-ce-cli
   - containerd.io
+  - docker-buildx-plugin
   - docker-compose-plugin
 
 # Refuse to run when the pinned version was built for another Ubuntu release.

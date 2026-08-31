@@ -109,6 +109,13 @@
   loop_control:
     label: "{{ item.variable }}"
 
+- name: Refuse to upload incomplete secret versions
+  ansible.builtin.fail:
+    msg: >-
+      Required secret source variables are missing or empty:
+      {{ secret_versions_absent | join(', ') }}
+  when: secret_versions_absent | default([]) | length > 0
+
 - name: Look for the containers
   ansible.builtin.command:
     argv:

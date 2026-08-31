@@ -4,8 +4,7 @@ ui_compose_project_dir: /opt/oilscope/app
 ui_compose_file: "{{ ui_compose_project_dir }}/compose.yaml"
 ui_compose_project_name: petroscope
 
-ui_application_image_tag: ""
-ui_postgres_image: ""
 ui_postgres_password: ""
 ui_health_retries: 30
 ui_health_delay: 2
+ui_docker_config_dir: /run/oilscope/docker-auth

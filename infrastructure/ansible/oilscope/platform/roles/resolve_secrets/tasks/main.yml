@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    resolve_secrets_config: >-
+      {{ lookup('ansible.builtin.file', resolve_secrets_config_path) | from_json }}
+
+- name: Resolve the target project
+  ansible.builtin.set_fact:
+    resolve_secrets_project: >-
+      {{ resolve_secrets_project_id
+        | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
+        | default(resolve_secrets_config.project_id | default(''), true) }}
+
+- name: Derive this VM's configuration key
+  ansible.builtin.set_fact:
+    resolve_secrets_vm_key: >-
+      {{ inventory_hostname
+         | regex_replace('^' ~ (resolve_secrets_config.name_prefix
+                                 ~ '-' ~ resolve_secrets_config.environment
+                                 ~ '-') | regex_escape, '') }}
+
+- name: Select the host's secret mappings
+  ansible.builtin.set_fact:
+    resolve_secrets_mappings: >-
+      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
+         | default({}) }}
+
+- name: Fetch an access token from the instance metadata server
+  ansible.builtin.uri:
+    url: "{{ resolve_secrets_metadata_url }}"
+    headers:
+      Metadata-Flavor: Google
+    return_content: true
+  register: resolve_secrets_token
+  no_log: true
+  when: resolve_secrets_mappings | length > 0
+
+- name: Extract the access token
+  ansible.builtin.set_fact:
+    resolve_secrets_access_token: >-
+      {{ (resolve_secrets_token.content | from_json).access_token }}
+  no_log: true
+  when: resolve_secrets_mappings | length > 0
+
+- name: Access each mapped secret's latest version
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_secretmanager_url }}/projects/{{ resolve_secrets_project }}/secrets/{{ item.value }}/versions/latest:access
+    headers:
+      Authorization: "Bearer {{ resolve_secrets_access_token }}"
+    return_content: true
+  register: resolve_secrets_accessed
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: resolve_secrets_mappings | length > 0
+
+- name: Build the resolved secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: ((item.content | from_json).payload.data | b64decode)
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: resolve_secrets_mappings | length > 0
+
+- name: Default to an empty result when there is nothing to resolve
+  ansible.builtin.set_fact:
+    resolve_secrets_result: "{{ resolve_secrets_result | default({}) }}"
+  no_log: true

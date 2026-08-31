@@ -12,6 +12,8 @@
       - image
       - pull
       - "{{ database_postgres_image }}"
+  environment:
+    DOCKER_CONFIG: "{{ database_docker_config_dir }}"
   register: database_image_pull
   changed_when: >-
     'Downloaded newer image' in database_image_pull.stdout or

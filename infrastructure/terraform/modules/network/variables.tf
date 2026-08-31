@@ -55,6 +55,12 @@ variable "bastion_allowed_cidrs" {
   }
 }
 
+variable "enable_bastion_ssh_bootstrap" {
+  description = "Whether to temporarily allow direct bastion SSH on port 22 when the final SSH port differs."
+  type        = bool
+  default     = false
+}
+
 variable "history_api_port" {
   description = "Port used by UI to connect to the History API."
   type        = number
@@ -78,13 +84,12 @@ variable "postgresql_port" {
 variable "ui_public_ports" {
   description = "Public TCP ports exposed on the UI VM"
   type        = list(string)
-  default     = ["80", "443"]
+  default     = ["443"]
 
   validation {
     condition = (
-      length(var.ui_public_ports) == 2 &&
-      toset(var.ui_public_ports) == toset(["80", "443"])
+      toset(var.ui_public_ports) == toset(["443"])
     )
-    error_message = "ui_public_ports must contain exactly ports 80 and 443"
+    error_message = "ui_public_ports must contain exactly port 443"
   }
 }

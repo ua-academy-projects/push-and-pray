@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy Database workload
+  ansible.builtin.import_playbook: database.yml
+
+- name: Deploy History workload
+  ansible.builtin.import_playbook: history.yml
+
+- name: Deploy Fetcher workload
+  ansible.builtin.import_playbook: fetcher.yml
+
+- name: Deploy UI workload
+  ansible.builtin.import_playbook: ui.yml

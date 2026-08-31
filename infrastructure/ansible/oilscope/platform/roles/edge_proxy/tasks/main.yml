@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check whether the shared edge network already exists
+  ansible.builtin.command:
+    argv: [docker, network, inspect, "{{ edge_proxy_network_name }}"]
+  register: edge_proxy_network_check
+  changed_when: false
+  failed_when: false
+
+- name: Create the shared edge network
+  ansible.builtin.command:
+    argv: [docker, network, create, "{{ edge_proxy_network_name }}"]
+  when: edge_proxy_network_check.rc != 0
+  changed_when: true
+
+- name: Create the dynamic configuration directory
+  ansible.builtin.file:
+    path: "{{ edge_proxy_dir }}/dynamic"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Traefik dynamic routing configuration
+  ansible.builtin.template:
+    src: dynamic.yml.j2
+    dest: "{{ edge_proxy_dir }}/dynamic/dynamic.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Check whether acme.json already exists
+  ansible.builtin.stat:
+    path: "{{ edge_proxy_dir }}/acme.json"
+  register: edge_proxy_acme_stat
+
+- name: Create acme.json only if it does not already exist
+  ansible.builtin.file:
+    path: "{{ edge_proxy_dir }}/acme.json"
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+  when: not edge_proxy_acme_stat.stat.exists
+
+
+- name: Pull the Traefik image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ edge_proxy_compose_project_name }}"
+      - --file
+      - "{{ edge_proxy_compose_file }}"
+      - pull
+      - traefik
+  args:
+    chdir: "{{ edge_proxy_dir }}"
+  register: edge_proxy_pull
+  changed_when: >-
+    'Downloaded newer image' in edge_proxy_pull.stdout or
+    'Pull complete' in edge_proxy_pull.stdout or
+    'Downloaded newer image' in edge_proxy_pull.stderr or
+    'Pull complete' in edge_proxy_pull.stderr
+
+
+- name: Start Traefik
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ edge_proxy_compose_project_name }}"
+      - --file
+      - "{{ edge_proxy_compose_file }}"
+      - up
+      - --detach
+      - --wait
+      - --wait-timeout
+      - "60"
+      - traefik
+  args:
+    chdir: "{{ edge_proxy_dir }}"
+  register: edge_proxy_up
+  changed_when: >-
+    'Created' in edge_proxy_up.stderr or
+    'Started' in edge_proxy_up.stderr or
+    'Recreated' in edge_proxy_up.stderr

@@ -16,9 +16,6 @@ secret values.
 
 ## Variables
 
-- `history_application_image_tag`: History image Git SHA.
-- `history_postgres_image`: PostgreSQL image required to parse the shared
-  Compose file.
 - `history_postgres_password`: password injected by the deployment workflow.
 
 ## Example
@@ -30,8 +27,6 @@ secret values.
   roles:
     - role: oilscope.platform.history
       vars:
-        history_application_image_tag: "0123456789abcdef0123456789abcdef01234567"
-        history_postgres_image: "ghcr.io/example/database@sha256:..."
         history_postgres_password: "{{ resolved_secrets.POSTGRES_PASSWORD }}"
 ```
 

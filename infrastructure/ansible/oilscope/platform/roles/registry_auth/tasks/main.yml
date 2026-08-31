@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Remove stale transient Docker registry credentials
+  become: true
+  ansible.builtin.file:
+    path: "{{ registry_auth_docker_config_dir }}"
+    state: absent
+
+- name: Record whether a registry token is available
+  ansible.builtin.set_fact:
+    registry_auth_token_available: "{{ registry_auth_token | length > 0 }}"
+  no_log: true
+
+- name: Require a registry username
+  ansible.builtin.fail:
+    msg: registry_auth_username must contain the GitHub account that owns the token.
+  when: registry_auth_username | trim | length == 0
+
+- name: Require a registry token
+  ansible.builtin.fail:
+    msg: GHCR_TOKEN is missing or empty for this workload.
+  when: not registry_auth_token_available
+
+- name: Create the transient Docker configuration directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ registry_auth_docker_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Authenticate to the private container registry
+  block:
+    - name: Log in using the token resolved from Secret Manager
+      become: true
+      ansible.builtin.command:
+        argv:
+          - docker
+          - login
+          - "{{ registry_auth_registry }}"
+          - --username
+          - "{{ registry_auth_username }}"
+          - --password-stdin
+        stdin: "{{ registry_auth_token }}"
+        stdin_add_newline: false
+      environment:
+        DOCKER_CONFIG: "{{ registry_auth_docker_config_dir }}"
+      changed_when: true
+      no_log: true
+      notify: Remove transient Docker registry credentials
+
+  rescue:
+    - name: Remove credentials after a failed registry login
+      become: true
+      ansible.builtin.file:
+        path: "{{ registry_auth_docker_config_dir }}"
+        state: absent
+
+    - name: Report the registry authentication failure
+      ansible.builtin.fail:
+        msg: Authentication to the private container registry failed.
