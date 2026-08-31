@@ -51,7 +51,16 @@ def list_observations(
     offset: int,
 ) -> list[PriceObservation]:
     query = _filtered_query(instrument, category, date_from, date_to)
-    query = query.order_by(PriceObservation.source_observed_at.desc()).limit(limit).offset(offset)
+    query = (
+        query.order_by(
+            PriceObservation.source_observed_at.desc(),
+            PriceObservation.scheduled_for.desc(),
+            PriceObservation.created_at.desc(),
+            PriceObservation.id.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
     return list(session.execute(query).scalars())
 
 
@@ -61,7 +70,12 @@ def latest_observations(session: Session) -> list[PriceObservation]:
         func.row_number()
         .over(
             partition_by=PriceObservation.instrument_code,
-            order_by=PriceObservation.source_observed_at.desc(),
+            order_by=(
+                PriceObservation.source_observed_at.desc(),
+                PriceObservation.scheduled_for.desc(),
+                PriceObservation.created_at.desc(),
+                PriceObservation.id.desc(),
+            ),
         )
         .label("row_number"),
     ).subquery()

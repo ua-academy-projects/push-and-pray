@@ -1,3 +1,7 @@
+import asyncio
+
+import pytest
+
 from history_service import messaging
 from history_service.config import Settings
 
@@ -182,3 +186,46 @@ def test_consumer_archives_after_retry_limit(
     )
 
     assert archived == [999]
+
+
+def test_consumer_becomes_ready_only_after_successful_queue_poll(
+    monkeypatch,
+) -> None:
+    consumer = messaging.PGMQConsumer(Settings())
+
+    monkeypatch.setattr(
+        consumer,
+        "_process_next_message",
+        lambda: False,
+    )
+
+    async def stop_after_poll(_: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(messaging.asyncio, "sleep", stop_after_poll)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(consumer._run())
+
+    assert consumer.ready is True
+
+
+def test_consumer_is_not_ready_when_queue_poll_fails(
+    monkeypatch,
+) -> None:
+    consumer = messaging.PGMQConsumer(Settings())
+
+    def fail_poll() -> bool:
+        raise RuntimeError("queue is unavailable")
+
+    monkeypatch.setattr(consumer, "_process_next_message", fail_poll)
+
+    async def stop_after_failure(_: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(messaging.asyncio, "sleep", stop_after_failure)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(consumer._run())
+
+    assert consumer.ready is False

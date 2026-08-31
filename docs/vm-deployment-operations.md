@@ -1,99 +1,92 @@
 # VM deployment operations
 
-This describes operating a workload VM's automated deployment — the
-`oilscope-deploy.service` systemd unit that cloud-init installs, and the
-`run.sh` script it runs. This is the automated path; for manually running
-`compose.deployment.yaml` by hand instead, see
-[the supported Compose deployment guide](supported-compose-deployment.md).
+The supported deployment is controlled by Ansible. Each workload VM receives
+`/opt/oilscope/app/compose.yaml` for its own role. The UI VM also receives the
+Traefik project under `/opt/oilscope/proxy`.
 
-Every workload VM runs exactly one role (`database`, `history`, `fetcher`, or
-`ui`), and `oilscope-deploy.service` starts exactly that role's service(s)
-from `/opt/oilscope/deploy/compose.deployment.yaml`. All commands below run
-on the VM itself, over SSH through the bastion.
+There is no `oilscope-deploy.service`, shared `compose.deployment.yaml`, or
+persistent `deployment.env` in the current Ansible path. Runtime secrets are
+supplied only while Ansible invokes Compose.
 
-There are two separate things to look at, not one: `oilscope-deploy.service`
-itself (the deploy *attempt* — did `run.sh` finish successfully) and the
-Docker container(s) it started (the *application* — is History/Fetcher/UI/
-Postgres actually running right now). Checking only one gives an incomplete
-picture.
+## Check workload status
 
-## Checking deployment status
-
-Whether the last deploy attempt succeeded:
+Connect to the VM through the bastion and list containers belonging to the
+application project:
 
 ```sh
-systemctl status oilscope-deploy.service
+docker ps --all \
+  --filter label=com.docker.compose.project=petroscope \
+  --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 ```
 
-`active (exited)` with no error means `run.sh` ran to completion, including
-its own health check, on its last invocation. `failed` means it didn't —
-check the logs below for why. Since this is a `Type=oneshot` unit, it has no
-persistent "running" state between invocations; it only ever reports the
-result of its most recent run.
-
-Whether the actual container(s) for this VM's role are up:
+On the UI VM, inspect the edge proxy separately:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml ps
+docker ps --all \
+  --filter label=com.docker.compose.project=oilscope-proxy \
+  --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 ```
 
-## Reading deployment logs
-
-**`run.sh`'s own output** — what the deploy script itself printed (which
-step it was on, any error message) — goes through the systemd journal, not
-Docker:
+Check the container health status used by the Ansible roles:
 
 ```sh
-journalctl -u oilscope-deploy.service          # full history
-journalctl -u oilscope-deploy.service -f       # follow live
-journalctl -u oilscope-deploy.service --since "1 hour ago"
+docker inspect \
+  --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' \
+  <container-name>
 ```
 
-**The application's own logs** — what History/Fetcher/UI/Postgres printed
-while running — go through Docker's own logging, since
-`compose.deployment.yaml` does not configure a `journald` logging driver.
-Do not look for these in `journalctl`:
+History also publishes its health endpoint on the VM's private interface, so
+`curl --fail http://127.0.0.1:8001/health` is available on the History VM.
+Ansible validates Fetcher and UI through their container health status rather
+than relying on a host-side HTTP request.
+
+## Read logs
+
+First obtain the container name with `docker ps`, then read its logs directly.
+This does not require reconstructing the secret environment used during
+deployment:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml logs <service>
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml logs -f <service>
+docker logs <container-name>
+docker logs --follow <container-name>
+docker logs --since 1h <container-name>
 ```
 
-Replace `<service>` with whichever this VM's role actually runs
-(`postgres`/`migrate` on the `database` VM, otherwise the role name itself —
-`history`, `fetcher`, or `ui`).
+Typical names are derived from the `petroscope` project and the service name,
+for example `petroscope-history-1`. Always use the name reported by Docker
+rather than assuming it.
 
-## Restarting a role
+## Redeploy or restart a workload
 
-`run.sh` is idempotent and safe to re-run — see the idempotency notes for
-why. To redeploy (for example, after a new `APP_IMAGE_TAG` is published),
-re-run the whole deploy script through systemd rather than calling
-`docker compose` directly:
+Redeploy from the Ansible controller. This re-resolves secrets, authenticates
+to the registry, pulls the configured immutable image SHA, starts the role, and
+waits for its health check:
 
 ```sh
-sudo systemctl restart oilscope-deploy.service
+ansible-playbook oilscope.platform.history \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json
 ```
 
-This re-authenticates to GHCR, re-pulls images, and re-applies the correct
-`up`/`run` sequence for this VM's role — it will only actually recreate a
-container if something about it changed (a newer image, for instance);
-otherwise it's a fast no-op.
+Replace `history` with `database`, `fetcher`, or `ui` as needed. Use
+`oilscope.platform.deploy_workloads` when dependencies also need to be
+reapplied in order.
 
-## Stopping a role
-
-There is no running process behind `oilscope-deploy.service` to stop — it
-already exited after its last successful run. What you actually want to stop
-is the application container(s) it started:
+For an immediate restart that does not pull or re-render configuration, use
+the exact container name reported by `docker ps`:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml stop <service>
+docker restart <container-name>
 ```
 
-This stops the container(s) without removing them, so a later
-`systemctl restart oilscope-deploy.service` (or a VM reboot) brings them
-back. To also disable automatic restart on the next boot, additionally stop
-and disable the unit itself:
+## Stop a workload
+
+Stop the role's container without removing its volume or configuration:
 
 ```sh
-sudo systemctl disable --now oilscope-deploy.service
+docker stop <container-name>
 ```
+
+Running the corresponding Ansible playbook starts it again. On the Database
+VM, do not remove the `petroscope_postgres_data` volume unless permanent data
+deletion is explicitly intended.

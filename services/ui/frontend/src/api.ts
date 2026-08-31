@@ -1,5 +1,7 @@
 import type { Instrument, Observation, Preferences } from "./types";
 
+const OBSERVATION_PAGE_SIZE = 5000;
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -14,6 +16,19 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function loadAllObservations(): Promise<Observation[]> {
+  const observations: Observation[] = [];
+
+  for (let offset = 0; ; offset += OBSERVATION_PAGE_SIZE) {
+    const page = await requestJson<Observation[]>(
+      `/api/observations?limit=${OBSERVATION_PAGE_SIZE}&offset=${offset}`,
+    );
+    observations.push(...page);
+
+    if (page.length < OBSERVATION_PAGE_SIZE) return observations;
+  }
+}
+
 export async function loadMarketData(): Promise<{
   latest: Observation[];
   observations: Observation[];
@@ -21,7 +36,7 @@ export async function loadMarketData(): Promise<{
 }> {
   const [latest, observations, instruments] = await Promise.all([
     requestJson<Observation[]>("/api/latest"),
-    requestJson<Observation[]>("/api/observations?limit=5000"),
+    loadAllObservations(),
     requestJson<Instrument[]>("/api/instruments"),
   ]);
   return { latest, observations, instruments };

@@ -101,7 +101,7 @@ write_compose_env() {
     printf 'RABBITMQ_IMAGE=%s\n' "${RABBITMQ_IMAGE:-rabbitmq:4.3.4-management}"
     printf 'PYTHON_IMAGE=%s\n' "${PYTHON_IMAGE:-python:3.12.13-slim-bookworm}"
     printf 'UV_IMAGE=%s\n' "${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}"
-    printf 'GO_IMAGE=%s\n' "${GO_IMAGE:-golang:1.24.13-bookworm}"
+    printf 'GO_IMAGE=%s\n' "${GO_IMAGE:-golang:1.25-bookworm}"
     printf 'GO_RUNTIME_IMAGE=%s\n' "${GO_RUNTIME_IMAGE:-debian:bookworm-slim}"
     printf 'NODE_IMAGE=%s\n' "${NODE_IMAGE:-node:24.13.0-bookworm-slim}"
     if [[ "${include_api_key}" == "true" ]]; then

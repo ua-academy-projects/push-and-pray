@@ -26,7 +26,7 @@ class PGMQConsumer:
         return bool(self.ready and self.task is not None and not self.task.done())
 
     async def start(self) -> None:
-        self.ready = True
+        self.ready = False
 
         self.task = asyncio.create_task(
             self._run(),
@@ -55,6 +55,7 @@ class PGMQConsumer:
         while True:
             try:
                 processed = await asyncio.to_thread(self._process_next_message)
+                self.ready = True
 
                 if not processed:
                     await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)
@@ -63,6 +64,7 @@ class PGMQConsumer:
                 raise
 
             except Exception:
+                self.ready = False
                 logger.exception("PGMQ consumer failed; retrying")
 
                 await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)

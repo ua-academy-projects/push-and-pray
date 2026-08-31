@@ -49,7 +49,7 @@ have already been persisted in PostgreSQL.
 
 | Area           | Technology                                    |
 | -------------- | --------------------------------------------- |
-| Fetcher        | Go 1.24                                       |
+| Fetcher        | Go 1.25                                       |
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
@@ -172,11 +172,12 @@ not part of this project.
 
 GitHub Actions builds and publishes every application image to GitHub Container Registry:
 
-| Application | Image                                   |
-| ----------- | --------------------------------------- |
-| Fetcher     | `ghcr.io/<owner>/push-and-pray/fetcher` |
-| History     | `ghcr.io/<owner>/push-and-pray/history` |
-| UI          | `ghcr.io/<owner>/push-and-pray/ui`      |
+| Application | Image                                    |
+| ----------- | ---------------------------------------- |
+| Fetcher     | `ghcr.io/<owner>/push-and-pray/fetcher`  |
+| History     | `ghcr.io/<owner>/push-and-pray/history`  |
+| UI          | `ghcr.io/<owner>/push-and-pray/ui`       |
+| Database    | `ghcr.io/<owner>/push-and-pray/database` |
 
 Replace `<owner>` with the lowercase GitHub account or organization that owns the
 repository. Every published image receives the full commit SHA as an immutable tag.
@@ -193,7 +194,7 @@ or pass the token as a Docker build argument.
 
 ## Local development
 
-Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with
+Local development requires Python 3.12+, uv, Go 1.25+, Node.js, PostgreSQL 18 with
 hstore, pgcrypto, pg_cron, and PGMQ.
 
 Install Python dependencies and build the frontend:

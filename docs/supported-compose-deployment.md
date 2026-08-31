@@ -1,109 +1,108 @@
-# Supported Docker Compose deployment
+# Supported Ansible and Docker Compose deployment
 
-This deployment pulls prebuilt application and PostgreSQL images. It does not
-build application images on the target machine. The Ansible role installs a
-non-secret `deployment.env` file containing the application image SHA from the
-external project configuration JSON. Secret retrieval and injection are handled
-outside Compose through the parent process environment.
+The supported deployment path is the `oilscope.platform` Ansible collection.
+It deploys one workload per VM in dependency order: Database, History, Fetcher,
+and UI. Docker Compose remains the container runtime on each VM, but operators
+do not install or start a shared all-in-one Compose project manually.
 
-The canonical configuration is the `compose_project` role template at
-`infrastructure/ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2`.
-The role installs it as `/opt/oilscope/app/compose.yaml`. The older role-specific
-Compose files are retained for the Vagrant development environment; they are not
-the supported GHCR deployment configuration.
+The `compose_project` role renders exactly one workload definition to
+`/opt/oilscope/app/compose.yaml` on each VM:
 
-## Required settings
-
-| Variable | Description |
+| VM role | Installed services |
 | --- | --- |
-| `APP_IMAGE_TAG` | Immutable Git commit SHA installed from the external JSON by the Ansible role. Do not use `latest`. |
-| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include PGMQ, `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
-| `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
-| `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
+| `database` | PostgreSQL and the one-shot migration service |
+| `history` | History API and PGMQ consumer |
+| `fetcher` | Scheduled Fetcher |
+| `ui` | UI service; Traefik is installed separately under `/opt/oilscope/proxy` |
 
-Authenticate to the private registry before deployment. Supply a GitHub token
-with `read:packages` to `docker login ghcr.io` through standard input; do not put
-the token in Compose, this repository, or a shell argument.
+Image references are rendered from `registry.repository` and
+`registry.image_sha` in the external project configuration JSON. Runtime
+secrets are read from Google Secret Manager and passed directly to the Ansible
+tasks that invoke Compose. They are not written to `deployment.env`.
 
-## Optional settings
+`compose.deployment.yaml.j2` is retained only for the legacy Terraform
+cloud-init path. The Ansible role does not install it.
 
-| Variable | Default | Purpose |
+## Controller prerequisites
+
+Install Ansible's Python and collection dependencies, authenticate with GCP,
+and build this repository's collection:
+
+```sh
+pip install -r infrastructure/ansible/requirements.txt
+ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+gcloud auth application-default login
+
+cd infrastructure/ansible/oilscope/platform
+ansible-galaxy collection build --force
+ansible-galaxy collection install oilscope-platform-*.tar.gz --force
+cd ../../../..
+```
+
+Rebuild and reinstall the local collection after changing an inventory plugin,
+playbook, or role. Ansible executes the installed collection, not the working
+copy.
+
+Validate the external project configuration before deploying:
+
+```sh
+uvx check-jsonschema \
+  --schemafile infrastructure/terraform/project-config.schema.json \
+  /absolute/path/project-config.json
+```
+
+The referenced Secret Manager entries and current secret versions must already
+exist. See [Secrets](secrets.md) for the upload workflow.
+
+## Deploy all workloads
+
+Run from the repository root:
+
+```sh
+ansible-playbook oilscope.platform.deploy_workloads \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json
+```
+
+The playbook deploys Database first, applies migrations, then deploys History,
+Fetcher, and UI. `any_errors_fatal` prevents dependent workloads from being
+deployed after a failure.
+
+To redeploy one workload, run its playbook directly, for example:
+
+```sh
+ansible-playbook oilscope.platform.history \
+  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -e project_config_path=/absolute/path/project-config.json
+```
+
+The available workload playbooks are `database`, `history`, `fetcher`, and
+`ui`. Database must be healthy and migrated before the other workloads are
+deployed; History must be healthy before UI is deployed.
+
+## Runtime defaults
+
+| Setting | Default | Purpose |
 | --- | --- | --- |
 | `POSTGRES_DB` | `oil_tracker` | Database name |
 | `POSTGRES_USER` | `oil_tracker` | Database user |
-| `DATABASE_HOST` | `postgres` | PostgreSQL hostname; set the database VM address for split-host deployment |
-| `DATABASE_PORT` | `5432` | PostgreSQL service port |
-| `DATABASE_SSLMODE` | `disable` | Client PostgreSQL TLS mode |
-| `DATABASE_BIND_ADDRESS` | `0.0.0.0` | PostgreSQL host bind address |
-| `DATABASE_HOST_PORT` | `5432` | Published PostgreSQL host port |
-| `HISTORY_SERVICE_URL` | `http://history:8001` | UI-to-History endpoint; set the History VM address for split-host deployment |
-| `HISTORY_BIND_ADDRESS` | `0.0.0.0` | History host bind address |
-| `HISTORY_HOST_PORT` | `8001` | Published History host port |
-| `FETCHER_BIND_ADDRESS` | `0.0.0.0` | Fetcher host bind address |
-| `FETCHER_HOST_PORT` | `8002` | Published Fetcher host port |
-| `FETCHER_LISTEN_ADDRESS` | `0.0.0.0:8002` | Fetcher listen endpoint inside its container |
-| `UI_BIND_ADDRESS` | `0.0.0.0` | UI host bind address |
-| `UI_HTTP_PORT` | `80` | Published UI HTTP port |
-| `PGMQ_QUEUE` | `price_observations` | PostgreSQL queue name |
+| `DATABASE_PORT` | `5432` | PostgreSQL port |
+| `DATABASE_SSLMODE` | `disable` | PostgreSQL TLS mode on the private network |
+| `PGMQ_QUEUE` | `price_observations` | Queue name |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60` | History queue visibility timeout |
-| `PGMQ_POLL_INTERVAL_SECONDS` | `1` | History queue polling interval |
-| `PGMQ_MAX_ATTEMPTS` | `5` | History maximum delivery attempts |
-| `DATA_PROVIDER` | `oilpriceapi` | Fetcher data provider |
+| `PGMQ_POLL_INTERVAL_SECONDS` | `1` | History polling interval |
+| `PGMQ_MAX_ATTEMPTS` | `5` | Maximum message delivery attempts |
+| `DATA_PROVIDER` | `oilpriceapi` | Fetcher provider |
 | `FETCH_CRON_HOURS` | `0,6,12,18` | Fetch schedule hours |
 | `FETCH_TIMEZONE` | `UTC` | Fetch schedule timezone |
-| `FETCH_ON_STARTUP` | `true` | Fetch immediately after startup |
-| `REQUEST_TIMEOUT_SECONDS` | `15` | Fetcher provider timeout |
-| `SESSION_TTL_SECONDS` | `2592000` | PostgreSQL UI-session lifetime |
-| `SESSION_COOKIE_SECURE` | `false` | Set to `true` when HTTPS terminates at the application host |
-| `LOG_LEVEL` | `INFO` | History and UI log level |
+| `FETCH_ON_STARTUP` | `true` | Fetch the latest slot after startup |
+| `REQUEST_TIMEOUT_SECONDS` | `15` | One provider request timeout |
+| `SESSION_TTL_SECONDS` | `2592000` | UI-session lifetime |
 | `APPLICATION_PLATFORM` | `linux/amd64` | Application image platform |
-| `POSTGRES_PLATFORM` | `linux/amd64` | PostgreSQL image platform |
 | `APPLICATION_PULL_POLICY` | `always` | Application image pull policy |
-| `POSTGRES_PULL_POLICY` | `always` | PostgreSQL image pull policy |
 
-## Complete stack on one machine
+Host addresses and secret values are resolved by the inventory and deployment
+roles. Do not create a persistent environment file containing them.
 
-After exporting the required secret variables, use this single startup command:
-
-```sh
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml pull && \
-  docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --wait
-```
-
-Compose starts PostgreSQL, waits for it to become healthy, applies every
-migration through the one-shot `migrate` service, starts Fetcher and History,
-then starts UI after History is healthy. UI is published on host port 80 by
-default.
-
-Run the application smoke test:
-
-```sh
-infrastructure/docker/smoke-test.sh
-```
-
-Stop the deployment without deleting PostgreSQL data:
-
-```sh
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml down
-```
-
-## Independent VM roles
-
-Cross-host ordering is handled by the deployment orchestrator, not by Compose.
-Start PostgreSQL first, run the independently executable migration job, and
-then start the application roles. Use `--no-deps` so a role does not try to
-start its same-file dependencies on that VM:
-
-```sh
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps postgres
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml run --rm --no-deps migrate
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps history
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps fetcher
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps ui
-```
-
-Run `docker compose ... pull SERVICE` before each role command. On application
-VMs, set `DATABASE_HOST` to the database VM endpoint. On the UI VM, also set
-`HISTORY_SERVICE_URL` to the History VM endpoint. Network firewalls must permit
-only the required cross-VM traffic; Compose dependencies do not coordinate
-services across machines.
+See [VM deployment operations](vm-deployment-operations.md) for status, logs,
+redeployment, and stopping containers.

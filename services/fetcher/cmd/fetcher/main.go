@@ -69,12 +69,14 @@ func main() {
 	)
 	defer stop()
 
+	collectionTimeout := configuration.RequestTimeout * 20
+
 	var nextRunUnix atomic.Int64
 
 	run := func(slot time.Time) {
 		jobContext, cancel := context.WithTimeout(
 			ctx,
-			configuration.RequestTimeout*20,
+			collectionTimeout,
 		)
 		defer cancel()
 
@@ -171,8 +173,14 @@ func main() {
 			return
 		}
 
-		result, err := collector.Run(
+		requestContext, cancel := context.WithTimeout(
 			request.Context(),
+			collectionTimeout,
+		)
+		defer cancel()
+
+		result, err := collector.Run(
+			requestContext,
 			schedule.LatestSlot(
 				time.Now(),
 				configuration.CronHours,
@@ -199,7 +207,7 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      collectionTimeout + 5*time.Second,
 	}
 
 	go func() {
