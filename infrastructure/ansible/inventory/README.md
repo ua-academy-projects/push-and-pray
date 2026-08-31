@@ -62,6 +62,34 @@ cd infrastructure/ansible/oilscope/platform && ansible-galaxy collection build -
 Repeat that after every change to the plugin or to a role — Ansible reads the
 installed copy, not the files you just edited.
 
+## Pointing it at your configuration
+
+`oilscope.yml` carries no path of its own, because the project configuration
+does not live in the same place for everyone. The path is resolved in three
+steps, weakest first:
+
+1. the plugin's default, `../../terraform/env/dev.json`, relative to this
+   directory;
+2. the `OILSCOPE_PROJECT_CONFIG` environment variable;
+3. a `project_config_path` key written into the inventory file.
+
+So a configuration kept elsewhere needs no edit to a committed file:
+
+```sh
+OILSCOPE_PROJECT_CONFIG=infrastructure/terraform/env/mine.json \
+  ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
+```
+
+Export it once and every later command picks it up. An absolute path is used as
+given; a relative one is tried against the working directory first, then
+against this directory, so a path typed from the repository root works.
+
+Adding `project_config_path` back into `oilscope.yml` would pin the path for
+everyone **and** make the variable ineffective, since a value set in the file
+wins over the environment. Keep personal paths in the variable, or in a local
+`*oilscope.yml` of your own — the filename only has to end in `oilscope.yml`
+for the plugin to claim it, and `local.oilscope.yml` is already ignored by git.
+
 ## Usage
 
 ```sh

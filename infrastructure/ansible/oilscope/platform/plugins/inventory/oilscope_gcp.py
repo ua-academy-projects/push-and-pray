@@ -26,16 +26,13 @@ version_added: "0.1.0"
 author:
   - Push and Pray team
 description:
-  - Reads the shared project configuration JSON that Terraform also consumes,
-    derives every environment-specific setting from it, and hands the result to
-    C(google.cloud.gcp_compute), which performs the actual discovery.
-  - The GCP project, the zone, the C(application) and C(environment) label
-    filters and the bastion SSH port all come from that file, so no environment
-    value is repeated in the inventory configuration and a copy per environment
-    is unnecessary.
-  - This wrapper exists because C(gcp_compute) neither reads the project
-    configuration nor evaluates Jinja in its own configuration file - a
-    template expression there is sent to the API as literal text.
+  - Derives the GCP project, zone, C(application) and C(environment) label
+    filters and the bastion SSH port from the project configuration JSON that
+    Terraform also reads, then hands them to C(google.cloud.gcp_compute), which
+    performs the discovery. No environment value is repeated here.
+  - The wrapper exists because C(gcp_compute) neither reads that file nor
+    evaluates Jinja in its own configuration - a template expression there
+    reaches the API as literal text.
 extends_documentation_fragment:
   - inventory_cache
 options:
@@ -49,21 +46,27 @@ options:
       - oilscope.platform.oilscope_gcp
   project_config_path:
     description:
-      - Path to the project configuration JSON. A relative path resolves
-        against the directory holding this inventory configuration file.
+      - Path to the project configuration JSON. Absolute is used as given;
+        relative is tried against the working directory, then against this
+        file's directory.
+      - Set C(OILSCOPE_PROJECT_CONFIG) for a configuration kept elsewhere. A
+        value written into the inventory file wins over the environment, so
+        leave the key out to make the variable effective.
     type: str
-    required: true
+    required: false
+    default: ../../terraform/env/dev.json
+    env:
+      - name: OILSCOPE_PROJECT_CONFIG
   workload_ssh_port:
     description:
-      - Port the workload VMs listen on. The Terraform workload firewall rule
-        opens 22 and nothing else, so the bastion's non-default port must not
-        be applied to them.
+      - Port the workload VMs listen on. The Terraform firewall rule opens 22
+        and nothing else, so the bastion's port must not apply to them.
     type: int
     default: 22
   bastion_role:
     description:
-      - Value of the C(role) field identifying the bastion in the project
-        configuration, and of the C(role) label on the instance.
+      - Value of C(role) identifying the bastion, in the configuration and in
+        the instance label.
     type: str
     default: bastion
   auth_kind:
@@ -74,8 +77,8 @@ options:
   vars_prefix:
     description:
       - Prefix for the raw instance fields C(gcp_compute) copies into host
-        variables. Without one, its C(name) and C(tags) fields collide with
-        names Ansible reserves.
+        variables; without one its C(name) and C(tags) collide with reserved
+        names.
     type: str
     default: gcp_
 requirements:
@@ -88,10 +91,9 @@ notes:
 """
 
 EXAMPLES = r"""
-# inventory/oilscope.yml
+# inventory/oilscope.yml - the path comes from OILSCOPE_PROJECT_CONFIG or the
+# option default, so it is deliberately not set here.
 plugin: oilscope.platform.oilscope_gcp
-project_config_path: ../../terraform/env/dev.json
-
 cache: true
 cache_plugin: ansible.builtin.jsonfile
 cache_connection: ~/.cache/oilscope-inventory
@@ -110,10 +112,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     NAME = "oilscope.platform.oilscope_gcp"
 
     def verify_file(self, path):
-        if not super().verify_file(path):
-            return False
-
-        return path.endswith(("oilscope.yml", "oilscope.yaml"))
+        return super().verify_file(path) and path.endswith(("oilscope.yml", "oilscope.yaml"))
 
     def parse(self, inventory, loader, path, cache=True):
         super().parse(inventory, loader, path, cache=cache)
@@ -134,25 +133,30 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             except OSError as cleanup_error:
                 display.vvv(f"could not remove {generated}: {cleanup_error}")
 
+    def _resolve_config_path(self, path):
+        configured = plain(self.get_option("project_config_path"))
+
+        if os.path.isabs(configured):
+            return os.path.normpath(configured)
+
+        from_cwd = os.path.abspath(configured)
+
+        if os.path.isfile(from_cwd):
+            return from_cwd
+
+        beside = os.path.join(os.path.dirname(os.path.abspath(path)), configured)
+        return os.path.normpath(beside)
+
     def _load_project_config(self, path):
-        config_path = self.get_option("project_config_path")
-
-        if not os.path.isabs(config_path):
-            config_path = os.path.join(os.path.dirname(os.path.abspath(path)), config_path)
-
-        config_path = os.path.normpath(config_path)
+        config_path = self._resolve_config_path(path)
 
         try:
             with open(config_path, "rb") as handle:
                 config = json.load(handle)
-        except OSError as read_error:
+        except (OSError, ValueError) as error:
             raise AnsibleParserError(
-                f"could not read the project configuration at {config_path}: {read_error}"
-            ) from read_error
-        except ValueError as decode_error:
-            raise AnsibleParserError(
-                f"the project configuration at {config_path} is not valid JSON: {decode_error}"
-            ) from decode_error
+                f"could not load the project configuration at {config_path}: {error}"
+            ) from error
 
         if not isinstance(config, dict):
             raise AnsibleParserError(
@@ -184,15 +188,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             if isinstance(vm, dict) and vm.get("role") == bastion_role
         ]
 
-        if not ports:
+        if len(ports) != 1:
             raise AnsibleParserError(
-                f"the project configuration defines no VM with role {bastion_role!r}"
-            )
-
-        if len(ports) > 1:
-            raise AnsibleParserError(
-                f"the project configuration defines {len(ports)} VMs with role "
-                f"{bastion_role!r}; expected one"
+                f"expected exactly one VM with role {bastion_role!r}, found {len(ports)}"
             )
 
         try:
