@@ -104,6 +104,10 @@
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "public_endpoint": {
+        "hostname": "oilscope.example.com",
+        "acme_email": "example-operator@example.com"
       }
     }
   }

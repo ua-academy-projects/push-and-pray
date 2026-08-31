@@ -30,6 +30,14 @@
         registry_auth_token: >-
           {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_dir: /opt/oilscope/proxy
+        compose_project_workload: proxy
+
+    - role: oilscope.platform.edge_proxy
+
     - role: oilscope.platform.ui
       vars:
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
