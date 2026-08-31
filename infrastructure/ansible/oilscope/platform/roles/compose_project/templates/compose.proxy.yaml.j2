@@ -1,0 +1,35 @@
+name: oilscope-proxy
+services:
+  traefik:
+    image: traefik:v3.7.12
+    restart: unless-stopped
+    init: true
+    command:
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=false"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      >-
+      - --certificatesresolvers.letsencrypt.acme.email={{
+        compose_project_config.vms.ui.public_endpoint.acme_mail }} 
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--ping=true"
+      - "--log.level.INFO"
+    ports: - "443:443"
+    volumes:
+      - "{{ compose_project_dir }}/dynamic:/etc/traefik/dynamic:ro"
+      - "{{ compose_project_dir }}/acme.json:/letsencrypt/acme.json"
+    networks:
+      - oilscope-edge
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+networks:
+  oilscope-edge:
+    external: true

@@ -5,3 +5,4 @@ compose_project_templates:
   history: compose.history.yaml.j2
   fetcher: compose.fetcher.yaml.j2
   ui: compose.ui.yaml.j2
+  proxy: compose.proxy.yaml.j2
