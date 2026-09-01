@@ -33,9 +33,13 @@ crash.*.log
 *.pem
 *.key
 !project-config.example.json
+!project-config.aws.example.json
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/oilscope.gcp.yml
 
 *.local.gcp.yml
+
+# Local backups of tfvars
+*.tfvars.bak

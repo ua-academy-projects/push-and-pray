@@ -19,6 +19,18 @@
     loop_var: secret_versions_vm
     label: "{{ secret_versions_vm.key }}"
 
+- name: Resolve the cloud every VM runs in
+  ansible.builtin.set_fact:
+    secret_versions_vm_clouds: >-
+      {{ secret_versions_vm_clouds | default({}) | combine({
+           secret_versions_vm.key: secret_versions_vm.value.cloud
+                                   | default(secret_versions_config.default_cloud)
+         }) }}
+  loop: "{{ secret_versions_config.vms | dict2items }}"
+  loop_control:
+    loop_var: secret_versions_vm
+    label: "{{ secret_versions_vm.key }}"
+
 # The variable name comes from the container ID, not from the key side of
 # secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
 # different secret on every workload and one shell cannot hold them all.
@@ -59,7 +71,12 @@
            'variable': secret_versions_entry.1,
            'read_by': secret_versions_pairs
                       | selectattr('0', 'eq', secret_versions_entry.0)
-                      | map(attribute='1') | sort | list
+                      | map(attribute='1') | sort | list,
+           'clouds': secret_versions_pairs
+                     | selectattr('0', 'eq', secret_versions_entry.0)
+                     | map(attribute='1')
+                     | map('extract', secret_versions_vm_clouds)
+                     | unique | sort | list
          }] }}
   loop: "{{ secret_versions_ids | zip(secret_versions_variables) | list }}"
   loop_control:
@@ -83,17 +100,11 @@
   ansible.builtin.debug:
     msg: >-
       {{ item.variable }} -> {{ item.secret_id }}
+      in {{ item.clouds | join(', ') }}
       (read by {{ item.read_by | join(', ') }})
   loop: "{{ secret_versions_catalog }}"
   loop_control:
     label: "{{ item.secret_id }}"
-
-- name: Resolve the target project
-  ansible.builtin.set_fact:
-    secret_versions_project: >-
-      {{ secret_versions_project_id
-         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-         | default(secret_versions_config.project_id | default(''), true) }}
 
 # Everything is checked before anything is written. A value that turns out to
 # be missing halfway through leaves some workloads on the new credential and
@@ -116,58 +127,10 @@
       {{ secret_versions_absent | join(', ') }}
   when: secret_versions_absent | default([]) | length > 0
 
-- name: Look for the containers
-  ansible.builtin.command:
-    argv:
-      - "{{ secret_versions_gcloud }}"
-      - secrets
-      - describe
-      - "{{ item.secret_id }}"
-      - "--project={{ secret_versions_project }}"
-      - "--format=value(name)"
-  loop: "{{ secret_versions_catalog }}"
+- name: Add the versions in every cloud that holds a container
+  ansible.builtin.include_tasks: "{{ secret_versions_cloud }}.yml"
+  loop: >-
+    {{ secret_versions_catalog | map(attribute='clouds')
+       | flatten | unique | sort | list }}
   loop_control:
-    label: "{{ item.secret_id }}"
-  register: secret_versions_describe
-  changed_when: false
-  failed_when: false
-  check_mode: false
-
-# secretVersionAdder allows adding a version without reading the metadata, so a
-# permission error is not proof that the container is missing.
-# --data-file=- takes the payload from stdin, so it never becomes a command
-# argument and cannot appear in ps output or a shell history. no_log keeps it
-# out of the Ansible output and any callback log, and stdin_add_newline is off
-# because a trailing newline would become part of the stored value.
-- name: Add a new version to every container
-  ansible.builtin.command:
-    argv:
-      - "{{ secret_versions_gcloud }}"
-      - secrets
-      - versions
-      - add
-      - "{{ item.secret_id }}"
-      - "--project={{ secret_versions_project }}"
-      - "--data-file=-"
-      - "--format=value(name)"
-    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
-    stdin_add_newline: false
-  loop: "{{ secret_versions_catalog }}"
-  loop_control:
-    label: "{{ item.secret_id }}"
-  register: secret_versions_added
-  changed_when: true
-  no_log: true
-  # Not check_mode - a skipped-in-check-mode result carries the module
-  # arguments, and at -vvv Ansible prints those uncensored even under no_log.
-  when: not ansible_check_mode
-
-- name: Report the new versions
-  ansible.builtin.debug:
-    msg: >-
-      {{ item.item.secret_id }} <- ${{ item.item.variable }}
-      (version {{ item.stdout | trim | regex_replace('^.*/', '') }})
-  loop: "{{ secret_versions_added.results | default([]) }}"
-  loop_control:
-    label: "{{ item.item.secret_id }}"
-  when: not ansible_check_mode
+    loop_var: secret_versions_cloud

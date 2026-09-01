@@ -3,11 +3,16 @@
 # Project configuration JSON - the same file the Terraform configuration reads.
 secret_versions_config_file: ""
 
-# Target GCP project. Falls back to $GOOGLE_PROJECT, then to project_id in the
+# Target GCP project. Falls back to $GOOGLE_PROJECT, then to gcp.project_id in the
 # configuration.
 secret_versions_project_id: ""
+
+# Target AWS region. Falls back to $AWS_REGION, then to the first entry of
+# aws.regions in the configuration.
+secret_versions_region: ""
 
 # Upload a subset. Entries match a container ID or a variable name.
 secret_versions_only: []
 
 secret_versions_gcloud: gcloud
+secret_versions_aws: aws

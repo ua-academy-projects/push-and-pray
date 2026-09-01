@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Select the containers held in GCP
+  ansible.builtin.set_fact:
+    secret_versions_targets: >-
+      {{ secret_versions_catalog | selectattr('clouds', 'contains', 'gcp') | list }}
+
+- name: Resolve the target project
+  ansible.builtin.set_fact:
+    secret_versions_project: >-
+      {{ secret_versions_project_id
+         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
+         | default(secret_versions_config.gcp.project_id | default(''), true) }}
+
+- name: Refuse to upload without a target project
+  ansible.builtin.fail:
+    msg: >-
+      No GCP project resolved. Set secret_versions_project_id, $GOOGLE_PROJECT
+      or gcp.project_id in the project configuration.
+  when: secret_versions_project | length == 0
+
+- name: Look for the containers
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_gcloud }}"
+      - secrets
+      - describe
+      - "{{ item.secret_id }}"
+      - "--project={{ secret_versions_project }}"
+      - "--format=value(name)"
+  loop: "{{ secret_versions_targets }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_describe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# secretVersionAdder allows adding a version without reading the metadata, so a
+# permission error is not proof that the container is missing.
+# --data-file=- takes the payload from stdin, so it never becomes a command
+# argument and cannot appear in ps output or a shell history. no_log keeps it
+# out of the Ansible output and any callback log, and stdin_add_newline is off
+# because a trailing newline would become part of the stored value.
+- name: Add a new version to every container
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_gcloud }}"
+      - secrets
+      - versions
+      - add
+      - "{{ item.secret_id }}"
+      - "--project={{ secret_versions_project }}"
+      - "--data-file=-"
+      - "--format=value(name)"
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_targets }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_added
+  changed_when: true
+  no_log: true
+  # Not check_mode - a skipped-in-check-mode result carries the module
+  # arguments, and at -vvv Ansible prints those uncensored even under no_log.
+  when: not ansible_check_mode
+
+- name: Report the new versions
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      (gcp version {{ item.stdout | trim | regex_replace('^.*/', '') }})
+  loop: "{{ secret_versions_added.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.secret_id }}"
+  when: not ansible_check_mode

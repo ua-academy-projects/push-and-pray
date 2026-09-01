@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Select the containers held in AWS
+  ansible.builtin.set_fact:
+    secret_versions_targets: >-
+      {{ secret_versions_catalog | selectattr('clouds', 'contains', 'aws') | list }}
+
+- name: Resolve the target region
+  ansible.builtin.set_fact:
+    secret_versions_aws_region: >-
+      {{ secret_versions_region
+         | default(lookup('ansible.builtin.env', 'AWS_REGION'), true)
+         | default(lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION'), true)
+         | default(secret_versions_config.aws.regions | default([]) | first | default(''), true) }}
+
+- name: Refuse to upload without a target region
+  ansible.builtin.fail:
+    msg: >-
+      No AWS region resolved. Set secret_versions_region, $AWS_REGION or
+      aws.regions in the project configuration.
+  when: secret_versions_aws_region | length == 0
+
+- name: Look for the containers
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws }}"
+      - secretsmanager
+      - describe-secret
+      - --secret-id
+      - "{{ item.secret_id }}"
+      - --region
+      - "{{ secret_versions_aws_region }}"
+      - --query
+      - ARN
+      - --output
+      - text
+  loop: "{{ secret_versions_targets }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_describe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# file:///dev/stdin makes the AWS CLI read the payload from stdin, so the value
+# never becomes a command argument and cannot appear in ps output or a shell
+# history. no_log keeps it out of the Ansible output and any callback log, and
+# stdin_add_newline is off because a trailing newline would become part of the
+# stored value.
+- name: Add a new version to every container
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws }}"
+      - secretsmanager
+      - put-secret-value
+      - --secret-id
+      - "{{ item.secret_id }}"
+      - --region
+      - "{{ secret_versions_aws_region }}"
+      - --secret-string
+      - file:///dev/stdin
+      - --query
+      - VersionId
+      - --output
+      - text
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_targets }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_added
+  changed_when: true
+  no_log: true
+  # Not check_mode - a skipped-in-check-mode result carries the module
+  # arguments, and at -vvv Ansible prints those uncensored even under no_log.
+  when: not ansible_check_mode
+
+- name: Report the new versions
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      (aws version {{ item.stdout | trim }})
+  loop: "{{ secret_versions_added.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.secret_id }}"
+  when: not ansible_check_mode

@@ -5,10 +5,9 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
+    "default_cloud",
+    "location",
     "environment",
-    "region",
-    "zone",
     "name_prefix",
     "common_labels",
     "ssh_users",
@@ -18,21 +17,13 @@
     "vms"
   ],
   "properties": {
-    "project_id": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
-    },
     "environment": {
       "type": "string",
-      "enum": ["dev", "stage", "prod"]
-    },
-    "region": {
-      "type": "string",
-      "minLength": 1
-    },
-    "zone": {
-      "type": "string",
-      "minLength": 1
+      "enum": [
+        "dev",
+        "stage",
+        "prod"
+      ]
     },
     "name_prefix": {
       "type": "string",
@@ -47,7 +38,11 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "username", "image_sha"],
+      "required": [
+        "repository",
+        "username",
+        "image_sha"
+      ],
       "properties": {
         "repository": {
           "type": "string",
@@ -69,7 +64,8 @@
       "required": [
         "management_subnet_cidr",
         "workload_subnet_cidr",
-        "ui_public_ports"
+        "ui_public_ports",
+        "vpc_cidr"
       ],
       "properties": {
         "management_subnet_cidr": {
@@ -84,18 +80,28 @@
           "type": "array",
           "items": {
             "type": "integer",
-            "enum": [80, 443]
+            "enum": [
+              80,
+              443
+            ]
           },
-          "minItems": 2,
+          "minItems": 1,
           "maxItems": 2,
           "uniqueItems": true
+        },
+        "vpc_cidr": {
+          "description": "CIDR range of the VPC. AWS requires one; GCP derives its network from the subnets and ignores this value.",
+          "type": "string"
         }
       }
     },
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": [
+        "history_api",
+        "postgresql"
+      ],
       "properties": {
         "history_api": {
           "type": "integer",
@@ -112,7 +118,9 @@
     "vms": {
       "type": "object",
       "minProperties": 2,
-      "required": ["bastion"],
+      "required": [
+        "bastion"
+      ],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -128,7 +136,9 @@
                   "const": "bastion"
                 }
               },
-              "required": ["role"]
+              "required": [
+                "role"
+              ]
             }
           ]
         }
@@ -136,21 +146,79 @@
       "additionalProperties": {
         "$ref": "#/$defs/vm"
       }
+    },
+    "location": {
+      "description": "Portable location token. Terraform resolves it to a provider region and zone.",
+      "type": "string",
+      "enum": [
+        "us-east",
+        "eu-west"
+      ]
+    },
+    "gcp": {
+      "description": "Settings that exist only on GCP. Required when cloud is gcp.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id"
+      ],
+      "properties": {
+        "project_id": {
+          "description": "Target GCP project ID.",
+          "type": "string"
+        }
+      }
+    },
+    "aws": {
+      "description": "Settings that exist only on AWS.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "description": "Target AWS account ID, recorded for humans.",
+          "type": "string",
+          "pattern": "^[0-9]{12}$"
+        },
+        "regions": {
+          "description": "Regions the dynamic inventory searches for this account's instances. AWS partitions resources by region, so the inventory cannot find them without one.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "default_cloud": {
+      "description": "Cloud used by every VM that does not name one of its own.",
+      "type": "string",
+      "enum": [
+        "gcp",
+        "aws"
+      ]
     }
   },
   "$defs": {
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["size_gb", "type"],
+      "required": [
+        "size_gb",
+        "type"
+      ],
       "properties": {
         "size_gb": {
           "type": "integer",
           "minimum": 10
         },
         "type": {
+          "description": "Portable disk class. Terraform resolves it per cloud.",
           "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+          "enum": [
+            "standard",
+            "balanced",
+            "ssd"
+          ]
         }
       }
     },
@@ -172,17 +240,19 @@
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
-    "machine_type": {
-      "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
-    },
     "vm_network_tags": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["bastion", "infra", "history", "fetcher", "ui"]
+        "enum": [
+          "bastion",
+          "infra",
+          "history",
+          "fetcher",
+          "ui"
+        ]
       }
     },
     "secret_mappings": {
@@ -201,25 +271,24 @@
       "additionalProperties": false,
       "required": [
         "role",
-        "machine_type",
-        "image",
         "internal_ip",
         "boot_disk",
         "assign_public_ip",
         "network_tags",
-        "secret_mappings"
+        "secret_mappings",
+        "size",
+        "os"
       ],
       "properties": {
         "role": {
           "type": "string",
-          "enum": ["bastion", "database", "history", "fetcher", "ui"]
-        },
-        "machine_type": {
-          "$ref": "#/$defs/machine_type"
-        },
-        "image": {
-          "type": "string",
-          "minLength": 1
+          "enum": [
+            "bastion",
+            "database",
+            "history",
+            "fetcher",
+            "ui"
+          ]
         },
         "internal_ip": {
           "type": "string",
@@ -257,7 +326,10 @@
         "public_endpoint": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["hostname", "acme_email"],
+          "required": [
+            "hostname",
+            "acme_email"
+          ],
           "properties": {
             "hostname": {
               "type": "string",
@@ -268,6 +340,15 @@
               "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
             }
           }
+        },
+        "size": {
+          "$ref": "#/$defs/size"
+        },
+        "os": {
+          "$ref": "#/$defs/os"
+        },
+        "cloud": {
+          "$ref": "#/$defs/cloud"
         }
       },
       "allOf": [
@@ -278,12 +359,17 @@
                 "const": true
               }
             },
-            "required": ["assign_public_ip"]
+            "required": [
+              "assign_public_ip"
+            ]
           },
           "then": {
             "properties": {
               "role": {
-                "enum": ["bastion", "ui"]
+                "enum": [
+                  "bastion",
+                  "ui"
+                ]
               }
             }
           }
@@ -295,10 +381,15 @@
                 "const": "bastion"
               }
             },
-            "required": ["role"]
+            "required": [
+              "role"
+            ]
           },
           "then": {
-            "required": ["ssh_port", "allowed_cidrs"],
+            "required": [
+              "ssh_port",
+              "allowed_cidrs"
+            ],
             "properties": {
               "assign_public_ip": {
                 "const": true
@@ -317,10 +408,14 @@
             "not": {
               "anyOf": [
                 {
-                  "required": ["ssh_port"]
+                  "required": [
+                    "ssh_port"
+                  ]
                 },
                 {
-                  "required": ["allowed_cidrs"]
+                  "required": [
+                    "allowed_cidrs"
+                  ]
                 }
               ]
             }
@@ -333,7 +428,9 @@
                 "const": "history"
               }
             },
-            "required": ["role"]
+            "required": [
+              "role"
+            ]
           },
           "then": {}
         },
@@ -344,7 +441,9 @@
                 "const": "fetcher"
               }
             },
-            "required": ["role"]
+            "required": [
+              "role"
+            ]
           },
           "then": {}
         },
@@ -355,10 +454,14 @@
                 "const": "ui"
               }
             },
-            "required": ["role"]
+            "required": [
+              "role"
+            ]
           },
           "then": {
-            "required": ["public_endpoint"],
+            "required": [
+              "public_endpoint"
+            ],
             "properties": {
               "network_tags": {
                 "contains": {
@@ -369,6 +472,50 @@
           }
         }
       ]
+    },
+    "size": {
+      "description": "Portable machine size. Terraform resolves it per cloud.",
+      "type": "string",
+      "enum": [
+        "micro",
+        "small",
+        "medium"
+      ]
+    },
+    "os": {
+      "description": "Portable operating system token. Terraform resolves it to an image family on GCP and to an AMI name pattern on AWS.",
+      "type": "string",
+      "enum": [
+        "ubuntu-26.04",
+        "ubuntu-24.04"
+      ]
+    },
+    "cloud": {
+      "description": "Cloud a resource is created in.",
+      "type": "string",
+      "enum": [
+        "gcp",
+        "aws"
+      ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "default_cloud": {
+            "const": "gcp"
+          }
+        },
+        "required": [
+          "default_cloud"
+        ]
+      },
+      "then": {
+        "required": [
+          "gcp"
+        ]
+      }
+    }
+  ]
 }

@@ -8,7 +8,7 @@ output "workload_subnet_id" {
   value       = google_compute_subnetwork.workload.id
 }
 
-output "network_tags" {
-  description = "Network tags used by firewall rules and Compute Engine instances."
+output "workload_groups" {
+  description = "Network group identifiers keyed by logical name."
   value       = local.network_tags
 }

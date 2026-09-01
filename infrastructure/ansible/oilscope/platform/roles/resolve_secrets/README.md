@@ -69,3 +69,28 @@ with no `secret_mappings` gets an empty result rather than a failure.
 ## License
 
 GPL-2.0-or-later
+
+## Two clouds, one interface
+
+The role reads the same `secret_mappings` and produces the same
+`resolve_secrets_result` in both clouds. Only the way the VM proves who it is
+differs, and that split lives in `tasks/gcp.yml` and `tasks/aws.yml`, selected
+by the `oilscope_cloud` fact the inventory composes.
+
+On GCP the metadata server returns a bearer token for the attached service
+account, and the Secret Manager REST API accepts it directly.
+
+On AWS every Secrets Manager request must carry a SigV4 signature, which is not
+something worth hand-rolling in Jinja. The role takes an IMDSv2 session token,
+reads the instance region, and lets the AWS CLI sign the calls using the
+instance profile. IMDSv2 is why the AWS VM module sets `http_tokens` to
+`required`: a v1 endpoint is reachable by anything that can make the VM issue a
+request on its behalf.
+
+In neither cloud does a key file exist to be stolen, and in neither does a
+value reach the Ansible output - every task that touches one carries `no_log`.
+
+The endpoints themselves come from `inventory/group_vars/cloud_gcp.yml` and
+`cloud_aws.yml`, attached through the `cloud_gcp` and `cloud_aws` groups the
+inventory builds, so adding a cloud is adding a file rather than another
+condition inside a task.

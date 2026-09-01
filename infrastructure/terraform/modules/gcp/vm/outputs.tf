@@ -13,12 +13,12 @@ output "public_ip" {
   value       = var.assign_public_ip ? google_compute_address.public[0].address : null
 }
 
-output "network_tags" {
-  description = "Effective network tags attached to the workload VM."
+output "network_groups" {
+  description = "Network group identifiers attached to the VM."
   value       = google_compute_instance.workload.tags
 }
 
-output "service_account_email" {
-  description = "Email of the workload VM's dedicated service account."
+output "runtime_identity" {
+  description = "Identity the VM runs as."
   value       = google_service_account.workload.email
 }

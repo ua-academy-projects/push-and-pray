@@ -60,7 +60,7 @@ Google Cloud's implied allow-egress rule.
 
 ```hcl
 module "network" {
-  source = "./modules/network"
+  source = "./modules/gcp/network"
 
   resource_prefix = local.resource_prefix
 
@@ -78,7 +78,7 @@ module "network" {
 ```
 
 The module outputs the management and workload subnet IDs and the role-based
-`network_tags` map.
+`workload_groups` map.
 
 ## Access procedure
 

@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Ensure the AWS CLI is present
+  become: true
+  ansible.builtin.apt:
+    name: "{{ resolve_secrets_awscli_package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Fetch an IMDSv2 session token
+  ansible.builtin.uri:
+    url: "{{ resolve_secrets_imds_token_url }}"
+    method: PUT
+    headers:
+      X-aws-ec2-metadata-token-ttl-seconds: "60"
+    return_content: true
+  register: resolve_secrets_imds_token
+  no_log: true
+
+- name: Read the region this instance runs in
+  ansible.builtin.uri:
+    url: "{{ resolve_secrets_imds_region_url }}"
+    headers:
+      X-aws-ec2-metadata-token: "{{ resolve_secrets_imds_token.content }}"
+    return_content: true
+  register: resolve_secrets_imds_region
+  changed_when: false
+
+- name: Access each mapped secret's current value
+  ansible.builtin.command:
+    argv:
+      - aws
+      - secretsmanager
+      - get-secret-value
+      - --secret-id
+      - "{{ item.value }}"
+      - --region
+      - "{{ resolve_secrets_imds_region.content | trim }}"
+      - --query
+      - SecretString
+      - --output
+      - text
+  register: resolve_secrets_accessed
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Build the resolved secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: item.stdout
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"

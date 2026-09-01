@@ -1,9 +1,14 @@
 # Secret versions role
 
-Adds a new Secret Manager version to every container declared in the project
+Adds a new secret version to every container declared in the project
 configuration, taking each value from the environment of the operator running
-the play. It runs on `localhost`: this is an operator task against the Google
-API, not host configuration.
+the play. It runs on `localhost`: this is an operator task against a cloud API,
+not host configuration.
+
+It covers both providers. A container is written in the cloud its readers run
+in, taken from `default_cloud` and the per-VM `cloud` key, so nothing has to be
+passed on the command line — and a container read from both clouds, which
+Terraform creates on both sides, is written on both sides.
 
 Terraform creates the containers and grants access to them, and never carries a
 payload — see [docs/secrets.md](../../../../../../docs/secrets.md). This role is
@@ -13,10 +18,11 @@ the other half: the payload, and nothing else.
 
 - Values are read from the process environment, and from nowhere else. Nothing
   is written to disk.
-- The payload reaches `gcloud` on stdin through `--data-file=-`, so it never
-  becomes a command argument and cannot appear in `ps` output or a shell
-  history. `stdin_add_newline` is off, because a trailing newline would become
-  part of the stored value.
+- The payload reaches the provider on stdin — `--data-file=-` for `gcloud`,
+  `--secret-string file:///dev/stdin` for the AWS CLI — so it never becomes a
+  command argument and cannot appear in `ps` output or a shell history.
+  `stdin_add_newline` is off, because a trailing newline would become part of
+  the stored value.
 - The upload task is marked `no_log`, so the value stays out of the Ansible
   output and out of any callback log, at every verbosity.
 - Every value and every container is checked before the first version is added.
@@ -28,11 +34,18 @@ adds nothing.
 
 ## Requirements
 
-`gcloud`, authenticated as a principal holding
+For GCP: `gcloud`, authenticated as a principal holding
 `roles/secretmanager.secretVersionAdder` on the containers. That role permits
 adding a version and not reading one, so rotation does not require access to
 the current value. Terraform grants it from the `secret_version_managers`
 variable.
+
+For AWS: the AWS CLI, authenticated as a principal allowed
+`secretsmanager:PutSecretValue` on the containers — the same split, granted by
+Terraform from `secret_version_manager_arns`.
+
+Only the providers actually in use are contacted, so a GCP-only configuration
+needs no AWS credentials.
 
 The containers must already exist: `terraform apply` creates them from the same
 configuration file this role reads.
@@ -44,11 +57,15 @@ configuration file this role reads.
 
 ## Optional variables
 
-- `secret_versions_project_id`: target project. Falls back to `$GOOGLE_PROJECT`,
-  then to `project_id` in the configuration.
+- `secret_versions_project_id`: target GCP project. Falls back to
+  `$GOOGLE_PROJECT`, then to `gcp.project_id` in the configuration.
+- `secret_versions_region`: target AWS region. Falls back to `$AWS_REGION`, then
+  to `$AWS_DEFAULT_REGION`, then to the first entry of `aws.regions` in the
+  configuration.
 - `secret_versions_only`: list of container IDs or variable names to upload.
   Defaults to all of them; use it to rotate one credential.
 - `secret_versions_gcloud`: path to the `gcloud` executable.
+- `secret_versions_aws`: path to the `aws` executable.
 
 ## Which variable holds which value
 

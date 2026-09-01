@@ -1,0 +1,10 @@
+#cloud-config
+users:
+%{ for username, public_key in ssh_users ~}
+  - name: ${username}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${trimspace(public_key)}
+%{ endfor ~}

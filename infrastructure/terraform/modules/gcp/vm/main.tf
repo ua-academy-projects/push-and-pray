@@ -16,7 +16,7 @@ resource "google_compute_instance" "workload" {
   machine_type              = var.machine_type
   allow_stopping_for_update = true
 
-  tags   = var.network_tags
+  tags   = var.network_groups
   labels = var.labels
 
   boot_disk {
@@ -31,7 +31,7 @@ resource "google_compute_instance" "workload" {
   }
 
   network_interface {
-    subnetwork = var.subnetwork_id
+    subnetwork = var.subnet_id
     network_ip = var.internal_ip
 
     dynamic "access_config" {
