@@ -1,47 +1,47 @@
 output "bastion_public_ip" {
   description = "Bastion public IP."
-  value       = module.vm["bastion"].public_ip
+  value       = module.aws_vm["bastion"].public_ip
 }
 
 output "workload_vm_names" {
   description = "VM names by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].name
+    for name, workload in local.gcp_workload_vms : name => module.vm[name].name
   }
 }
 
 output "workload_roles" {
   description = "Roles by workload."
   value = {
-    for name, workload in local.workload_vms : name => workload.role
+    for name, workload in local.gcp_workload_vms : name => workload.role
   }
 }
 
 output "workload_internal_ips" {
   description = "Internal IPs by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].internal_ip
+    for name, workload in local.gcp_workload_vms : name => module.vm[name].internal_ip
   }
 }
 
 output "workload_external_ips" {
   description = "External IPs by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].public_ip
+    for name, workload in local.gcp_workload_vms : name => module.vm[name].public_ip
   }
 }
 
 output "workload_network_tags" {
   description = "Network tags by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].network_tags
+    for name, workload in local.gcp_workload_vms : name => module.vm[name].network_tags
   }
 }
 
 output "workload_service_account_emails" {
   description = "Service-account emails by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].service_account_email
+    for name, workload in local.gcp_workload_vms : name => module.vm[name].service_account_email
   }
 }
 
@@ -60,7 +60,7 @@ output "secret_resource_names" {
 output "workload_secret_access" {
   description = "Secret IDs each workload service account may read. Names only - never values."
   value = {
-    for name, workload in local.workload_vms :
+    for name, workload in local.gcp_workload_vms :
     name => sort(distinct(values(workload.secret_mappings)))
   }
 }

@@ -5,10 +5,13 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
+    "default_cloud",
+    "default_region",
+    "clouds",
+    "regions",
+    "sizes",
+    "disk_types",
     "environment",
-    "region",
-    "zone",
     "name_prefix",
     "common_labels",
     "ssh_users",
@@ -18,21 +21,114 @@
     "vms"
   ],
   "properties": {
-    "project_id": {
+    "default_cloud": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+      "enum": ["aws", "gcp"]
+    },
+    "default_region": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clouds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp"],
+      "properties": {
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id"],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+            }
+          }
+        }
+      }
+    },
+    "regions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gcp", "aws"],
+        "properties": {
+          "gcp": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["region", "zone"],
+            "properties": {
+              "region": {
+                "type": "string",
+                "minLength": 1
+              },
+              "zone": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "aws": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["region", "availability_zone"],
+            "properties": {
+              "region": {
+                "type": "string",
+                "minLength": 1
+              },
+              "availability_zone": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "sizes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gcp", "aws"],
+        "properties": {
+          "gcp": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aws": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "disk_types": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gcp", "aws"],
+        "properties": {
+          "gcp": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aws": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     },
     "environment": {
       "type": "string",
       "enum": ["dev", "stage", "prod"]
-    },
-    "region": {
-      "type": "string",
-      "minLength": 1
-    },
-    "zone": {
-      "type": "string",
-      "minLength": 1
     },
     "name_prefix": {
       "type": "string",
@@ -67,11 +163,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "vpc_cidr",
         "management_subnet_cidr",
         "workload_subnet_cidr",
         "ui_public_ports"
       ],
       "properties": {
+        "vpc_cidr": {
+            "type": "string",
+            "minLength": 1
+        },
         "management_subnet_cidr": {
           "type": "string",
           "minLength": 1
@@ -150,7 +251,7 @@
         },
         "type": {
           "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+          "minLength": 1
         }
       }
     },
@@ -171,10 +272,6 @@
         "type": "string",
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
-    },
-    "machine_type": {
-      "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
     },
     "vm_network_tags": {
       "type": "array",
@@ -201,7 +298,8 @@
       "additionalProperties": false,
       "required": [
         "role",
-        "machine_type",
+        "size",
+        "region",
         "image",
         "internal_ip",
         "boot_disk",
@@ -214,8 +312,15 @@
           "type": "string",
           "enum": ["bastion", "database", "history", "fetcher", "ui"]
         },
-        "machine_type": {
-          "$ref": "#/$defs/machine_type"
+        "size": {
+            "type": "string"
+        },
+        "region": {
+            "type": "string"
+        },
+        "cloud": {
+            "type": "string",
+            "enum": ["gcp", "aws"]
         },
         "image": {
           "type": "string",

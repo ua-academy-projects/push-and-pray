@@ -1,5 +1,5 @@
 terraform {
-  required_version = "~> 1.15.1"
+  required_version = "~> 1.16.0"
 
   backend "gcs" {}
 
@@ -7,6 +7,10 @@ terraform {
     google = {
       source  = "hashicorp/google"
       version = "~> 7.44.0"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.62.0"
     }
   }
 }
