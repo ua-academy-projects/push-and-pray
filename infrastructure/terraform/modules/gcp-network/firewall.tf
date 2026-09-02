@@ -34,7 +34,7 @@ resource "google_compute_firewall" "workload_ssh" {
 
   source_tags = [local.network_tags.bastion]
   target_tags = [
-    local.network_tags.infra,
+    local.network_tags.database,
     local.network_tags.history,
     local.network_tags.fetcher,
     local.network_tags.ui,
@@ -82,7 +82,7 @@ resource "google_compute_firewall" "postgresql" {
     local.network_tags.ui,
   ]
 
-  target_tags = [local.network_tags.infra]
+  target_tags = [local.network_tags.database]
 
   allow {
     protocol = "tcp"

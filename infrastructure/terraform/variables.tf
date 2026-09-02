@@ -15,16 +15,47 @@ variable "enable_bastion_ssh_bootstrap" {
   default     = false
 }
 
-variable "secret_version_managers" {
-  description = "IAM members allowed to add new versions to every secret. Adding a version does not grant reading one."
-  type        = list(string)
-  default     = []
-
-  validation {
+check "vm_size_references" {
+  assert {
     condition = alltrue([
-      for member in var.secret_version_managers :
-      can(regex("^(user|group|serviceAccount|principal|principalSet):.+$", member))
+      for vm in values(local.config.vms) : contains(keys(local.config.sizes), vm.size)
     ])
-    error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
+    error_message = "Every VM size must refer to a key in config.sizes."
+  }
+}
+
+check "vm_instance_type_references" {
+  assert {
+    condition = alltrue([
+      for vm in values(local.configured_vms) : can(local.config.provider_mappings.instance_types[vm.size][vm.cloud])
+    ])
+    error_message = "Every VM size must have an instance type mapping for its selected cloud."
+  }
+}
+
+check "vm_disk_type_references" {
+  assert {
+    condition = alltrue([
+      for vm in values(local.configured_vms) : can(local.config.provider_mappings.disk_types[vm.disk_type][vm.cloud])
+    ])
+    error_message = "Every VM disk_type must have a provider mapping for its selected cloud."
+  }
+}
+
+check "vm_image_references" {
+  assert {
+    condition = alltrue([
+      for vm in values(local.configured_vms) : can(local.config.provider_mappings.images[vm.image][vm.cloud])
+    ])
+    error_message = "Every VM image must have a provider mapping for its selected cloud."
+  }
+}
+
+check "vm_location_references" {
+  assert {
+    condition = alltrue([
+      for vm in values(local.config.vms) : contains(keys(local.config.locations), vm.location)
+    ])
+    error_message = "Every VM location must refer to a key in config.locations."
   }
 }

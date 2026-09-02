@@ -31,8 +31,8 @@ adds nothing.
 `gcloud`, authenticated as a principal holding
 `roles/secretmanager.secretVersionAdder` on the containers. That role permits
 adding a version and not reading one, so rotation does not require access to
-the current value. Terraform grants it from the `secret_version_managers`
-variable.
+the current value. Terraform grants it from
+`clouds.gcp.secret_version_managers` in the project configuration.
 
 The containers must already exist: `terraform apply` creates them from the same
 configuration file this role reads.

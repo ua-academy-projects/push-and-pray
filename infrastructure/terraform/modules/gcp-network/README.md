@@ -1,4 +1,4 @@
-# Network module
+# GCP network module
 
 Creates the OilScope VPC foundation: management and workload subnets, Cloud
 NAT, and role-based firewall rules for Bastion, Infra, History, Fetcher, and
@@ -10,15 +10,15 @@ The module exports one tag for every VM role:
 
 ```hcl
 network_tags = {
-  bastion = "<prefix>-bastion"
-  infra   = "<prefix>-infra"
-  history = "<prefix>-history"
-  fetcher = "<prefix>-fetcher"
-  ui      = "<prefix>-ui"
+  bastion  = "<prefix>-bastion"
+  database = "<prefix>-infra"
+  history  = "<prefix>-history"
+  fetcher  = "<prefix>-fetcher"
+  ui       = "<prefix>-ui"
 }
 ```
 
-The bastion and workload modules must attach the tag matching each VM's role.
+The root module attaches the tag matching each provider-independent VM role.
 The firewall contract does not use generic `app` or `db` tags.
 
 ## Resources
@@ -60,7 +60,7 @@ Google Cloud's implied allow-egress rule.
 
 ```hcl
 module "network" {
-  source = "./modules/network"
+  source = "./modules/gcp-network"
 
   resource_prefix = local.resource_prefix
 

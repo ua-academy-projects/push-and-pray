@@ -1,21 +1,24 @@
-locals {
-  required_apis = [
-    "compute.googleapis.com",
-    "iam.googleapis.com",
-    "secretmanager.googleapis.com",
-  ]
-}
-
-resource "google_project_service" "required" {
-  for_each = toset(local.required_apis)
-
-  service = each.value
-
-  disable_on_destroy         = false
-  disable_dependent_services = false
+module "gcp_project" {
+  count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
+  source = "./modules/gcp-project"
 }
 
 moved {
   from = google_project_service.secretmanager
   to   = google_project_service.required["secretmanager.googleapis.com"]
+}
+
+moved {
+  from = google_project_service.required
+  to   = module.gcp_project[0].google_project_service.required
+}
+
+moved {
+  from = module.network
+  to   = module.gcp_network[0]
+}
+
+moved {
+  from = module.vm
+  to   = module.gcp_vm
 }
