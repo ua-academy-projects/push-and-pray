@@ -1,9 +1,5 @@
-locals {
-  roles = toset(["bastion", "database", "history", "fetcher", "ui"])
-}
-
 resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
+  cidr_block           = var.network_config.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
 
@@ -17,8 +13,8 @@ resource "aws_internet_gateway" "main" {
 
 resource "aws_subnet" "management" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.management_subnet_cidr
-  availability_zone       = var.availability_zone
+  cidr_block              = var.network_config.management_subnet_cidr
+  availability_zone       = var.location_config.aws.availability_zone
   map_public_ip_on_launch = false
 
   tags = merge(var.tags, { Name = "${var.resource_prefix}-management" })
@@ -26,8 +22,8 @@ resource "aws_subnet" "management" {
 
 resource "aws_subnet" "workload" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.workload_subnet_cidr
-  availability_zone       = var.availability_zone
+  cidr_block              = var.network_config.workload_subnet_cidr
+  availability_zone       = var.location_config.aws.availability_zone
   map_public_ip_on_launch = false
 
   tags = merge(var.tags, { Name = "${var.resource_prefix}-workload" })
@@ -79,7 +75,7 @@ resource "aws_route_table_association" "workload" {
 }
 
 resource "aws_security_group" "role" {
-  for_each = local.roles
+  for_each = local.vm_names_by_role
 
   name_prefix = "${var.resource_prefix}-${each.key}-"
   description = "OilScope ${each.key} role"
@@ -96,7 +92,7 @@ resource "aws_security_group" "role" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "role" {
-  for_each = local.roles
+  for_each = local.vm_names_by_role
 
   security_group_id = aws_security_group.role[each.key].id
   cidr_ipv4         = "0.0.0.0/0"
@@ -104,17 +100,17 @@ resource "aws_vpc_security_group_egress_rule" "role" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
-  for_each = toset(var.bastion_allowed_cidrs)
+  for_each = toset(local.bastion_vm.allowed_cidrs)
 
   security_group_id = aws_security_group.role["bastion"].id
   cidr_ipv4         = each.value
-  from_port         = var.bastion_ssh_port
-  to_port           = var.bastion_ssh_port
+  from_port         = local.bastion_vm.ssh_port
+  to_port           = local.bastion_vm.ssh_port
   ip_protocol       = "tcp"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh_bootstrap" {
-  for_each = var.enable_bastion_ssh_bootstrap && var.bastion_ssh_port != 22 ? toset(var.bastion_allowed_cidrs) : toset([])
+  for_each = var.network_config.enable_bastion_ssh_bootstrap && local.bastion_vm.ssh_port != 22 ? toset(local.bastion_vm.allowed_cidrs) : toset([])
 
   security_group_id = aws_security_group.role["bastion"].id
   cidr_ipv4         = each.value
@@ -124,7 +120,10 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ssh_bootstrap" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
-  for_each = toset(["database", "history", "fetcher", "ui"])
+  for_each = {
+    for role, name in local.vm_names_by_role : role => name
+    if role != "bastion"
+  }
 
   security_group_id            = aws_security_group.role[each.key].id
   referenced_security_group_id = aws_security_group.role["bastion"].id
@@ -134,29 +133,11 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ui_web" {
-  for_each = toset([for port in var.ui_public_ports : tostring(port)])
+  for_each = toset([for port in var.network_config.ui_public_ports : tostring(port)])
 
   security_group_id = aws_security_group.role["ui"].id
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = tonumber(each.value)
   to_port           = tonumber(each.value)
   ip_protocol       = "tcp"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "history_api" {
-  security_group_id            = aws_security_group.role["history"].id
-  referenced_security_group_id = aws_security_group.role["ui"].id
-  from_port                    = var.history_api_port
-  to_port                      = var.history_api_port
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "postgresql" {
-  for_each = toset(["fetcher", "history", "ui"])
-
-  security_group_id            = aws_security_group.role["database"].id
-  referenced_security_group_id = aws_security_group.role[each.value].id
-  from_port                    = var.postgresql_port
-  to_port                      = var.postgresql_port
-  ip_protocol                  = "tcp"
 }

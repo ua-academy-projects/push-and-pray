@@ -1,6 +1,6 @@
 output "name" {
   description = "Name of the AWS workload VM."
-  value       = var.name
+  value       = local.name
 }
 
 output "internal_ip" {
@@ -10,7 +10,7 @@ output "internal_ip" {
 
 output "public_ip" {
   description = "Elastic IP address, or null when none is assigned."
-  value       = var.assign_public_ip ? aws_eip.public[0].public_ip : null
+  value       = local.vm.assign_public_ip ? aws_eip.public[0].public_ip : null
 }
 
 output "iam_role_name" {

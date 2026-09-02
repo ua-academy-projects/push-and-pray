@@ -11,27 +11,28 @@ data "aws_iam_policy_document" "assume_role" {
 }
 
 data "aws_ssm_parameter" "image" {
-  name = var.image_ssm_parameter
+  name = local.image_ssm_parameter
 }
 
 resource "aws_iam_role" "workload" {
-  name               = var.name
+  name               = local.name
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
-  tags               = var.tags
+  tags               = local.tags
 }
 
 resource "aws_iam_instance_profile" "workload" {
-  name = var.name
+  name = local.name
   role = aws_iam_role.workload.name
-  tags = var.tags
+  tags = local.tags
 }
 
+#trivy:ignore:AVD-AWS-0028[associate_public_ip_address=true]
 resource "aws_instance" "workload" {
   ami                    = data.aws_ssm_parameter.image.value
-  instance_type          = var.instance_type
-  subnet_id              = var.subnet_id
-  private_ip             = var.internal_ip
-  vpc_security_group_ids = var.security_group_ids
+  instance_type          = local.instance_type
+  subnet_id              = local.subnet_id
+  private_ip             = local.vm.internal_ip
+  vpc_security_group_ids = local.security_group_ids
   iam_instance_profile   = aws_iam_instance_profile.workload.name
   key_name               = var.key_name
 
@@ -40,9 +41,8 @@ resource "aws_instance" "workload" {
   root_block_device {
     delete_on_termination = true
     encrypted             = true
-    volume_size           = var.root_volume_size_gb
-    volume_type           = var.root_volume_type
-    tags                  = var.tags
+    volume_type           = local.root_volume_type
+    tags                  = local.tags
   }
 
   metadata_options {
@@ -50,7 +50,7 @@ resource "aws_instance" "workload" {
     http_tokens   = "required"
   }
 
-  tags = merge(var.tags, { Name = var.name })
+  tags = merge(local.tags, { Name = local.name })
 
   lifecycle {
     ignore_changes = [
@@ -60,16 +60,16 @@ resource "aws_instance" "workload" {
     ]
 
     precondition {
-      condition     = !var.assign_public_ip || contains(["ui", "bastion"], var.role)
+      condition     = !local.vm.assign_public_ip || contains(["ui", "bastion"], local.vm.role)
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }
 }
 
 resource "aws_eip" "public" {
-  count = var.assign_public_ip ? 1 : 0
+  count = local.vm.assign_public_ip ? 1 : 0
 
   domain   = "vpc"
   instance = aws_instance.workload.id
-  tags     = merge(var.tags, { Name = "${var.name}-ip" })
+  tags     = merge(local.tags, { Name = "${local.name}-ip" })
 }

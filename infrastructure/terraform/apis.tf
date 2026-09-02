@@ -22,3 +22,8 @@ moved {
   from = module.vm
   to   = module.gcp_vm
 }
+
+moved {
+  from = aws_key_pair.bootstrap
+  to   = module.aws_key_pair[0].aws_key_pair.bootstrap
+}

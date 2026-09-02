@@ -10,7 +10,7 @@ output "internal_ip" {
 
 output "public_ip" {
   description = "Static external IP address, or null when none is assigned."
-  value       = var.assign_public_ip ? google_compute_address.public[0].address : null
+  value       = local.vm.assign_public_ip ? google_compute_address.public[0].address : null
 }
 
 output "network_tags" {

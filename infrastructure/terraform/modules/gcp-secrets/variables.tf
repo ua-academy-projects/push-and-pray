@@ -16,7 +16,6 @@ variable "service_account_emails" {
 variable "secret_version_managers" {
   description = "IAM members allowed to add new secret versions."
   type        = list(string)
-  default     = []
 
   validation {
     condition = alltrue([

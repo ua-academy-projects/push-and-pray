@@ -18,10 +18,10 @@ module "gcp_secrets" {
   count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
   source = "./modules/gcp-secrets"
 
-  labels                  = local.common_labels
+  labels                  = local.config.common_labels
   workload_secret_access  = local.gcp_workload_secret_access
   service_account_emails  = { for name, vm in module.gcp_vm : name => vm.service_account_email }
-  secret_version_managers = try(local.config.clouds.gcp.secret_version_managers, [])
+  secret_version_managers = local.config.clouds.gcp.secret_version_managers
 
   depends_on = [module.gcp_project]
 }
@@ -30,7 +30,7 @@ module "aws_secrets" {
   count  = contains(local.enabled_clouds, "aws") ? 1 : 0
   source = "./modules/aws-secrets"
 
-  tags                   = local.common_tags
+  tags                   = local.config.common_labels
   workload_secret_access = local.aws_workload_secret_access
   iam_role_names         = { for name, vm in module.aws_vm : name => vm.iam_role_name }
 }

@@ -1,9 +1,7 @@
 locals {
+  bastion_vm = var.vms.bastion
+
   network_tags = {
-    bastion  = "${var.resource_prefix}-bastion"
-    database = "${var.resource_prefix}-infra"
-    history  = "${var.resource_prefix}-history"
-    fetcher  = "${var.resource_prefix}-fetcher"
-    ui       = "${var.resource_prefix}-ui"
+    for name, vm in var.vms : vm.role => "${var.resource_prefix}-${name}"
   }
 }

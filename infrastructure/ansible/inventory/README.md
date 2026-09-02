@@ -147,9 +147,12 @@ bootstrap sequence whenever the bastion has not yet been configured.
 
 ```sh
 terraform -chdir=infrastructure/terraform apply \
-  -var=project_config_path=/absolute/path/project-config.json \
-  -var=enable_bastion_ssh_bootstrap=true
+  -var=project_config_path=/absolute/path/project-config.json
 ```
+
+Set `network.enable_bastion_ssh_bootstrap` to `true` in that project
+configuration for the bootstrap apply, then set it back to `false` immediately
+after Ansible verifies the final bastion SSH port.
 
 2. Connect through port 22 and run the bastion playbook. The role validates the
    generated `sshd` configuration before installing it, restarts SSH, waits for
@@ -173,9 +176,9 @@ ansible bastion \
   -m ansible.builtin.ping
 ```
 
-4. Apply Terraform again without the bootstrap variable. Its default is
-   `false`, so Terraform removes the temporary port-22 rule without changing
-   any VM.
+4. After setting `network.enable_bastion_ssh_bootstrap` back to `false`, apply
+   Terraform again. Terraform removes the temporary port-22 rule without
+   changing any VM.
 
 ```sh
 terraform -chdir=infrastructure/terraform apply \

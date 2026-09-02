@@ -37,19 +37,10 @@ The firewall contract does not use generic `app` or `db` tags.
 | `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `bastion_ssh_port` |
 | `<prefix>-allow-bastion-ssh-bootstrap` | `bastion_allowed_cidrs` | Bastion | `22` (temporary and opt-in) |
 | `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
-| `<prefix>-allow-history-api` | UI | History | `history_api_port` |
-| `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `postgresql_port` |
 | `<prefix>-allow-ui-web` | `0.0.0.0/0` | UI | `ui_public_ports` (`80` and `443`) |
 
-This matrix follows the current deployment configuration:
-
-- UI calls the History API;
-- Fetcher, History, and UI connect directly to PostgreSQL on Infra;
-- Fetcher port `8002` is used by its local container health check only;
-- UI port `8080` remains inside the UI VM's Docker network behind Traefik.
-
-Consequently, there are no VPC ingress rules for `6379`, `8002`, `8080`, or
-`15672`. Other ingress is blocked by Google Cloud's implied deny-ingress rule.
+Application service ports are not managed by this Terraform module. Other
+ingress is blocked by Google Cloud's implied deny-ingress rule.
 
 ## Egress
 
@@ -63,17 +54,8 @@ module "network" {
   source = "./modules/gcp-network"
 
   resource_prefix = local.resource_prefix
-
-  management_subnet_cidr = local.config.network.management_subnet_cidr
-  workload_subnet_cidr   = local.config.network.workload_subnet_cidr
-  ui_public_ports        = ["80", "443"]
-
-  bastion_ssh_port      = local.bastion_vm.ssh_port
-  bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
-  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-
-  history_api_port = local.config.service_ports.history_api
-  postgresql_port  = local.config.service_ports.postgresql
+  network_config  = local.config.network
+  vms             = local.config.vms
 }
 ```
 
@@ -91,10 +73,8 @@ private workload VM -> Cloud NAT -> internet
 ```
 
 Workload SSH is accepted only from instances carrying the bastion network tag.
-PostgreSQL and the History API have role-tag sources and are not reachable
-directly from the internet.
 
-The bootstrap rule is disabled by default. When
+The bootstrap rule is controlled by project configuration. When
 `enable_bastion_ssh_bootstrap` is true, it is created only if the final
 `bastion_ssh_port` is not already `22`. It uses the same operator CIDRs and
 bastion target tag as the final SSH rule. Remove it immediately after Ansible

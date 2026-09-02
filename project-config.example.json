@@ -2,6 +2,9 @@
   "environment": "dev",
   "name_prefix": "oilscope",
   "common_labels": {
+    "application": "oilscope",
+    "environment": "dev",
+    "managed_by": "terraform",
     "project": "example-oil-price-tracker",
     "team": "example-team"
   },
@@ -9,18 +12,6 @@
   "vm_defaults": {
     "image": "ubuntu-24.04",
     "disk_type": "balanced"
-  },
-  "sizes": {
-    "micro": {
-      "cpu": 2,
-      "memory_gb": 1,
-      "boot_disk_size_gb": 10
-    },
-    "small": {
-      "cpu": 2,
-      "memory_gb": 2,
-      "boot_disk_size_gb": 10
-    }
   },
   "clouds": {
     "gcp": {
@@ -91,11 +82,8 @@
     "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/28",
     "workload_subnet_cidr": "10.0.1.0/26",
+    "enable_bastion_ssh_bootstrap": false,
     "ui_public_ports": [80, 443]
-  },
-  "service_ports": {
-    "history_api": 8001,
-    "postgresql": 5432
   },
   "vms": {
     "bastion": {

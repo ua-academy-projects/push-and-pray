@@ -8,7 +8,6 @@
     "default_cloud",
     "vm_defaults",
     "clouds",
-    "sizes",
     "locations",
     "provider_mappings",
     "environment",
@@ -17,7 +16,6 @@
     "ssh_users",
     "registry",
     "network",
-    "service_ports",
     "vms"
   ],
   "properties": {
@@ -35,7 +33,7 @@
         "gcp": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["project_id"],
+          "required": ["project_id", "secret_version_managers"],
           "properties": {
             "project_id": {
               "type": "string",
@@ -62,16 +60,6 @@
             }
           }
         }
-      }
-    },
-    "sizes": {
-      "type": "object",
-      "minProperties": 1,
-      "propertyNames": {
-        "pattern": "^[a-z][a-z0-9_-]*$"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/size"
       }
     },
     "locations": {
@@ -128,6 +116,7 @@
         "vpc_cidr",
         "management_subnet_cidr",
         "workload_subnet_cidr",
+        "enable_bastion_ssh_bootstrap",
         "ui_public_ports"
       ],
       "properties": {
@@ -143,6 +132,9 @@
           "type": "string",
           "minLength": 1
         },
+        "enable_bastion_ssh_bootstrap": {
+          "type": "boolean"
+        },
         "ui_public_ports": {
           "type": "array",
           "items": {
@@ -152,23 +144,6 @@
           "minItems": 1,
           "maxItems": 2,
           "uniqueItems": true
-        }
-      }
-    },
-    "service_ports": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
-      "properties": {
-        "history_api": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "postgresql": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
         }
       }
     },
@@ -221,25 +196,6 @@
         },
         "disk_type": {
           "$ref": "#/$defs/disk_type"
-        }
-      }
-    },
-    "size": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["cpu", "memory_gb", "boot_disk_size_gb"],
-      "properties": {
-        "cpu": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "memory_gb": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "boot_disk_size_gb": {
-          "type": "integer",
-          "minimum": 8
         }
       }
     },

@@ -1,16 +1,11 @@
 locals {
-  bastion_startup_script = templatefile("${path.module}/templates/bastion-startup.sh.tftpl", {
-    ssh_port = var.ssh_port
-  })
+  vm = merge(var.vm_defaults, var.vm)
 
-  cloud_config = templatefile("${path.module}/templates/cloud-config.yaml.tftpl", {
-    registry_repository = var.registry_repository
-    image_sha           = var.image_sha
-    docker_version      = var.docker_version
-    run_script          = file("${path.module}/templates/run.sh")
-    # Single source of truth for the deployment Compose file. It moved into the
-    # compose_project role in #106; the name ends in .j2 by role convention, but
-    # the file holds no Jinja - only the shell interpolation Compose expands.
-    compose_deployment = file("${path.module}/../../../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2")
-  })
+  name           = "${var.resource_prefix}-${var.vm_name}"
+  subnetwork_id  = local.vm.role == "bastion" ? var.management_subnet_id : var.workload_subnet_id
+  network_tags   = [var.network_tags_by_role[local.vm.role]]
+  machine_type   = var.provider_mappings.instance_types[local.vm.size].gcp.machine_type
+  image          = var.provider_mappings.images[local.vm.image].gcp.image
+  boot_disk_type = var.provider_mappings.disk_types[local.vm.disk_type].gcp
+  labels         = merge(var.common_labels, try(local.vm.labels, {}), { role = local.vm.role })
 }
