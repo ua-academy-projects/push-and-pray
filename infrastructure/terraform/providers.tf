@@ -1,5 +1,9 @@
 provider "google" {
-  project = local.config.project_id
-  region  = local.config.region
-  zone    = local.config.zone
+  project = local.gcp_project_id
+  region  = local.gcp_region
+  zone    = local.gcp_zone
+}
+
+provider "aws" {
+  region = local.aws_region
 }

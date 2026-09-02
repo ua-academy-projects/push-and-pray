@@ -1,6 +1,7 @@
 resource "google_compute_router" "main" {
   name    = "${var.resource_prefix}-router"
   network = google_compute_network.main.id
+  region  = var.region
 }
 
 resource "google_compute_router_nat" "main" {

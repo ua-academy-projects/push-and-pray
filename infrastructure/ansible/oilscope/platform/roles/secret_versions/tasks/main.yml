@@ -93,7 +93,8 @@
     secret_versions_project: >-
       {{ secret_versions_project_id
          | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-         | default(secret_versions_config.project_id | default(''), true) }}
+         | default(secret_versions_config.clouds.gcp.project_id
+                   | default(''), true) }}
 
 # Everything is checked before anything is written. A value that turns out to
 # be missing halfway through leaves some workloads on the new credential and

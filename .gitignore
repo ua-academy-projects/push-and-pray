@@ -36,6 +36,6 @@ crash.*.log
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz
-infrastructure/ansible/inventory/oilscope.gcp.yml
+infrastructure/ansible/inventory/local.oilscope.yml
 
 *.local.gcp.yml

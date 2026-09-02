@@ -10,7 +10,9 @@
     resolve_secrets_project: >-
       {{ resolve_secrets_project_id
         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-        | default(resolve_secrets_config.project_id | default(''), true) }}
+        | default(resolve_secrets_config.clouds.gcp.project_id
+                  | default(''), true) }}
+  when: oilscope_cloud == 'gcp'
 
 - name: Derive this VM's configuration key
   ansible.builtin.set_fact:
@@ -35,6 +37,7 @@
   register: resolve_secrets_token
   no_log: true
   when: resolve_secrets_mappings | length > 0
+        and oilscope_cloud == 'gcp'
 
 - name: Extract the access token
   ansible.builtin.set_fact:
@@ -42,6 +45,7 @@
       {{ (resolve_secrets_token.content | from_json).access_token }}
   no_log: true
   when: resolve_secrets_mappings | length > 0
+        and oilscope_cloud == 'gcp'
 
 - name: Access each mapped secret's latest version
   ansible.builtin.uri:
@@ -56,6 +60,7 @@
   loop_control:
     label: "{{ item.key }}"
   when: resolve_secrets_mappings | length > 0
+        and oilscope_cloud == 'gcp'
 
 - name: Build the resolved secrets mapping
   ansible.builtin.set_fact:
@@ -68,6 +73,38 @@
   loop_control:
     label: "{{ item.item.key }}"
   when: resolve_secrets_mappings | length > 0
+        and oilscope_cloud == 'gcp'
+
+- name: Access each mapped AWS secret with the instance profile
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import base64,boto3;
+        value=boto3.client('secretsmanager').get_secret_value(SecretId={{ item.value | to_json }});
+        print(value.get('SecretString') or base64.b64decode(value['SecretBinary']).decode())
+  register: resolve_secrets_aws_accessed
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: resolve_secrets_mappings | length > 0
+        and oilscope_cloud == 'aws'
+
+- name: Build the resolved AWS secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: item.stdout
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_aws_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: resolve_secrets_mappings | length > 0
+        and oilscope_cloud == 'aws'
 
 - name: Default to an empty result when there is nothing to resolve
   ansible.builtin.set_fact:

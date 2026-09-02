@@ -1,5 +1,5 @@
 variable "resource_prefix" {
-  description = "Prefix used for names of network resources."
+  description = "Prefix used for AWS network resource names."
   type        = string
 
   validation {
@@ -8,8 +8,18 @@ variable "resource_prefix" {
   }
 }
 
+variable "vpc_cidr" {
+  description = "CIDR range of the AWS VPC."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr must be a valid CIDR range."
+  }
+}
+
 variable "management_subnet_cidr" {
-  description = "CIDR range of the management subnet."
+  description = "CIDR range of the public management subnet."
   type        = string
 
   validation {
@@ -19,13 +29,18 @@ variable "management_subnet_cidr" {
 }
 
 variable "workload_subnet_cidr" {
-  description = "CIDR range of the workload subnet."
+  description = "CIDR range of the private workload subnet."
   type        = string
 
   validation {
     condition     = can(cidrhost(var.workload_subnet_cidr, 0))
     error_message = "workload_subnet_cidr must be a valid CIDR range."
   }
+}
+
+variable "availability_zone" {
+  description = "AWS availability zone used for the subnets."
+  type        = string
 }
 
 variable "bastion_ssh_port" {
@@ -56,9 +71,19 @@ variable "bastion_allowed_cidrs" {
 }
 
 variable "enable_bastion_ssh_bootstrap" {
-  description = "Whether to temporarily allow direct bastion SSH on port 22 when the final SSH port differs."
+  description = "Whether to temporarily allow direct bastion SSH on port 22."
   type        = bool
   default     = false
+}
+
+variable "ui_public_ports" {
+  description = "Public TCP ports exposed by the UI."
+  type        = list(number)
+
+  validation {
+    condition     = toset(var.ui_public_ports) == toset([80, 443])
+    error_message = "ui_public_ports must contain exactly ports 80 and 443."
+  }
 }
 
 variable "history_api_port" {
@@ -72,7 +97,7 @@ variable "history_api_port" {
 }
 
 variable "postgresql_port" {
-  description = "Port used by workloads to connect to PostgreSQL on the infra VM."
+  description = "Port used by workloads to connect to PostgreSQL."
   type        = number
 
   validation {
@@ -81,17 +106,14 @@ variable "postgresql_port" {
   }
 }
 
-variable "ui_public_ports" {
-  description = "Public TCP ports exposed on the UI VM."
-  type        = list(string)
-
-  validation {
-    condition     = toset(var.ui_public_ports) == toset(["80", "443"])
-    error_message = "ui_public_ports must contain exactly ports 80 and 443."
-  }
+variable "tags" {
+  description = "Common tags applied to AWS resources."
+  type        = map(string)
+  default     = {}
 }
 
-variable "region" {
-  description = "GCP region used by both subnets and the Cloud Router."
-  type        = string
+variable "enable_nat_gateway" {
+  description = "Whether to create the paid NAT Gateway used for private-subnet internet egress."
+  type        = bool
+  default     = false
 }
