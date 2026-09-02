@@ -42,3 +42,48 @@ moved {
   from = google_compute_router_nat.main
   to   = google_compute_router_nat.main["this"]
 }
+
+moved {
+  from = google_compute_network.main["this"]
+  to   = google_compute_network.main["europe"]
+}
+
+moved {
+  from = google_compute_subnetwork.management["this"]
+  to   = google_compute_subnetwork.management["europe"]
+}
+
+moved {
+  from = google_compute_subnetwork.workload["this"]
+  to   = google_compute_subnetwork.workload["europe"]
+}
+
+moved {
+  from = google_compute_firewall.bastion_ssh["this"]
+  to   = google_compute_firewall.bastion_ssh["europe"]
+}
+
+moved {
+  from = google_compute_firewall.bastion_ssh_bootstrap["this"]
+  to   = google_compute_firewall.bastion_ssh_bootstrap["europe"]
+}
+
+moved {
+  from = google_compute_firewall.workload_ssh["this"]
+  to   = google_compute_firewall.workload_ssh["europe"]
+}
+
+moved {
+  from = google_compute_firewall.ui_web["this"]
+  to   = google_compute_firewall.ui_web["europe"]
+}
+
+moved {
+  from = google_compute_router.main["this"]
+  to   = google_compute_router.main["europe"]
+}
+
+moved {
+  from = google_compute_router_nat.main["this"]
+  to   = google_compute_router_nat.main["europe"]
+}

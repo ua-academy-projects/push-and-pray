@@ -1,17 +1,19 @@
-output "management_subnet_id" {
-  description = "ID of the AWS management subnet."
-  value       = try(aws_subnet.management["this"].id, null)
+output "management_subnet_ids" {
+  description = "AWS management subnet IDs keyed by abstract location."
+  value       = { for location, subnet in aws_subnet.management : location => subnet.id }
 }
 
-output "workload_subnet_id" {
-  description = "ID of the AWS workload subnet."
-  value       = try(aws_subnet.workload["this"].id, null)
+output "workload_subnet_ids" {
+  description = "AWS workload subnet IDs keyed by abstract location."
+  value       = { for location, subnet in aws_subnet.workload : location => subnet.id }
 }
 
 output "security_group_ids" {
-  description = "AWS security group IDs keyed by logical role."
+  description = "AWS security group IDs keyed by abstract location and VM role."
   value = {
-    for role, security_group in aws_security_group.role :
-    role => security_group.id
+    for location in keys(local.vms_by_location) : location => {
+      for key, instance in local.role_instances :
+      instance.role => aws_security_group.role[key].id if instance.location == location
+    }
   }
 }

@@ -65,7 +65,6 @@
     "locations": {
       "type": "object",
       "minProperties": 1,
-      "maxProperties": 1,
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9_-]*$"
       },

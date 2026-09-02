@@ -1,14 +1,14 @@
-output "management_subnet_id" {
-  description = "ID of the subnet used by the bastion."
-  value       = try(google_compute_subnetwork.management["this"].id, null)
+output "management_subnet_ids" {
+  description = "GCP management subnet IDs keyed by abstract location."
+  value       = { for location, subnet in google_compute_subnetwork.management : location => subnet.id }
 }
 
-output "workload_subnet_id" {
-  description = "ID of the subnet used by workload VMs."
-  value       = try(google_compute_subnetwork.workload["this"].id, null)
+output "workload_subnet_ids" {
+  description = "GCP workload subnet IDs keyed by abstract location."
+  value       = { for location, subnet in google_compute_subnetwork.workload : location => subnet.id }
 }
 
 output "network_tags" {
-  description = "Network tags used by firewall rules and Compute Engine instances."
+  description = "GCP network tags keyed by abstract location and VM role."
   value       = local.network_tags
 }

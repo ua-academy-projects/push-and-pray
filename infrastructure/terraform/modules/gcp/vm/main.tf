@@ -30,7 +30,7 @@ resource "google_compute_instance" "workload" {
   zone                      = var.config.locations[each.value.location].gcp.zone
   allow_stopping_for_update = true
 
-  tags   = [var.network_tags_by_role[each.value.role]]
+  tags   = [var.network_tags_by_location[each.value.location][each.value.role]]
   labels = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
 
   boot_disk {
@@ -44,7 +44,7 @@ resource "google_compute_instance" "workload" {
   }
 
   network_interface {
-    subnetwork = local.subnet_ids_by_role[each.value.role]
+    subnetwork = local.subnet_ids_by_location[each.value.location][each.value.role]
     network_ip = each.value.internal_ip
 
     dynamic "access_config" {

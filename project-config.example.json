@@ -32,6 +32,16 @@
         "region": "eu-central-1",
         "availability_zone": "eu-central-1a"
       }
+    },
+    "north_america": {
+      "gcp": {
+        "region": "us-central1",
+        "zone": "us-central1-a"
+      },
+      "aws": {
+        "region": "us-east-1",
+        "availability_zone": "us-east-1a"
+      }
     }
   },
   "provider_mappings": {
@@ -110,7 +120,7 @@
     "history": {
       "role": "history",
       "size": "small",
-      "location": "europe",
+      "location": "north_america",
       "internal_ip": "10.0.1.5",
       "assign_public_ip": false,
       "secret_mappings": {
@@ -135,7 +145,7 @@
       "role": "ui",
       "cloud": "aws",
       "size": "micro",
-      "location": "europe",
+      "location": "north_america",
       "internal_ip": "10.0.1.7",
       "assign_public_ip": true,
       "secret_mappings": {

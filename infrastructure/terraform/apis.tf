@@ -30,6 +30,11 @@ moved {
 }
 
 moved {
+  from = module.aws_key_pair.aws_key_pair.bootstrap["this"]
+  to   = module.aws_key_pair.aws_key_pair.bootstrap["europe"]
+}
+
+moved {
   from = google_project_service.required
   to   = module.gcp_project.google_project_service.required
 }

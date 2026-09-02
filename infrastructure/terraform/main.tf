@@ -8,11 +8,11 @@ module "gcp_network" {
 module "gcp_vm" {
   source = "./modules/gcp/vm"
 
-  config               = local.config
-  project_services     = module.gcp_project.services
-  management_subnet_id = module.gcp_network.management_subnet_id
-  workload_subnet_id   = module.gcp_network.workload_subnet_id
-  network_tags_by_role = module.gcp_network.network_tags
+  config                   = local.config
+  project_services         = module.gcp_project.services
+  management_subnet_ids    = module.gcp_network.management_subnet_ids
+  workload_subnet_ids      = module.gcp_network.workload_subnet_ids
+  network_tags_by_location = module.gcp_network.network_tags
 }
 
 module "aws_network" {
@@ -30,9 +30,9 @@ module "aws_key_pair" {
 module "aws_vm" {
   source = "./modules/aws/vm"
 
-  config                     = local.config
-  key_name                   = module.aws_key_pair.key_name
-  management_subnet_id       = module.aws_network.management_subnet_id
-  workload_subnet_id         = module.aws_network.workload_subnet_id
-  security_group_ids_by_role = module.aws_network.security_group_ids
+  config                         = local.config
+  key_names_by_location          = module.aws_key_pair.key_names_by_location
+  management_subnet_ids          = module.aws_network.management_subnet_ids
+  workload_subnet_ids            = module.aws_network.workload_subnet_ids
+  security_group_ids_by_location = module.aws_network.security_group_ids
 }

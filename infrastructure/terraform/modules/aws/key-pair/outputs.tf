@@ -1,4 +1,4 @@
-output "key_name" {
-  description = "Name of the bootstrap EC2 key pair, or null when AWS has no VMs."
-  value       = try(aws_key_pair.bootstrap["this"].key_name, null)
+output "key_names_by_location" {
+  description = "EC2 key-pair names keyed by abstract location."
+  value       = { for location, key_pair in aws_key_pair.bootstrap : location => key_pair.key_name }
 }
