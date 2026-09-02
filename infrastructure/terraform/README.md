@@ -26,6 +26,7 @@ invalid same-provider multi-region placement, and overlapping subnets:
 
 ```sh
 python infrastructure/terraform/tests/generate_test_configs.py
+python infrastructure/terraform/tests/validate_test_configs.py
 terraform -chdir=infrastructure/terraform test
 ```
 

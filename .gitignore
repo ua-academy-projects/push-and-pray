@@ -38,4 +38,6 @@ crash.*.log
 infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/local.oilscope.yml
 
+# Legacy provider-specific local inventory name retained to prevent accidental
+# commits from pre-multi-cloud worktrees.
 *.local.gcp.yml

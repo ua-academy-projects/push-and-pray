@@ -1,5 +1,7 @@
 # Copy the relevant blocks to ~/.ssh/config and replace every <PLACEHOLDER>.
 # Never copy a private key into this repository.
+# The blocks below describe the supported same-cloud application topology:
+# private workload addresses are reached through the same-cloud bastion.
 
 Host oilscope-bastion
     HostName <BASTION_PUBLIC_IP>
@@ -44,3 +46,16 @@ Host oilscope-ui
     IdentitiesOnly yes
     ForwardAgent no
     ProxyJump oilscope-bastion
+
+# Hybrid provisioning/discovery can place a public UI in a cloud different
+# from the bastion. Manage that public VM directly without ProxyJump:
+Host oilscope-ui-direct
+    HostName <FOREIGN_CLOUD_UI_PUBLIC_IP>
+    User <YOUR_LINUX_USERNAME>
+    Port 22
+    IdentityFile <YOUR_PRIVATE_KEY_PATH>
+    IdentitiesOnly yes
+    ForwardAgent no
+
+# Direct UI SSH is only a management path. It does not provide private
+# cross-cloud connectivity to database, history, or other application roles.

@@ -208,7 +208,8 @@
     },
     "vms": {
       "type": "object",
-      "minProperties": 2,
+      "minProperties": 5,
+      "maxProperties": 5,
       "required": [
         "bastion"
       ],

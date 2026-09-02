@@ -1,9 +1,8 @@
 """Generate deterministic, credential-free Terraform test configurations."""
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from pathlib import Path
-
 
 TERRAFORM_ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY_ROOT = TERRAFORM_ROOT.parent.parent
@@ -16,9 +15,7 @@ def write_config(name: str, config: dict) -> None:
 
 
 def main() -> None:
-    base = json.loads(
-        (REPOSITORY_ROOT / "project-config.example.json").read_text(encoding="utf-8")
-    )
+    base = json.loads((REPOSITORY_ROOT / "project-config.example.json").read_text(encoding="utf-8"))
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
     aws_only = deepcopy(base)
@@ -32,9 +29,7 @@ def main() -> None:
 
     invalid_multi_region = deepcopy(base)
     invalid_multi_region["cloud_mappings"]["regions"]["secondary"] = deepcopy(
-        invalid_multi_region["cloud_mappings"]["regions"][
-            invalid_multi_region["default_region"]
-        ]
+        invalid_multi_region["cloud_mappings"]["regions"][invalid_multi_region["default_region"]]
     )
     invalid_multi_region["cloud_mappings"]["regions"]["secondary"]["gcp"] = {
         "region": "us-central1",
