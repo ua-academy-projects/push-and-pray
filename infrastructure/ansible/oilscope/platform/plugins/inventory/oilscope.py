@@ -261,6 +261,41 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return providers
 
+    def _application_topology(self, config):
+        default_cloud = self._default_cloud(config)
+        clouds = sorted({
+            self._vm_cloud(vm, default_cloud)
+            for vm in self._vms(config).values()
+            if isinstance(vm, dict)
+        })
+
+        supported = len(clouds) == 1
+        error = ""
+
+        if not supported:
+            error = (
+                "OilScope application deployment requires bastion and all "
+                "workloads in one cloud until cross-cloud private networking "
+                "is configured; inventory discovery and Terraform provisioning "
+                f"remain available for this hybrid topology ({', '.join(clouds)})"
+            )
+
+        return supported, error
+
+    def _bastion_cloud(self, config):
+        default_cloud = self._default_cloud(config)
+        bastions = [
+            vm for vm in self._vms(config).values()
+            if isinstance(vm, dict) and vm.get("role") == "bastion"
+        ]
+
+        if len(bastions) != 1:
+            raise AnsibleParserError(
+                "expected exactly one VM with role 'bastion'"
+            )
+
+        return self._vm_cloud(bastions[0], default_cloud)
+
     def _cloud_mappings(self, config):
         mappings = config.get("cloud_mappings")
 
@@ -440,6 +475,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         zones = self._provider_zones(config, "gcp")
         provider_region = self._single_provider_region(config, "gcp")
+        bastion_cloud = self._bastion_cloud(config)
+        topology_supported, topology_error = self._application_topology(config)
 
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port = self._bastion_ssh_port(config)
@@ -492,7 +529,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 ),
                 "ansible_host": (
                     f"{public_ip} if {is_bastion} "
-                    f"else {private_ip}"
+                    f"else ({public_ip} if "
+                    f"{bastion_cloud != 'gcp'!r} and {has_public} "
+                    f"else {private_ip})"
                 ),
                 "ansible_port": (
                     f"{bastion_port} if {is_bastion} "
@@ -503,6 +542,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 ),
                 "oilscope_cloud": "'gcp'",
                 "oilscope_region": repr(provider_region),
+                "oilscope_application_topology_supported": repr(
+                    topology_supported
+                ),
+                "oilscope_application_topology_error": repr(topology_error),
             },
         }
 
@@ -520,6 +563,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         )
 
         provider_region = self._single_provider_region(config, "aws")
+        bastion_cloud = self._bastion_cloud(config)
+        topology_supported, topology_error = self._application_topology(config)
 
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port = self._bastion_ssh_port(config)
@@ -558,7 +603,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "ansible_host": (
                     "public_ip_address "
                     f"if tags.role == '{bastion_role}' "
-                    "else private_ip_address"
+                    "else (public_ip_address "
+                    f"if {bastion_cloud != 'aws'!r} and "
+                    "public_ip_address is defined "
+                    "else private_ip_address)"
                 ),
                 "ansible_port": (
                     f"{bastion_port} "
@@ -568,6 +616,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "'aws'",
                 "oilscope_region": repr(provider_region),
+                "oilscope_application_topology_supported": repr(
+                    topology_supported
+                ),
+                "oilscope_application_topology_error": repr(topology_error),
             },
         }
 

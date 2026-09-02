@@ -84,7 +84,6 @@
       "role": "bastion",
       "size": "small",
       "image": "ubuntu_26_04",
-      "internal_ip": "10.0.0.4",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -100,7 +99,6 @@
       "role": "database",
       "size": "small",
       "image": "ubuntu_26_04",
-      "internal_ip": "10.0.1.4",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -115,7 +113,6 @@
       "role": "history",
       "size": "medium",
       "image": "ubuntu_26_04",
-      "internal_ip": "10.0.1.5",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -130,7 +127,6 @@
       "role": "fetcher",
       "size": "small",
       "image": "ubuntu_26_04",
-      "internal_ip": "10.0.1.6",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -146,7 +142,6 @@
       "role": "ui",
       "size": "small",
       "image": "ubuntu_26_04",
-      "internal_ip": "10.0.1.7",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"

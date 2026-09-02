@@ -349,7 +349,7 @@ jobs:
           esac
 
           if git diff --quiet "${base_sha}" "${head_sha}" \
-            -- infrastructure/terraform/; then
+            -- infrastructure/terraform/ project-config.example.json; then
             echo "No Terraform changes detected."
           else
             status=$?
@@ -384,6 +384,12 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
+
+      - name: Test multi-cloud configuration resolution
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          python infrastructure/terraform/tests/generate_test_configs.py
+          terraform -chdir=infrastructure/terraform test
 
       - name: Validate cloud-init syntax
         if: steps.changes.outputs.changed == 'true'

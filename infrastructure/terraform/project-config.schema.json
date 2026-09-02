@@ -29,7 +29,8 @@
     },
     "name_prefix": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+      "maxLength": 20
     },
     "default_cloud": {
       "$ref": "#/$defs/cloud_name"
@@ -384,8 +385,29 @@
     },
     "labels": {
       "type": "object",
+      "$comment": "Identity labels are managed by Terraform and cannot be overridden by user metadata.",
+      "propertyNames": {
+        "allOf": [
+          {
+            "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+          },
+          {
+            "not": {
+              "enum": [
+                "Name",
+                "application",
+                "cloud",
+                "environment",
+                "managed_by",
+                "role"
+              ]
+            }
+          }
+        ]
+      },
       "additionalProperties": {
-        "type": "string"
+        "type": "string",
+        "pattern": "^[a-z0-9_-]{0,63}$"
       }
     },
     "ssh_users": {
@@ -444,11 +466,6 @@
         },
         "image": {
           "$ref": "#/$defs/logical_name"
-        },
-        "internal_ip": {
-          "description": "Optional deterministic private address. Required by Terraform for effective GCP VMs; omit to let AWS assign one.",
-          "type": "string",
-          "format": "ipv4"
         },
         "boot_disk": {
           "$ref": "#/$defs/boot_disk"
@@ -574,7 +591,12 @@
           "then": {
             "required": [
               "public_endpoint"
-            ]
+            ],
+            "properties": {
+              "assign_public_ip": {
+                "const": true
+              }
+            }
           }
         }
       ]

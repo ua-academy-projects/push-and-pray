@@ -20,6 +20,8 @@ module "network" {
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
 
+  enable_ui_direct_ssh = local.gcp_ui_direct_ssh
+
   depends_on = [google_project_service.required]
 }
 
@@ -53,8 +55,7 @@ module "vm" {
     each.value.image_settings.family,
   )
 
-  internal_ip = each.value.internal_ip
-  ssh_port    = lookup(each.value, "ssh_port", 22)
+  ssh_port = lookup(each.value, "ssh_port", 22)
 
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.disk_type
@@ -65,8 +66,11 @@ module "vm" {
     local.common_labels,
     try(each.value.labels, {}),
     {
-      role  = each.value.role
-      cloud = each.value.cloud
+      application = local.config.name_prefix
+      environment = local.config.environment
+      managed_by  = "terraform"
+      role        = each.value.role
+      cloud       = each.value.cloud
     },
   )
 
@@ -85,6 +89,8 @@ module "aws_network" {
 
   availability_zone  = local.aws_zone
   enable_nat_gateway = local.config.network.aws_enable_nat_gateway
+
+  enable_ui_direct_ssh = local.aws_ui_direct_ssh
 
   bastion_ssh_port             = local.bastion_vm.ssh_port
   bastion_allowed_cidrs        = local.bastion_vm.allowed_cidrs
@@ -119,8 +125,6 @@ module "aws_vm" {
   image_owners       = each.value.image_settings.owners
   image_name_pattern = each.value.image_settings.name_pattern
 
-  private_ip = each.value.internal_ip
-
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.disk_type
 
@@ -132,9 +136,12 @@ module "aws_vm" {
     local.common_labels,
     try(each.value.labels, {}),
     {
-      Name  = "${local.resource_prefix}-${each.key}"
-      role  = each.value.role
-      cloud = each.value.cloud
+      Name        = "${local.resource_prefix}-${each.key}"
+      application = local.config.name_prefix
+      environment = local.config.environment
+      managed_by  = "terraform"
+      role        = each.value.role
+      cloud       = each.value.cloud
     },
   )
 

@@ -91,6 +91,12 @@ variable "ui_public_ports" {
   }
 }
 
+variable "enable_ui_direct_ssh" {
+  description = "Allow operator SSH directly to a public UI when its bastion is in another cloud."
+  type        = bool
+  default     = false
+}
+
 variable "region" {
   description = "GCP region used by both subnets and the Cloud Router."
   type        = string

@@ -37,6 +37,7 @@ The firewall contract does not use generic `app` or `db` tags.
 | `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `bastion_ssh_port` |
 | `<prefix>-allow-bastion-ssh-bootstrap` | `bastion_allowed_cidrs` | Bastion | `22` (temporary and opt-in) |
 | `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
+| `<prefix>-allow-ui-direct-ssh` | `bastion_allowed_cidrs` | UI | `22` (hybrid, conditional) |
 | `<prefix>-allow-history-api` | UI | History | `history_api_port` |
 | `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `postgresql_port` |
 | `<prefix>-allow-ui-web` | `0.0.0.0/0` | UI | `ui_public_ports` (`80` and `443`) |
@@ -71,6 +72,7 @@ module "network" {
   bastion_ssh_port      = local.bastion_vm.ssh_port
   bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+  enable_ui_direct_ssh          = local.gcp_ui_direct_ssh
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql

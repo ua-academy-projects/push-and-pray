@@ -150,3 +150,22 @@ output "workload_secret_access" {
     )
   }
 }
+
+output "resolved_vm_configuration" {
+  description = "Provider-neutral and resolved placement values for validation and operations."
+
+  value = {
+    for name, vm in local.resolved_vms : name => {
+      role               = vm.role
+      cloud              = vm.cloud
+      logical_region     = vm.region_key
+      provider_region    = vm.provider_region
+      provider_zone      = vm.provider_zone
+      logical_size       = vm.size
+      provider_size      = vm.machine_type
+      logical_disk_type  = vm.boot_disk.type
+      provider_disk_type = vm.disk_type
+      assign_public_ip   = vm.assign_public_ip
+    }
+  }
+}

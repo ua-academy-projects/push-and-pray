@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Refuse unsupported cross-cloud application deployment
+  ansible.builtin.assert:
+    that:
+      - oilscope_application_topology_supported | default(false) | bool
+    fail_msg: >-
+      {{ oilscope_application_topology_error
+         | default('Inventory did not provide OilScope topology metadata.') }}
+    quiet: true
+
+- name: Gather facts after topology validation
+  ansible.builtin.setup:

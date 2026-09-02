@@ -62,22 +62,6 @@ variable "image_name_pattern" {
   type        = string
 }
 
-variable "private_ip" {
-  description = "Static private IPv4 address. Null lets AWS choose an address from the subnet."
-  type        = string
-  default     = null
-  nullable    = true
-
-  validation {
-    condition = (
-      var.private_ip == null ||
-      can(cidrhost("${var.private_ip}/32", 0))
-    )
-
-    error_message = "private_ip must be null or a valid IPv4 address."
-  }
-}
-
 variable "boot_disk_size_gb" {
   description = "Size of the EC2 root EBS volume in GiB."
   type        = number

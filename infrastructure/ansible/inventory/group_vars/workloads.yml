@@ -2,10 +2,21 @@
 ---
 oilscope_bastion_address: "{{ hostvars[groups['bastion'][0]].ansible_host }}"
 oilscope_bastion_ssh_port: "{{ hostvars[groups['bastion'][0]].bastion_ssh_port }}"
+oilscope_bastion_cloud: "{{ hostvars[groups['bastion'][0]].oilscope_cloud }}"
 
 ansible_ssh_common_args: >-
+  {% if public_ip | default('') | length > 0
+        and oilscope_cloud != oilscope_bastion_cloud %}
+  {{ oilscope_ssh_base_args }}
+  {% elif oilscope_cloud == oilscope_bastion_cloud %}
   {{ oilscope_ssh_base_args }}
   -o ProxyCommand="ssh -W %h:%p -q
   -p {{ oilscope_bastion_ssh_port }}
   {{ oilscope_ssh_base_args }}
   {{ ansible_user }}@{{ oilscope_bastion_address }}"
+  {% else %}
+  {{ oilscope_ssh_base_args }}
+  -o ProxyCommand="sh -c 'echo
+  Unsupported private cross-cloud SSH path for {{ inventory_hostname }}
+  >&2; exit 1'"
+  {% endif %}

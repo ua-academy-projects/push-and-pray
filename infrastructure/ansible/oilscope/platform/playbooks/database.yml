@@ -3,11 +3,13 @@
 - name: Deploy Database
   hosts: database
   become: true
-  gather_facts: true
+  gather_facts: false
   force_handlers: true
   any_errors_fatal: true
 
   roles:
+    - role: oilscope.platform.topology_guard
+
     - role: oilscope.platform.host_baseline
 
     - role: oilscope.platform.docker_engine

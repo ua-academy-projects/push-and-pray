@@ -46,6 +46,21 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
+resource "google_compute_firewall" "ui_direct_ssh" {
+  count = var.enable_ui_direct_ssh ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-ui-direct-ssh"
+  network = google_compute_network.main.id
+
+  source_ranges = var.bastion_allowed_cidrs
+  target_tags   = [local.network_tags.ui]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+}
+
 resource "google_compute_firewall" "ui_web" {
   name    = "${var.resource_prefix}-allow-ui-web"
   network = google_compute_network.main.id

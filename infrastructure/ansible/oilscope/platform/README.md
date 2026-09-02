@@ -32,6 +32,9 @@ ansible-playbook oilscope.platform.deploy_workloads \
 The deployment stops if a workload fails, preventing dependent workloads from being deployed.
 
 The inventory discovers both GCP and AWS according to `default_cloud` and
-per-VM `cloud` overrides. Private addresses are only routable inside their own
-cloud network. A cross-cloud VPN or overlay is required before a bastion or
-application in one cloud can reach a private workload in the other.
+per-VM `cloud` overrides. Terraform provisioning and inventory discovery may
+be hybrid, but application deployment currently requires all five roles to be
+in one cloud. Each workload play runs `topology_guard` on the controller before
+opening SSH connections and reports the missing private cross-cloud network.
+A public UI in a cloud different from the bastion can be managed directly, but
+that does not make its private database and history dependencies reachable.

@@ -46,12 +46,20 @@ OILSCOPE_PROJECT_CONFIG=/absolute/path/project-config.json \
 The default is the repository's `project-config.example.json`. Inventory is
 live, so it is empty until matching instances exist.
 
-`internal_ip` is optional in the generic VM contract. Terraform requires it
-for effective GCP VMs to preserve existing deterministic addressing. AWS uses
-the configured address when present and otherwise lets EC2 assign one; omit it
-for an AWS UI because that VM is placed in the public management subnet. The
-inventory always exposes the private address actually discovered from the
-provider.
+The generic VM contract does not accept a static `internal_ip`. Each provider
+assigns an address from the subnet selected for the VM role, Terraform outputs
+the assigned address, and inventory exposes the private address discovered
+from the provider as `internal_ip`. Existing GCP instances keep their current
+address while they exist; a replacement can receive a different address.
+
+`default_cloud` and an optional per-VM `cloud` select the provider. `clouds`
+declares which providers may be used; `cloud_mappings` translates logical
+region, size, disk, and image names. Terraform hard-fails when an effective
+provider is undeclared, a mapping is missing, one provider resolves to more
+than one region or zone, required application roles are duplicated or absent,
+or network CIDRs violate provider limits. `application`, `environment`,
+`managed_by`, `role`, `cloud`, and AWS `Name` are managed identity labels/tags
+and cannot be supplied through user metadata.
 
 ## SSH and bastions
 
@@ -60,19 +68,30 @@ username. Use Ansible's standard `ANSIBLE_PRIVATE_KEY_FILE`, SSH agent, or
 normal `~/.ssh` configuration for keys; there is no provider-specific key-path
 default.
 
-Workloads use their private address through the configured bastion. The
-bastion starts on port 22, and the bootstrap play changes it to the configured
-`vms.bastion.ssh_port`. For bootstrap, temporarily enable Terraform's
+Workloads in the bastion's cloud use their private address through that
+bastion. A public UI in the other cloud is managed directly; Terraform opens
+its SSH port only to the bastion's operator CIDRs. This direct management path
+does not provide connectivity from the UI to private application services.
+The bastion starts on port 22, and the bootstrap play changes it to the
+configured `vms.bastion.ssh_port`. For bootstrap, temporarily enable Terraform's
 `enable_bastion_ssh_bootstrap` and set `OILSCOPE_BASTION_CONNECT_PORT=22`;
 remove both overrides afterward.
 
 ## Cross-cloud limitation
 
-Discovery does not create connectivity. A GCP bastion cannot reach an AWS
-private subnet, nor can an AWS UI reach private GCP services, without a VPN,
+Terraform provider dispatch and inventory discovery support GCP-only,
+AWS-only, and hybrid configurations. Application deployment supports only a
+topology where all five roles are in one cloud. In a hybrid configuration the
+inventory publishes `oilscope_application_topology_supported=false` and a
+specific error; every workload play checks it on the controller before fact
+gathering or SSH. An impossible private cross-cloud SSH proxy also exits with
+an explicit error instead of waiting for a timeout.
+
+A GCP bastion cannot reach an AWS private subnet, and workloads in different
+clouds cannot use each other's private service addresses, without a VPN,
 transit design, or authenticated overlay. Private workloads are deliberately
-not exposed publicly as a workaround. Keep communicating workloads in one
-cloud until cross-cloud private networking is added.
+not exposed publicly as a workaround. Keep all communicating application
+roles in one cloud until cross-cloud private networking is added.
 
 AWS private-subnet internet egress is disabled by default. Setting
 `network.aws_enable_nat_gateway` to `true` creates a paid NAT Gateway; review

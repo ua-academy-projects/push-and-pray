@@ -112,6 +112,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "enable_ui_direct_ssh" {
+  description = "Allow operator SSH directly to a public UI when its bastion is in another cloud."
+  type        = bool
+  default     = false
+}
+
 variable "enable_nat_gateway" {
   description = "Whether to create the paid NAT Gateway used for private-subnet internet egress."
   type        = bool
