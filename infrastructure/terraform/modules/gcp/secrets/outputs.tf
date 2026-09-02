@@ -5,3 +5,8 @@ output "secret_resource_names" {
     secret_id => secret.name
   }
 }
+
+output "secret_ids" {
+  description = "Secret IDs selected for GCP workloads."
+  value       = local.all_secret_ids
+}

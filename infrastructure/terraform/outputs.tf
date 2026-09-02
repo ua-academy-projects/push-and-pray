@@ -1,26 +1,7 @@
 locals {
-  vm_outputs_by_name = merge(
-    {
-      for name, vm in module.gcp_vm : name => {
-        name                  = vm.name
-        internal_ip           = vm.internal_ip
-        public_ip             = vm.public_ip
-        network_tags          = vm.network_tags
-        identity_id           = vm.service_account_email
-        service_account_email = vm.service_account_email
-      }
-    },
-    {
-      for name, vm in module.aws_vm : name => {
-        name                  = vm.name
-        internal_ip           = vm.internal_ip
-        public_ip             = vm.public_ip
-        network_tags          = []
-        identity_id           = vm.iam_role_arn
-        service_account_email = null
-      }
-    },
-  )
+  vm_outputs_by_name = merge(module.gcp_vm.vms, module.aws_vm.vms)
+  workload_outputs   = { for name, vm in local.vm_outputs_by_name : name => vm if vm.role != "bastion" }
+  all_secret_ids     = distinct(concat(module.gcp_secrets.secret_ids, module.aws_secrets.secret_ids))
 }
 
 output "bastion_public_ip" {
@@ -31,55 +12,49 @@ output "bastion_public_ip" {
 output "workload_vm_names" {
   description = "VM names by workload."
   value = {
-    for name, workload in local.workload_vms :
-    name => local.vm_outputs_by_name[name].name
+    for name, workload in local.workload_outputs : name => workload.name
   }
 }
 
 output "workload_roles" {
   description = "Roles by workload."
   value = {
-    for name, workload in local.workload_vms : name => workload.role
+    for name, workload in local.workload_outputs : name => workload.role
   }
 }
 
 output "workload_internal_ips" {
   description = "Internal IPs by workload."
   value = {
-    for name, workload in local.workload_vms :
-    name => local.vm_outputs_by_name[name].internal_ip
+    for name, workload in local.workload_outputs : name => workload.internal_ip
   }
 }
 
 output "workload_external_ips" {
   description = "External IPs by workload."
   value = {
-    for name, workload in local.workload_vms :
-    name => local.vm_outputs_by_name[name].public_ip
+    for name, workload in local.workload_outputs : name => workload.public_ip
   }
 }
 
 output "workload_network_tags" {
   description = "GCP network tags by workload. AWS workloads return an empty list."
   value = {
-    for name, workload in local.workload_vms :
-    name => local.vm_outputs_by_name[name].network_tags
+    for name, workload in local.workload_outputs : name => workload.network_tags
   }
 }
 
 output "workload_identity_ids" {
   description = "GCP service-account email or AWS IAM role ARN by workload."
   value = {
-    for name, workload in local.workload_vms :
-    name => local.vm_outputs_by_name[name].identity_id
+    for name, workload in local.workload_outputs : name => workload.identity_id
   }
 }
 
 output "workload_service_account_emails" {
   description = "GCP service-account emails by workload; null for AWS workloads."
   value = {
-    for name, workload in local.workload_vms :
-    name => local.vm_outputs_by_name[name].service_account_email
+    for name, workload in local.workload_outputs : name => workload.service_account_email
   }
 }
 
@@ -90,21 +65,20 @@ output "secret_ids" {
 
 output "secret_resource_names" {
   description = "GCP Secret Manager resource names by secret ID, retained for compatibility."
-  value       = try(module.gcp_secrets[0].secret_resource_names, {})
+  value       = module.gcp_secrets.secret_resource_names
 }
 
 output "secret_resource_names_by_cloud" {
   description = "Secret resource names grouped by cloud and secret ID."
   value = {
-    gcp = try(module.gcp_secrets[0].secret_resource_names, {})
-    aws = try(module.aws_secrets[0].secret_resource_names, {})
+    gcp = module.gcp_secrets.secret_resource_names
+    aws = module.aws_secrets.secret_resource_names
   }
 }
 
 output "workload_secret_access" {
   description = "Secret IDs each workload service account may read. Names only - never values."
   value = {
-    for name, workload in local.workload_vms :
-    name => sort(distinct(values(workload.secret_mappings)))
+    for name, workload in local.workload_outputs : name => sort(workload.secret_ids)
   }
 }

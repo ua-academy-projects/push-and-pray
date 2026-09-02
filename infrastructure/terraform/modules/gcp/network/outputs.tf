@@ -1,11 +1,11 @@
 output "management_subnet_id" {
   description = "ID of the subnet used by the bastion."
-  value       = google_compute_subnetwork.management.id
+  value       = try(google_compute_subnetwork.management["this"].id, null)
 }
 
 output "workload_subnet_id" {
   description = "ID of the subnet used by workload VMs."
-  value       = google_compute_subnetwork.workload.id
+  value       = try(google_compute_subnetwork.workload["this"].id, null)
 }
 
 output "network_tags" {

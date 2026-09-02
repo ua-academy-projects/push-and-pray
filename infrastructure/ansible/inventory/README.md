@@ -1,8 +1,8 @@
 # Inventory
 
-`oilscope.yml` builds the deployment inventory from live Compute Engine state,
-so a `terraform apply` that replaces a VM or changes an address is picked up
-without editing a host list.
+`oilscope.yml` builds the deployment inventory from live Compute Engine and
+EC2 state, so a `terraform apply` that replaces a VM or changes an address is
+picked up without editing a host list.
 
 Every environment-specific value is derived from the project configuration
 JSON that Terraform also reads, so this file is identical for every
@@ -15,9 +15,10 @@ response is reused.
 
 ## How it fits together
 
-`oilscope.platform.oilscope_gcp` does not talk to GCP itself. It reads the
-project configuration, derives the settings below, and hands them to
-`google.cloud.gcp_compute`, which performs the discovery.
+`oilscope.platform.oilscope_gcp` does not talk to either cloud itself. It reads
+the project configuration, resolves `vm.cloud` with `default_cloud` as the
+fallback, and hands each non-empty cloud subset to `google.cloud.gcp_compute`
+or `amazon.aws.aws_ec2`.
 
 The wrapper exists because `gcp_compute` can neither read the project
 configuration nor evaluate Jinja in its own configuration file — a template
@@ -25,10 +26,11 @@ expression placed there is sent to the API as literal text.
 
 | Derived from the JSON | Becomes |
 | --- | --- |
-| `project_id` | the project queried |
-| `zone` | the zone queried |
-| `name_prefix` | the `labels.application` filter |
-| `environment` | the `labels.environment` filter |
+| `clouds.gcp.project_id` | the GCP project queried |
+| each VM's abstract `location` | the GCP zone or AWS region queried |
+| `vm.cloud`, falling back to `default_cloud` | the provider that discovers the VM |
+| `common_labels.application` | the application label/tag filter |
+| `common_labels.environment` | the environment label/tag filter |
 | `ssh_port` of the VM whose `role` is `bastion` | the bastion's `ansible_port` |
 
 Everything else — the grouping rules, the host-variable expressions, the
@@ -46,11 +48,9 @@ ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
 gcloud auth application-default login
 ```
 
-`requirements.yml` installs the `google.cloud` collection, which provides the
-`gcp_compute` plugin this one delegates to. `requirements.txt` installs the
-Python libraries that plugin imports at run time — `google-auth` and
-`requests`. `ansible-galaxy` installs collections, never Python packages, so
-neither file covers for the other.
+`requirements.yml` installs the `google.cloud` and `amazon.aws` collections.
+`requirements.txt` installs their controller-side Python libraries. GCP uses
+Application Default Credentials; AWS uses the normal AWS SDK credential chain.
 
 This repository's own collection must also be installed, because there is no
 `ansible.cfg` pointing Ansible at the working copy:
@@ -94,13 +94,14 @@ for the plugin to claim it, and `local.oilscope.yml` is already ignored by git.
 
 ```sh
 ansible-inventory \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json \
   --graph
 ```
 
 Hosts appear only after `terraform apply`: the inventory reports what exists in
-GCP, so before the infrastructure is created it is legitimately empty.
+the configured GCP project and AWS regions, so before infrastructure is created
+it is legitimately empty.
 
 ## Groups
 
@@ -162,7 +163,7 @@ after Ansible verifies the final bastion SSH port.
 ```sh
 export OILSCOPE_BASTION_CONNECT_PORT=22
 ansible-playbook oilscope.platform.bootstrap_bastion \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json
 unset OILSCOPE_BASTION_CONNECT_PORT
 ```
@@ -171,7 +172,7 @@ unset OILSCOPE_BASTION_CONNECT_PORT
 
 ```sh
 ansible bastion \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json \
   -m ansible.builtin.ping
 ```
@@ -214,12 +215,12 @@ key with `OILSCOPE_SSH_KEY`.
 | `unknown plugin 'google.cloud.gcp_compute'` | `requirements.yml` not installed |
 | `cannot start: ... library (google-auth)` | `requirements.txt` not installed |
 | `must define a 'vms' object` | the JSON is still `config_version` 2 |
-| **Empty `@all`, exit status 0** | `project_id`, `zone` or the labels do not match reality |
+| **Empty `@all`, exit status 0** | project/region/zone or label/tag filters do not match reality |
 | `Permission denied (publickey)` | the account is absent from `ssh_users`, or the wrong key |
 
-The empty-inventory case is the dangerous one: the delegate swallows API
-errors, so a wrong project or zone looks exactly like a working inventory with
-nothing in it. Check against GCP directly rather than trusting the graph:
+The empty-inventory case is the dangerous one: a wrong project, region, zone,
+label, or tag can look like a working inventory with nothing in it. Check the
+configured provider directly rather than trusting the graph.
 
 ```sh
 gcloud compute instances list --format="table(name,zone,labels)"

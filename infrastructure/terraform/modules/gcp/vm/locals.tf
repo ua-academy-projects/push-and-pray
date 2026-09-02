@@ -1,11 +1,12 @@
 locals {
-  vm = merge(var.vm_defaults, var.vm)
+  vms = {
+    for name, vm in var.config.vms : name => merge(var.config.vm_defaults, vm)
+    if try(vm.cloud, var.config.default_cloud) == "gcp"
+  }
 
-  name           = "${var.resource_prefix}-${var.vm_name}"
-  subnetwork_id  = local.vm.role == "bastion" ? var.management_subnet_id : var.workload_subnet_id
-  network_tags   = [var.network_tags_by_role[local.vm.role]]
-  machine_type   = var.provider_mappings.instance_types[local.vm.size].gcp.machine_type
-  image          = var.provider_mappings.images[local.vm.image].gcp.image
-  boot_disk_type = var.provider_mappings.disk_types[local.vm.disk_type].gcp
-  labels         = merge(var.common_labels, try(local.vm.labels, {}), { role = local.vm.role })
+  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
+  subnet_ids_by_role = merge(
+    { for vm in values(local.vms) : vm.role => var.workload_subnet_id },
+    { bastion = var.management_subnet_id },
+  )
 }

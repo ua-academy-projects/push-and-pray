@@ -1,46 +1,24 @@
-variable "resource_prefix" {
-  description = "Prefix used for AWS VM resources."
-  type        = string
-}
-
-variable "vm_name" {
-  description = "Logical VM name."
-  type        = string
-}
-
-variable "vm" {
-  description = "Provider-independent configuration for this VM."
+variable "config" {
+  description = "Shared project configuration."
   type        = any
-}
-
-variable "vm_defaults" {
-  description = "Default VM configuration."
-  type        = any
-}
-
-variable "provider_mappings" {
-  description = "Provider mappings for abstract VM configuration."
-  type        = any
-}
-
-variable "common_tags" {
-  description = "Common tags applied to AWS resources."
-  type        = map(string)
 }
 
 variable "key_name" {
   description = "EC2 key pair used for initial Ansible SSH access."
   type        = string
+  nullable    = true
 }
 
 variable "management_subnet_id" {
   description = "ID of the management subnet."
   type        = string
+  nullable    = true
 }
 
 variable "workload_subnet_id" {
   description = "ID of the workload subnet."
   type        = string
+  nullable    = true
 }
 
 variable "security_group_ids_by_role" {
@@ -50,11 +28,15 @@ variable "security_group_ids_by_role" {
 
 check "provider_mappings" {
   assert {
-    condition = (
-      can(var.provider_mappings.instance_types[local.vm.size].aws.instance_type) &&
-      can(var.provider_mappings.disk_types[local.vm.disk_type].aws) &&
-      can(var.provider_mappings.images[local.vm.image].aws.ssm_parameter)
-    )
-    error_message = "The VM size, disk type, and image must have AWS provider mappings."
+    condition = alltrue([
+      for vm in values(local.vms) : (
+        can(var.config.provider_mappings.instance_types[vm.size].aws.instance_type) &&
+        can(var.config.provider_mappings.disk_types[vm.disk_type].aws) &&
+        can(var.config.provider_mappings.images[vm.image].aws.ssm_parameter) &&
+        can(var.config.locations[vm.location].aws.region) &&
+        can(var.config.locations[vm.location].aws.availability_zone)
+      )
+    ])
+    error_message = "Every selected VM size, disk type, image, and location must have AWS provider mappings."
   }
 }

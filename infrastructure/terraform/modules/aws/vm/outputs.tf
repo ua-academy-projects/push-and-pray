@@ -1,24 +1,22 @@
-output "name" {
-  description = "Name of the AWS workload VM."
-  value       = local.name
+output "vms" {
+  description = "Created AWS VMs keyed by logical VM name."
+  value = {
+    for name, vm in aws_instance.workload : name => {
+      name                  = "${local.resource_prefix}-${name}"
+      role                  = local.vms[name].role
+      internal_ip           = vm.private_ip
+      public_ip             = try(aws_eip.public[name].public_ip, null)
+      network_tags          = []
+      identity_id           = aws_iam_role.workload[name].arn
+      service_account_email = null
+      secret_ids            = distinct(values(local.vms[name].secret_mappings))
+    }
+  }
 }
 
-output "internal_ip" {
-  description = "Private IP address of the AWS workload VM."
-  value       = aws_instance.workload.private_ip
-}
-
-output "public_ip" {
-  description = "Elastic IP address, or null when none is assigned."
-  value       = local.vm.assign_public_ip ? aws_eip.public[0].public_ip : null
-}
-
-output "iam_role_name" {
-  description = "Name of the workload IAM role."
-  value       = aws_iam_role.workload.name
-}
-
-output "iam_role_arn" {
-  description = "ARN of the workload IAM role."
-  value       = aws_iam_role.workload.arn
+output "iam_role_names" {
+  description = "AWS IAM role names keyed by logical VM name."
+  value = {
+    for name, role in aws_iam_role.workload : name => role.name
+  }
 }

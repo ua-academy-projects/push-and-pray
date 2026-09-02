@@ -5,3 +5,8 @@ output "secret_resource_names" {
     secret_id => secret.arn
   }
 }
+
+output "secret_ids" {
+  description = "Secret IDs selected for AWS workloads."
+  value       = local.all_secret_ids
+}

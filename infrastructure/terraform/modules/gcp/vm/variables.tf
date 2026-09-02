@@ -1,46 +1,23 @@
-variable "resource_prefix" {
-  description = "Prefix used for GCP VM resources."
-  type        = string
-}
-
-variable "vm_name" {
-  description = "Logical VM name."
-  type        = string
-}
-
-variable "vm" {
-  description = "Provider-independent configuration for this VM."
+variable "config" {
+  description = "Shared project configuration."
   type        = any
 }
 
-variable "vm_defaults" {
-  description = "Default VM configuration."
-  type        = any
-}
-
-variable "provider_mappings" {
-  description = "Provider mappings for abstract VM configuration."
-  type        = any
-}
-
-variable "common_labels" {
-  description = "Common labels applied to GCP resources."
-  type        = map(string)
-}
-
-variable "ssh_users" {
-  description = "Public SSH keys keyed by Linux username."
-  type        = map(string)
+variable "project_services" {
+  description = "GCP project services enabled before VM creation."
+  type        = list(string)
 }
 
 variable "management_subnet_id" {
   description = "ID of the management subnet."
   type        = string
+  nullable    = true
 }
 
 variable "workload_subnet_id" {
   description = "ID of the workload subnet."
   type        = string
+  nullable    = true
 }
 
 variable "network_tags_by_role" {
@@ -50,11 +27,15 @@ variable "network_tags_by_role" {
 
 check "provider_mappings" {
   assert {
-    condition = (
-      can(var.provider_mappings.instance_types[local.vm.size].gcp.machine_type) &&
-      can(var.provider_mappings.disk_types[local.vm.disk_type].gcp) &&
-      can(var.provider_mappings.images[local.vm.image].gcp.image)
-    )
-    error_message = "The VM size, disk type, and image must have GCP provider mappings."
+    condition = alltrue([
+      for vm in values(local.vms) : (
+        can(var.config.provider_mappings.instance_types[vm.size].gcp.machine_type) &&
+        can(var.config.provider_mappings.disk_types[vm.disk_type].gcp) &&
+        can(var.config.provider_mappings.images[vm.image].gcp.image) &&
+        can(var.config.locations[vm.location].gcp.region) &&
+        can(var.config.locations[vm.location].gcp.zone)
+      )
+    ])
+    error_message = "Every selected VM size, disk type, image, and location must have GCP provider mappings."
   }
 }

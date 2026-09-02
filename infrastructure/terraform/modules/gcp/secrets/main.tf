@@ -1,8 +1,13 @@
 locals {
-  all_secret_ids = distinct(flatten(values(var.workload_secret_access)))
+  workload_secret_access = {
+    for name, vm in var.config.vms : name => distinct(values(vm.secret_mappings))
+    if try(vm.cloud, var.config.default_cloud) == "gcp" && vm.role != "bastion"
+  }
+
+  all_secret_ids = distinct(flatten(values(local.workload_secret_access)))
 
   workload_secret_pairs = flatten([
-    for name, secret_ids in var.workload_secret_access : [
+    for name, secret_ids in local.workload_secret_access : [
       for secret_id in secret_ids : {
         vm_name   = name
         secret_id = secret_id
@@ -11,7 +16,7 @@ locals {
   ])
 
   secret_version_writers = {
-    for pair in setproduct(sort(local.all_secret_ids), var.secret_version_managers) :
+    for pair in setproduct(sort(local.all_secret_ids), var.config.clouds.gcp.secret_version_managers) :
     "${pair[0]}/${pair[1]}" => {
       secret_id = pair[0]
       member    = pair[1]
@@ -22,10 +27,17 @@ locals {
 resource "google_secret_manager_secret" "this" {
   for_each  = toset(local.all_secret_ids)
   secret_id = each.value
-  labels    = var.labels
+  labels    = var.config.common_labels
 
   replication {
     auto {}
+  }
+
+  lifecycle {
+    precondition {
+      condition     = contains(var.project_services, "secretmanager.googleapis.com")
+      error_message = "The Secret Manager API must be enabled before creating GCP secrets."
+    }
   }
 }
 

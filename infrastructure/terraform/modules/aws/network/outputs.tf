@@ -1,11 +1,11 @@
 output "management_subnet_id" {
   description = "ID of the AWS management subnet."
-  value       = aws_subnet.management.id
+  value       = try(aws_subnet.management["this"].id, null)
 }
 
 output "workload_subnet_id" {
   description = "ID of the AWS workload subnet."
-  value       = aws_subnet.workload.id
+  value       = try(aws_subnet.workload["this"].id, null)
 }
 
 output "security_group_ids" {

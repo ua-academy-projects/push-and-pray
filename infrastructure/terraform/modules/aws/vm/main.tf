@@ -1,4 +1,6 @@
 data "aws_iam_policy_document" "assume_role" {
+  for_each = local.vms
+
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
@@ -11,29 +13,39 @@ data "aws_iam_policy_document" "assume_role" {
 }
 
 data "aws_ssm_parameter" "image" {
-  name = local.image_ssm_parameter
+  for_each = local.vms
+
+  name   = var.config.provider_mappings.images[each.value.image].aws.ssm_parameter
+  region = var.config.locations[each.value.location].aws.region
 }
 
 resource "aws_iam_role" "workload" {
-  name               = local.name
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
-  tags               = local.tags
+  for_each = local.vms
+
+  name               = "${local.resource_prefix}-${each.key}"
+  assume_role_policy = data.aws_iam_policy_document.assume_role[each.key].json
+  tags               = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
 }
 
 resource "aws_iam_instance_profile" "workload" {
-  name = local.name
-  role = aws_iam_role.workload.name
-  tags = local.tags
+  for_each = local.vms
+
+  name = "${local.resource_prefix}-${each.key}"
+  role = aws_iam_role.workload[each.key].name
+  tags = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
 }
 
 #trivy:ignore:AVD-AWS-0028[associate_public_ip_address=true]
 resource "aws_instance" "workload" {
-  ami                    = data.aws_ssm_parameter.image.value
-  instance_type          = local.instance_type
-  subnet_id              = local.subnet_id
-  private_ip             = local.vm.internal_ip
-  vpc_security_group_ids = local.security_group_ids
-  iam_instance_profile   = aws_iam_instance_profile.workload.name
+  for_each = local.vms
+
+  region                 = var.config.locations[each.value.location].aws.region
+  ami                    = data.aws_ssm_parameter.image[each.key].value
+  instance_type          = var.config.provider_mappings.instance_types[each.value.size].aws.instance_type
+  subnet_id              = local.subnet_ids_by_role[each.value.role]
+  private_ip             = each.value.internal_ip
+  vpc_security_group_ids = [var.security_group_ids_by_role[each.value.role]]
+  iam_instance_profile   = aws_iam_instance_profile.workload[each.key].name
   key_name               = var.key_name
 
   associate_public_ip_address = false
@@ -41,8 +53,8 @@ resource "aws_instance" "workload" {
   root_block_device {
     delete_on_termination = true
     encrypted             = true
-    volume_type           = local.root_volume_type
-    tags                  = local.tags
+    volume_type           = var.config.provider_mappings.disk_types[each.value.disk_type].aws
+    tags                  = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
   }
 
   metadata_options {
@@ -50,7 +62,14 @@ resource "aws_instance" "workload" {
     http_tokens   = "required"
   }
 
-  tags = merge(local.tags, { Name = local.name })
+  tags = merge(
+    var.config.common_labels,
+    try(each.value.labels, {}),
+    {
+      Name = "${local.resource_prefix}-${each.key}"
+      role = each.value.role
+    },
+  )
 
   lifecycle {
     ignore_changes = [
@@ -60,16 +79,24 @@ resource "aws_instance" "workload" {
     ]
 
     precondition {
-      condition     = !local.vm.assign_public_ip || contains(["ui", "bastion"], local.vm.role)
+      condition     = !each.value.assign_public_ip || contains(["ui", "bastion"], each.value.role)
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }
 }
 
 resource "aws_eip" "public" {
-  count = local.vm.assign_public_ip ? 1 : 0
+  for_each = { for name, vm in local.vms : name => vm if vm.assign_public_ip }
 
+  region   = var.config.locations[each.value.location].aws.region
   domain   = "vpc"
-  instance = aws_instance.workload.id
-  tags     = merge(local.tags, { Name = "${local.name}-ip" })
+  instance = aws_instance.workload[each.key].id
+  tags = merge(
+    var.config.common_labels,
+    try(each.value.labels, {}),
+    {
+      Name = "${local.resource_prefix}-${each.key}-ip"
+      role = each.value.role
+    },
+  )
 }

@@ -120,6 +120,7 @@
     },
     "fetcher": {
       "role": "fetcher",
+      "cloud": "aws",
       "size": "micro",
       "location": "europe",
       "internal_ip": "10.0.1.6",
@@ -132,6 +133,7 @@
     },
     "ui": {
       "role": "ui",
+      "cloud": "aws",
       "size": "micro",
       "location": "europe",
       "internal_ip": "10.0.1.7",

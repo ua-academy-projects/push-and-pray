@@ -1,6 +1,7 @@
 module "gcp_project" {
-  count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
   source = "./modules/gcp/project"
+
+  config = local.config
 }
 
 moved {
@@ -9,21 +10,31 @@ moved {
 }
 
 moved {
-  from = google_project_service.required
-  to   = module.gcp_project[0].google_project_service.required
+  from = module.gcp_project[0]
+  to   = module.gcp_project
 }
 
 moved {
-  from = module.network
-  to   = module.gcp_network[0]
+  from = module.gcp_network[0]
+  to   = module.gcp_network
+}
+
+moved {
+  from = module.aws_network[0]
+  to   = module.aws_network
+}
+
+moved {
+  from = module.aws_key_pair[0].aws_key_pair.bootstrap
+  to   = module.aws_key_pair.aws_key_pair.bootstrap["this"]
+}
+
+moved {
+  from = google_project_service.required
+  to   = module.gcp_project.google_project_service.required
 }
 
 moved {
   from = module.vm
   to   = module.gcp_vm
-}
-
-moved {
-  from = aws_key_pair.bootstrap
-  to   = module.aws_key_pair[0].aws_key_pair.bootstrap
 }

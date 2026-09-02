@@ -1,11 +1,6 @@
-variable "tags" {
-  description = "Tags applied to AWS Secrets Manager containers."
-  type        = map(string)
-}
-
-variable "workload_secret_access" {
-  description = "Secret IDs each AWS workload may read, keyed by logical VM name."
-  type        = map(list(string))
+variable "config" {
+  description = "Shared project configuration."
+  type        = any
 }
 
 variable "iam_role_names" {
