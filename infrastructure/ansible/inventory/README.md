@@ -13,12 +13,19 @@ Both delegates expose the provider-neutral `bastion`, `database`, `history`,
 `fetcher`, `ui`, and `workloads` groups. The `infra` VM is grouped as
 `database` because grouping uses its `role`, not its configuration key. Hosts
 also expose `internal_ip`, `public_ip`, `oilscope_role`, `oilscope_cloud`,
-`ansible_host`, and `ansible_port`.
+`oilscope_region`, `ansible_host`, and `ansible_port`.
 
 ## Setup
 
+Ubuntu's system Python is externally managed, so use an isolated controller
+environment rather than installing into it directly:
+
 ```sh
-pip install -r infrastructure/ansible/requirements.txt
+uv venv .venv
+uv pip install --python .venv/bin/python \
+  ansible ansible-lint \
+  -r infrastructure/ansible/requirements.txt
+source .venv/bin/activate
 ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
 cd infrastructure/ansible/oilscope/platform
 ansible-galaxy collection build --force
@@ -38,6 +45,13 @@ OILSCOPE_PROJECT_CONFIG=/absolute/path/project-config.json \
 
 The default is the repository's `project-config.example.json`. Inventory is
 live, so it is empty until matching instances exist.
+
+`internal_ip` is optional in the generic VM contract. Terraform requires it
+for effective GCP VMs to preserve existing deterministic addressing. AWS uses
+the configured address when present and otherwise lets EC2 assign one; omit it
+for an AWS UI because that VM is placed in the public management subnet. The
+inventory always exposes the private address actually discovered from the
+provider.
 
 ## SSH and bastions
 
@@ -62,7 +76,10 @@ cloud until cross-cloud private networking is added.
 
 AWS private-subnet internet egress is disabled by default. Setting
 `network.aws_enable_nat_gateway` to `true` creates a paid NAT Gateway; review
-AWS pricing before enabling it.
+AWS pricing before enabling it. Current Ansible deployment of private AWS
+workloads needs outbound access for apt package installation, GHCR image pulls,
+and AWS Secrets Manager API calls. Set the flag to `true` unless the VPC has an
+alternative egress path or suitable private endpoints and package mirrors.
 
 ## Troubleshooting
 

@@ -82,7 +82,9 @@
       - -c
       - >-
         import base64,boto3;
-        value=boto3.client('secretsmanager').get_secret_value(SecretId={{ item.value | to_json }});
+        client=boto3.client(
+        'secretsmanager',region_name={{ oilscope_region | to_json }});
+        value=client.get_secret_value(SecretId={{ item.value | to_json }});
         print(value.get('SecretString') or base64.b64decode(value['SecretBinary']).decode())
   register: resolve_secrets_aws_accessed
   changed_when: false

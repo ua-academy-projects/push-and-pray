@@ -418,7 +418,6 @@
         "role",
         "size",
         "image",
-        "internal_ip",
         "boot_disk",
         "assign_public_ip",
         "secret_mappings"
@@ -447,8 +446,9 @@
           "$ref": "#/$defs/logical_name"
         },
         "internal_ip": {
+          "description": "Optional deterministic private address. Required by Terraform for effective GCP VMs; omit to let AWS assign one.",
           "type": "string",
-          "minLength": 1
+          "format": "ipv4"
         },
         "boot_disk": {
           "$ref": "#/$defs/boot_disk"

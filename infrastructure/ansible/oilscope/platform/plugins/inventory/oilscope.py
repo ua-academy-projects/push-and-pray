@@ -369,6 +369,17 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return resolved_zones
 
+    def _single_provider_region(self, config, provider):
+        regions = self._provider_regions(config, provider)
+
+        if len(regions) != 1:
+            raise AnsibleParserError(
+                f"the current {provider} architecture requires exactly one "
+                f"resolved provider region, found {len(regions)}"
+            )
+
+        return regions[0]
+
     def _bastion_ssh_port(self, config):
         bastion_role = plain(self.get_option("bastion_role"))
 
@@ -428,6 +439,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         )
 
         zones = self._provider_zones(config, "gcp")
+        provider_region = self._single_provider_region(config, "gcp")
 
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port = self._bastion_ssh_port(config)
@@ -490,6 +502,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     "labels.role | default('')"
                 ),
                 "oilscope_cloud": "'gcp'",
+                "oilscope_region": repr(provider_region),
             },
         }
 
@@ -506,7 +519,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "project configuration",
         )
 
-        regions = self._provider_regions(config, "aws")
+        provider_region = self._single_provider_region(config, "aws")
 
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port = self._bastion_ssh_port(config)
@@ -514,7 +527,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return {
             "plugin": AWS_DELEGATE,
-            "regions": regions,
+            "regions": [provider_region],
             "filters": {
                 "tag:application": name_prefix,
                 "tag:environment": environment,
@@ -554,6 +567,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 ),
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "'aws'",
+                "oilscope_region": repr(provider_region),
             },
         }
 

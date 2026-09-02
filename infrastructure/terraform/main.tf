@@ -119,11 +119,7 @@ module "aws_vm" {
   image_owners       = each.value.image_settings.owners
   image_name_pattern = each.value.image_settings.name_pattern
 
-  private_ip = (
-    each.value.role == "ui"
-    ? null
-    : each.value.internal_ip
-  )
+  private_ip = each.value.internal_ip
 
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.disk_type

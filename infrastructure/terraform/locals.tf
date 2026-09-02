@@ -8,8 +8,9 @@ locals {
     for name, vm in local.config.vms : name => merge(
       vm,
       {
-        cloud      = try(vm.cloud, local.default_cloud)
-        region_key = try(vm.region, local.default_region)
+        cloud       = try(vm.cloud, local.default_cloud)
+        region_key  = try(vm.region, local.default_region)
+        internal_ip = try(vm.internal_ip, null)
 
         provider_region = local.config.cloud_mappings.regions[
           try(vm.region, local.default_region)
@@ -92,19 +93,28 @@ locals {
   )
 }
 
-check "provider_configuration" {
-  assert {
-    condition     = length(local.gcp_vms) == 0 || local.gcp_project_id != null
-    error_message = "clouds.gcp.project_id is required when any VM resolves to GCP."
-  }
+resource "terraform_data" "configuration_validation" {
+  input = local.resource_prefix
 
-  assert {
-    condition     = length(local.gcp_regions) <= 1 && length(local.gcp_zones) <= 1
-    error_message = "The current GCP network supports one resolved region and zone per deployment."
-  }
+  lifecycle {
+    precondition {
+      condition     = length(local.gcp_vms) == 0 || local.gcp_project_id != null
+      error_message = "clouds.gcp.project_id is required when any VM resolves to GCP."
+    }
 
-  assert {
-    condition     = length(local.aws_regions) <= 1 && length(local.aws_zones) <= 1
-    error_message = "The current AWS VPC supports one resolved region and availability zone per deployment."
+    precondition {
+      condition     = alltrue([for vm in values(local.gcp_vms) : vm.internal_ip != null])
+      error_message = "Every GCP VM must define internal_ip; AWS VMs may omit it for provider assignment."
+    }
+
+    precondition {
+      condition     = length(local.gcp_regions) <= 1 && length(local.gcp_zones) <= 1
+      error_message = "The current GCP network supports one resolved region and zone per deployment."
+    }
+
+    precondition {
+      condition     = length(local.aws_regions) <= 1 && length(local.aws_zones) <= 1
+      error_message = "The current AWS VPC supports one resolved region and availability zone per deployment."
+    }
   }
 }

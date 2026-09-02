@@ -17,6 +17,8 @@ does not write them to disk.
   which the `host_baseline` role installs.
 - Inventory must expose `oilscope_cloud` and use Terraform's instance name,
   `<name_prefix>-<environment>-<vms key>`.
+- Inventory must expose `oilscope_region`; the AWS client uses it explicitly
+  instead of relying on an ambient SDK default region.
 
 The exact VM key is derived from `inventory_hostname`, so `vms.infra` still
 uses its own mappings even though its functional role is `database`.
