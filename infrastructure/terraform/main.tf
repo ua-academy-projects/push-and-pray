@@ -1,6 +1,6 @@
 module "gcp_network" {
   count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
-  source = "./modules/gcp-network"
+  source = "./modules/gcp/network"
 
   resource_prefix = local.resource_prefix
   network_config  = local.config.network
@@ -10,7 +10,7 @@ module "gcp_network" {
 }
 
 module "gcp_vm" {
-  source   = "./modules/gcp-vm"
+  source   = "./modules/gcp/vm"
   for_each = local.gcp_vms
 
   resource_prefix   = local.resource_prefix
@@ -30,7 +30,7 @@ module "gcp_vm" {
 
 module "aws_network" {
   count  = contains(local.enabled_clouds, "aws") ? 1 : 0
-  source = "./modules/aws-network"
+  source = "./modules/aws/network"
 
   resource_prefix = local.resource_prefix
   network_config  = local.config.network
@@ -41,7 +41,7 @@ module "aws_network" {
 
 module "aws_key_pair" {
   count  = contains(local.enabled_clouds, "aws") ? 1 : 0
-  source = "./modules/aws-key-pair"
+  source = "./modules/aws/key-pair"
 
   resource_prefix = local.resource_prefix
   ssh_users       = local.config.ssh_users
@@ -49,7 +49,7 @@ module "aws_key_pair" {
 }
 
 module "aws_vm" {
-  source   = "./modules/aws-vm"
+  source   = "./modules/aws/vm"
   for_each = local.aws_vms
 
   resource_prefix   = local.resource_prefix

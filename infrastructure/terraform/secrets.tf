@@ -16,7 +16,7 @@ locals {
 
 module "gcp_secrets" {
   count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
-  source = "./modules/gcp-secrets"
+  source = "./modules/gcp/secrets"
 
   labels                  = local.config.common_labels
   workload_secret_access  = local.gcp_workload_secret_access
@@ -28,7 +28,7 @@ module "gcp_secrets" {
 
 module "aws_secrets" {
   count  = contains(local.enabled_clouds, "aws") ? 1 : 0
-  source = "./modules/aws-secrets"
+  source = "./modules/aws/secrets"
 
   tags                   = local.config.common_labels
   workload_secret_access = local.aws_workload_secret_access

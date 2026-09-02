@@ -51,7 +51,7 @@ Google Cloud's implied allow-egress rule.
 
 ```hcl
 module "network" {
-  source = "./modules/gcp-network"
+  source = "./modules/gcp/network"
 
   resource_prefix = local.resource_prefix
   network_config  = local.config.network

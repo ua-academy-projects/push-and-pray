@@ -1,6 +1,6 @@
 module "gcp_project" {
   count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
-  source = "./modules/gcp-project"
+  source = "./modules/gcp/project"
 }
 
 moved {
