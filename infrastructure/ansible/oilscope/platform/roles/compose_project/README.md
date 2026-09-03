@@ -43,9 +43,6 @@ registry authentication are not handled by this role.
 
 The installed file is `/opt/oilscope/app/compose.yaml`.
 
-`compose.deployment.yaml.j2` remains temporarily as input to the legacy
-Terraform cloud-init path. The Ansible role does not install it.
-
 ## Test
 
 From the collection directory, render and validate all four definitions with:
