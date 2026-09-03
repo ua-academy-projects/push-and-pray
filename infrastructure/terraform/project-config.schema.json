@@ -5,34 +5,34 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
     "environment",
-    "region",
-    "zone",
+    "default_cloud",
+    "location",
     "name_prefix",
     "common_labels",
     "ssh_users",
     "registry",
     "network",
     "service_ports",
-    "vms"
+    "vms",
+    "cloud_settings",
+    "locations",
+    "machine_types",
+    "images",
+    "disk_types"
   ],
   "properties": {
-    "project_id": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
-    },
     "environment": {
       "type": "string",
       "enum": ["dev", "stage", "prod"]
     },
-    "region": {
+    "default_cloud": {
       "type": "string",
-      "minLength": 1
+      "enum": ["gcp", "aws"]
     },
-    "zone": {
+    "location": {
       "type": "string",
-      "minLength": 1
+      "enum": ["stockholm", "ohio", "mexico"]
     },
     "name_prefix": {
       "type": "string",
@@ -67,11 +67,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "vpc_cidr",
         "management_subnet_cidr",
         "workload_subnet_cidr",
         "ui_public_ports"
       ],
       "properties": {
+        "vpc_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
         "management_subnet_cidr": {
           "type": "string",
           "minLength": 1
@@ -136,21 +141,246 @@
       "additionalProperties": {
         "$ref": "#/$defs/vm"
       }
+    },
+    "cloud_settings": {
+      "$ref": "#/$defs/cloud_settings"
+    },
+    "locations": {
+      "$ref": "#/$defs/locations"
+    },
+    "machine_types": {
+      "$ref": "#/$defs/machine_types"
+    },
+    "images": {
+      "$ref": "#/$defs/images"
+    },
+    "disk_types": {
+      "$ref": "#/$defs/disk_types"
     }
   },
   "$defs": {
+    "cloud_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp"],
+      "properties": {
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id"],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+            }
+          }
+        }
+      }
+    },
+    "provider_location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region", "zone"],
+      "properties": {
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": {
+          "$ref": "#/$defs/provider_location"
+        },
+        "aws": {
+          "$ref": "#/$defs/provider_location"
+        }
+      }
+    },
+    "locations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stockholm", "ohio", "mexico"],
+      "properties": {
+        "stockholm": {
+          "$ref": "#/$defs/location"
+        },
+        "ohio": {
+          "$ref": "#/$defs/location"
+        },
+        "mexico": {
+          "$ref": "#/$defs/location"
+        }
+      }
+    },
+    "cloud_string_values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aws": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "machine_types": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["micro", "small", "medium"],
+      "properties": {
+        "micro": {
+          "$ref": "#/$defs/cloud_string_values"
+        },
+        "small": {
+          "$ref": "#/$defs/cloud_string_values"
+        },
+        "medium": {
+          "$ref": "#/$defs/cloud_string_values"
+        }
+      }
+    },
+    "gcp_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "family"],
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "aws_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ssm_parameter"],
+      "properties": {
+        "ssm_parameter": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": {
+          "$ref": "#/$defs/gcp_image"
+        },
+        "aws": {
+          "$ref": "#/$defs/aws_image"
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ubuntu_2604"],
+      "properties": {
+        "ubuntu_2604": {
+          "$ref": "#/$defs/image"
+        }
+      }
+    },
+    "gcp_disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["pd-balanced", "pd-ssd"]
+        }
+      }
+    },
+    "aws_disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["gp3", "io2"]
+        },
+        "iops": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 256000
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "io2"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["iops"]
+          }
+        }
+      ]
+    },
+    "disk_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": {
+          "$ref": "#/$defs/gcp_disk"
+        },
+        "aws": {
+          "$ref": "#/$defs/aws_disk"
+        }
+      }
+    },
+    "disk_types": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["balanced", "performance"],
+      "properties": {
+        "balanced": {
+          "$ref": "#/$defs/disk_type"
+        },
+        "performance": {
+          "$ref": "#/$defs/disk_type"
+        }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["size_gb", "type"],
+      "required": ["size_gb", "disk_type"],
       "properties": {
         "size_gb": {
           "type": "integer",
           "minimum": 10
         },
-        "type": {
+        "disk_type": {
           "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+          "enum": ["balanced", "performance"]
         }
       }
     },
@@ -172,17 +402,13 @@
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
-    "machine_type": {
-      "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
-    },
     "vm_network_tags": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["bastion", "infra", "history", "fetcher", "ui"]
+        "enum": ["bastion", "database", "history", "fetcher", "ui"]
       }
     },
     "secret_mappings": {
@@ -210,16 +436,21 @@
         "secret_mappings"
       ],
       "properties": {
+        "cloud": {
+          "type": "string",
+          "enum": ["gcp", "aws"]
+        },
         "role": {
           "type": "string",
           "enum": ["bastion", "database", "history", "fetcher", "ui"]
         },
         "machine_type": {
-          "$ref": "#/$defs/machine_type"
+          "type": "string",
+          "enum": ["micro", "small", "medium"]
         },
         "image": {
           "type": "string",
-          "minLength": 1
+          "enum": ["ubuntu_2604"]
         },
         "internal_ip": {
           "type": "string",
@@ -325,28 +556,6 @@
               ]
             }
           }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "history"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "fetcher"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
         },
         {
           "if": {

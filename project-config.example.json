@@ -1,8 +1,7 @@
 {
-  "project_id": "example-project-12345",
   "environment": "dev",
-  "region": "europe-west1",
-  "zone": "europe-west1-b",
+  "default_cloud": "aws",
+  "location": "stockholm",
   "name_prefix": "oilscope",
   "common_labels": {
     "project": "example-oil-price-tracker",
@@ -17,6 +16,7 @@
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
   "network": {
+    "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/29",
     "workload_subnet_cidr": "10.0.1.0/26",
     "ui_public_ports": [80, 443]
@@ -28,12 +28,13 @@
   "vms": {
     "bastion": {
       "role": "bastion",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.0.2",
+      "cloud": "gcp",
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.0.4",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "disk_type": "balanced"
       },
       "assign_public_ip": true,
       "network_tags": ["bastion"],
@@ -43,15 +44,15 @@
     },
     "infra": {
       "role": "database",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.2",
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.10",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "disk_type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": ["infra"],
+      "network_tags": ["database"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
@@ -59,12 +60,12 @@
     },
     "history": {
       "role": "history",
-      "machine_type": "e2-small",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.3",
+      "machine_type": "small",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.11",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "disk_type": "balanced"
       },
       "assign_public_ip": false,
       "network_tags": ["history"],
@@ -75,12 +76,12 @@
     },
     "fetcher": {
       "role": "fetcher",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.4",
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.12",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "disk_type": "balanced"
       },
       "assign_public_ip": false,
       "network_tags": ["fetcher"],
@@ -92,12 +93,12 @@
     },
     "ui": {
       "role": "ui",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.5",
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.13",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "disk_type": "balanced"
       },
       "assign_public_ip": true,
       "network_tags": ["ui"],
@@ -108,6 +109,87 @@
       "public_endpoint": {
         "hostname": "oilscope.example.com",
         "acme_email": "example-operator@example.com"
+      }
+    }
+  },
+  "cloud_settings": {
+    "gcp": {
+      "project_id": "example-project-12345"
+    }
+  },
+  "locations": {
+    "stockholm": {
+      "gcp": {
+        "region": "europe-north2",
+        "zone": "europe-north2-b"
+      },
+      "aws": {
+        "region": "eu-north-1",
+        "zone": "eu-north-1a"
+      }
+    },
+    "ohio": {
+      "gcp": {
+        "region": "us-east5",
+        "zone": "us-east5-a"
+      },
+      "aws": {
+        "region": "us-east-2",
+        "zone": "us-east-2a"
+      }
+    },
+    "mexico": {
+      "gcp": {
+        "region": "northamerica-south1",
+        "zone": "northamerica-south1-a"
+      },
+      "aws": {
+        "region": "mx-central-1",
+        "zone": "mx-central-1a"
+      }
+    }
+  },
+  "machine_types": {
+    "micro": {
+      "gcp": "e2-micro",
+      "aws": "t3.micro"
+    },
+    "small": {
+      "gcp": "e2-small",
+      "aws": "t3.small"
+    },
+    "medium": {
+      "gcp": "e2-medium",
+      "aws": "t3.medium"
+    }
+  },
+  "images": {
+    "ubuntu_2604": {
+      "gcp": {
+        "project": "ubuntu-os-cloud",
+        "family": "ubuntu-2604-lts-amd64"
+      },
+      "aws": {
+        "ssm_parameter": "/aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+      }
+    }
+  },
+  "disk_types": {
+    "balanced": {
+      "gcp": {
+        "type": "pd-balanced"
+      },
+      "aws": {
+        "type": "gp3"
+      }
+    },
+    "performance": {
+      "gcp": {
+        "type": "pd-ssd"
+      },
+      "aws": {
+        "type": "io2",
+        "iops": 5000
       }
     }
   }
