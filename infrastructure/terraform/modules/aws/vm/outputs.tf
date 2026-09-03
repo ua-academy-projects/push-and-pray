@@ -1,14 +1,20 @@
-output "name" {
+output "names" {
   description = "Name of the EC2 workload instance."
-  value       = var.name
+  value       = local.vm_names
 }
 
-output "private_ip" {
+output "private_ips" {
   description = "Private IPv4 address of the EC2 workload instance."
-  value       = aws_instance.workload.private_ip
+  value = {
+    for name, instance in aws_instance.workload :
+    name => instance.private_ip
+  }
 }
 
-output "public_ip" {
+output "public_ips" {
   description = "Public IPv4 address of the EC2 workload instance, or null when none is assigned."
-  value       = var.assign_public_ip ? aws_instance.workload.public_ip : null
+  value = {
+    for name, instance in aws_instance.workload :
+    name => instance.public_ip
+  }
 }

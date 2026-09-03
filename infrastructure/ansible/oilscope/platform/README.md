@@ -25,7 +25,7 @@ Run from the repository root:
 
 ```bash
 ansible-playbook oilscope.platform.deploy_workloads \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json
 ```
 

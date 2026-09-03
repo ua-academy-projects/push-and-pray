@@ -8,12 +8,14 @@ resource "google_compute_address" "public" {
   count = var.assign_public_ip ? 1 : 0
 
   name   = "${var.name}-ip"
+  region = var.region
   labels = var.labels
 }
 
 resource "google_compute_instance" "workload" {
   name                      = var.name
   machine_type              = var.machine_type
+  zone                      = var.zone
   allow_stopping_for_update = true
 
   tags   = var.network_tags

@@ -28,6 +28,16 @@ variable "role" {
   type        = string
 }
 
+variable "region" {
+  description = "GCP region used for regional resources attached to the VM."
+  type        = string
+}
+
+variable "zone" {
+  description = "GCP zone where the Compute Engine instance is created."
+  type        = string
+}
+
 variable "machine_type" {
   description = "Compute Engine machine type for the workload VM."
   type        = string

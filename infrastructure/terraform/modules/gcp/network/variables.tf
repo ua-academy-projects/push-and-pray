@@ -8,6 +8,11 @@ variable "resource_prefix" {
   }
 }
 
+variable "region" {
+  description = "GCP region used for subnets and Cloud Router."
+  type        = string
+}
+
 variable "management_subnet_cidr" {
   description = "CIDR range of the management subnet."
   type        = string

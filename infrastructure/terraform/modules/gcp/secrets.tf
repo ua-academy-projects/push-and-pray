@@ -1,10 +1,10 @@
 locals {
   all_secret_ids = distinct(flatten([
-    for workload in values(local.gcp_workload_vms) : values(workload.secret_mappings)
+    for workload in values(local.workload_vms) : values(workload.secret_mappings)
   ]))
 
   workload_secret_pairs = flatten([
-    for name, workload in local.gcp_workload_vms : [
+    for name, workload in local.workload_vms : [
       for secret_id in distinct(values(workload.secret_mappings)) : {
         vm_name   = name
         secret_id = secret_id

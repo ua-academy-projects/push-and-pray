@@ -1,223 +1,161 @@
-# Inventory
+# Multi-cloud dynamic inventory
 
-`oilscope.yml` builds the deployment inventory from live Compute Engine state,
-so a `terraform apply` that replaces a VM or changes an address is picked up
-without editing a host list.
+`oilscope.yml` builds one Ansible inventory from live GCP Compute Engine and
+AWS EC2 state. Terraform and Ansible read the same project configuration JSON;
+provider-specific values are not repeated in the inventory file.
 
-Every environment-specific value is derived from the project configuration
-JSON that Terraform also reads, so this file is identical for every
-environment — point `project_config_path` at a different configuration and it
-describes a different environment.
+The inventory is recomputed when Ansible runs. It discovers only running
+instances whose managed label/tag values match all three values:
 
-The inventory is dynamic in the Ansible sense: recomputed on every run. Nothing
-polls in the background; `cache_timeout` only bounds how long a previous API
-response is reused.
+- `application=<name_prefix>`
+- `environment=<environment>`
+- `cloud=gcp` or `cloud=aws`
 
-## How it fits together
+## Data flow
 
-`oilscope.platform.oilscope_gcp` does not talk to GCP itself. It reads the
-project configuration, derives the settings below, and hands them to
-`google.cloud.gcp_compute`, which performs the discovery.
+The `oilscope.platform.oilscope_gcp` wrapper keeps its historical plugin name
+for compatibility, but it is now multi-cloud. It performs these steps:
 
-The wrapper exists because `gcp_compute` can neither read the project
-configuration nor evaluate Jinja in its own configuration file — a template
-expression placed there is sent to the API as literal text.
+1. Read `default_cloud`, `vms`, `regions`, `clouds`, `name_prefix`, and
+   `environment` from the shared JSON.
+2. Resolve every VM's effective cloud as `vm.cloud` when present, otherwise
+   `default_cloud`.
+3. Collect the GCP zones and AWS regions used by the selected VMs.
+4. Skip a provider entirely when zero configured VMs select it.
+5. Delegate live discovery to `google.cloud.gcp_compute` and/or
+   `amazon.aws.aws_ec2`.
+6. Normalize both provider results into the same host variables and role
+   groups.
 
-| Derived from the JSON | Becomes |
-| --- | --- |
-| `project_id` | the project queried |
-| `zone` | the zone queried |
-| `name_prefix` | the `labels.application` filter |
-| `environment` | the `labels.environment` filter |
-| `ssh_port` of the VM whose `role` is `bastion` | the bastion's `ansible_port` |
+For example, with `default_cloud: gcp` and `vms.bastion.cloud: aws`, the GCP
+delegate queries the zones used by the workload VMs and the AWS delegate
+queries the regions used by the bastion. A configuration containing only AWS
+VMs never calls the GCP delegate.
 
-Everything else — the grouping rules, the host-variable expressions, the
-workload SSH port — lives in the plugin's defaults. Changing those means
-editing the plugin and rebuilding the collection, not editing this directory.
+## Controller setup
 
-## Setup
-
-All three steps are required, and skipping one produces a failure that does not
-name the missing piece:
+Install both Ansible collections and their Python SDK dependencies:
 
 ```sh
 pip install -r infrastructure/ansible/requirements.txt
 ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+```
+
+Build and install this repository's collection after changing a plugin or
+role, because Ansible reads the installed collection rather than the source
+file:
+
+```sh
+cd infrastructure/ansible/oilscope/platform
+ansible-galaxy collection build --force
+ansible-galaxy collection install oilscope-platform-*.tar.gz --force
+```
+
+For GCP discovery, configure Application Default Credentials:
+
+```sh
 gcloud auth application-default login
 ```
 
-`requirements.yml` installs the `google.cloud` collection, which provides the
-`gcp_compute` plugin this one delegates to. `requirements.txt` installs the
-Python libraries that plugin imports at run time — `google-auth` and
-`requests`. `ansible-galaxy` installs collections, never Python packages, so
-neither file covers for the other.
-
-This repository's own collection must also be installed, because there is no
-`ansible.cfg` pointing Ansible at the working copy:
+For AWS discovery, use the normal AWS/boto3 credential chain. The Terraform
+profile can be selected for the same shell:
 
 ```sh
-cd infrastructure/ansible/oilscope/platform && ansible-galaxy collection build --force && ansible-galaxy collection install oilscope-platform-*.tar.gz --force
+export AWS_PROFILE=terraform
+aws sts get-caller-identity
 ```
 
-Repeat that after every change to the plugin or to a role — Ansible reads the
-installed copy, not the files you just edited.
+Only the credentials for providers selected by at least one configured VM are
+needed for that inventory run.
 
-## Pointing it at your configuration
+## Selecting the project configuration
 
-`oilscope.yml` carries no path of its own, because the project configuration
-does not live in the same place for everyone. The path is resolved in three
-steps, weakest first:
+The path is resolved in this order:
 
-1. the plugin's default, `../../terraform/env/dev.json`, relative to this
-   directory;
-2. the `OILSCOPE_PROJECT_CONFIG` environment variable;
-3. a `project_config_path` key written into the inventory file.
+1. plugin default: `../../terraform/env/dev.json`;
+2. `OILSCOPE_PROJECT_CONFIG` environment variable;
+3. `project_config_path` written directly in an inventory YAML file.
 
-So a configuration kept elsewhere needs no edit to a committed file:
+Use an environment variable for a personal configuration:
 
 ```sh
-OILSCOPE_PROJECT_CONFIG=infrastructure/terraform/env/mine.json \
-  ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
-```
-
-Export it once and every later command picks it up. An absolute path is used as
-given; a relative one is tried against the working directory first, then
-against this directory, so a path typed from the repository root works.
-
-Adding `project_config_path` back into `oilscope.yml` would pin the path for
-everyone **and** make the variable ineffective, since a value set in the file
-wins over the environment. Keep personal paths in the variable, or in a local
-`*oilscope.yml` of your own — the filename only has to end in `oilscope.yml`
-for the plugin to claim it, and `local.oilscope.yml` is already ignored by git.
-
-## Usage
-
-```sh
+export OILSCOPE_PROJECT_CONFIG=/absolute/path/project-config.json
 ansible-inventory \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
-  -e project_config_path=/absolute/path/project-config.json \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   --graph
 ```
 
-Hosts appear only after `terraform apply`: the inventory reports what exists in
-GCP, so before the infrastructure is created it is legitimately empty.
+An absolute path is used unchanged. A relative path is tried from the current
+working directory and then relative to the inventory file.
 
-## Groups
+## Groups and normalized host variables
 
-Terraform labels every VM with `role=<role>`, which becomes the `bastion`,
-`database`, `history`, `fetcher` and `ui` groups the deployment roles expect.
-Everything except the bastion also joins `workloads`.
+Both delegates create groups from the provider `role` label/tag:
 
-The group name comes from the `role` label, not from the key in the project
-configuration: `vms.infra` has `role: database` and therefore lands in the
-`database` group, which is what the `ui` role looks for.
+- `bastion`
+- `database`
+- `history`
+- `fetcher`
+- `ui`
+- `workloads` for every role except `bastion`
 
-## Host variables
+Both providers expose the same normalized variables:
 
-`internal_ip` is set on every host. This is a contract, not a convenience: the
-`ui` role resolves its Database and History peers through that exact variable
-name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
-For the bastion, `bastion_ssh_port` is always the final port from
-`vms.bastion.ssh_port`. `ansible_port` normally uses that value, but can use
-`OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
+- `internal_ip`
+- `public_ip`
+- `ansible_host`
+- `ansible_port`
+- `oilscope_role`
+- `oilscope_cloud`
 
-Raw instance fields from the API are prefixed with `gcp_`, because two of them
-— `name` and `tags` — collide with names Ansible reserves.
+The bastion uses its public address and `vms.bastion.ssh_port`. Workloads use
+their private addresses on port 22 through the existing SSH `ProxyCommand`.
+Raw GCP fields retain the `gcp_` prefix; AWS provider fields remain available
+under the names exposed by `amazon.aws.aws_ec2`.
 
-## SSH
+Hosts appear only after `terraform apply`, because this inventory reports live
+cloud resources rather than the desired JSON entries.
 
-The bastion is normally reached on its external address at the final port read
-from `vms.bastion.ssh_port` in the project config by
-`group_vars/bastion.yml`. Every workload is reached on its internal address at
-port 22, through a `ProxyCommand` defined in `group_vars/workloads.yml`. The
-ProxyCommand always uses the bastion's final port; the bootstrap connection
-override applies only to the bastion itself. Pass the absolute project config
-path on every inventory, ad-hoc and playbook command.
+## Bastion bootstrap
 
-The non-default port belongs to the bastion alone; applying it globally would
-break every workload connection.
-
-Terraform does not configure `sshd`. A newly created bastion therefore starts
-on port 22, and Ansible changes it to the final configured port. Use this
-bootstrap sequence whenever the bastion has not yet been configured.
-
-1. Apply Terraform with the temporary port-22 rule enabled. The rule is
-   restricted to `vms.bastion.allowed_cidrs`, targets only the bastion, and is
-   not created when the final port is already 22.
+A new bastion initially listens on port 22. Enable the temporary ingress rule,
+run the bootstrap playbook through port 22, then apply again without the flag:
 
 ```sh
 terraform -chdir=infrastructure/terraform apply \
   -var=project_config_path=/absolute/path/project-config.json \
   -var=enable_bastion_ssh_bootstrap=true
-```
 
-2. Connect through port 22 and run the bastion playbook. The role validates the
-   generated `sshd` configuration before installing it, restarts SSH, waits for
-   the final port from the controller, resets the bootstrap connection, and
-   verifies Ansible connectivity on the final port.
-
-```sh
 export OILSCOPE_BASTION_CONNECT_PORT=22
 ansible-playbook oilscope.platform.bootstrap_bastion \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json
 unset OILSCOPE_BASTION_CONNECT_PORT
-```
 
-3. Confirm a new Ansible connection works on the final configured port.
-
-```sh
-ansible bastion \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
-  -e project_config_path=/absolute/path/project-config.json \
-  -m ansible.builtin.ping
-```
-
-4. Apply Terraform again without the bootstrap variable. Its default is
-   `false`, so Terraform removes the temporary port-22 rule without changing
-   any VM.
-
-```sh
 terraform -chdir=infrastructure/terraform apply \
   -var=project_config_path=/absolute/path/project-config.json
 ```
 
-5. Confirm the temporary firewall rule no longer exists and port 22 is not
-   reachable from an allowed operator address. The exact rule name ends in
-   `-allow-bastion-ssh-bootstrap`.
+Set `OILSCOPE_SSH_KEY` to the private key matching the public key stored in
+`ssh_users`. Never put the private key in JSON, Git, or Terraform state.
 
-```sh
-gcloud compute firewall-rules list \
-  --filter='name~allow-bastion-ssh-bootstrap' \
-  --format='value(name)'
-```
+## Troubleshooting
 
-The command must return no rule. Workload playbooks do not use the bootstrap
-override; their existing ProxyCommand connects to the bastion through the
-final configured port and then reaches workload SSH on port 22.
-
-`ansible_user` (in `group_vars/all.yml`) defaults to the controller's own login
-name, because that is the name a key added through `gcloud compute ssh` is
-registered under in GCP project metadata. Everyone connects as themselves and
-no name is committed. Override for one run with `OILSCOPE_SSH_USER`, and the
-key with `OILSCOPE_SSH_KEY`.
-
-## When it looks broken
-
-| Symptom | Cause |
+| Symptom | Likely cause |
 | --- | --- |
-| `No inventory was parsed`, doubled path in the message | not run from the repository root |
-| `unknown plugin 'oilscope.platform.oilscope_gcp'` | this repository's collection is not installed, or was not rebuilt |
-| `unknown plugin 'google.cloud.gcp_compute'` | `requirements.yml` not installed |
-| `cannot start: ... library (google-auth)` | `requirements.txt` not installed |
-| `must define a 'vms' object` | the JSON is still `config_version` 2 |
-| **Empty `@all`, exit status 0** | `project_id`, `zone` or the labels do not match reality |
-| `Permission denied (publickey)` | the account is absent from `ssh_users`, or the wrong key |
+| `unknown plugin 'oilscope.platform.oilscope_gcp'` | Rebuild and reinstall this repository's collection. |
+| `unknown plugin 'google.cloud.gcp_compute'` | Install `google.cloud` from `requirements.yml`. |
+| `unknown plugin 'amazon.aws.aws_ec2'` | Install `amazon.aws` from `requirements.yml`. |
+| Missing Google library | Install `requirements.txt` and configure ADC. |
+| Missing boto3/botocore | Install `requirements.txt`. |
+| AWS authentication error | Export the correct `AWS_PROFILE` and verify `aws sts get-caller-identity`. |
+| Empty inventory | Confirm that instances are running and their application/environment/cloud labels match the JSON. |
 
-The empty-inventory case is the dangerous one: the delegate swallows API
-errors, so a wrong project or zone looks exactly like a working inventory with
-nothing in it. Check against GCP directly rather than trusting the graph:
+Check provider state directly when inventory is unexpectedly empty:
 
 ```sh
-gcloud compute instances list --format="table(name,zone,labels)"
+gcloud compute instances list --format='table(name,zone,labels)'
+aws ec2 describe-instances \
+  --filters Name=tag:cloud,Values=aws Name=instance-state-name,Values=running \
+  --query 'Reservations[].Instances[].[Tags,PrivateIpAddress,PublicIpAddress]'
 ```
