@@ -11,6 +11,6 @@ locals {
     # Single source of truth for the deployment Compose file. It moved into the
     # compose_project role in #106; the name ends in .j2 by role convention, but
     # the file holds no Jinja - only the shell interpolation Compose expands.
-    compose_deployment = file("${path.module}/../../../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2")
+    compose_deployment = file("${path.module}/../../../../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2")
   })
 }

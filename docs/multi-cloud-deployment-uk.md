@@ -8,8 +8,10 @@ Terraform і Ansible читають один project-config.json. Поле defau
 
 VM містять тільки абстрактні machine_profile, image_profile та boot_disk.profile.
 Реальні region, zone, machine type, disk type й image/AMI знаходяться у
-словниках clouds.gcp і clouds.aws. Модулі modules/gcp і modules/aws самі
-фільтрують VM та виконують lookup. Root module не виконує конвертацію.
+словниках clouds.gcp і clouds.aws. Вкладені модулі modules/gcp/config і
+modules/aws/config фільтрують VM, застосовують defaults та виконують lookup для
+своєї хмари. Усі network, VM та config-підмодулі розташовані всередині
+modules/gcp або modules/aws. Root module не виконує конвертацію.
 
 ## Межа mixed-cloud
 

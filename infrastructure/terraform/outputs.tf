@@ -8,8 +8,8 @@ output "vms" {
   value       = merge(module.gcp.vms, module.aws.vms)
 
   precondition {
-    condition     = module.gcp.profiles_valid && module.aws.profiles_valid
-    error_message = "Every selected VM must reference machine, image and disk profiles defined for its effective cloud."
+    condition     = module.gcp.configuration_valid && module.aws.configuration_valid
+    error_message = "Every VM cloud override and its machine, image, disk and location profiles must resolve from the shared configuration."
   }
 }
 

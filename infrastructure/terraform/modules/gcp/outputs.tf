@@ -3,27 +3,23 @@ output "vms" {
   value = {
     for name, vm in module.vm : name => {
       name             = vm.name
-      role             = local.effective_vms[name].role
-      cloud            = local.module_cloud
+      role             = module.config.provisionable_vms[name].role
+      cloud            = module.config.cloud
       internal_ip      = vm.internal_ip
       public_ip        = vm.public_ip
       network_tags     = vm.network_tags
       runtime_identity = vm.service_account_email
     }
   }
-
 }
 
-output "profiles_valid" {
-  description = "Whether every selected VM resolves all abstract profiles."
-  value = alltrue([
-    for vm in values(local.effective_vms) :
-    vm.machine_type != null && vm.image != null && vm.disk_type != null
-  ])
+output "configuration_valid" {
+  description = "Whether every selected profile, cloud override, and GCP location resolves."
+  value       = module.config.configuration_valid
 }
 
 output "secret_ids" {
-  value = sort(local.all_secret_ids)
+  value = sort(module.config.all_secret_ids)
 }
 
 output "secret_resource_names" {
@@ -35,7 +31,7 @@ output "secret_resource_names" {
 
 output "workload_secret_access" {
   value = {
-    for name, workload in local.workload_vms :
+    for name, workload in module.config.workload_vms :
     name => sort(distinct(values(workload.secret_mappings)))
   }
 }

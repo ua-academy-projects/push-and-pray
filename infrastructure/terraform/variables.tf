@@ -11,20 +11,9 @@ variable "project_config_path" {
   validation {
     condition = contains(
       ["aws", "gcp"],
-      lower(lookup(jsondecode(file(var.project_config_path)), "default_cloud", "")),
+      lower(try(jsondecode(file(var.project_config_path)).default_cloud, "")),
     )
     error_message = "default_cloud must be either aws or gcp."
-  }
-
-  validation {
-    condition = alltrue([
-      for vm in values(jsondecode(file(var.project_config_path)).vms) :
-      contains(
-        ["aws", "gcp"],
-        lower(lookup(vm, "cloud", jsondecode(file(var.project_config_path)).default_cloud)),
-      )
-    ])
-    error_message = "Every vms.*.cloud override must be either aws or gcp."
   }
 }
 variable "enable_bastion_ssh_bootstrap" {
