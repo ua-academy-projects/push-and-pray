@@ -2,43 +2,36 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
   "description": "Contract for non-secret Terraform project configuration.",
+  "$comment": "Cloud-specific values live only in the clouds map. Everything under vms refers to them by abstract label, so moving a VM to another provider is a one-word change. Cross-references between the two - a size label existing in the target cloud's machine_sizes, default_cloud naming a declared cloud, every cloud in use owning a bastion - are outside what JSON Schema can express and are enforced by variable validation inside the per-cloud Terraform modules.",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
+    "default_cloud",
     "environment",
-    "region",
-    "zone",
     "name_prefix",
     "common_labels",
     "ssh_users",
     "registry",
     "network",
     "service_ports",
+    "clouds",
     "vms"
   ],
   "properties": {
-    "project_id": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+    "default_cloud": {
+      "$comment": "Cloud hosting every VM that does not override it. Must be a key of clouds; Terraform checks that.",
+      "$ref": "#/$defs/cloud_name"
     },
     "environment": {
       "type": "string",
       "enum": ["dev", "stage", "prod"]
-    },
-    "region": {
-      "type": "string",
-      "minLength": 1
-    },
-    "zone": {
-      "type": "string",
-      "minLength": 1
     },
     "name_prefix": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
     },
     "common_labels": {
+      "$comment": "Applied to every resource. Terraform adds application, environment, managed_by, role and cloud on its own - do not repeat them here.",
       "$ref": "#/$defs/labels"
     },
     "ssh_users": {
@@ -64,22 +57,11 @@
       }
     },
     "network": {
+      "$comment": "Provider-independent networking. Subnet ranges are per-cloud and live in clouds.<name>.subnets.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "management_subnet_cidr",
-        "workload_subnet_cidr",
-        "ui_public_ports"
-      ],
+      "required": ["ui_public_ports"],
       "properties": {
-        "management_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
-        "workload_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
         "ui_public_ports": {
           "type": "array",
           "items": {
@@ -109,29 +91,43 @@
         }
       }
     },
-    "vms": {
+    "clouds": {
+      "$comment": "One profile per supported provider. A profile translates the abstract labels used under vms into that provider's own identifiers.",
       "type": "object",
-      "minProperties": 2,
-      "required": ["bastion"],
-      "propertyNames": {
-        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-      },
+      "additionalProperties": false,
+      "minProperties": 1,
       "properties": {
-        "bastion": {
+        "gcp": {
           "allOf": [
             {
-              "$ref": "#/$defs/vm"
+              "$ref": "#/$defs/cloud_profile"
             },
             {
-              "properties": {
-                "role": {
-                  "const": "bastion"
-                }
-              },
-              "required": ["role"]
+              "required": ["project_id"]
+            }
+          ]
+        },
+        "aws": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/cloud_profile"
+            },
+            {
+              "$comment": "AWS resources are addressed by region and credentials, never by a project identifier.",
+              "not": {
+                "required": ["project_id"]
+              }
             }
           ]
         }
+      }
+    },
+    "vms": {
+      "$comment": "Every VM lives on default_cloud unless it sets cloud. Each cloud in use needs its own bastion: there is no cross-cloud networking, so a bastion cannot reach workloads on the other provider.",
+      "type": "object",
+      "minProperties": 2,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
       "additionalProperties": {
         "$ref": "#/$defs/vm"
@@ -139,6 +135,81 @@
     }
   },
   "$defs": {
+    "cloud_name": {
+      "type": "string",
+      "enum": ["gcp", "aws"]
+    },
+    "resource_label": {
+      "$comment": "Key into one of a cloud profile's lookup maps. Never a provider-specific identifier.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+    },
+    "label_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/resource_label"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cloud_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "region",
+        "zone",
+        "subnets",
+        "machine_sizes",
+        "disk_types",
+        "images"
+      ],
+      "properties": {
+        "project_id": {
+          "$comment": "GCP only.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone": {
+          "$comment": "GCP places instances here; AWS also binds its subnets to it, since an AWS subnet cannot span availability zones.",
+          "type": "string",
+          "minLength": 1
+        },
+        "subnets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["management", "workload"],
+          "properties": {
+            "management": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workload": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "machine_sizes": {
+          "$comment": "Abstract size label to this provider's machine type, for example tiny to e2-micro or t3.micro.",
+          "$ref": "#/$defs/label_map"
+        },
+        "disk_types": {
+          "$comment": "Abstract disk label to this provider's volume type, for example balanced to pd-balanced or gp3.",
+          "$ref": "#/$defs/label_map"
+        },
+        "images": {
+          "$comment": "Abstract image label to this provider's image reference. An AWS AMI ID is region-scoped, so it belongs to this profile and not to a shared list.",
+          "$ref": "#/$defs/label_map"
+        }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
@@ -149,8 +220,8 @@
           "minimum": 10
         },
         "type": {
-          "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+          "$comment": "Label resolved through the hosting cloud's disk_types map.",
+          "$ref": "#/$defs/resource_label"
         }
       }
     },
@@ -172,10 +243,6 @@
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
-    "machine_type": {
-      "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
-    },
     "vm_network_tags": {
       "type": "array",
       "minItems": 1,
@@ -186,7 +253,7 @@
       }
     },
     "secret_mappings": {
-      "$comment": "Maps application environment variable names to non-secret Secret Manager IDs.",
+      "$comment": "Maps application environment variable names to non-secret secret-store IDs.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[A-Z][A-Z0-9_]*$"
@@ -201,7 +268,7 @@
       "additionalProperties": false,
       "required": [
         "role",
-        "machine_type",
+        "size",
         "image",
         "internal_ip",
         "boot_disk",
@@ -210,18 +277,24 @@
         "secret_mappings"
       ],
       "properties": {
+        "cloud": {
+          "$comment": "Overrides default_cloud for this VM only. Omit to follow the default.",
+          "$ref": "#/$defs/cloud_name"
+        },
         "role": {
           "type": "string",
           "enum": ["bastion", "database", "history", "fetcher", "ui"]
         },
-        "machine_type": {
-          "$ref": "#/$defs/machine_type"
+        "size": {
+          "$comment": "Label resolved through the hosting cloud's machine_sizes map.",
+          "$ref": "#/$defs/resource_label"
         },
         "image": {
-          "type": "string",
-          "minLength": 1
+          "$comment": "Label resolved through the hosting cloud's images map.",
+          "$ref": "#/$defs/resource_label"
         },
         "internal_ip": {
+          "$comment": "Must sit inside the hosting cloud's matching subnet. AWS reserves the first four addresses and the last address of every subnet.",
           "type": "string",
           "minLength": 1
         },
@@ -325,28 +398,6 @@
               ]
             }
           }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "history"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "fetcher"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
         },
         {
           "if": {
