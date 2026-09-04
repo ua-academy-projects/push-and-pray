@@ -1,15 +1,13 @@
 module "gcp_network" {
   source = "./modules/gcp/network"
 
-  config           = local.config
-  project_services = module.gcp_project.services
+  config = local.config
 }
 
 module "gcp_vm" {
   source = "./modules/gcp/vm"
 
   config                   = local.config
-  project_services         = module.gcp_project.services
   management_subnet_ids    = module.gcp_network.management_subnet_ids
   workload_subnet_ids      = module.gcp_network.workload_subnet_ids
   network_tags_by_location = module.gcp_network.network_tags

@@ -4,13 +4,6 @@ resource "google_service_account" "workload" {
   account_id   = "${local.resource_prefix}-${each.key}"
   display_name = "${local.resource_prefix}-${each.key}"
   description  = "Runtime identity for the ${local.resource_prefix}-${each.key} workload VM"
-
-  lifecycle {
-    precondition {
-      condition     = contains(var.project_services, "iam.googleapis.com")
-      error_message = "The IAM API must be enabled before creating GCP VM identities."
-    }
-  }
 }
 
 resource "google_compute_address" "public" {

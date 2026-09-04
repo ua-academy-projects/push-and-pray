@@ -32,13 +32,6 @@ resource "google_secret_manager_secret" "this" {
   replication {
     auto {}
   }
-
-  lifecycle {
-    precondition {
-      condition     = contains(var.project_services, "secretmanager.googleapis.com")
-      error_message = "The Secret Manager API must be enabled before creating GCP secrets."
-    }
-  }
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {

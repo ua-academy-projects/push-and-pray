@@ -5,13 +5,6 @@ resource "google_compute_network" "main" {
 
   auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
-
-  lifecycle {
-    precondition {
-      condition     = contains(var.project_services, "compute.googleapis.com")
-      error_message = "The Compute Engine API must be enabled before creating the GCP network."
-    }
-  }
 }
 
 resource "google_compute_subnetwork" "management" {

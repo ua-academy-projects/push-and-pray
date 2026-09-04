@@ -3,11 +3,6 @@ variable "config" {
   type        = any
 }
 
-variable "project_services" {
-  description = "GCP project services enabled before VM creation."
-  type        = list(string)
-}
-
 variable "management_subnet_ids" {
   description = "Management subnet IDs keyed by abstract location."
   type        = map(string)
