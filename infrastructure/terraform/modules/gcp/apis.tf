@@ -1,3 +1,5 @@
+# Цей фалй взагалі потрібен, якщо апі вмикаються бутстрап скриптом?
+
 locals {
   required_apis = [
     "compute.googleapis.com",

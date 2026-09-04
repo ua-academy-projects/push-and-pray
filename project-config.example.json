@@ -1,8 +1,64 @@
 {
-  "project_id": "example-project-12345",
+  "default_cloud": "gcp",
+  "location": "us-east",
   "environment": "dev",
-  "region": "europe-west1",
-  "zone": "europe-west1-b",
+
+  "clouds": {
+    "gcp": {
+      "project_id": "example-project-12345"
+    },
+    "aws": {
+      "account_id": "123456789012"
+    }
+  },
+
+  "regions": {
+    "us-east": {
+      "gcp": "us-east1",
+      "aws": "us-east-1"
+    },
+    "eu-west": {
+      "gcp": "europe-west1",
+      "aws": "eu-west-1"
+    }
+  },
+
+  "sizes": {
+    "micro": {
+      "gcp": "e2-micro",
+      "aws": "t2.micro"
+    },
+    "small": {
+      "gcp": "e2-small",
+      "aws": "t2.small"
+    }
+  },
+
+  "disk_types": {
+    "balanced": {
+      "gcp": "pd-balanced",
+      "aws": "gp3"
+    },
+    "ssd": {
+      "gcp": "pd-ssd",
+      "aws": "io2"
+    }
+  },
+
+  "images": {
+    "ubuntu-26.04": {
+      "gcp": {
+        "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64"
+      },
+      "aws": {
+        "owners": [
+          "099720109477"
+        ],
+        "name_pattern": "ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"
+      }
+    }
+  },
+
   "name_prefix": "oilscope",
   "common_labels": {
     "project": "example-oil-price-tracker",
@@ -17,7 +73,8 @@
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
   "network": {
-    "management_subnet_cidr": "10.0.0.0/29",
+    "vpc_cidr": "10.0.0.0/16",
+    "management_subnet_cidr": "10.0.0.0/28",
     "workload_subnet_cidr": "10.0.1.0/26",
     "ui_public_ports": [80, 443]
   },
@@ -28,27 +85,27 @@
   "vms": {
     "bastion": {
       "role": "bastion",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.0.2",
+      "machine_type": "micro",
+      "image": "ubuntu-26.04",
+      "internal_ip": "10.0.0.4",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": true,
       "network_tags": ["bastion"],
       "secret_mappings": {},
       "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
+      "allowed_cidrs": ["0.0.0.0/0"]
     },
     "infra": {
       "role": "database",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.2",
+      "machine_type": "micro",
+      "image": "ubuntu-26.04",
+      "internal_ip": "10.0.1.5",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": false,
       "network_tags": ["infra"],
@@ -59,12 +116,12 @@
     },
     "history": {
       "role": "history",
-      "machine_type": "e2-small",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.3",
+      "machine_type": "micro",
+      "image": "ubuntu-26.04",
+      "internal_ip": "10.0.1.6",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": false,
       "network_tags": ["history"],
@@ -75,12 +132,12 @@
     },
     "fetcher": {
       "role": "fetcher",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.4",
+      "machine_type": "micro",
+      "image": "ubuntu-26.04",
+      "internal_ip": "10.0.1.7",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": false,
       "network_tags": ["fetcher"],
@@ -92,12 +149,12 @@
     },
     "ui": {
       "role": "ui",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
-      "internal_ip": "10.0.1.5",
+      "machine_type": "micro",
+      "image": "ubuntu-26.04",
+      "internal_ip": "10.0.1.8",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": true,
       "network_tags": ["ui"],

@@ -1,14 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Contract for non-secret Terraform project configuration.",
+  "description": "Contract for the provider-neutral, non-secret project configuration shared by Terraform and Ansible.",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
+    "default_cloud",
+    "location",
     "environment",
-    "region",
-    "zone",
+    "clouds",
+    "regions",
+    "sizes",
+    "disk_types",
+    "images",
     "name_prefix",
     "common_labels",
     "ssh_users",
@@ -18,21 +22,42 @@
     "vms"
   ],
   "properties": {
-    "project_id": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+    "default_cloud": {
+      "$ref": "#/$defs/cloud"
+    },
+    "location": {
+      "$comment": "Provider-neutral label resolved through the regions map by each cloud module.",
+      "$ref": "#/$defs/abstract_label"
     },
     "environment": {
       "type": "string",
       "enum": ["dev", "stage", "prod"]
     },
-    "region": {
-      "type": "string",
-      "minLength": 1
+    "clouds": {
+      "$ref": "#/$defs/cloud_settings"
     },
-    "zone": {
-      "type": "string",
-      "minLength": 1
+    "regions": {
+      "$comment": "Maps abstract location labels to provider region identifiers.",
+      "$ref": "#/$defs/provider_string_catalog"
+    },
+    "sizes": {
+      "$comment": "Maps abstract machine_type labels to provider machine types.",
+      "$ref": "#/$defs/provider_string_catalog"
+    },
+    "disk_types": {
+      "$comment": "Maps abstract boot_disk.type labels to provider disk types.",
+      "$ref": "#/$defs/provider_string_catalog"
+    },
+    "images": {
+      "$comment": "Maps abstract image labels to provider-specific image selectors.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/abstract_label"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/provider_image_map"
+      }
     },
     "name_prefix": {
       "type": "string",
@@ -86,7 +111,7 @@
             "type": "integer",
             "enum": [80, 443]
           },
-          "minItems": 2,
+          "minItems": 1,
           "maxItems": 2,
           "uniqueItems": true
         }
@@ -139,6 +164,112 @@
     }
   },
   "$defs": {
+    "abstract_label": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "cloud": {
+      "type": "string",
+      "enum": ["gcp", "aws"]
+    },
+    "cloud_settings": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id"],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+            }
+          }
+        },
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["account_id"],
+          "properties": {
+            "account_id": {
+              "type": "string",
+              "pattern": "^[0-9]{12}$"
+            }
+          }
+        }
+      }
+    },
+    "provider_string_catalog": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/abstract_label"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/provider_string_map"
+      }
+    },
+    "provider_string_map": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "gcp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aws": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "provider_image_map": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "gcp": {
+          "$ref": "#/$defs/gcp_image"
+        },
+        "aws": {
+          "$ref": "#/$defs/aws_image"
+        }
+      }
+    },
+    "gcp_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "aws_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owners", "name_pattern"],
+      "properties": {
+        "owners": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]{12}$"
+          }
+        },
+        "name_pattern": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
@@ -149,8 +280,8 @@
           "minimum": 10
         },
         "type": {
-          "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+          "$comment": "Abstract label resolved through disk_types.",
+          "$ref": "#/$defs/abstract_label"
         }
       }
     },
@@ -172,11 +303,8 @@
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
-    "machine_type": {
-      "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
-    },
     "vm_network_tags": {
+      "$comment": "Provider-neutral traffic-group labels retained under the existing field name for compatibility.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
@@ -186,7 +314,7 @@
       }
     },
     "secret_mappings": {
-      "$comment": "Maps application environment variable names to non-secret Secret Manager IDs.",
+      "$comment": "Maps application environment variable names to non-secret provider secret IDs.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[A-Z][A-Z0-9_]*$"
@@ -214,12 +342,17 @@
           "type": "string",
           "enum": ["bastion", "database", "history", "fetcher", "ui"]
         },
+        "cloud": {
+          "$comment": "Optional per-VM override; default_cloud applies when omitted.",
+          "$ref": "#/$defs/cloud"
+        },
         "machine_type": {
-          "$ref": "#/$defs/machine_type"
+          "$comment": "Abstract label resolved through sizes.",
+          "$ref": "#/$defs/abstract_label"
         },
         "image": {
-          "type": "string",
-          "minLength": 1
+          "$comment": "Abstract label resolved through images.",
+          "$ref": "#/$defs/abstract_label"
         },
         "internal_ip": {
           "type": "string",
@@ -325,28 +458,6 @@
               ]
             }
           }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "history"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "fetcher"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
         },
         {
           "if": {
