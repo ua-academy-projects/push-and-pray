@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
 
 # DO NOT DELETE BECAUSE PLUGIN WILL FAIL
 DOCUMENTATION = r"""
-name: oilscope_gcp
+name: oilscope
 short_description: OilScope multi-cloud inventory derived from project configuration
 version_added: "0.1.0"
 author:
@@ -40,7 +40,7 @@ options:
     type: str
     required: true
     choices:
-      - oilscope.platform.oilscope_gcp
+      - oilscope.platform.oilscope
   project_config_path:
     description:
       - Path to the project configuration JSON. Absolute is used as given;
@@ -82,7 +82,7 @@ requirements:
 """
 
 EXAMPLES = r"""
-plugin: oilscope.platform.oilscope_gcp
+plugin: oilscope.platform.oilscope
 cache: true
 cache_plugin: ansible.builtin.jsonfile
 cache_connection: ~/.cache/oilscope-inventory
@@ -101,7 +101,7 @@ def plain(value):
 
 
 class InventoryModule(BaseInventoryPlugin, Cacheable):
-    NAME = "oilscope.platform.oilscope_gcp"
+    NAME = "oilscope.platform.oilscope"
 
     def verify_file(self, path):
         return super().verify_file(path) and path.endswith(("oilscope.yml", "oilscope.yaml"))

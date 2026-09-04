@@ -15,7 +15,7 @@ response is reused.
 
 ## How it fits together
 
-`oilscope.platform.oilscope_gcp` does not talk to either cloud itself. It reads
+`oilscope.platform.oilscope` does not talk to either cloud itself. It reads
 the project configuration, resolves `vm.cloud` with `default_cloud` as the
 fallback, and hands each non-empty cloud subset to `google.cloud.gcp_compute`
 or `amazon.aws.aws_ec2`.
@@ -211,7 +211,7 @@ key with `OILSCOPE_SSH_KEY`.
 | Symptom | Cause |
 | --- | --- |
 | `No inventory was parsed`, doubled path in the message | not run from the repository root |
-| `unknown plugin 'oilscope.platform.oilscope_gcp'` | this repository's collection is not installed, or was not rebuilt |
+| `unknown plugin 'oilscope.platform.oilscope'` | this repository's collection is not installed, or was not rebuilt |
 | `unknown plugin 'google.cloud.gcp_compute'` | `requirements.yml` not installed |
 | `cannot start: ... library (google-auth)` | `requirements.txt` not installed |
 | `must define a 'vms' object` | the JSON is still `config_version` 2 |
