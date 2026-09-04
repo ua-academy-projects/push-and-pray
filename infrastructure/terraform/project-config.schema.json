@@ -352,6 +352,7 @@
       "$comment": "Maps Linux usernames to public SSH keys. Private keys and local key-file paths are not accepted.",
       "type": "object",
       "minProperties": 1,
+      "maxProperties": 1,
       "propertyNames": {
         "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
       },

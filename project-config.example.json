@@ -181,7 +181,7 @@
       "cloud": "aws",
       "size": "micro",
       "location": "europe",
-      "internal_ip": "10.0.1.7",
+      "internal_ip": "10.0.0.5",
       "assign_public_ip": true,
       "public_endpoint": {
         "hostname": "oilscope.example.com",

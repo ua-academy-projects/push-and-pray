@@ -42,7 +42,7 @@ resource "aws_instance" "workload" {
   region                 = var.config.locations[each.value.location].aws.region
   ami                    = data.aws_ssm_parameter.image[each.key].value
   instance_type          = var.config.provider_mappings.instance_types[each.value.size].aws.instance_type
-  subnet_id              = each.value.role == "bastion" ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
+  subnet_id              = (each.value.role == "bastion" || each.value.assign_public_ip) ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
   private_ip             = each.value.internal_ip
   vpc_security_group_ids = [var.security_group_ids_by_location[each.value.location][each.value.role]]
   iam_instance_profile   = aws_iam_instance_profile.workload[each.key].name
