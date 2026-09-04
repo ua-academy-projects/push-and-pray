@@ -1,7 +1,8 @@
 module "network" {
-  source = "./modules/network"
+  source = "./modules/gcp/network"
 
-  resource_prefix = local.resource_prefix
+  name_prefix = local.config.name_prefix
+  environment = local.config.environment
 
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
@@ -10,8 +11,8 @@ module "network" {
     for port in local.config.network.ui_public_ports : tostring(port)
   ]
 
-  bastion_ssh_port             = local.bastion_vm.ssh_port
-  bastion_allowed_cidrs        = local.bastion_vm.allowed_cidrs
+  bastion_ssh_port             = local.config.vms.bastion.ssh_port
+  bastion_allowed_cidrs        = local.config.vms.bastion.allowed_cidrs
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 
   history_api_port = local.config.service_ports.history_api
@@ -20,40 +21,70 @@ module "network" {
   depends_on = [google_project_service.required]
 }
 
-#trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
-  source   = "./modules/vm"
-  for_each = local.config.vms
+  source = "./modules/gcp/vm"
 
-  name                = "${local.resource_prefix}-${each.key}"
-  subnetwork_id       = each.value.role == "bastion" ? module.network.management_subnet_id : module.network.workload_subnet_id
-  role                = each.value.role
-  registry_repository = local.config.registry.repository
-  image_sha           = local.config.registry.image_sha
-  ssh_users           = local.config.ssh_users
-  network_tags = [
-    for tag in each.value.network_tags :
-    "${local.resource_prefix}-${tag}"
-  ]
+  vms           = local.config.vms
+  default_cloud = local.config.cloud
+  default_image = local.config.image
 
-  machine_type = each.value.machine_type
-  image        = each.value.image
-  internal_ip  = each.value.internal_ip
-  ssh_port     = lookup(each.value, "ssh_port", 22)
+  machine_types = local.config.machine_types
+  disk_types    = local.config.disk_types
+  images        = local.config.images
 
-  boot_disk_size_gb = each.value.boot_disk.size_gb
-  boot_disk_type    = each.value.boot_disk.type
+  name_prefix          = local.config.name_prefix
+  environment          = local.config.environment
+  registry_repository  = local.config.registry.repository
+  image_sha            = local.config.registry.image_sha
+  ssh_users            = local.config.ssh_users
+  common_labels        = local.config.common_labels
 
-  assign_public_ip = each.value.assign_public_ip
-
-
-  labels = merge(
-    local.common_labels,
-    try(each.value.labels, {}),
-    {
-      role = each.value.role
-    },
-  )
+  management_subnet_id = module.network.management_subnet_id
+  workload_subnet_id   = module.network.workload_subnet_id
 
   depends_on = [google_project_service.required]
+}
+
+module "aws_network" {
+  source = "./modules/aws/network"
+
+  name_prefix = local.config.name_prefix
+  environment = local.config.environment
+
+  management_subnet_cidr = local.config.network.management_subnet_cidr
+  workload_subnet_cidr   = local.config.network.workload_subnet_cidr
+
+  region  = local.config.region
+  regions = local.config.regions
+
+  bastion_ssh_port             = local.config.vms.bastion.ssh_port
+  bastion_allowed_cidrs        = local.config.vms.bastion.allowed_cidrs
+  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+
+  history_api_port = local.config.service_ports.history_api
+  postgresql_port  = local.config.service_ports.postgresql
+
+  ui_public_ports = [
+    for port in local.config.network.ui_public_ports : tostring(port)
+  ]
+}
+
+module "aws_vm" {
+  source = "./modules/aws/vm"
+
+  vms           = local.config.vms
+  default_cloud = local.config.cloud
+  default_image = local.config.image
+
+  machine_types = local.config.machine_types
+  disk_types    = local.config.disk_types
+  images        = local.config.images
+
+  name_prefix = local.config.name_prefix
+  environment = local.config.environment
+  ssh_users   = local.config.ssh_users
+
+  management_subnet_id = module.aws_network.management_subnet_id
+  workload_subnet_id   = module.aws_network.workload_subnet_id
+  security_group_ids   = module.aws_network.security_group_ids
 }

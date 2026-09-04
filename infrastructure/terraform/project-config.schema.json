@@ -5,10 +5,14 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
+    "cloud",
     "environment",
     "region",
-    "zone",
+    "regions",
+    "image",
+    "images",
+    "machine_types",
+    "disk_types",
     "name_prefix",
     "common_labels",
     "ssh_users",
@@ -18,6 +22,10 @@
     "vms"
   ],
   "properties": {
+    "cloud": {
+      "type": "string",
+      "enum": ["gcp", "aws"]
+    },
     "project_id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
@@ -30,9 +38,42 @@
       "type": "string",
       "minLength": 1
     },
-    "zone": {
+    "regions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/region_entry" }
+    },
+    "image": {
+      "description": "Default image label, resolved through the images dictionary. VMs may override.",
       "type": "string",
-      "minLength": 1
+      "enum": ["ubuntu"]
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ubuntu"],
+      "properties": {
+        "ubuntu": { "$ref": "#/$defs/cloud_values" }
+      }
+    },
+    "machine_types": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["micro", "small"],
+      "properties": {
+        "micro": { "$ref": "#/$defs/cloud_values" },
+        "small": { "$ref": "#/$defs/cloud_values" }
+      }
+    },
+    "disk_types": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["economy", "balanced", "performance"],
+      "properties": {
+        "economy": { "$ref": "#/$defs/cloud_values" },
+        "balanced": { "$ref": "#/$defs/cloud_values" },
+        "performance": { "$ref": "#/$defs/cloud_values" }
+      }
     },
     "name_prefix": {
       "type": "string",
@@ -139,6 +180,33 @@
     }
   },
   "$defs": {
+    "cloud_values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": { "type": "string", "minLength": 1 },
+        "aws": { "type": "string", "minLength": 1 }
+      }
+    },
+    "region_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": { "$ref": "#/$defs/placement" },
+        "aws": { "$ref": "#/$defs/placement" }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region", "zone"],
+      "properties": {
+        "region": { "type": "string", "minLength": 1 },
+        "zone": { "type": "string", "minLength": 1 }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
@@ -150,7 +218,7 @@
         },
         "type": {
           "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+          "enum": ["economy", "balanced", "performance"]
         }
       }
     },
@@ -174,7 +242,7 @@
     },
     "machine_type": {
       "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
+      "enum": ["micro", "small"]
     },
     "vm_network_tags": {
       "type": "array",
@@ -202,7 +270,6 @@
       "required": [
         "role",
         "machine_type",
-        "image",
         "internal_ip",
         "boot_disk",
         "assign_public_ip",
@@ -210,6 +277,16 @@
         "secret_mappings"
       ],
       "properties": {
+        "cloud": {
+          "description": "Cloud this VM is created on. Defaults to the root-level cloud when omitted.",
+          "type": "string",
+          "enum": ["gcp", "aws"]
+        },
+        "region": {
+          "description": "Region label for this VM, resolved through the regions dictionary. Defaults to the root-level region when omitted.",
+          "type": "string",
+          "minLength": 1
+        },
         "role": {
           "type": "string",
           "enum": ["bastion", "database", "history", "fetcher", "ui"]
@@ -218,8 +295,9 @@
           "$ref": "#/$defs/machine_type"
         },
         "image": {
+          "description": "Image label for this VM, resolved through the images dictionary. Defaults to the root-level image when omitted.",
           "type": "string",
-          "minLength": 1
+          "enum": ["ubuntu"]
         },
         "internal_ip": {
           "type": "string",

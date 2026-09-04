@@ -1,11 +1,11 @@
-variable "resource_prefix" {
-  description = "Prefix used for names of network resources."
+variable "name_prefix" {
+  description = "Project-wide name prefix, used with environment to build resource_prefix."
   type        = string
+}
 
-  validation {
-    condition     = can(regex("^[a-z][a-z0-9-]*$", var.resource_prefix))
-    error_message = "resource_prefix must start with a lowercase letter and contain only lowercase letters, digits, and hyphens."
-  }
+variable "environment" {
+  description = "Deployment environment, used with name_prefix to build resource_prefix."
+  type        = string
 }
 
 variable "management_subnet_cidr" {

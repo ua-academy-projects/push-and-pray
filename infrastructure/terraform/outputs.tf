@@ -1,48 +1,65 @@
+locals {
+  all_workload_vms = {
+    for name, vm in local.config.vms : name => vm
+    if vm.role != "bastion"
+  }
+}
+
 output "bastion_public_ip" {
-  description = "Bastion public IP."
-  value       = module.vm["bastion"].public_ip
+  description = "Bastion public IP, whichever cloud it was created on."
+  value = coalesce(
+    try(module.vm.public_ips["bastion"], null),
+    try(module.aws_vm.public_ips["bastion"], null),
+  )
 }
 
 output "workload_vm_names" {
-  description = "VM names by workload."
+  description = "VM names by workload, across both clouds."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].name
+    for name in keys(local.all_workload_vms) :
+    name => coalesce(try(module.vm.names[name], null), try(module.aws_vm.names[name], null))
   }
 }
 
 output "workload_roles" {
-  description = "Roles by workload."
+  description = "Roles by workload, across both clouds."
   value = {
-    for name, workload in local.workload_vms : name => workload.role
+    for name, workload in local.all_workload_vms : name => workload.role
   }
 }
 
 output "workload_internal_ips" {
-  description = "Internal IPs by workload."
+  description = "Internal IPs by workload, across both clouds."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].internal_ip
+    for name in keys(local.all_workload_vms) :
+    name => coalesce(try(module.vm.internal_ips[name], null), try(module.aws_vm.internal_ips[name], null))
   }
 }
 
 output "workload_external_ips" {
-  description = "External IPs by workload."
+  description = "External IPs by workload, across both clouds."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].public_ip
+    for name in keys(local.all_workload_vms) :
+    name => coalesce(try(module.vm.public_ips[name], null), try(module.aws_vm.public_ips[name], null))
   }
 }
 
 output "workload_network_tags" {
-  description = "Network tags by workload."
+  description = "Network tags by workload, across both clouds."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].network_tags
+    for name in keys(local.all_workload_vms) :
+    name => coalesce(try(module.vm.network_tags[name], null), try(module.aws_vm.network_tags[name], null))
   }
 }
 
 output "workload_service_account_emails" {
-  description = "Service-account emails by workload."
-  value = {
-    for name, workload in local.workload_vms : name => module.vm[name].service_account_email
-  }
+  description = "GCP service-account emails by workload. GCP-only - AWS workloads have no equivalent here, see workload_iam_role_arns."
+  value       = module.vm.service_account_emails
+}
+
+output "workload_iam_role_arns" {
+  description = "AWS IAM role ARNs by workload. AWS-only - GCP workloads have no equivalent here, see workload_service_account_emails."
+  value       = module.aws_vm.iam_role_arns
 }
 
 output "secret_ids" {
@@ -58,9 +75,9 @@ output "secret_resource_names" {
 }
 
 output "workload_secret_access" {
-  description = "Secret IDs each workload service account may read. Names only - never values."
+  description = "Secret IDs each workload service account may read, across both clouds. Names only - never values."
   value = {
-    for name, workload in local.workload_vms :
+    for name, workload in local.all_workload_vms :
     name => sort(distinct(values(workload.secret_mappings)))
   }
 }

@@ -1,10 +1,10 @@
 resource "google_compute_router" "main" {
-  name    = "${var.resource_prefix}-router"
+  name    = "${local.resource_prefix}-router"
   network = google_compute_network.main.id
 }
 
 resource "google_compute_router_nat" "main" {
-  name   = "${var.resource_prefix}-nat"
+  name   = "${local.resource_prefix}-nat"
   router = google_compute_router.main.name
 
   nat_ip_allocate_option             = "AUTO_ONLY"
