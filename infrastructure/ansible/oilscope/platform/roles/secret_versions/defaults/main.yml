@@ -1,13 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Project configuration JSON - the same file the Terraform configuration reads.
-secret_versions_config_file: ""
-
-# Target GCP project. Falls back to $GOOGLE_PROJECT, then to project_id in the
-# configuration.
-secret_versions_project_id: ""
-
-# Upload a subset. Entries match a container ID or a variable name.
+secret_versions_config_file: "{{ project_config_path }}"
 secret_versions_only: []
-
 secret_versions_gcloud: gcloud
+secret_versions_aws: aws

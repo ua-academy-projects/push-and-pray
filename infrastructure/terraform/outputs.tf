@@ -1,12 +1,16 @@
 locals {
   vm_outputs_by_name = merge(module.gcp_vm.vms, module.aws_vm.vms)
   workload_outputs   = { for name, vm in local.vm_outputs_by_name : name => vm if vm.role != "bastion" }
-  all_secret_ids     = distinct(concat(module.gcp_secrets.secret_ids, module.aws_secrets.secret_ids))
+}
+
+output "bastion_public_ips" {
+  description = "Bastion public IPs by logical VM name."
+  value       = { for name, vm in local.vm_outputs_by_name : name => vm.public_ip if vm.role == "bastion" }
 }
 
 output "bastion_public_ip" {
   description = "Bastion public IP."
-  value       = local.vm_outputs_by_name["bastion"].public_ip
+  value       = try(local.vm_outputs_by_name["bastion"].public_ip, null)
 }
 
 output "workload_vm_names" {
@@ -55,30 +59,5 @@ output "workload_service_account_emails" {
   description = "GCP service-account emails by workload; null for AWS workloads."
   value = {
     for name, workload in local.workload_outputs : name => workload.service_account_email
-  }
-}
-
-output "secret_ids" {
-  description = "Secret Manager container IDs created from the project configuration."
-  value       = sort(local.all_secret_ids)
-}
-
-output "secret_resource_names" {
-  description = "GCP Secret Manager resource names by secret ID, retained for compatibility."
-  value       = module.gcp_secrets.secret_resource_names
-}
-
-output "secret_resource_names_by_cloud" {
-  description = "Secret resource names grouped by cloud and secret ID."
-  value = {
-    gcp = module.gcp_secrets.secret_resource_names
-    aws = module.aws_secrets.secret_resource_names
-  }
-}
-
-output "workload_secret_access" {
-  description = "Secret IDs each workload service account may read. Names only - never values."
-  value = {
-    for name, workload in local.workload_outputs : name => sort(workload.secret_ids)
   }
 }

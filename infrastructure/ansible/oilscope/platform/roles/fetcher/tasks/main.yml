@@ -1,5 +1,33 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Load fetcher secret requirements
+  ansible.builtin.include_vars:
+    file: secrets.yml
+    name: fetcher_secret_requirements
+
+- name: Resolve fetcher secrets
+  ansible.builtin.include_role:
+    name: oilscope.platform.resolve_secrets
+  vars:
+    resolve_secrets_mappings: >-
+      {{ ({} if fetcher_postgres_password | length > 0
+             else {'POSTGRES_PASSWORD': fetcher_secret_requirements.POSTGRES_PASSWORD})
+         | combine({} if fetcher_oilpriceapi_key | length > 0
+                      else {'OILPRICEAPI_KEY': fetcher_secret_requirements.OILPRICEAPI_KEY}) }}
+  when: fetcher_postgres_password | length == 0 or fetcher_oilpriceapi_key | length == 0
+
+- name: Assign the resolved Fetcher database credential
+  ansible.builtin.set_fact:
+    fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+  no_log: true
+  when: fetcher_postgres_password | length == 0
+
+- name: Assign the resolved Fetcher provider credential
+  ansible.builtin.set_fact:
+    fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"
+  no_log: true
+  when: fetcher_oilpriceapi_key | length == 0
+
 - name: Pull the Fetcher image
   ansible.builtin.command:
     argv:

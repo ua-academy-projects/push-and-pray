@@ -9,14 +9,6 @@ output "vms" {
       network_tags          = []
       identity_id           = aws_iam_role.workload[name].arn
       service_account_email = null
-      secret_ids            = distinct(values(local.vms[name].secret_mappings))
     }
-  }
-}
-
-output "iam_role_names" {
-  description = "AWS IAM role names keyed by logical VM name."
-  value = {
-    for name, role in aws_iam_role.workload : name => role.name
   }
 }

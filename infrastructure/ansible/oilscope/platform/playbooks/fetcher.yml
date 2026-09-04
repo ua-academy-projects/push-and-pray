@@ -16,23 +16,16 @@
         compose_project_config_path: "{{ project_config_path }}"
         compose_project_workload: "{{ oilscope_role }}"
 
-    - role: oilscope.platform.resolve_secrets
-      vars:
-        resolve_secrets_config_path: "{{ project_config_path }}"
-
     - role: oilscope.platform.registry_auth
+      when: compose_project_config.registry.username | default('') | length > 0
       vars:
         registry_auth_registry: >-
           {{ compose_project_config.registry.repository
              | regex_replace('/.*$', '') }}
         registry_auth_username: >-
           {{ compose_project_config.registry.username | default('') }}
-        registry_auth_token: >-
-          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
     - role: oilscope.platform.fetcher
       vars:
         fetcher_database_host: >-
           {{ hostvars[groups['database'][0]].internal_ip }}
-        fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
-        fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

@@ -1,5 +1,23 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Load database secret requirements
+  ansible.builtin.include_vars:
+    file: secrets.yml
+    name: database_secret_requirements
+
+- name: Resolve database secrets
+  ansible.builtin.include_role:
+    name: oilscope.platform.resolve_secrets
+  vars:
+    resolve_secrets_mappings: "{{ database_secret_requirements }}"
+  when: database_postgres_password | length == 0
+
+- name: Assign database runtime credentials
+  ansible.builtin.set_fact:
+    database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+  no_log: true
+  when: database_postgres_password | length == 0
+
 - name: Check the Compose definition
   ansible.builtin.stat:
     path: "{{ database_compose_file }}"

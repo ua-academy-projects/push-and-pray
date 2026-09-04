@@ -6,7 +6,7 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = merge(var.config.common_labels, { Name = "${local.resource_prefix}-vpc${local.location_suffixes[each.key]}" })
+  tags = merge(local.labels, { Name = "${local.resource_prefix}-vpc${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_internet_gateway" "main" {
@@ -14,7 +14,7 @@ resource "aws_internet_gateway" "main" {
 
   region = each.value.region
   vpc_id = aws_vpc.main[each.key].id
-  tags   = merge(var.config.common_labels, { Name = "${local.resource_prefix}-igw${local.location_suffixes[each.key]}" })
+  tags   = merge(local.labels, { Name = "${local.resource_prefix}-igw${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_subnet" "management" {
@@ -26,7 +26,7 @@ resource "aws_subnet" "management" {
   availability_zone       = each.value.availability_zone
   map_public_ip_on_launch = false
 
-  tags = merge(var.config.common_labels, { Name = "${local.resource_prefix}-management${local.location_suffixes[each.key]}" })
+  tags = merge(local.labels, { Name = "${local.resource_prefix}-management${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_subnet" "workload" {
@@ -38,7 +38,7 @@ resource "aws_subnet" "workload" {
   availability_zone       = each.value.availability_zone
   map_public_ip_on_launch = false
 
-  tags = merge(var.config.common_labels, { Name = "${local.resource_prefix}-workload${local.location_suffixes[each.key]}" })
+  tags = merge(local.labels, { Name = "${local.resource_prefix}-workload${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_eip" "nat" {
@@ -46,7 +46,7 @@ resource "aws_eip" "nat" {
 
   region = each.value.region
   domain = "vpc"
-  tags   = merge(var.config.common_labels, { Name = "${local.resource_prefix}-nat-ip${local.location_suffixes[each.key]}" })
+  tags   = merge(local.labels, { Name = "${local.resource_prefix}-nat-ip${local.location_suffixes[each.key]}" })
 
   depends_on = [aws_internet_gateway.main]
 }
@@ -57,7 +57,7 @@ resource "aws_nat_gateway" "main" {
   region        = each.value.region
   allocation_id = aws_eip.nat[each.key].id
   subnet_id     = aws_subnet.management[each.key].id
-  tags          = merge(var.config.common_labels, { Name = "${local.resource_prefix}-nat${local.location_suffixes[each.key]}" })
+  tags          = merge(local.labels, { Name = "${local.resource_prefix}-nat${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_route_table" "management" {
@@ -65,7 +65,7 @@ resource "aws_route_table" "management" {
 
   region = each.value.region
   vpc_id = aws_vpc.main[each.key].id
-  tags   = merge(var.config.common_labels, { Name = "${local.resource_prefix}-management${local.location_suffixes[each.key]}" })
+  tags   = merge(local.labels, { Name = "${local.resource_prefix}-management${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_route" "management_internet" {
@@ -90,7 +90,7 @@ resource "aws_route_table" "workload" {
 
   region = each.value.region
   vpc_id = aws_vpc.main[each.key].id
-  tags   = merge(var.config.common_labels, { Name = "${local.resource_prefix}-workload${local.location_suffixes[each.key]}" })
+  tags   = merge(local.labels, { Name = "${local.resource_prefix}-workload${local.location_suffixes[each.key]}" })
 }
 
 resource "aws_route" "workload_internet" {
@@ -118,7 +118,7 @@ resource "aws_security_group" "role" {
   description = "OilScope ${each.value.role} role"
   vpc_id      = aws_vpc.main[each.value.location].id
 
-  tags = merge(var.config.common_labels, {
+  tags = merge(local.labels, {
     Name = "${local.resource_prefix}-${each.value.role}${local.location_suffixes[each.value.location]}"
     role = each.value.role
   })
@@ -141,7 +141,7 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
   for_each = local.bastion_cidrs
 
   region            = local.locations[each.value.location].region
-  security_group_id = aws_security_group.role[each.value.location == local.primary_location ? "bastion" : "${each.value.location}/bastion"].id
+  security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? "bastion" : "${each.value.location}/bastion"].id
   cidr_ipv4         = each.value.cidr
   from_port         = each.value.ssh_port
   to_port           = each.value.ssh_port
@@ -152,7 +152,7 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ssh_bootstrap" {
   for_each = local.bootstrap_bastion_cidrs
 
   region            = local.locations[each.value.location].region
-  security_group_id = aws_security_group.role[each.value.location == local.primary_location ? "bastion" : "${each.value.location}/bastion"].id
+  security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? "bastion" : "${each.value.location}/bastion"].id
   cidr_ipv4         = each.value.cidr
   from_port         = 22
   to_port           = 22
@@ -164,7 +164,7 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
 
   region                       = local.locations[each.value.location].region
   security_group_id            = aws_security_group.role[each.key].id
-  referenced_security_group_id = aws_security_group.role[each.value.location == local.primary_location ? "bastion" : "${each.value.location}/bastion"].id
+  referenced_security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? "bastion" : "${each.value.location}/bastion"].id
   from_port                    = 22
   to_port                      = 22
   ip_protocol                  = "tcp"
@@ -174,7 +174,7 @@ resource "aws_vpc_security_group_ingress_rule" "ui_web" {
   for_each = local.ui_ports
 
   region            = local.locations[each.value.location].region
-  security_group_id = aws_security_group.role[each.value.location == local.primary_location ? "ui" : "${each.value.location}/ui"].id
+  security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? "ui" : "${each.value.location}/ui"].id
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = each.value.port
   to_port           = each.value.port

@@ -17,8 +17,8 @@ The `compose_project` role renders exactly one workload definition to
 
 Image references are rendered from `registry.repository` and
 `registry.image_sha` in the external project configuration JSON. Runtime
-secrets are read from Google Secret Manager and passed directly to the Ansible
-tasks that invoke Compose. They are not written to `deployment.env`.
+secrets are read from the target cloud secret manager and passed directly to
+the Ansible tasks that invoke Compose. They are not written to `deployment.env`.
 
 `compose.deployment.yaml.j2` is retained only for the legacy Terraform
 cloud-init path. The Ansible role does not install it.
@@ -51,8 +51,8 @@ uvx check-jsonschema \
   /absolute/path/project-config.json
 ```
 
-The referenced Secret Manager entries and current secret versions must already
-exist. See [Secrets](secrets.md) for the upload workflow.
+Provision the required secret containers and versions before deployment. See
+[Secrets](secrets.md) for the Ansible workflow.
 
 ## Deploy all workloads
 
@@ -60,7 +60,7 @@ Run from the repository root:
 
 ```sh
 ansible-playbook oilscope.platform.deploy_workloads \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json
 ```
 
@@ -72,7 +72,7 @@ To redeploy one workload, run its playbook directly, for example:
 
 ```sh
 ansible-playbook oilscope.platform.history \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
+  -i infrastructure/ansible/inventory/oilscope.yml \
   -e project_config_path=/absolute/path/project-config.json
 ```
 

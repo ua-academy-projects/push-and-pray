@@ -49,7 +49,7 @@ options:
       - Set C(OILSCOPE_PROJECT_CONFIG) for a configuration kept elsewhere.
     type: str
     required: false
-    default: ../../terraform/env/dev.json
+    default: ../../../project-config.json
     env:
       - name: OILSCOPE_PROJECT_CONFIG
   workload_ssh_port:
@@ -126,6 +126,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 except OSError as cleanup_error:
                     display.vvv(f"could not remove {generated}: {cleanup_error}")
 
+        self._set_host_context(config)
+
     def _resolve_config_path(self, path):
         configured = plain(self.get_option("project_config_path"))
 
@@ -166,6 +168,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
     def _effective_vms(self, config):
         default_cloud = self._require_string(config.get("default_cloud"), "default_cloud")
+        bastion_role = plain(self.get_option("bastion_role"))
         vms = config.get("vms")
         if not isinstance(vms, dict):
             raise AnsibleParserError("the project configuration must define a 'vms' object")
@@ -178,25 +181,53 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             if cloud not in selected:
                 raise AnsibleParserError(f"vms.{name} selects unsupported cloud {cloud!r}")
             selected[cloud][name] = vm
+
+        for cloud, vms in selected.items():
+            workload_locations = {
+                vm["location"] for vm in vms.values() if vm.get("role") != bastion_role
+            }
+            selected[cloud] = {
+                name: vm for name, vm in vms.items()
+                if vm["location"] in workload_locations
+            }
         return selected
 
-    def _bastion_ssh_port(self, config):
+    def _set_host_context(self, config):
+        prefix = f"{config['name_prefix']}-{config['environment']}-"
         bastion_role = self.get_option("bastion_role")
-        ports = [
-            vm.get("ssh_port")
-            for vm in config["vms"].values()
-            if vm.get("role") == bastion_role
-        ]
-        if len(ports) != 1:
-            raise AnsibleParserError(
-                f"expected exactly one VM with role {bastion_role!r}, found {len(ports)}"
-            )
-        try:
-            return int(ports[0])
-        except (TypeError, ValueError) as port_error:
-            raise AnsibleParserError(
-                f"the {bastion_role!r} VM must define an integer ssh_port"
-            ) from port_error
+        for cloud, vms in self._effective_vms(config).items():
+            for name, vm in vms.items():
+                hostname = prefix + name
+                if hostname not in self.inventory.hosts:
+                    continue
+                location = config["locations"][vm["location"]][cloud]
+                bastions = [
+                    prefix + key
+                    for key, candidate in vms.items()
+                    if candidate["role"] == bastion_role
+                    and candidate["location"] == vm["location"]
+                ]
+                context = {
+                    "oilscope_cloud": cloud,
+                    "oilscope_location": vm["location"],
+                    "oilscope_region": location["region"],
+                    "oilscope_bastion_host": bastions[0] if bastions else "",
+                    "oilscope_bootstrap_user": "ubuntu"
+                    if cloud == "aws"
+                    else next(iter(config["ssh_users"])),
+                    "ansible_port": int(vm["ssh_port"])
+                    if vm["role"] == bastion_role
+                    else int(self.get_option("workload_ssh_port")),
+                }
+                if cloud == "gcp":
+                    context["oilscope_project_id"] = config["clouds"]["gcp"]["project_id"]
+                if vm["role"] == bastion_role:
+                    context["bastion_ssh_port"] = int(vm["ssh_port"])
+                    context["ansible_port"] = int(
+                        os.environ.get("OILSCOPE_BASTION_CONNECT_PORT") or vm["ssh_port"]
+                    )
+                for key, value in context.items():
+                    self.inventory.set_variable(hostname, key, value)
 
     def _resource_names(self, config, vms):
         prefix = self._require_string(config.get("name_prefix"), "name_prefix")
@@ -219,10 +250,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         labels = config.get("common_labels", {})
         return {
             "application": self._require_string(labels.get("application"), "common_labels.application"),
-            "environment": self._require_string(labels.get("environment"), "common_labels.environment"),
+            "environment": self._require_string(config.get("environment"), "environment"),
             "bastion_role": plain(self.get_option("bastion_role")),
-            "bastion_port": self._bastion_ssh_port(config),
-            "workload_port": int(self.get_option("workload_ssh_port")),
         }
 
     def _gcp_settings(self, config, vms, common):
@@ -258,9 +287,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "internal_ip": private,
                 "public_ip": f"{public} if {has_public} else ''",
                 "ansible_host": f"{public} if {is_bastion} else {private}",
-                "ansible_port": (
-                    f"{common['bastion_port']} if {is_bastion} else {common['workload_port']}"
-                ),
                 "oilscope_role": "labels.role | default('')",
                 "oilscope_cloud": "'gcp'",
             },
@@ -290,9 +316,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "internal_ip": private,
                 "public_ip": public,
                 "ansible_host": f"{public} if {is_bastion} else {private}",
-                "ansible_port": (
-                    f"{common['bastion_port']} if {is_bastion} else {common['workload_port']}"
-                ),
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "'aws'",
             },

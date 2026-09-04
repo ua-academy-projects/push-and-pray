@@ -1,5 +1,23 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Load ui secret requirements
+  ansible.builtin.include_vars:
+    file: secrets.yml
+    name: ui_secret_requirements
+
+- name: Resolve ui secrets
+  ansible.builtin.include_role:
+    name: oilscope.platform.resolve_secrets
+  vars:
+    resolve_secrets_mappings: "{{ ui_secret_requirements }}"
+  when: ui_postgres_password | length == 0
+
+- name: Assign ui runtime credentials
+  ansible.builtin.set_fact:
+    ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+  no_log: true
+  when: ui_postgres_password | length == 0
+
 - name: Deploy only UI
   environment:
     DOCKER_CONFIG: "{{ ui_docker_config_dir }}"

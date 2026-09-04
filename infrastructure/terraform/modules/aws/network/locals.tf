@@ -1,7 +1,12 @@
 locals {
+  workload_locations = toset([
+    for vm in values(var.config.vms) : vm.location
+    if try(vm.cloud, var.config.default_cloud) == "aws" && vm.role != "bastion"
+  ])
+
   vms = {
     for name, vm in var.config.vms : name => vm
-    if try(vm.cloud, var.config.default_cloud) == "aws"
+    if try(vm.cloud, var.config.default_cloud) == "aws" && contains(local.workload_locations, vm.location)
   }
 
   vms_by_location = {
@@ -13,11 +18,11 @@ locals {
     for location in keys(local.vms_by_location) : location => var.config.locations[location].aws
   }
 
-  primary_location = var.config.vms.bastion.location
   location_suffixes = {
     for location in keys(local.locations) :
-    location => location == local.primary_location ? "" : "-${location}"
+    location => location == var.config.default_location ? "" : "-${location}"
   }
+  labels          = merge(var.config.common_labels, { environment = var.config.environment })
   resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
 
   bastion_vms_by_location = {
@@ -28,7 +33,7 @@ locals {
   role_instances = merge({}, [
     for location, vms in local.vms_by_location : {
       for name, vm in vms :
-      location == local.primary_location ? vm.role : "${location}/${vm.role}" => {
+      location == var.config.default_location ? vm.role : "${location}/${vm.role}" => {
         location = location
         role     = vm.role
         vm_name  = name
@@ -44,7 +49,7 @@ locals {
   bastion_cidrs = merge({}, [
     for location, vm in local.bastion_vms_by_location : vm == null ? {} : {
       for cidr in vm.allowed_cidrs :
-      location == local.primary_location ? cidr : "${location}/${cidr}" => {
+      location == var.config.default_location ? cidr : "${location}/${cidr}" => {
         location = location
         cidr     = cidr
         ssh_port = vm.ssh_port
@@ -60,7 +65,7 @@ locals {
     for location, vms in local.vms_by_location :
     contains([for vm in values(vms) : vm.role], "ui") ? {
       for port in var.config.network.ui_public_ports :
-      location == local.primary_location ? tostring(port) : "${location}/${port}" => {
+      location == var.config.default_location ? tostring(port) : "${location}/${port}" => {
         location = location
         port     = port
       }

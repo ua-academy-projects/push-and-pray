@@ -1,7 +1,12 @@
 locals {
+  workload_locations = toset([
+    for vm in values(var.config.vms) : vm.location
+    if try(vm.cloud, var.config.default_cloud) == "gcp" && vm.role != "bastion"
+  ])
+
   vms = {
     for name, vm in var.config.vms : name => vm
-    if try(vm.cloud, var.config.default_cloud) == "gcp"
+    if try(vm.cloud, var.config.default_cloud) == "gcp" && contains(local.workload_locations, vm.location)
   }
 
   vms_by_location = {
@@ -14,10 +19,9 @@ locals {
     for location in keys(local.vms_by_location) : location => var.config.locations[location].gcp
   }
 
-  primary_location = var.config.vms.bastion.location
   location_suffixes = {
     for location in keys(local.locations) :
-    location => location == local.primary_location ? "" : "-${location}"
+    location => location == var.config.default_location ? "" : "-${location}"
   }
   resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
 

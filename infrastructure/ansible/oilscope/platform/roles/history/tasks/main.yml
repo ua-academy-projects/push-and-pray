@@ -1,5 +1,23 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Load history secret requirements
+  ansible.builtin.include_vars:
+    file: secrets.yml
+    name: history_secret_requirements
+
+- name: Resolve history secrets
+  ansible.builtin.include_role:
+    name: oilscope.platform.resolve_secrets
+  vars:
+    resolve_secrets_mappings: "{{ history_secret_requirements }}"
+  when: history_postgres_password | length == 0
+
+- name: Assign history runtime credentials
+  ansible.builtin.set_fact:
+    history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+  no_log: true
+  when: history_postgres_password | length == 0
+
 - name: Deploy only History
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"

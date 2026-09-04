@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-resolve_secrets_config_path: ""
-resolve_secrets_project_id: ""
-resolve_secrets_metadata_url: >-
-  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
-resolve_secrets_secretmanager_url: https://secretmanager.googleapis.com/v1
+resolve_secrets_mappings: {}
+resolve_secrets_cloud: "{{ oilscope_cloud | default('') }}"
+resolve_secrets_project_id: "{{ oilscope_project_id | default('') }}"
+resolve_secrets_region: "{{ oilscope_region | default('') }}"
+resolve_secrets_name_prefix: "{{ compose_project_config.name_prefix }}"
+resolve_secrets_environment: "{{ compose_project_config.environment }}"

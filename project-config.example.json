@@ -3,20 +3,19 @@
   "name_prefix": "oilscope",
   "common_labels": {
     "application": "oilscope",
-    "environment": "dev",
     "managed_by": "terraform",
     "project": "example-oil-price-tracker",
     "team": "example-team"
   },
   "default_cloud": "gcp",
+  "default_location": "europe",
   "vm_defaults": {
     "image": "ubuntu-24.04",
     "disk_type": "balanced"
   },
   "clouds": {
     "gcp": {
-      "project_id": "example-project-12345",
-      "secret_version_managers": []
+      "project_id": "example-project-12345"
     },
     "aws": {
       "account_id": "123456789012"
@@ -154,60 +153,50 @@
       "location": "europe",
       "internal_ip": "10.0.0.4",
       "assign_public_ip": true,
-      "secret_mappings": {},
       "ssh_port": 8787,
       "allowed_cidrs": ["192.0.2.10/32"]
     },
     "infra": {
       "role": "database",
+      "cloud": "gcp",
       "size": "micro",
       "location": "europe",
-      "internal_ip": "10.0.1.4",
-      "assign_public_ip": false,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "internal_ip": "10.0.1.4"
     },
     "history": {
       "role": "history",
       "size": "small",
-      "location": "north_america",
-      "internal_ip": "10.0.1.5",
-      "assign_public_ip": false,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "location": "europe",
+      "internal_ip": "10.0.1.5"
     },
     "fetcher": {
       "role": "fetcher",
       "cloud": "aws",
       "size": "micro",
       "location": "europe",
-      "internal_ip": "10.0.1.6",
-      "assign_public_ip": false,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "internal_ip": "10.0.1.6"
     },
     "ui": {
       "role": "ui",
       "cloud": "aws",
       "size": "micro",
-      "location": "north_america",
+      "location": "europe",
       "internal_ip": "10.0.1.7",
       "assign_public_ip": true,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      },
       "public_endpoint": {
         "hostname": "oilscope.example.com",
         "acme_email": "example-operator@example.com"
       }
+    },
+    "bastion-aws": {
+      "role": "bastion",
+      "cloud": "aws",
+      "size": "micro",
+      "location": "europe",
+      "internal_ip": "10.0.0.4",
+      "assign_public_ip": true,
+      "ssh_port": 8787,
+      "allowed_cidrs": ["192.0.2.10/32"]
     }
   }
 }

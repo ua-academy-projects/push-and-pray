@@ -30,7 +30,7 @@ expression placed there is sent to the API as literal text.
 | each VM's abstract `location` | the GCP zone or AWS region queried |
 | `vm.cloud`, falling back to `default_cloud` | the provider that discovers the VM |
 | `common_labels.application` | the application label/tag filter |
-| `common_labels.environment` | the environment label/tag filter |
+| `environment` | the environment label/tag filter |
 | `ssh_port` of the VM whose `role` is `bastion` | the bastion's `ansible_port` |
 
 Everything else — the grouping rules, the host-variable expressions, the
@@ -68,7 +68,7 @@ installed copy, not the files you just edited.
 does not live in the same place for everyone. The path is resolved in three
 steps, weakest first:
 
-1. the plugin's default, `../../terraform/env/dev.json`, relative to this
+1. the plugin's default, `../../../project-config.json`, relative to this
    directory;
 2. the `OILSCOPE_PROJECT_CONFIG` environment variable;
 3. a `project_config_path` key written into the inventory file.
@@ -76,7 +76,7 @@ steps, weakest first:
 So a configuration kept elsewhere needs no edit to a committed file:
 
 ```sh
-OILSCOPE_PROJECT_CONFIG=infrastructure/terraform/env/mine.json \
+OILSCOPE_PROJECT_CONFIG=/absolute/path/project-config.json \
   ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
 ```
 
@@ -117,9 +117,8 @@ configuration: `vms.infra` has `role: database` and therefore lands in the
 
 `internal_ip` is set on every host. This is a contract, not a convenience: the
 `ui` role resolves its Database and History peers through that exact variable
-name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
-For the bastion, `bastion_ssh_port` is always the final port from
-`vms.bastion.ssh_port`. `ansible_port` normally uses that value, but can use
+name. Also set: `public_ip`, `oilscope_role`, `oilscope_cloud`, `oilscope_location`, `oilscope_region`, `ansible_host`, and `ansible_port`.
+For each bastion, `bastion_ssh_port` is its configured final port. `ansible_port` normally uses that value, but can use
 `OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
 
 Raw instance fields from the API are prefixed with `gcp_`, because two of them
@@ -127,11 +126,11 @@ Raw instance fields from the API are prefixed with `gcp_`, because two of them
 
 ## SSH
 
-The bastion is normally reached on its external address at the final port read
-from `vms.bastion.ssh_port` in the project config by
-`group_vars/bastion.yml`. Every workload is reached on its internal address at
-port 22, through a `ProxyCommand` defined in `group_vars/workloads.yml`. The
-ProxyCommand always uses the bastion's final port; the bootstrap connection
+A bastion is reached on its external address at its configured final port.
+Every workload is reached on its internal address at port 22 through a
+`ProxyCommand` defined in `group_vars/workloads.yml`. Inventory selects a
+bastion in the same cloud and logical location. The ProxyCommand uses that
+bastion's final port; the bootstrap connection
 override applies only to the bastion itself. Pass the absolute project config
 path on every inventory, ad-hoc and playbook command.
 
@@ -143,7 +142,8 @@ on port 22, and Ansible changes it to the final configured port. Use this
 bootstrap sequence whenever the bastion has not yet been configured.
 
 1. Apply Terraform with the temporary port-22 rule enabled. The rule is
-   restricted to `vms.bastion.allowed_cidrs`, targets only the bastion, and is
+   restricted to the selected bastion VM's `allowed_cidrs`, targets only that
+   bastion, and is
    not created when the final port is already 22.
 
 ```sh
@@ -200,10 +200,8 @@ The command must return no rule. Workload playbooks do not use the bootstrap
 override; their existing ProxyCommand connects to the bastion through the
 final configured port and then reaches workload SSH on port 22.
 
-`ansible_user` (in `group_vars/all.yml`) defaults to the controller's own login
-name, because that is the name a key added through `gcloud compute ssh` is
-registered under in GCP project metadata. Everyone connects as themselves and
-no name is committed. Override for one run with `OILSCOPE_SSH_USER`, and the
+`ansible_user` defaults to `ubuntu` for AWS images and to the first configured
+SSH operator for GCP. Override for one run with `OILSCOPE_SSH_USER`, and the
 key with `OILSCOPE_SSH_KEY`.
 
 ## When it looks broken

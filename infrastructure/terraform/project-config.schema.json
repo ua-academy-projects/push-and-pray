@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "default_cloud",
+    "default_location",
     "vm_defaults",
     "clouds",
     "locations",
@@ -22,6 +23,10 @@
     "default_cloud": {
       "$ref": "#/$defs/cloud"
     },
+    "default_location": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
     "vm_defaults": {
       "$ref": "#/$defs/vm_defaults"
     },
@@ -33,19 +38,11 @@
         "gcp": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["project_id", "secret_version_managers"],
+          "required": ["project_id"],
           "properties": {
             "project_id": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
-            },
-            "secret_version_managers": {
-              "type": "array",
-              "uniqueItems": true,
-              "items": {
-                "type": "string",
-                "pattern": "^(user|group|serviceAccount|principal|principalSet):.+$"
-              }
             }
           }
         },
@@ -363,17 +360,6 @@
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
-    "secret_mappings": {
-      "$comment": "Maps application environment variable names to non-secret cloud secret IDs.",
-      "type": "object",
-      "propertyNames": {
-        "pattern": "^[A-Z][A-Z0-9_]*$"
-      },
-      "additionalProperties": {
-        "type": "string",
-        "pattern": "^[A-Za-z0-9_-]+$"
-      }
-    },
     "vm": {
       "type": "object",
       "additionalProperties": false,
@@ -381,9 +367,7 @@
         "role",
         "size",
         "location",
-        "internal_ip",
-        "assign_public_ip",
-        "secret_mappings"
+        "internal_ip"
       ],
       "properties": {
         "role": {
@@ -412,13 +396,11 @@
           "minLength": 1
         },
         "assign_public_ip": {
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "labels": {
           "$ref": "#/$defs/labels"
-        },
-        "secret_mappings": {
-          "$ref": "#/$defs/secret_mappings"
         },
         "ssh_port": {
           "type": "integer",
@@ -472,13 +454,9 @@
             "required": ["role"]
           },
           "then": {
-            "required": ["ssh_port", "allowed_cidrs"],
+            "required": ["assign_public_ip", "ssh_port", "allowed_cidrs"],
             "properties": {
-              "assign_public_ip": { "const": true },
-              "secret_mappings": {
-                "type": "object",
-                "maxProperties": 0
-              }
+              "assign_public_ip": { "const": true }
             }
           },
           "else": {

@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-oilscope_bastion_address: "{{ hostvars[groups['bastion'][0]].ansible_host }}"
-oilscope_bastion_ssh_port: "{{ hostvars[groups['bastion'][0]].bastion_ssh_port }}"
-
+# Inventory selects management access within the same cloud and location.
+# With no bastion, the controller must already have direct network access.
 ansible_ssh_common_args: >-
   {{ oilscope_ssh_base_args }}
+  {% if oilscope_bastion_host | default('') | length > 0 %}
   -o ProxyCommand="ssh -W %h:%p -q
-  -p {{ oilscope_bastion_ssh_port }}
+  -p {{ hostvars[oilscope_bastion_host].bastion_ssh_port }}
   -i {{ ansible_ssh_private_key_file }}
   {{ oilscope_ssh_base_args }}
-  {{ ansible_user }}@{{ oilscope_bastion_address }}"
+  {{ hostvars[oilscope_bastion_host].ansible_user }}@{{ hostvars[oilscope_bastion_host].ansible_host }}"
+  {% endif %}

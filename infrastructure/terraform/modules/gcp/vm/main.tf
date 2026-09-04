@@ -11,10 +11,9 @@ resource "google_compute_address" "public" {
 
   name   = "${local.resource_prefix}-${each.key}-ip"
   region = var.config.locations[each.value.location].gcp.region
-  labels = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
+  labels = local.labels_by_vm[each.key]
 }
 
-#trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 resource "google_compute_instance" "workload" {
   for_each = local.vms
 
@@ -24,7 +23,7 @@ resource "google_compute_instance" "workload" {
   allow_stopping_for_update = true
 
   tags   = [var.network_tags_by_location[each.value.location][each.value.role]]
-  labels = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
+  labels = local.labels_by_vm[each.key]
 
   boot_disk {
     auto_delete = true
@@ -32,12 +31,12 @@ resource "google_compute_instance" "workload" {
     initialize_params {
       image  = var.config.provider_mappings.images[each.value.image].gcp.image
       type   = var.config.provider_mappings.disk_types[each.value.disk_type].gcp
-      labels = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
+      labels = local.labels_by_vm[each.key]
     }
   }
 
   network_interface {
-    subnetwork = local.subnet_ids_by_location[each.value.location][each.value.role]
+    subnetwork = each.value.role == "bastion" ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
     network_ip = each.value.internal_ip
 
     dynamic "access_config" {

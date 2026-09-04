@@ -1,5 +1,23 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Load registry_auth secret requirements
+  ansible.builtin.include_vars:
+    file: secrets.yml
+    name: registry_auth_secret_requirements
+
+- name: Resolve registry_auth secrets
+  ansible.builtin.include_role:
+    name: oilscope.platform.resolve_secrets
+  vars:
+    resolve_secrets_mappings: "{{ registry_auth_secret_requirements }}"
+  when: registry_auth_token | length == 0
+
+- name: Assign registry_auth runtime credentials
+  ansible.builtin.set_fact:
+    registry_auth_token: "{{ resolve_secrets_result.GHCR_TOKEN }}"
+  no_log: true
+  when: registry_auth_token | length == 0
+
 - name: Remove stale transient Docker registry credentials
   become: true
   ansible.builtin.file:

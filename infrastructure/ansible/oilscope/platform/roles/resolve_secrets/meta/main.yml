@@ -2,13 +2,12 @@
 ---
 galaxy_info:
   author: Push and Pray team
-  description: >-
-    Resolve secret values for the current host from Secret Manager, using
-    its attached service account
+  description: Resolve application secret values from AWS or GCP
   license: GPL-2.0-or-later
   min_ansible_version: "2.16"
   galaxy_tags:
     - gcp
+    - aws
     - secrets
     - security
 

@@ -24,7 +24,7 @@ resource "aws_iam_role" "workload" {
 
   name               = "${local.resource_prefix}-${each.key}"
   assume_role_policy = data.aws_iam_policy_document.assume_role[each.key].json
-  tags               = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
+  tags               = local.labels_by_vm[each.key]
 }
 
 resource "aws_iam_instance_profile" "workload" {
@@ -32,7 +32,7 @@ resource "aws_iam_instance_profile" "workload" {
 
   name = "${local.resource_prefix}-${each.key}"
   role = aws_iam_role.workload[each.key].name
-  tags = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
+  tags = local.labels_by_vm[each.key]
 }
 
 #trivy:ignore:AVD-AWS-0028[associate_public_ip_address=true]
@@ -42,7 +42,7 @@ resource "aws_instance" "workload" {
   region                 = var.config.locations[each.value.location].aws.region
   ami                    = data.aws_ssm_parameter.image[each.key].value
   instance_type          = var.config.provider_mappings.instance_types[each.value.size].aws.instance_type
-  subnet_id              = local.subnet_ids_by_location[each.value.location][each.value.role]
+  subnet_id              = each.value.role == "bastion" ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
   private_ip             = each.value.internal_ip
   vpc_security_group_ids = [var.security_group_ids_by_location[each.value.location][each.value.role]]
   iam_instance_profile   = aws_iam_instance_profile.workload[each.key].name
@@ -54,7 +54,7 @@ resource "aws_instance" "workload" {
     delete_on_termination = true
     encrypted             = true
     volume_type           = var.config.provider_mappings.disk_types[each.value.disk_type].aws
-    tags                  = merge(var.config.common_labels, try(each.value.labels, {}), { role = each.value.role })
+    tags                  = local.labels_by_vm[each.key]
   }
 
   metadata_options {
@@ -63,11 +63,9 @@ resource "aws_instance" "workload" {
   }
 
   tags = merge(
-    var.config.common_labels,
-    try(each.value.labels, {}),
+    local.labels_by_vm[each.key],
     {
       Name = "${local.resource_prefix}-${each.key}"
-      role = each.value.role
     },
   )
 
@@ -92,11 +90,9 @@ resource "aws_eip" "public" {
   domain   = "vpc"
   instance = aws_instance.workload[each.key].id
   tags = merge(
-    var.config.common_labels,
-    try(each.value.labels, {}),
+    local.labels_by_vm[each.key],
     {
       Name = "${local.resource_prefix}-${each.key}-ip"
-      role = each.value.role
     },
   )
 }
