@@ -1,66 +1,98 @@
+output "default_cloud" {
+  description = "Default cloud selected by the shared project configuration."
+  value       = jsondecode(file(var.project_config_path)).default_cloud
+}
+
+output "vms" {
+  description = "Provider-neutral VM inventory keyed by project-config VM key."
+  value       = merge(module.gcp.vms, module.aws.vms)
+
+  precondition {
+    condition     = module.gcp.profiles_valid && module.aws.profiles_valid
+    error_message = "Every selected VM must reference machine, image and disk profiles defined for its effective cloud."
+  }
+}
+
 output "bastion_public_ip" {
-  description = "Bastion public IP."
-  value       = module.vm["bastion"].public_ip
+  description = "Public IP of the default-cloud bastion, or null when absent."
+  value = try([
+    for vm in values(merge(module.gcp.vms, module.aws.vms)) :
+    vm.public_ip
+    if vm.role == "bastion" && vm.cloud == jsondecode(file(var.project_config_path)).default_cloud
+  ][0], null)
 }
 
 output "workload_vm_names" {
   description = "VM names by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].name
+    for name, vm in merge(module.gcp.vms, module.aws.vms) :
+    name => vm.name if vm.role != "bastion"
   }
 }
 
 output "workload_roles" {
   description = "Roles by workload."
   value = {
-    for name, workload in local.workload_vms : name => workload.role
+    for name, vm in merge(module.gcp.vms, module.aws.vms) :
+    name => vm.role if vm.role != "bastion"
   }
 }
 
 output "workload_internal_ips" {
   description = "Internal IPs by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].internal_ip
+    for name, vm in merge(module.gcp.vms, module.aws.vms) :
+    name => vm.internal_ip if vm.role != "bastion"
   }
 }
 
 output "workload_external_ips" {
   description = "External IPs by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].public_ip
+    for name, vm in merge(module.gcp.vms, module.aws.vms) :
+    name => vm.public_ip if vm.role != "bastion"
   }
 }
 
 output "workload_network_tags" {
-  description = "Network tags by workload."
+  description = "Provider-native network selectors by workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].network_tags
+    for name, vm in merge(module.gcp.vms, module.aws.vms) :
+    name => vm.network_tags if vm.role != "bastion"
+  }
+}
+
+output "workload_identities" {
+  description = "GCP service-account email or AWS IAM role ARN by workload."
+  value = {
+    for name, vm in merge(module.gcp.vms, module.aws.vms) :
+    name => vm.runtime_identity if vm.role != "bastion"
   }
 }
 
 output "workload_service_account_emails" {
-  description = "Service-account emails by workload."
+  description = "Backward-compatible GCP-only service-account emails."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].service_account_email
+    for name, vm in module.gcp.vms :
+    name => vm.runtime_identity
+    if vm.role != "bastion"
   }
 }
 
 output "secret_ids" {
-  description = "Secret Manager container IDs created from the project configuration."
-  value       = sort(local.all_secret_ids)
+  description = "Secret IDs referenced by at least one workload."
+  value       = sort(distinct(concat(module.gcp.secret_ids, module.aws.secret_ids)))
 }
 
 output "secret_resource_names" {
-  description = "Fully qualified Secret Manager resource names, by secret ID."
+  description = "Provider-native secret resource names, keyed by cloud and secret ID."
   value = {
-    for secret_id, secret in google_secret_manager_secret.this : secret_id => secret.name
+    gcp = module.gcp.secret_resource_names
+    aws = module.aws.secret_resource_names
   }
 }
 
 output "workload_secret_access" {
-  description = "Secret IDs each workload service account may read. Names only - never values."
-  value = {
-    for name, workload in local.workload_vms :
-    name => sort(distinct(values(workload.secret_mappings)))
-  }
+  description = "Secret IDs each workload identity may read; never values."
+  value       = merge(module.gcp.workload_secret_access, module.aws.workload_secret_access)
 }

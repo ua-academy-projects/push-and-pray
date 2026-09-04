@@ -1,32 +1,21 @@
-# Ansible Collection - oilscope.platform
+# Ansible Collection — oilscope.platform
 
-Documentation for the collection.
+Validate a config:
 
-## Validate configuration
+    uvx check-jsonschema \
+      --schemafile infrastructure/terraform/project-config.schema.json \
+      /absolute/path/project-config.json
 
-Before deploying, validate your project configuration file against the schema:
+Build and install this collection after plugin or role changes, then use:
 
-​```bash
-uvx check-jsonschema \
-  --schemafile infrastructure/terraform/project-config.schema.json \
-  /absolute/path/project-config.json
-​```
+    export OILSCOPE_PROJECT_CONFIG=/absolute/path/project-config.json
+    ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
 
-## Deploy all workloads
+Deploy workloads in Database, History, Fetcher, UI order:
 
-Deploy the application workloads in dependency order:
+    ansible-playbook oilscope.platform.deploy_workloads \
+      -i infrastructure/ansible/inventory/oilscope.yml \
+      -e project_config_path="$OILSCOPE_PROJECT_CONFIG"
 
-1. Database
-2. History
-3. Fetcher
-4. UI
-
-Run from the repository root:
-
-```bash
-ansible-playbook oilscope.platform.deploy_workloads \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
-  -e project_config_path=/absolute/path/project-config.json
-```
-
-The deployment stops if a workload fails, preventing dependent workloads from being deployed.
+A private workload requires a bastion in the same cloud. Cross-cloud
+networking is outside this collection's scope.

@@ -1,5 +1,5 @@
 {
-  "default_cloud": "gcp",
+  "default_cloud": "aws",
   "defaults": {
     "location_profile": "primary",
     "machine_profile": "micro",

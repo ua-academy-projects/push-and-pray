@@ -4,13 +4,21 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Include the role without a configuration file
-      ansible.builtin.include_role:
-        name: secret_versions
-      register: secret_versions_no_config
-      ignore_errors: true
+    - name: Exercise missing configuration
+      block:
+        - name: Include the role without a configuration file
+          ansible.builtin.include_role:
+            name: secret_versions
 
-    - name: Verify a missing configuration is rejected
+        - name: Fail if the missing file was accepted
+          ansible.builtin.fail:
+            msg: Missing configuration was unexpectedly accepted
+      rescue:
+        - name: Record the expected rejection
+          ansible.builtin.set_fact:
+            secret_versions_missing_rejected: true
+
+    - name: Verify missing configuration was rejected
       ansible.builtin.assert:
         that:
-          - secret_versions_no_config is failed
+          - secret_versions_missing_rejected | default(false)

@@ -4,69 +4,33 @@
   ansible.builtin.set_fact:
     secret_versions_config: >-
       {{ lookup('ansible.builtin.file', secret_versions_config_file) | from_json }}
+    secret_versions_records: []
+    secret_versions_catalog: []
+    secret_versions_absent: []
 
-# The unit of upload is the container. One container is usually read by several
-# workloads, so the mappings are collapsed to (container, workload) pairs first.
-- name: Collect the container and workload pairs
-  ansible.builtin.set_fact:
-    secret_versions_pairs: >-
-      {{ secret_versions_pairs | default([])
-         + (secret_versions_vm.value.secret_mappings | default({}) | dict2items
-            | map(attribute='value') | unique | list
-            | zip_longest([], fillvalue=secret_versions_vm.key) | list) }}
+- name: Collect provider and secret records for every VM
+  ansible.builtin.include_tasks: collect_vm.yml
   loop: "{{ secret_versions_config.vms | dict2items }}"
   loop_control:
     loop_var: secret_versions_vm
     label: "{{ secret_versions_vm.key }}"
 
-# The variable name comes from the container ID, not from the key side of
-# secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
-# different secret on every workload and one shell cannot hold them all.
-- name: Derive a variable name for every container
-  ansible.builtin.set_fact:
-    secret_versions_ids: >-
-      {{ secret_versions_pairs | map(attribute='0') | unique | sort | list }}
-    secret_versions_prefix: >-
-      {{ secret_versions_config.name_prefix }}-{{ secret_versions_config.environment }}-
-
-- name: Prepare the short and the fully qualified variable names
-  ansible.builtin.set_fact:
-    secret_versions_short_names: >-
-      {{ secret_versions_ids
-         | map('regex_replace', '^' ~ (secret_versions_prefix | regex_escape), '')
-         | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
-    secret_versions_full_names: >-
-      {{ secret_versions_ids
-         | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
-
-# Dropping the project prefix only stays safe while it keeps every name
-# distinct. If two containers would collapse onto one variable, all of them
-# keep the full name: a shorter prompt is not worth writing a value into the
-# wrong container.
-- name: Choose the variable names
-  ansible.builtin.set_fact:
-    secret_versions_variables: >-
-      {{ secret_versions_short_names
-         if (secret_versions_short_names | unique | length)
-            == (secret_versions_short_names | length)
-         else secret_versions_full_names }}
-
-- name: Build the upload catalog
+- name: Build one upload target per provider and secret
   ansible.builtin.set_fact:
     secret_versions_catalog: >-
-      {{ secret_versions_catalog | default([]) + [{
-           'secret_id': secret_versions_entry.0,
-           'variable': secret_versions_entry.1,
-           'read_by': secret_versions_pairs
-                      | selectattr('0', 'eq', secret_versions_entry.0)
-                      | map(attribute='1') | sort | list
+      {{ secret_versions_catalog + [{
+           'cloud': item.cloud,
+           'secret_id': item.secret_id,
+           'variable': item.secret_id | upper | regex_replace('[^A-Z0-9]', '_'),
+           'read_by': secret_versions_records
+                      | selectattr('key', 'equalto', item.key)
+                      | map(attribute='vm_name') | unique | sort | list
          }] }}
-  loop: "{{ secret_versions_ids | zip(secret_versions_variables) | list }}"
+  loop: "{{ secret_versions_records | unique(attribute='key') }}"
   loop_control:
-    loop_var: secret_versions_entry
-    label: "{{ secret_versions_entry.0 }}"
+    label: "{{ item.key }}"
 
-- name: Keep only the requested containers
+- name: Keep only requested secrets or environment variable names
   ansible.builtin.set_fact:
     secret_versions_catalog: >-
       {{ secret_versions_catalog
@@ -78,30 +42,27 @@
             | list) }}
   when: secret_versions_only | length > 0
 
-
-- name: Show which variable feeds which container
+- name: Show provider-specific upload targets
   ansible.builtin.debug:
     msg: >-
-      {{ item.variable }} -> {{ item.secret_id }}
+      {{ item.variable }} -> {{ item.cloud }}:{{ item.secret_id }}
       (read by {{ item.read_by | join(', ') }})
   loop: "{{ secret_versions_catalog }}"
   loop_control:
-    label: "{{ item.secret_id }}"
+    label: "{{ item.cloud }}:{{ item.secret_id }}"
 
-- name: Resolve the target project
+- name: Resolve cloud destinations
   ansible.builtin.set_fact:
-    secret_versions_project: >-
-      {{ secret_versions_project_id
-         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-         | default(secret_versions_config.project_id | default(''), true) }}
+    secret_versions_project: "{{ secret_versions_config.clouds.gcp.project_id }}"
+    secret_versions_aws_region: >-
+      {{ secret_versions_config.clouds.aws.locations[
+           secret_versions_config.defaults.location_profile
+         ].region }}
 
-# Everything is checked before anything is written. A value that turns out to
-# be missing halfway through leaves some workloads on the new credential and
-# some on the old one, which is worse than not having started.
-- name: Find values that are not in the environment
+- name: Find values absent from the controller environment
   ansible.builtin.set_fact:
     secret_versions_absent: >-
-      {{ secret_versions_absent | default([])
+      {{ secret_versions_absent
          + ([item.variable]
             if lookup('ansible.builtin.env', item.variable) | length == 0
             else []) }}
@@ -109,14 +70,15 @@
   loop_control:
     label: "{{ item.variable }}"
 
-- name: Refuse to upload incomplete secret versions
-  ansible.builtin.fail:
-    msg: >-
+- name: Refuse an incomplete upload
+  ansible.builtin.assert:
+    that:
+      - secret_versions_absent | unique | length == 0
+    fail_msg: >-
       Required secret source variables are missing or empty:
-      {{ secret_versions_absent | join(', ') }}
-  when: secret_versions_absent | default([]) | length > 0
+      {{ secret_versions_absent | unique | join(', ') }}
 
-- name: Look for the containers
+- name: Look for GCP Secret Manager containers
   ansible.builtin.command:
     argv:
       - "{{ secret_versions_gcloud }}"
@@ -128,18 +90,12 @@
   loop: "{{ secret_versions_catalog }}"
   loop_control:
     label: "{{ item.secret_id }}"
-  register: secret_versions_describe
   changed_when: false
   failed_when: false
   check_mode: false
+  when: item.cloud == 'gcp'
 
-# secretVersionAdder allows adding a version without reading the metadata, so a
-# permission error is not proof that the container is missing.
-# --data-file=- takes the payload from stdin, so it never becomes a command
-# argument and cannot appear in ps output or a shell history. no_log keeps it
-# out of the Ansible output and any callback log, and stdin_add_newline is off
-# because a trailing newline would become part of the stored value.
-- name: Add a new version to every container
+- name: Add GCP secret versions
   ansible.builtin.command:
     argv:
       - "{{ secret_versions_gcloud }}"
@@ -155,19 +111,78 @@
   loop: "{{ secret_versions_catalog }}"
   loop_control:
     label: "{{ item.secret_id }}"
-  register: secret_versions_added
+  register: secret_versions_gcp_added
   changed_when: true
   no_log: true
-  # Not check_mode - a skipped-in-check-mode result carries the module
-  # arguments, and at -vvv Ansible prints those uncensored even under no_log.
-  when: not ansible_check_mode
+  when:
+    - item.cloud == 'gcp'
+    - not ansible_check_mode
 
-- name: Report the new versions
+- name: Look for AWS SSM parameters
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws }}"
+      - ssm
+      - get-parameter
+      - --region
+      - "{{ secret_versions_aws_region }}"
+      - --name
+      - "{{ item.secret_id }}"
+      - --query
+      - Parameter.Name
+      - --output
+      - text
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: item.cloud == 'aws'
+
+- name: Create or update AWS Standard SecureString parameters
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws }}"
+      - ssm
+      - put-parameter
+      - --region
+      - "{{ secret_versions_aws_region }}"
+      - --name
+      - "{{ item.secret_id }}"
+      - --type
+      - SecureString
+      - --tier
+      - Standard
+      - --value
+      - file:///dev/stdin
+      - --overwrite
+      - --query
+      - Version
+      - --output
+      - text
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_aws_added
+  changed_when: true
+  no_log: true
+  when:
+    - item.cloud == 'aws'
+    - not ansible_check_mode
+
+- name: Report uploaded versions
   ansible.builtin.debug:
     msg: >-
-      {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      {{ item.item.cloud }}:{{ item.item.secret_id }} from {{ item.item.variable }}
       (version {{ item.stdout | trim | regex_replace('^.*/', '') }})
-  loop: "{{ secret_versions_added.results | default([]) }}"
+  loop: >-
+    {{ (secret_versions_gcp_added.results | default([]))
+       + (secret_versions_aws_added.results | default([])) }}
   loop_control:
-    label: "{{ item.item.secret_id }}"
-  when: not ansible_check_mode
+    label: "{{ item.item.cloud }}:{{ item.item.secret_id }}"
+  when:
+    - not ansible_check_mode
+    - not item.skipped | default(false)

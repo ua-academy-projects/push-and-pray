@@ -8,6 +8,9 @@ The system deliberately separates data collection from presentation. The browser
 calls the external market API or the Fetcher directly. It reads only observations that
 have already been persisted in PostgreSQL.
 
+Deployment can target GCP or AWS from one JSON contract. See the
+[multi-cloud deployment guide](docs/multi-cloud-deployment-uk.md).
+
 ## Features
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.

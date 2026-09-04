@@ -38,17 +38,25 @@ variable "bastion_ssh_port" {
   }
 }
 
+variable "enable_bastion" {
+  description = "Whether this cloud contains a bastion VM."
+  type        = bool
+  default     = true
+}
+
 variable "bastion_allowed_cidrs" {
   description = "Source CIDRs allowed to connect to the bastion."
   type        = list(string)
 
   validation {
     condition = (
-      length(var.bastion_allowed_cidrs) > 0 &&
-      alltrue([
-        for cidr in var.bastion_allowed_cidrs :
-        can(cidrhost(cidr, 0))
-      ])
+      !var.enable_bastion || (
+        length(var.bastion_allowed_cidrs) > 0 &&
+        alltrue([
+          for cidr in var.bastion_allowed_cidrs :
+          can(cidrhost(cidr, 0))
+        ])
+      )
     )
 
     error_message = "bastion_allowed_cidrs must contain at least one valid CIDR range."
@@ -88,8 +96,10 @@ variable "ui_public_ports" {
 
   validation {
     condition = (
-      toset(var.ui_public_ports) == toset(["443"])
+      length(var.ui_public_ports) > 0 &&
+      length(var.ui_public_ports) == length(distinct(var.ui_public_ports)) &&
+      alltrue([for port in var.ui_public_ports : contains(["80", "443"], port)])
     )
-    error_message = "ui_public_ports must contain exactly port 443"
+    error_message = "ui_public_ports must contain unique values from 80 and 443."
   }
 }

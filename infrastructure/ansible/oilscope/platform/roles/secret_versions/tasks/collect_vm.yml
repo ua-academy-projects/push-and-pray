@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Add this VM's provider-specific secret records
+  ansible.builtin.set_fact:
+    secret_versions_records: >-
+      {{ secret_versions_records + [{
+           'key': ((secret_versions_vm.value.cloud
+                    | default(secret_versions_config.default_cloud)
+                    | lower) ~ '/' ~ item.value),
+           'cloud': (secret_versions_vm.value.cloud
+                     | default(secret_versions_config.default_cloud)
+                     | lower),
+           'secret_id': item.value,
+           'vm_name': secret_versions_vm.key
+         }] }}
+  loop: "{{ secret_versions_vm.value.secret_mappings | default({}) | dict2items }}"
+  loop_control:
+    label: "{{ item.value }}"
