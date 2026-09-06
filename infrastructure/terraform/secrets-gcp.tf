@@ -1,10 +1,10 @@
 locals {
   all_secret_ids = distinct(flatten([
-    for workload in values(local.workload_vms) : values(workload.secret_mappings)
+    for workload in values(local.gcp_vms) : values(workload.secret_mappings)
   ]))
 
   workload_secret_pairs = flatten([
-    for name, workload in local.workload_vms : [
+    for name, workload in local.gcp_vms : [
       for secret_id in distinct(values(workload.secret_mappings)) : {
         vm_name   = name
         secret_id = secret_id
@@ -38,7 +38,7 @@ resource "google_secret_manager_secret_iam_member" "workload_access" {
 
   secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${module.vm[each.value.vm_name].service_account_email}"
+  member    = "serviceAccount:${module.gcp_vm[each.value.vm_name].service_account_email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "version_adder" {

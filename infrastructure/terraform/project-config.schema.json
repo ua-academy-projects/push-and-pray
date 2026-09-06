@@ -1,58 +1,131 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Contract for non-secret Terraform project configuration.",
+  "description": "Contract for non-secret Terraform project configuration. Cloud-neutral: VMs reference abstract size/image/disk_type/region tiers resolved per-cloud via the *_map dictionaries.",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_id",
-    "environment",
+    "default_cloud",
     "region",
-    "zone",
+    "environment",
     "name_prefix",
-    "common_labels",
+    "size_map",
+    "region_map",
+    "disk_type_map",
+    "image_map",
+    "clouds",
+    "network",
     "ssh_users",
     "registry",
-    "network",
     "service_ports",
     "vms"
   ],
   "properties": {
-    "project_id": {
+    "default_cloud": {
+      "$ref": "#/$defs/cloud_name",
+      "description": "Which cloud this apply targets. Single-cloud-per-apply: every VM in `vms` deploys here."
+    },
+    "region": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+      "minLength": 1,
+      "description": "Key into region_map. Not cross-validated by this schema — an unknown key fails loudly at `terraform plan` via a plain map lookup."
     },
     "environment": {
       "type": "string",
       "enum": ["dev", "stage", "prod"]
     },
-    "region": {
-      "type": "string",
-      "minLength": 1
-    },
-    "zone": {
-      "type": "string",
-      "minLength": 1
-    },
     "name_prefix": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
     },
-    "common_labels": {
-      "$ref": "#/$defs/labels"
+
+    "size_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
+      "description": "Abstract size tiers (e.g. \"small\") to native machine/instance type per cloud."
     },
-    "ssh_users": {
-      "$ref": "#/$defs/ssh_users"
+    "region_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/region_entry" },
+      "description": "Abstract region keys (e.g. \"eu-central\") to native region/zone per cloud."
     },
+    "disk_type_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
+      "description": "Abstract disk tiers (e.g. \"balanced\") to native disk/volume type per cloud."
+    },
+    "image_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_.-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
+      "description": "Abstract image keys (e.g. \"ubuntu-26.04\") to native image reference per cloud. For aws this is an SSM parameter path or AMI id, resolved by the aws module — not a raw value Terraform can use directly."
+    },
+
+    "clouds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id"],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+            }
+          }
+        },
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["vpc_cidr"],
+          "properties": {
+            "vpc_cidr": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "management_subnet_cidr",
+        "workload_subnet_cidr",
+        "ui_public_ports"
+      ],
+      "properties": {
+        "management_subnet_cidr": { "type": "string", "minLength": 1 },
+        "workload_subnet_cidr": { "type": "string", "minLength": 1 },
+        "ui_public_ports": {
+          "type": "array",
+          "items": { "type": "integer", "enum": [80, 443] },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "ssh_users": { "$ref": "#/$defs/ssh_users" },
+
     "registry": {
       "type": "object",
       "additionalProperties": false,
       "required": ["repository", "username", "image_sha"],
       "properties": {
-        "repository": {
-          "type": "string",
-          "minLength": 1
-        },
+        "repository": { "type": "string", "minLength": 1 },
         "username": {
           "type": "string",
           "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
@@ -63,118 +136,100 @@
         }
       }
     },
-    "network": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "management_subnet_cidr",
-        "workload_subnet_cidr",
-        "ui_public_ports"
-      ],
-      "properties": {
-        "management_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
-        "workload_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
-        "ui_public_ports": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "enum": [80, 443]
-          },
-          "minItems": 2,
-          "maxItems": 2,
-          "uniqueItems": true
-        }
-      }
-    },
+
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
       "required": ["history_api", "postgresql"],
       "properties": {
-        "history_api": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "postgresql": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        }
+        "history_api": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "postgresql": { "type": "integer", "minimum": 1, "maximum": 65535 }
       }
     },
+
     "vms": {
       "type": "object",
       "minProperties": 2,
       "required": ["bastion"],
-      "propertyNames": {
-        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-      },
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$" },
       "properties": {
         "bastion": {
           "allOf": [
+            { "$ref": "#/$defs/vm" },
             {
-              "$ref": "#/$defs/vm"
-            },
-            {
-              "properties": {
-                "role": {
-                  "const": "bastion"
-                }
-              },
+              "properties": { "role": { "const": "bastion" } },
               "required": ["role"]
             }
           ]
         }
       },
-      "additionalProperties": {
-        "$ref": "#/$defs/vm"
-      }
+      "additionalProperties": { "$ref": "#/$defs/vm" }
     }
   },
+
+  "allOf": [
+    {
+      "if": { "properties": { "default_cloud": { "const": "gcp" } } },
+      "then": { "properties": { "clouds": { "required": ["gcp"] } } }
+    },
+    {
+      "if": { "properties": { "default_cloud": { "const": "aws" } } },
+      "then": { "properties": { "clouds": { "required": ["aws"] } } }
+    }
+  ],
+
   "$defs": {
-    "boot_disk": {
+    "cloud_name": {
+      "type": "string",
+      "enum": ["gcp", "aws"]
+    },
+    "per_cloud_string": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["size_gb", "type"],
+      "required": ["gcp", "aws"],
       "properties": {
-        "size_gb": {
-          "type": "integer",
-          "minimum": 10
+        "gcp": { "type": "string", "minLength": 1 },
+        "aws": { "type": "string", "minLength": 1 }
+      }
+    },
+    "region_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["region", "zone"],
+          "properties": {
+            "region": { "type": "string", "minLength": 1 },
+            "zone": { "type": "string", "minLength": 1 }
+          }
         },
-        "type": {
-          "type": "string",
-          "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["region", "availability_zone"],
+          "properties": {
+            "region": { "type": "string", "minLength": 1 },
+            "availability_zone": { "type": "string", "minLength": 1 }
+          }
         }
       }
     },
     "labels": {
       "type": "object",
-      "additionalProperties": {
-        "type": "string"
-      }
+      "additionalProperties": { "type": "string" }
     },
     "ssh_users": {
       "$comment": "Maps Linux usernames to public SSH keys. Private keys and local key-file paths are not accepted.",
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {
-        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
-      },
+      "propertyNames": { "pattern": "^[a-z_][a-z0-9_-]{0,31}$" },
       "additionalProperties": {
         "type": "string",
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
-    },
-    "machine_type": {
-      "type": "string",
-      "enum": ["e2-micro", "e2-small", "e2-medium", "e2-standard-2"]
     },
     "vm_network_tags": {
       "type": "array",
@@ -188,9 +243,7 @@
     "secret_mappings": {
       "$comment": "Maps application environment variable names to non-secret Secret Manager IDs.",
       "type": "object",
-      "propertyNames": {
-        "pattern": "^[A-Z][A-Z0-9_]*$"
-      },
+      "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]*$" },
       "additionalProperties": {
         "type": "string",
         "pattern": "^[A-Za-z0-9_-]+$"
@@ -201,10 +254,11 @@
       "additionalProperties": false,
       "required": [
         "role",
-        "machine_type",
+        "size",
         "image",
+        "disk_type",
+        "disk_size_gb",
         "internal_ip",
-        "boot_disk",
         "assign_public_ip",
         "network_tags",
         "secret_mappings"
@@ -214,31 +268,41 @@
           "type": "string",
           "enum": ["bastion", "database", "history", "fetcher", "ui"]
         },
-        "machine_type": {
-          "$ref": "#/$defs/machine_type"
+        "cloud": {
+          "$ref": "#/$defs/cloud_name",
+          "description": "Overrides default_cloud for this VM only. Omit to inherit default_cloud."
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key into size_map."
         },
         "image": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Key into image_map."
+        },
+        "disk_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Key into disk_type_map."
+        },
+        "disk_size_gb": {
+          "type": "integer",
+          "minimum": 10
         },
         "internal_ip": {
           "type": "string",
-          "minLength": 1
-        },
-        "boot_disk": {
-          "$ref": "#/$defs/boot_disk"
+          "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}$"
         },
         "assign_public_ip": {
           "type": "boolean"
         },
-        "network_tags": {
-          "$ref": "#/$defs/vm_network_tags"
-        },
-        "labels": {
-          "$ref": "#/$defs/labels"
-        },
+        "network_tags": { "$ref": "#/$defs/vm_network_tags" },
+        "labels": { "$ref": "#/$defs/labels" },
         "secret_mappings": {
-          "$ref": "#/$defs/secret_mappings"
+          "$ref": "#/$defs/secret_mappings",
+          "description": "Required on every VM. Use {} if this VM has no secrets to resolve."
         },
         "ssh_port": {
           "type": "integer",
@@ -249,10 +313,7 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+          "items": { "type": "string", "minLength": 1 }
         },
         "public_endpoint": {
           "type": "object",
@@ -273,98 +334,44 @@
       "allOf": [
         {
           "if": {
-            "properties": {
-              "assign_public_ip": {
-                "const": true
-              }
-            },
+            "properties": { "assign_public_ip": { "const": true } },
             "required": ["assign_public_ip"]
           },
           "then": {
-            "properties": {
-              "role": {
-                "enum": ["bastion", "ui"]
-              }
-            }
+            "properties": { "role": { "enum": ["bastion", "ui"] } }
           }
         },
         {
           "if": {
-            "properties": {
-              "role": {
-                "const": "bastion"
-              }
-            },
+            "properties": { "role": { "const": "bastion" } },
             "required": ["role"]
           },
           "then": {
             "required": ["ssh_port", "allowed_cidrs"],
             "properties": {
-              "assign_public_ip": {
-                "const": true
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "bastion"
-                }
-              },
-              "secret_mappings": {
-                "maxProperties": 0
-              }
+              "assign_public_ip": { "const": true },
+              "network_tags": { "contains": { "const": "bastion" } },
+              "secret_mappings": { "maxProperties": 0 }
             }
           },
           "else": {
             "not": {
               "anyOf": [
-                {
-                  "required": ["ssh_port"]
-                },
-                {
-                  "required": ["allowed_cidrs"]
-                }
+                { "required": ["ssh_port"] },
+                { "required": ["allowed_cidrs"] }
               ]
             }
           }
         },
         {
           "if": {
-            "properties": {
-              "role": {
-                "const": "history"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "fetcher"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "ui"
-              }
-            },
+            "properties": { "role": { "const": "ui" } },
             "required": ["role"]
           },
           "then": {
             "required": ["public_endpoint"],
             "properties": {
-              "network_tags": {
-                "contains": {
-                  "const": "ui"
-                }
-              }
+              "network_tags": { "contains": { "const": "ui" } }
             }
           }
         }

@@ -84,12 +84,12 @@ variable "postgresql_port" {
 variable "ui_public_ports" {
   description = "Public TCP ports exposed on the UI VM"
   type        = list(string)
-  default     = ["443"]
+  default     = ["80", "443"]
 
   validation {
     condition = (
-      toset(var.ui_public_ports) == toset(["443"])
+      toset(var.ui_public_ports) == toset(["80", "443"])
     )
-    error_message = "ui_public_ports must contain exactly port 443"
+    error_message = "ui_public_ports must contain exactly ports 80 and 443"
   }
 }

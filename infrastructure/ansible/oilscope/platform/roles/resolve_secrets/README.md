@@ -31,7 +31,7 @@ containers.
 
 The host must be a GCE instance with a service account attached, granted
 `roles/secretmanager.secretAccessor` on the secrets in its own
-`secret_mappings` — this is what `infrastructure/terraform/secrets.tf`
+`secret_mappings` — this is what `infrastructure/terraform/secrets-gcp.tf`
 grants automatically.
 
 The role identifies which `vms` entry is "this host" from `inventory_hostname`

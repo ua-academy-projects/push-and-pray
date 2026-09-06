@@ -122,4 +122,5 @@ variable "ssh_users" {
 variable "ssh_port" {
   description = "Initial SSH daemon port."
   type        = number
+  default     = 22
 }

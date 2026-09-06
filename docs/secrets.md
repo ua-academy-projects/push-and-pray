@@ -24,8 +24,9 @@ The key is the environment variable the application expects; the value is the
 Secret Manager container ID. Both halves are non-secret, which is why the whole
 mapping can live in a file the repository reads.
 
-`infrastructure/terraform/secrets.tf` flattens those maps into the set of
-containers to create, and into the list of (workload, secret) pairs to grant.
+`infrastructure/terraform/secrets-gcp.tf`/`secrets-aws.tf` flatten those maps
+into the set of containers to create, and into the list of (workload, secret)
+pairs to grant.
 Giving a workload a new secret is a one-line change to that JSON — the
 container, the grant and the environment-variable name all follow from it.
 
