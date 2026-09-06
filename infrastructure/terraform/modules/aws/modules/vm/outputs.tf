@@ -10,7 +10,7 @@ output "internal_ip" {
 
 output "public_ip" {
   description = "Static Elastic IP address, or null when none is assigned."
-  value       = var.assign_public_ip ? aws_eip.public[0].public_ip : null
+  value       = var.vm.assign_public_ip ? aws_eip.public[0].public_ip : null
 }
 
 output "security_group_ids" {

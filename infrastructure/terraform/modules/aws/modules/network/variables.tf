@@ -8,71 +8,53 @@ variable "resource_prefix" {
   }
 }
 
-variable "network_cidr" {
-  description = "CIDR range of the VPC. Must contain both subnets - AWS, unlike GCP, gives the network itself a range."
-  type        = string
+variable "config" {
+  description = "The parts of the project configuration this module reads. A wider object converts down to this type, so the caller passes the whole configuration."
+  type = object({
+    network = object({
+      ui_public_ports = list(number)
+    })
+    service_ports = object({
+      history_api = number
+      postgresql  = number
+    })
+  })
 
   validation {
-    condition     = can(cidrhost(var.network_cidr, 0))
-    error_message = "network_cidr must be a valid CIDR range."
+    condition     = toset(var.config.network.ui_public_ports) == toset([443])
+    error_message = "ui_public_ports must contain exactly port 443: Traefik terminates TLS there and solves the ACME challenge with TLS-ALPN-01, so nothing ever listens on 80."
+  }
+
+  validation {
+    condition = alltrue([
+      for port in values(var.config.service_ports) :
+      port >= 1 && port <= 65535
+    ])
+    error_message = "Every service port must be between 1 and 65535."
   }
 }
 
-variable "public_subnet_cidr" {
-  description = "CIDR range of the public subnet. Holds the bastion and every other VM that is assigned a public IP."
-  type        = string
+variable "bastion" {
+  description = "The bastion this cloud runs, from the project configuration. Only its externally reachable SSH settings are read."
+  type = object({
+    ssh_port      = number
+    allowed_cidrs = list(string)
+  })
 
   validation {
-    condition     = can(cidrhost(var.public_subnet_cidr, 0))
-    error_message = "public_subnet_cidr must be a valid CIDR range."
+    condition     = var.bastion.ssh_port >= 1 && var.bastion.ssh_port <= 65535
+    error_message = "bastion.ssh_port must be between 1 and 65535."
   }
-}
-
-variable "private_subnet_cidr" {
-  description = "CIDR range of the private subnet. Reaches the internet through the NAT gateway only."
-  type        = string
-
-  validation {
-    condition     = can(cidrhost(var.private_subnet_cidr, 0))
-    error_message = "private_subnet_cidr must be a valid CIDR range."
-  }
-}
-
-variable "availability_zone" {
-  description = "Availability zone both subnets are created in. An AWS subnet cannot span zones, so this is required where GCP needs nothing."
-  type        = string
-}
-
-variable "enable_nat_gateway" {
-  description = "Whether to create the NAT gateway. Only VMs without a public IP need it, and it bills by the hour whether or not anything uses it."
-  type        = bool
-  default     = true
-}
-
-variable "bastion_ssh_port" {
-  description = "External SSH port opened for the bastion."
-  type        = number
-
-  validation {
-    condition     = var.bastion_ssh_port >= 1 && var.bastion_ssh_port <= 65535
-    error_message = "bastion_ssh_port must be between 1 and 65535."
-  }
-}
-
-variable "bastion_allowed_cidrs" {
-  description = "Source CIDRs allowed to connect to the bastion."
-  type        = list(string)
 
   validation {
     condition = (
-      length(var.bastion_allowed_cidrs) > 0 &&
+      length(var.bastion.allowed_cidrs) > 0 &&
       alltrue([
-        for cidr in var.bastion_allowed_cidrs :
+        for cidr in var.bastion.allowed_cidrs :
         can(cidrhost(cidr, 0))
       ])
     )
-
-    error_message = "bastion_allowed_cidrs must contain at least one valid CIDR range."
+    error_message = "bastion.allowed_cidrs must contain at least one valid CIDR range."
   }
 }
 
@@ -82,37 +64,30 @@ variable "enable_bastion_ssh_bootstrap" {
   default     = false
 }
 
-variable "history_api_port" {
-  description = "Port used by UI to connect to the History API."
-  type        = number
+variable "profile" {
+  description = "This cloud's profile. An AWS VPC carries its own range, and an AWS subnet cannot span availability zones, so both are read here."
+  type = object({
+    network_cidr = string
+    zone         = string
+    subnets = object({
+      management = string
+      workload   = string
+    })
+  })
 
   validation {
-    condition     = var.history_api_port >= 1 && var.history_api_port <= 65535
-    error_message = "history_api_port must be between 1 and 65535."
+    condition = alltrue(concat(
+      [can(cidrhost(var.profile.network_cidr, 0))],
+      [for cidr in values(var.profile.subnets) : can(cidrhost(cidr, 0))],
+    ))
+    error_message = "network_cidr and every subnet range must be a valid CIDR."
   }
 }
 
-variable "postgresql_port" {
-  description = "Port used by workloads to connect to PostgreSQL on the infra VM."
-  type        = number
-
-  validation {
-    condition     = var.postgresql_port >= 1 && var.postgresql_port <= 65535
-    error_message = "postgresql_port must be between 1 and 65535."
-  }
-}
-
-variable "ui_public_ports" {
-  description = "Public TCP ports exposed on the UI VM"
-  type        = list(string)
-  default     = ["443"]
-
-  validation {
-    condition = (
-      toset(var.ui_public_ports) == toset(["443"])
-    )
-    error_message = "ui_public_ports must contain exactly port 443"
-  }
+variable "enable_nat_gateway" {
+  description = "Whether to create the NAT gateway. Only VMs without a public IP need it, and it bills by the hour whether or not anything uses it."
+  type        = bool
+  default     = true
 }
 
 variable "tags" {

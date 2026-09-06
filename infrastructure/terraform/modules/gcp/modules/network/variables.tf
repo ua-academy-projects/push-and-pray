@@ -8,50 +8,53 @@ variable "resource_prefix" {
   }
 }
 
-variable "management_subnet_cidr" {
-  description = "CIDR range of the management subnet."
-  type        = string
+variable "config" {
+  description = "The parts of the project configuration this module reads. A wider object converts down to this type, so the caller passes the whole configuration."
+  type = object({
+    network = object({
+      ui_public_ports = list(number)
+    })
+    service_ports = object({
+      history_api = number
+      postgresql  = number
+    })
+  })
 
   validation {
-    condition     = can(cidrhost(var.management_subnet_cidr, 0))
-    error_message = "management_subnet_cidr must be a valid CIDR range."
+    condition     = toset(var.config.network.ui_public_ports) == toset([443])
+    error_message = "ui_public_ports must contain exactly port 443: Traefik terminates TLS there and solves the ACME challenge with TLS-ALPN-01, so nothing ever listens on 80."
+  }
+
+  validation {
+    condition = alltrue([
+      for port in values(var.config.service_ports) :
+      port >= 1 && port <= 65535
+    ])
+    error_message = "Every service port must be between 1 and 65535."
   }
 }
 
-variable "workload_subnet_cidr" {
-  description = "CIDR range of the workload subnet."
-  type        = string
+variable "bastion" {
+  description = "The bastion this cloud runs, from the project configuration. Only its externally reachable SSH settings are read."
+  type = object({
+    ssh_port      = number
+    allowed_cidrs = list(string)
+  })
 
   validation {
-    condition     = can(cidrhost(var.workload_subnet_cidr, 0))
-    error_message = "workload_subnet_cidr must be a valid CIDR range."
+    condition     = var.bastion.ssh_port >= 1 && var.bastion.ssh_port <= 65535
+    error_message = "bastion.ssh_port must be between 1 and 65535."
   }
-}
-
-variable "bastion_ssh_port" {
-  description = "External SSH port opened for the bastion."
-  type        = number
-
-  validation {
-    condition     = var.bastion_ssh_port >= 1 && var.bastion_ssh_port <= 65535
-    error_message = "bastion_ssh_port must be between 1 and 65535."
-  }
-}
-
-variable "bastion_allowed_cidrs" {
-  description = "Source CIDRs allowed to connect to the bastion."
-  type        = list(string)
 
   validation {
     condition = (
-      length(var.bastion_allowed_cidrs) > 0 &&
+      length(var.bastion.allowed_cidrs) > 0 &&
       alltrue([
-        for cidr in var.bastion_allowed_cidrs :
+        for cidr in var.bastion.allowed_cidrs :
         can(cidrhost(cidr, 0))
       ])
     )
-
-    error_message = "bastion_allowed_cidrs must contain at least one valid CIDR range."
+    error_message = "bastion.allowed_cidrs must contain at least one valid CIDR range."
   }
 }
 
@@ -61,35 +64,20 @@ variable "enable_bastion_ssh_bootstrap" {
   default     = false
 }
 
-variable "history_api_port" {
-  description = "Port used by UI to connect to the History API."
-  type        = number
+variable "profile" {
+  description = "This cloud's profile. Only the subnet ranges are read; a GCP network carries no range of its own."
+  type = object({
+    subnets = object({
+      management = string
+      workload   = string
+    })
+  })
 
   validation {
-    condition     = var.history_api_port >= 1 && var.history_api_port <= 65535
-    error_message = "history_api_port must be between 1 and 65535."
-  }
-
-}
-
-variable "postgresql_port" {
-  description = "Port used by workloads to connect to PostgreSQL on the infra VM."
-  type        = number
-
-  validation {
-    condition     = var.postgresql_port >= 1 && var.postgresql_port <= 65535
-    error_message = "postgresql_port must be between 1 and 65535."
-  }
-}
-variable "ui_public_ports" {
-  description = "Public TCP ports exposed on the UI VM"
-  type        = list(string)
-  default     = ["443"]
-
-  validation {
-    condition = (
-      toset(var.ui_public_ports) == toset(["443"])
-    )
-    error_message = "ui_public_ports must contain exactly port 443"
+    condition = alltrue([
+      for cidr in values(var.profile.subnets) :
+      can(cidrhost(cidr, 0))
+    ])
+    error_message = "Every subnet range must be a valid CIDR."
   }
 }

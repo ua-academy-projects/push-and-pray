@@ -8,6 +8,40 @@ variable "name" {
   }
 }
 
+variable "vm" {
+  description = "This VM's entry from the project configuration. Sizes, images and disk types are abstract labels resolved through var.profile."
+  type = object({
+    role             = string
+    size             = string
+    image            = string
+    internal_ip      = string
+    assign_public_ip = bool
+    boot_disk = object({
+      size_gb = number
+      type    = string
+    })
+  })
+
+  validation {
+    condition     = can(cidrhost("${var.vm.internal_ip}/32", 0))
+    error_message = "internal_ip must be a valid IPv4 address."
+  }
+
+  validation {
+    condition     = var.vm.boot_disk.size_gb >= 10
+    error_message = "boot_disk.size_gb must be at least 10 GiB."
+  }
+}
+
+variable "profile" {
+  description = "This cloud's profile. Only the three lookup maps are read; modules/shared/selection has already checked that every label used here exists in them and that their values are ones GCP accepts."
+  type = object({
+    machine_sizes = map(string)
+    disk_types    = map(string)
+    images        = map(string)
+  })
+}
+
 variable "subnetwork_id" {
   description = "ID of the subnet where the VM is created."
   type        = string
@@ -21,62 +55,6 @@ variable "network_tags" {
     condition     = length(var.network_tags) > 0 && length(var.network_tags) == length(distinct(var.network_tags))
     error_message = "network_tags must contain at least one unique tag."
   }
-}
-
-variable "role" {
-  description = "Functional role of the workload, independent from its resource name."
-  type        = string
-}
-
-variable "machine_type" {
-  description = "Compute Engine machine type for the workload VM."
-  type        = string
-}
-
-variable "image" {
-  description = "Boot image used by the VM."
-  type        = string
-}
-
-variable "internal_ip" {
-  description = "Static internal IPv4 address assigned to the VM."
-  type        = string
-
-  validation {
-    condition     = can(cidrhost("${var.internal_ip}/32", 0))
-    error_message = "internal_ip must be a valid IPv4 address."
-  }
-}
-
-variable "boot_disk_size_gb" {
-  description = "Size of the boot disk in GiB."
-  type        = number
-
-  validation {
-    condition     = var.boot_disk_size_gb >= 10
-    error_message = "boot_disk_size_gb must be at least 10 GiB."
-  }
-}
-
-variable "boot_disk_type" {
-  description = "Persistent Disk type used by the boot disk."
-  type        = string
-
-  validation {
-    condition = contains([
-      "pd-standard",
-      "pd-balanced",
-      "pd-ssd",
-    ], var.boot_disk_type)
-
-    error_message = "boot_disk_type must be pd-standard, pd-balanced, or pd-ssd."
-  }
-}
-
-variable "assign_public_ip" {
-  description = "Whether to create and assign a static external IP address."
-  type        = bool
-  default     = false
 }
 
 variable "labels" {

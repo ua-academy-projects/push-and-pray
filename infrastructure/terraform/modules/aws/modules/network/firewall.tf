@@ -22,14 +22,14 @@ resource "aws_vpc_security_group_egress_rule" "allow_all" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
-  for_each = toset(var.bastion_allowed_cidrs)
+  for_each = toset(var.bastion.allowed_cidrs)
 
   security_group_id = aws_security_group.scope["bastion"].id
   cidr_ipv4         = each.value
 
   ip_protocol = "tcp"
-  from_port   = var.bastion_ssh_port
-  to_port     = var.bastion_ssh_port
+  from_port   = var.bastion.ssh_port
+  to_port     = var.bastion.ssh_port
 
   tags = var.tags
 }
@@ -38,8 +38,8 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
 # This rule must be explicitly enabled and removed immediately after bootstrap.
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh_bootstrap" {
   for_each = (
-    var.enable_bastion_ssh_bootstrap && var.bastion_ssh_port != 22
-    ? toset(var.bastion_allowed_cidrs)
+    var.enable_bastion_ssh_bootstrap && var.bastion.ssh_port != 22
+    ? toset(var.bastion.allowed_cidrs)
     : toset([])
   )
 
@@ -67,7 +67,7 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ui_web" {
-  for_each = toset(var.ui_public_ports)
+  for_each = toset(local.ui_public_ports)
 
   security_group_id = aws_security_group.scope["ui"].id
   cidr_ipv4         = "0.0.0.0/0"
@@ -84,8 +84,8 @@ resource "aws_vpc_security_group_ingress_rule" "history_api" {
   referenced_security_group_id = aws_security_group.scope["ui"].id
 
   ip_protocol = "tcp"
-  from_port   = var.history_api_port
-  to_port     = var.history_api_port
+  from_port   = var.config.service_ports.history_api
+  to_port     = var.config.service_ports.history_api
 
   tags = var.tags
 }
@@ -97,8 +97,8 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
   referenced_security_group_id = aws_security_group.scope[each.value].id
 
   ip_protocol = "tcp"
-  from_port   = var.postgresql_port
-  to_port     = var.postgresql_port
+  from_port   = var.config.service_ports.postgresql
+  to_port     = var.config.service_ports.postgresql
 
   tags = var.tags
 }

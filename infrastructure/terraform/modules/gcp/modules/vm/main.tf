@@ -5,7 +5,7 @@ resource "google_service_account" "workload" {
 }
 
 resource "google_compute_address" "public" {
-  count = var.assign_public_ip ? 1 : 0
+  count = var.vm.assign_public_ip ? 1 : 0
 
   name   = "${var.name}-ip"
   labels = var.labels
@@ -13,7 +13,7 @@ resource "google_compute_address" "public" {
 
 resource "google_compute_instance" "workload" {
   name                      = var.name
-  machine_type              = var.machine_type
+  machine_type              = local.machine_type
   allow_stopping_for_update = true
 
   tags   = var.network_tags
@@ -23,19 +23,19 @@ resource "google_compute_instance" "workload" {
     auto_delete = true
 
     initialize_params {
-      image  = var.image
-      size   = var.boot_disk_size_gb
-      type   = var.boot_disk_type
+      image  = local.image
+      size   = var.vm.boot_disk.size_gb
+      type   = local.boot_disk_type
       labels = var.labels
     }
   }
 
   network_interface {
     subnetwork = var.subnetwork_id
-    network_ip = var.internal_ip
+    network_ip = var.vm.internal_ip
 
     dynamic "access_config" {
-      for_each = var.assign_public_ip ? [1] : []
+      for_each = var.vm.assign_public_ip ? [1] : []
 
       content {
         nat_ip = google_compute_address.public[0].address
@@ -56,7 +56,7 @@ resource "google_compute_instance" "workload" {
 
   lifecycle {
     precondition {
-      condition     = !var.assign_public_ip || contains(["ui", "bastion"], var.role)
+      condition     = !var.vm.assign_public_ip || contains(["ui", "bastion"], var.vm.role)
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }

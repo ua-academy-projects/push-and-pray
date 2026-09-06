@@ -22,7 +22,7 @@ resource "aws_iam_instance_profile" "workload" {
 }
 
 resource "aws_eip" "public" {
-  count = var.assign_public_ip ? 1 : 0
+  count = var.vm.assign_public_ip ? 1 : 0
 
   domain = "vpc"
 
@@ -30,19 +30,19 @@ resource "aws_eip" "public" {
 }
 
 resource "aws_instance" "workload" {
-  ami           = var.ami
-  instance_type = var.instance_type
+  ami           = local.ami
+  instance_type = local.instance_type
 
   subnet_id              = var.subnet_id
-  private_ip             = var.private_ip
+  private_ip             = var.vm.internal_ip
   vpc_security_group_ids = var.security_group_ids
 
   iam_instance_profile = aws_iam_instance_profile.workload.name
   user_data            = local.user_data
 
   root_block_device {
-    volume_size = var.boot_disk_size_gb
-    volume_type = var.boot_disk_type
+    volume_size = var.vm.boot_disk.size_gb
+    volume_type = local.boot_disk_type
     encrypted   = true
 
     tags = var.tags
@@ -55,7 +55,7 @@ resource "aws_instance" "workload" {
 
   lifecycle {
     precondition {
-      condition     = !var.assign_public_ip || contains(["ui", "bastion"], var.role)
+      condition     = !var.vm.assign_public_ip || contains(["ui", "bastion"], var.vm.role)
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }
@@ -64,7 +64,7 @@ resource "aws_instance" "workload" {
 }
 
 resource "aws_eip_association" "public" {
-  count = var.assign_public_ip ? 1 : 0
+  count = var.vm.assign_public_ip ? 1 : 0
 
   instance_id   = aws_instance.workload.id
   allocation_id = aws_eip.public[0].id
