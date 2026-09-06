@@ -7,7 +7,7 @@ locals {
 }
 
 resource "google_project_service" "required" {
-  for_each = length(local.my_vms) > 0 ? toset(local.required_apis) : toset([])
+  for_each = local.is_active ? toset(local.required_apis) : toset([])
 
   service = each.value
 
