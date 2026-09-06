@@ -28,3 +28,9 @@ variable "secret_version_managers" {
     error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
   }
 }
+
+variable "secret_version_manager_arns" {
+  description = "AWS IAM principal ARNs allowed to add new versions to every secret. The AWS counterpart of secret_version_managers, kept separate because the two clouds name principals differently."
+  type        = list(string)
+  default     = []
+}

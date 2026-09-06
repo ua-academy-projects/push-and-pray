@@ -1,66 +1,54 @@
-output "bastion_public_ip" {
-  description = "Bastion public IP."
-  value       = module.vm["bastion"].public_ip
+output "bastion_public_ips" {
+  description = "Public IP of every bastion, by VM name. Each cloud runs its own."
+  value       = merge(module.gcp.bastion_public_ips, module.aws.bastion_public_ips)
 }
 
 output "workload_vm_names" {
   description = "VM names by workload."
-  value = {
-    for name, workload in local.workload_vms : name => module.vm[name].name
-  }
+  value       = merge(module.gcp.workload_vm_names, module.aws.workload_vm_names)
 }
 
 output "workload_roles" {
   description = "Roles by workload."
-  value = {
-    for name, workload in local.workload_vms : name => workload.role
-  }
+  value       = merge(module.gcp.workload_roles, module.aws.workload_roles)
+}
+
+output "workload_clouds" {
+  description = "Cloud hosting each workload. Matches the cloud label the Ansible inventory selects on."
+  value       = merge(module.gcp.workload_clouds, module.aws.workload_clouds)
 }
 
 output "workload_internal_ips" {
   description = "Internal IPs by workload."
-  value = {
-    for name, workload in local.workload_vms : name => module.vm[name].internal_ip
-  }
+  value       = merge(module.gcp.workload_internal_ips, module.aws.workload_internal_ips)
 }
 
 output "workload_external_ips" {
   description = "External IPs by workload."
-  value = {
-    for name, workload in local.workload_vms : name => module.vm[name].public_ip
-  }
+  value       = merge(module.gcp.workload_external_ips, module.aws.workload_external_ips)
 }
 
-output "workload_network_tags" {
-  description = "Network tags by workload."
-  value = {
-    for name, workload in local.workload_vms : name => module.vm[name].network_tags
-  }
+output "workload_network_scopes" {
+  description = "Firewall scopes each workload belongs to: network tags on GCP, security group IDs on AWS."
+  value       = merge(module.gcp.workload_network_scopes, module.aws.workload_network_scopes)
 }
 
-output "workload_service_account_emails" {
-  description = "Service-account emails by workload."
-  value = {
-    for name, workload in local.workload_vms : name => module.vm[name].service_account_email
-  }
+output "workload_identities" {
+  description = "Runtime identity of each workload: a service-account email on GCP, an IAM role ARN on AWS."
+  value       = merge(module.gcp.workload_identities, module.aws.workload_identities)
 }
 
 output "secret_ids" {
-  description = "Secret Manager container IDs created from the project configuration."
-  value       = sort(local.all_secret_ids)
+  description = "Secret container IDs created from the project configuration."
+  value       = sort(distinct(concat(module.gcp.secret_ids, module.aws.secret_ids)))
 }
 
 output "secret_resource_names" {
-  description = "Fully qualified Secret Manager resource names, by secret ID."
-  value = {
-    for secret_id, secret in google_secret_manager_secret.this : secret_id => secret.name
-  }
+  description = "Fully qualified secret resource names, by secret ID."
+  value       = merge(module.gcp.secret_resource_names, module.aws.secret_resource_names)
 }
 
 output "workload_secret_access" {
-  description = "Secret IDs each workload service account may read. Names only - never values."
-  value = {
-    for name, workload in local.workload_vms :
-    name => sort(distinct(values(workload.secret_mappings)))
-  }
+  description = "Secret IDs each workload identity may read. Names only - never values."
+  value       = merge(module.gcp.workload_secret_access, module.aws.workload_secret_access)
 }

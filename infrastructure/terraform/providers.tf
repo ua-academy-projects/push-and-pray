@@ -1,5 +1,5 @@
 provider "google" {
-  project = local.config.project_id
-  region  = local.config.region
-  zone    = local.config.zone
+  project = try(local.config.clouds.gcp.project_id, null)
+  region  = try(local.config.clouds.gcp.region, null)
+  zone    = try(local.config.clouds.gcp.zone, null)
 }

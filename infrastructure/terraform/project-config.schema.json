@@ -63,13 +63,14 @@
       "required": ["ui_public_ports"],
       "properties": {
         "ui_public_ports": {
+          "$comment": "Traefik terminates TLS on 443 and solves the ACME challenge with TLS-ALPN-01, so nothing ever listens on 80. Opening it would expose a port with no service behind it.",
           "type": "array",
           "items": {
             "type": "integer",
-            "enum": [80, 443]
+            "enum": [443]
           },
-          "minItems": 2,
-          "maxItems": 2,
+          "minItems": 1,
+          "maxItems": 1,
           "uniqueItems": true
         }
       }
@@ -104,6 +105,12 @@
             },
             {
               "required": ["project_id"]
+            },
+            {
+              "$comment": "A GCP network has no CIDR of its own; its subnets carry the ranges.",
+              "not": {
+                "required": ["network_cidr"]
+              }
             }
           ]
         },
@@ -117,6 +124,9 @@
               "not": {
                 "required": ["project_id"]
               }
+            },
+            {
+              "required": ["network_cidr"]
             }
           ]
         }
@@ -178,6 +188,11 @@
         },
         "zone": {
           "$comment": "GCP places instances here; AWS also binds its subnets to it, since an AWS subnet cannot span availability zones.",
+          "type": "string",
+          "minLength": 1
+        },
+        "network_cidr": {
+          "$comment": "AWS only. An AWS VPC carries its own range and every subnet must fall inside it; a GCP network has no range of its own.",
           "type": "string",
           "minLength": 1
         },
