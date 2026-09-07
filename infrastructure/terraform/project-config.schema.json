@@ -8,8 +8,10 @@
     "default_cloud",
     "location",
     "environment",
-    "clouds",
+    "secret_version_managers",
+    "gcp",
     "regions",
+    "zones",
     "sizes",
     "disk_types",
     "images",
@@ -22,6 +24,15 @@
     "vms"
   ],
   "properties": {
+    "secret_version_managers": {
+      "description": "GCP IAM members allowed to add versions to application secrets.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(user|group|serviceAccount|principal|principalSet):.+$"
+      }
+    },
     "default_cloud": {
       "$ref": "#/$defs/cloud"
     },
@@ -33,11 +44,15 @@
       "type": "string",
       "enum": ["dev", "stage", "prod"]
     },
-    "clouds": {
-      "$ref": "#/$defs/cloud_settings"
+    "gcp": {
+      "$ref": "#/$defs/gcp_settings"
     },
     "regions": {
       "$comment": "Maps abstract location labels to provider region identifiers.",
+      "$ref": "#/$defs/provider_string_catalog"
+    },
+    "zones": {
+      "$comment": "Maps location labels to explicit provider availability zones.",
       "$ref": "#/$defs/provider_string_catalog"
     },
     "sizes": {
@@ -92,11 +107,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "vpc_cidr",
         "management_subnet_cidr",
         "workload_subnet_cidr",
         "ui_public_ports"
       ],
       "properties": {
+        "vpc_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
         "management_subnet_cidr": {
           "type": "string",
           "minLength": 1
@@ -172,32 +192,14 @@
       "type": "string",
       "enum": ["gcp", "aws"]
     },
-    "cloud_settings": {
+    "gcp_settings": {
       "type": "object",
-      "minProperties": 1,
       "additionalProperties": false,
+      "required": ["project_id"],
       "properties": {
-        "gcp": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["project_id"],
-          "properties": {
-            "project_id": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
-            }
-          }
-        },
-        "aws": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["account_id"],
-          "properties": {
-            "account_id": {
-              "type": "string",
-              "pattern": "^[0-9]{12}$"
-            }
-          }
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
         }
       }
     },
@@ -275,6 +277,11 @@
       "additionalProperties": false,
       "required": ["size_gb", "type"],
       "properties": {
+        "iops": {
+          "description": "Provisioned AWS EBS IOPS; required when using io1 or io2.",
+          "type": "integer",
+          "minimum": 1
+        },
         "size_gb": {
           "type": "integer",
           "minimum": 10
@@ -357,6 +364,10 @@
         "internal_ip": {
           "type": "string",
           "minLength": 1
+        },
+        "internal_ips": {
+          "$comment": "Optional per-cloud private IP overrides; internal_ip is the fallback.",
+          "$ref": "#/$defs/provider_string_map"
         },
         "boot_disk": {
           "$ref": "#/$defs/boot_disk"

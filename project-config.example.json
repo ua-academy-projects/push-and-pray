@@ -2,15 +2,12 @@
   "default_cloud": "gcp",
   "location": "us-east",
   "environment": "dev",
+  "secret_version_managers": [],
 
-  "clouds": {
-    "gcp": {
-      "project_id": "example-project-12345"
-    },
-    "aws": {
-      "account_id": "123456789012"
-    }
+  "gcp": {
+    "project_id": "example-project-12345"
   },
+
 
   "regions": {
     "us-east": {
@@ -20,6 +17,17 @@
     "eu-west": {
       "gcp": "europe-west1",
       "aws": "eu-west-1"
+    }
+  },
+
+  "zones": {
+    "us-east": {
+      "gcp": "us-east1-b",
+      "aws": "us-east-1a"
+    },
+    "eu-west": {
+      "gcp": "europe-west1-b",
+      "aws": "eu-west-1a"
     }
   },
 
@@ -152,6 +160,9 @@
       "machine_type": "micro",
       "image": "ubuntu-26.04",
       "internal_ip": "10.0.1.8",
+      "internal_ips": {
+        "aws": "10.0.0.5"
+      },
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
