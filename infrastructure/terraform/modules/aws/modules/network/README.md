@@ -1,30 +1,12 @@
 # AWS network module
 
 Creates the VPC foundation for one AWS deployment: the VPC, a public and a
-private subnet, an internet gateway, an optional NAT gateway, route tables, and
-one security group per role with the ingress rules between them.
+private subnet, an internet gateway, an optional NAT gateway, and the route
+tables that make the two subnets differ.
 
-The module is called once per active cloud. It never sees the VM list - only
-the ranges from the cloud profile, the shared service ports, and the bastion's
-externally reachable SSH settings.
-
-## Security groups instead of network tags
-
-GCP matches firewall rules against tag strings at the network level. AWS
-attaches a security group to the instance, and rules reference another group.
-The module creates one group per scope and exports the map:
-
-```hcl
-security_group_ids = {
-  bastion = "sg-..."
-  infra   = "sg-..."
-  history = "sg-..."
-  fetcher = "sg-..."
-  ui      = "sg-..."
-}
-```
-
-The VM module attaches the groups matching each VM's `network_tags`.
+It knows nothing about ports, roles or the bastion. Who may talk to whom lives
+in the sibling [firewall module](../firewall/README.md), because that contract
+changes with the application while this layout does not.
 
 ## Resources
 
@@ -36,25 +18,6 @@ The VM module attaches the groups matching each VM's `network_tags`.
 | `<prefix>-igw` | Internet gateway |
 | `<prefix>-nat`, `<prefix>-nat-ip` | NAT gateway and its address, only when `enable_nat_gateway` |
 | `<prefix>-public`, `<prefix>-private` route tables | One default route each, plus their associations |
-| `<prefix>-<scope>` | One security group per role |
-
-## Ingress contract
-
-| Rule | Source | Destination | TCP ports |
-| --- | --- | --- | --- |
-| `bastion_ssh` | `bastion.allowed_cidrs` | bastion group | `bastion.ssh_port` |
-| `bastion_ssh_bootstrap` | `bastion.allowed_cidrs` | bastion group | `22` (temporary and opt-in) |
-| `workload_ssh` | bastion group | infra, history, fetcher, ui groups | `22` |
-| `history_api` | ui group | history group | `config.service_ports.history_api` |
-| `postgresql` | fetcher, history, ui groups | infra group | `config.service_ports.postgresql` |
-| `ui_web` | `0.0.0.0/0` | ui group | `config.network.ui_public_ports` (`443` only) |
-
-## Egress is not free here
-
-A GCP network permits all egress unless a rule denies it; an AWS security group
-permits none unless a rule allows it. The module therefore creates an explicit
-allow-all egress rule for every group. Without it no instance could pull a
-container image, and nothing in the Terraform plan would hint at why.
 
 ## Two placement rules that differ from GCP
 
@@ -79,9 +42,6 @@ every VM on this cloud has a public address.
 | --- | --- |
 | `resource_prefix` | Prefix for every resource name |
 | `profile` | Cloud profile; `network_cidr`, `zone` and both subnet ranges are read |
-| `config` | Project configuration; only `network.ui_public_ports` and `service_ports` are read |
-| `bastion` | The bastion's `ssh_port` and `allowed_cidrs` |
-| `enable_bastion_ssh_bootstrap` | Opt in to the temporary port 22 rule |
 | `enable_nat_gateway` | Whether any VM needs outbound access without a public IP |
 | `tags` | Tags for every resource |
 
@@ -89,7 +49,7 @@ every VM on this cloud has a public address.
 
 | Name | Description |
 | --- | --- |
-| `vpc_id`, `vpc_arn`, `vpc_cidr_block` | The VPC |
+| `vpc_id`, `vpc_arn`, `vpc_cidr_block` | The VPC; `vpc_id` is what the firewall module needs |
 | `availability_zone` | Zone both subnets are bound to |
 | `public_subnet_id`, `public_subnet_cidr` | Subnet routed to the gateway |
 | `private_subnet_id`, `private_subnet_cidr` | Subnet routed through NAT |
@@ -97,7 +57,6 @@ every VM on this cloud has a public address.
 | `nat_gateway_id` | NAT gateway, or `null` when none is created |
 | `nat_public_ip` | Address every private VM appears to come from - useful for upstream allowlisting |
 | `public_route_table_id`, `private_route_table_id` | Route tables |
-| `security_group_ids`, `security_group_names`, `security_group_arns` | Groups by scope |
 
 ## Usage
 
@@ -107,13 +66,10 @@ module "network" {
   count  = local.is_active ? 1 : 0
 
   resource_prefix = local.resource_prefix
-  config          = var.config
   profile         = local.profile
-  bastion         = local.bastion_vm
 
-  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-  enable_nat_gateway           = local.needs_nat_gateway
-  tags                         = local.common_tags
+  enable_nat_gateway = local.needs_nat_gateway
+  tags               = local.common_tags
 }
 ```
 

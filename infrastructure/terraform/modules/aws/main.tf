@@ -1,14 +1,29 @@
+# The VPC foundation: a VPC, its subnets and outbound routing. Long-lived and
+# unaware of which ports the application happens to need.
 module "network" {
   source = "./modules/network"
   count  = local.is_active ? 1 : 0
 
   resource_prefix = local.resource_prefix
-  config          = var.config
   profile         = local.profile
+
+  enable_nat_gateway = local.needs_nat_gateway
+  tags               = local.common_tags
+}
+
+# Who may talk to whom. Separate from the network because it changes with the
+# application's ports rather than with the network layout, and because the two
+# are different privilege boundaries.
+module "firewall" {
+  source = "./modules/firewall"
+  count  = local.is_active ? 1 : 0
+
+  resource_prefix = local.resource_prefix
+  vpc_id          = module.network[0].vpc_id
+  config          = var.config
   bastion         = local.bastion_vm
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-  enable_nat_gateway           = local.needs_nat_gateway
   tags                         = local.common_tags
 }
 
@@ -26,7 +41,7 @@ module "vm" {
   subnet_id = each.value.assign_public_ip ? module.network[0].public_subnet_id : module.network[0].private_subnet_id
   security_group_ids = [
     for scope in each.value.network_tags :
-    module.network[0].security_group_ids[scope]
+    module.firewall[0].security_group_ids[scope]
   ]
 
   ssh_users = var.config.ssh_users

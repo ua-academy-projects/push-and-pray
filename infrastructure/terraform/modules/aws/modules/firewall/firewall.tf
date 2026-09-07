@@ -3,7 +3,7 @@ resource "aws_security_group" "scope" {
 
   name        = "${var.resource_prefix}-${each.value}"
   description = "Traffic allowed to the ${each.value} scope"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = var.vpc_id
 
   tags = merge(var.tags, { Name = "${var.resource_prefix}-${each.value}" })
 }
@@ -34,8 +34,6 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
   tags = var.tags
 }
 
-# A fresh bastion listens on 22 until Ansible installs the final sshd policy.
-# This rule must be explicitly enabled and removed immediately after bootstrap.
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh_bootstrap" {
   for_each = (
     var.enable_bastion_ssh_bootstrap && var.bastion.ssh_port != 22
