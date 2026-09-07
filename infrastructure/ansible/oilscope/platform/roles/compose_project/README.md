@@ -24,7 +24,7 @@ The controller must have access to the external project configuration JSON.
   both default to `deploy`.
 
 Image references are rendered from `registry.repository` and
-`registry.image_sha` in the project configuration. Secret values and private
+`registry.image_tag` in the project configuration. Secret values and private
 registry authentication are not handled by this role.
 
 ## Example playbook

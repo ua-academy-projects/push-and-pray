@@ -11,9 +11,9 @@
   vars:
     resolve_secrets_mappings: >-
       {{ ({} if fetcher_postgres_password | length > 0
-             else {'POSTGRES_PASSWORD': fetcher_secret_requirements.POSTGRES_PASSWORD})
+             else {'fetcher_postgres_password': fetcher_secret_requirements.fetcher_postgres_password})
          | combine({} if fetcher_oilpriceapi_key | length > 0
-                      else {'OILPRICEAPI_KEY': fetcher_secret_requirements.OILPRICEAPI_KEY}) }}
+                      else {'fetcher_oilpriceapi_key': fetcher_secret_requirements.fetcher_oilpriceapi_key}) }}
   when: fetcher_postgres_password | length == 0 or fetcher_oilpriceapi_key | length == 0
 
 - name: Assign the resolved Fetcher database credential

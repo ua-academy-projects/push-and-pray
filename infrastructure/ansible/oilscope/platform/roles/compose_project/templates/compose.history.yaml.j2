@@ -2,7 +2,7 @@ name: petroscope
 
 services:
   history:
-    image: "{{ compose_project_config.registry.repository }}/history:{{ compose_project_config.registry.image_sha }}"
+    image: "{{ compose_project_config.registry.repository }}/history:{{ compose_project_config.registry.image_tag }}"
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
     pull_policy: ${APPLICATION_PULL_POLICY:-always}
     restart: unless-stopped

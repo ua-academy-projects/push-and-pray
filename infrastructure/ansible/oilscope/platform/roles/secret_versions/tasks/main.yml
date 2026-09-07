@@ -73,7 +73,7 @@
              'cloud': item.0.cloud,
              'project': secret_versions_project,
              'region': secret_versions_region,
-             'runtime_variable': item.1.key,
+             'runtime_variable': item.1.value.runtime_env,
              'logical_secret_id': item.1.value.secret_id,
              'source_env': item.1.value.source_env,
              'secret_id': secret_versions_physical_id

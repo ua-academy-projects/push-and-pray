@@ -1,3 +1,12 @@
+resource "aws_key_pair" "bootstrap" {
+  for_each = local.key_pair_locations
+
+  region     = each.value.region
+  key_name   = "${local.resource_prefix}-bootstrap${each.key == var.config.default_location ? "" : "-${each.key}"}"
+  public_key = trimspace(one(values(var.config.ssh_users)))
+  tags       = merge(var.config.common_labels, { environment = var.config.environment, Name = "${local.resource_prefix}-bootstrap" })
+}
+
 data "aws_iam_policy_document" "assume_role" {
   for_each = local.vms
 
@@ -46,7 +55,7 @@ resource "aws_instance" "workload" {
   private_ip             = each.value.internal_ip
   vpc_security_group_ids = [var.security_group_ids_by_location[each.value.location][each.value.role]]
   iam_instance_profile   = aws_iam_instance_profile.workload[each.key].name
-  key_name               = var.key_names_by_location[each.value.location]
+  key_name               = aws_key_pair.bootstrap[each.value.location].key_name
 
   associate_public_ip_address = false
 

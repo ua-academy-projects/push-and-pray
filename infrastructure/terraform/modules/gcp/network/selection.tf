@@ -19,27 +19,18 @@ locals {
     for location in keys(local.vms_by_location) : location => var.config.locations[location].gcp
   }
 
-  location_suffixes = {
-    for location in keys(local.locations) :
-    location => location == var.config.default_location ? "" : "-${location}"
-  }
-  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
-
   roles_by_location = {
     for location, vms in local.vms_by_location :
     location => toset([for vm in values(vms) : vm.role])
   }
+
   workload_roles_by_location = {
     for location, roles in local.roles_by_location :
     location => toset([for role in roles : role if role != "bastion"])
   }
+
   bastion_vms_by_location = {
     for location, vms in local.vms_by_location :
     location => try(one([for vm in values(vms) : vm if vm.role == "bastion"]), null)
-  }
-  network_tags = {
-    for location, vms in local.vms_by_location : location => {
-      for name, vm in vms : vm.role => "${local.resource_prefix}-${name}"
-    }
   }
 }

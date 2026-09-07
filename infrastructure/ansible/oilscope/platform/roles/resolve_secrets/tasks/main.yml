@@ -9,7 +9,7 @@
   ansible.builtin.set_fact:
     resolve_secrets_result: >-
       {{ resolve_secrets_result | combine({
-           item.key: lookup(
+           item.value.runtime_env: lookup(
              'google.cloud.gcp_secret_manager',
              key=(resolve_secrets_name_prefix ~ '-' ~ resolve_secrets_environment
                   ~ '-' ~ item.value.secret_id),
@@ -24,7 +24,7 @@
   ansible.builtin.set_fact:
     resolve_secrets_result: >-
       {{ resolve_secrets_result | combine({
-           item.key: lookup(
+           item.value.runtime_env: lookup(
              'amazon.aws.secretsmanager_secret',
              resolve_secrets_name_prefix ~ '-' ~ resolve_secrets_environment
              ~ '-' ~ item.value.secret_id,

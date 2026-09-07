@@ -16,7 +16,7 @@ The `compose_project` role renders exactly one workload definition to
 | `ui` | UI service; Traefik is installed separately under `/opt/oilscope/proxy` |
 
 Image references are rendered from `registry.repository` and
-`registry.image_sha` in the external project configuration JSON. Runtime
+`registry.image_tag` in the external project configuration JSON. Runtime
 secrets are read from the target cloud secret manager and passed directly to
 the Ansible tasks that invoke Compose. They are not written to `deployment.env`.
 

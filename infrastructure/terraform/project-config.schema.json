@@ -89,7 +89,7 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "image_sha"],
+      "required": ["repository", "image_tag"],
       "properties": {
         "repository": {
           "type": "string",
@@ -99,7 +99,7 @@
           "type": "string",
           "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
-        "image_sha": {
+        "image_tag": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         }
