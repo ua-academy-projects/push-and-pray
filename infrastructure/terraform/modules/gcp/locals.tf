@@ -1,5 +1,6 @@
 locals {
-  config = var.config
+  config    = var.config
+  cloud_key = "gcp"
 
   resource_prefix = "${local.config.name_prefix}-${local.config.environment}"
 
@@ -8,7 +9,7 @@ locals {
       application = local.config.name_prefix
       environment = local.config.environment
       managed_by  = "terraform"
-      cloud       = var.cloud_key
+      cloud       = local.cloud_key
     },
     local.config.common_labels,
   )
@@ -21,17 +22,17 @@ locals {
   selected_raw_vms = {
     for name, vm in local.config.vms :
     name => vm
-    if local.effective_cloud_by_vm[name] == var.cloud_key
+    if local.effective_cloud_by_vm[name] == local.cloud_key
   }
 
   resolved_vms = {
     for name, vm in local.selected_raw_vms :
     name => merge(vm, {
       effective_cloud = local.effective_cloud_by_vm[name]
-      location        = local.config.regions[vm.region][var.cloud_key]
-      instance_type   = local.config.sizes[vm.size][var.cloud_key]
-      disk_type       = local.config.disk_types[vm.boot_disk.type][var.cloud_key]
-      image_config    = local.config.images[vm.image][var.cloud_key]
+      location        = local.config.regions[vm.region][local.cloud_key]
+      instance_type   = local.config.sizes[vm.size][local.cloud_key]
+      disk_type       = local.config.disk_types[vm.boot_disk.type][local.cloud_key]
+      image_config    = local.config.images[vm.image][local.cloud_key]
     })
   }
 

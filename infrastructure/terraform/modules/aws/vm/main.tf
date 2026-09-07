@@ -28,6 +28,31 @@ resource "aws_iam_instance_profile" "workload_profile" {
   role = aws_iam_role.workload_instance_role[each.key].name
 }
 
+# An instance receives only the secret ARNs declared by its own
+# vms.<name>.secret_mappings entry. Bastion has no mappings and therefore no
+# Secrets Manager read policy.
+resource "aws_iam_role_policy" "secret_read" {
+  for_each = {
+    for name, secret_arns in var.secret_arns_by_vm :
+    name => secret_arns
+    if length(secret_arns) > 0
+  }
+
+  name = "${local.vm_names[each.key]}-secrets-read"
+  role = aws_iam_role.workload_instance_role[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = each.value
+      },
+    ]
+  })
+}
+
 data "aws_ami" "ubuntu" {
   for_each    = var.vms
   most_recent = true

@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
 
 # Ansible requires inventory plugins to expose this variable.
 DOCUMENTATION = r"""
-name: oilscope_gcp
+name: oilscope_cloud
 short_description: OilScope multi-cloud inventory derived from the project configuration
 version_added: "0.1.0"
 author:
@@ -44,7 +44,7 @@ options:
     type: str
     required: true
     choices:
-      - oilscope.platform.oilscope_gcp
+      - oilscope.platform.oilscope_cloud
   project_config_path:
     description:
       - Path to the shared project configuration JSON. Absolute paths are used
@@ -92,7 +92,7 @@ notes:
 
 EXAMPLES = r"""
 # inventory/oilscope.yml
-plugin: oilscope.platform.oilscope_gcp
+plugin: oilscope.platform.oilscope_cloud
 cache: true
 cache_plugin: ansible.builtin.jsonfile
 cache_connection: ~/.cache/oilscope-inventory
@@ -116,7 +116,7 @@ def plain(value):
 
 
 class InventoryModule(BaseInventoryPlugin, Cacheable):
-    NAME = "oilscope.platform.oilscope_gcp"
+    NAME = "oilscope.platform.oilscope_cloud"
 
     def verify_file(self, path):
         return super().verify_file(path) and path.endswith(("oilscope.yml", "oilscope.yaml"))

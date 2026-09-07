@@ -3,7 +3,7 @@ module "network" {
   count  = local.has_vms ? 1 : 0
 
   resource_prefix = local.resource_prefix
-  region          = local.config.regions[local.config.default_region][var.cloud_key].region
+  region          = local.config.regions[local.config.default_region][local.cloud_key].region
 
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr

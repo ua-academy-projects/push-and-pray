@@ -1,10 +1,11 @@
+
 resource "aws_security_group" "bastion_ssh" {
   name   = "${var.resource_prefix}-allow-bastion-ssh"
-  vpc_id = aws_vpc.main.id
+  vpc_id = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "bastion-ssh"
-  }
+  })
 
 }
 
@@ -21,11 +22,11 @@ resource "aws_vpc_security_group_ingress_rule" "allow_ssh_to_bastion" {
 
 resource "aws_security_group" "ui" {
   name   = "${var.resource_prefix}-ui-security-group"
-  vpc_id = aws_vpc.main.id
+  vpc_id = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "ui"
-  }
+  })
 
 }
 
@@ -42,30 +43,30 @@ resource "aws_vpc_security_group_ingress_rule" "allow_tls" {
 }
 resource "aws_security_group" "fetcher" {
   name   = "${var.resource_prefix}-fetcher-security-group"
-  vpc_id = aws_vpc.main.id
+  vpc_id = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "fetcher"
-  }
+  })
 
 }
 
 resource "aws_security_group" "infra" {
   name   = "${var.resource_prefix}-infra-security-group"
-  vpc_id = aws_vpc.main.id
+  vpc_id = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "infra"
-  }
+  })
 
 }
 resource "aws_security_group" "history" {
   name   = "${var.resource_prefix}-history-security-group"
-  vpc_id = aws_vpc.main.id
+  vpc_id = var.vpc_id
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "history"
-  }
+  })
 
 }
 

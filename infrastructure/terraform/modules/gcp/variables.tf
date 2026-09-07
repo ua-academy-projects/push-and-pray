@@ -3,11 +3,6 @@ variable "config" {
   type        = any
 }
 
-variable "cloud_key" {
-  description = "Lookup key used to select GCP values from cloud mappings."
-  type        = string
-}
-
 variable "enable_bastion_ssh_bootstrap" {
   description = "Temporarily allow direct bastion SSH on port 22 during bootstrap."
   type        = bool

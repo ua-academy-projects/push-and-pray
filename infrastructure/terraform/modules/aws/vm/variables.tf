@@ -39,3 +39,9 @@ variable "workload_subnet_id" {
 variable "security_group_ids" {
   type = map(string)
 }
+
+variable "secret_arns_by_vm" {
+  description = "AWS Secrets Manager ARNs each workload instance role may read, keyed by VM name."
+  type        = map(list(string))
+  default     = {}
+}

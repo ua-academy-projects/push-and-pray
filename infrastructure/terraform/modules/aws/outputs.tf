@@ -37,3 +37,12 @@ output "workload_public_ips" {
     for name, vm in local.workload_vms : name => module.vm[0].public_ips[name]
   } : {}
 }
+
+output "workload_secret_access" {
+  description = "Secret IDs each AWS workload instance role may read."
+  value       = local.secret_ids_by_vm
+}
+
+output "secret_arns" {
+  value = module.secrets.secret_arns
+}

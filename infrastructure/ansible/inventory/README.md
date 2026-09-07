@@ -13,7 +13,7 @@ instances whose managed label/tag values match all three values:
 
 ## Data flow
 
-The `oilscope.platform.oilscope_gcp` wrapper keeps its historical plugin name
+The `oilscope.platform.oilscope_cloud` wrapper discovers both supported clouds
 for compatibility, but it is now multi-cloud. It performs these steps:
 
 1. Read `default_cloud`, `vms`, `regions`, `clouds`, `name_prefix`, and
@@ -143,7 +143,7 @@ Set `OILSCOPE_SSH_KEY` to the private key matching the public key stored in
 
 | Symptom | Likely cause |
 | --- | --- |
-| `unknown plugin 'oilscope.platform.oilscope_gcp'` | Rebuild and reinstall this repository's collection. |
+| `unknown plugin 'oilscope.platform.oilscope_cloud'` | Rebuild and reinstall this repository's collection. |
 | `unknown plugin 'google.cloud.gcp_compute'` | Install `google.cloud` from `requirements.yml`. |
 | `unknown plugin 'amazon.aws.aws_ec2'` | Install `amazon.aws` from `requirements.yml`. |
 | Missing Google library | Install `requirements.txt` and configure ADC. |

@@ -63,7 +63,7 @@ the dynamic inventory filters live resources by `cloud=gcp` / `cloud=aws`.
 ### Multi-cloud dynamic inventory
 
 Reworked
-`infrastructure/ansible/oilscope/platform/plugins/inventory/oilscope_gcp.py`.
+`infrastructure/ansible/oilscope/platform/plugins/inventory/oilscope_cloud.py`.
 The historical plugin filename and FQCN were retained for compatibility, but
 the plugin is now multi-cloud.
 
@@ -99,7 +99,7 @@ Updated dependencies:
 - Python source was parsed with Neovim Tree-sitter: zero syntax-error nodes.
 - Python source was compiled with Python 3.14 `compile(...)`: passed.
 - `ansible-doc` successfully loaded and rendered documentation for
-  `oilscope.platform.oilscope_gcp` when the source collection was exposed via
+  `oilscope.platform.oilscope_cloud` when the source collection was exposed via
   a temporary collection path.
 
 `terraform validate` cannot run successfully inside the Codex sandbox because

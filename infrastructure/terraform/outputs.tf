@@ -47,3 +47,13 @@ output "workload_secret_access" {
   description = "Secret IDs each GCP workload service account may read."
   value       = module.gcp.workload_secret_access
 }
+
+output "aws_secret_arns" {
+  description = "AWS Secrets Manager ARNs by logical secret ID. Secret values are never exposed."
+  value       = module.aws.secret_arns
+}
+
+output "aws_workload_secret_access" {
+  description = "Secret IDs each AWS workload instance role may read."
+  value       = module.aws.workload_secret_access
+}
