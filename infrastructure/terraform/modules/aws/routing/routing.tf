@@ -1,5 +1,5 @@
 resource "aws_internet_gateway" "main" {
-    vpc_id = aws_vpc.main.id
+    vpc_id = var.vpc_id
 
     tags = {
         Name = "${local.resource_prefix}-igw"
@@ -8,7 +8,7 @@ resource "aws_internet_gateway" "main" {
 
 resource "aws_eip" "nat" {
     domain = "vpc"
-    
+
     tags = {
         Name = "${local.resource_prefix}-nat-eip"
     }
@@ -16,7 +16,7 @@ resource "aws_eip" "nat" {
 
 resource "aws_nat_gateway" "main" {
     allocation_id = aws_eip.nat.id
-    subnet_id = aws_subnet.management.id
+    subnet_id = var.management_subnet_id
 
     depends_on = [aws_internet_gateway.main]
 
@@ -26,7 +26,7 @@ resource "aws_nat_gateway" "main" {
 }
 
 resource "aws_route_table" "public" {
-    vpc_id = aws_vpc.main.id
+    vpc_id = var.vpc_id
 
     route {
         cidr_block = "0.0.0.0/0"
@@ -39,7 +39,7 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table" "private" {
-    vpc_id = aws_vpc.main.id
+    vpc_id = var.vpc_id
 
     route {
         cidr_block = "0.0.0.0/0"
@@ -52,11 +52,11 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "management" {
-    subnet_id = aws_subnet.management.id
+    subnet_id = var.management_subnet_id
     route_table_id = aws_route_table.public.id
 }
 
 resource "aws_route_table_association" "workload" {
-    subnet_id = aws_subnet.workload.id
+    subnet_id = var.workload_subnet_id
     route_table_id = aws_route_table.private.id
 }

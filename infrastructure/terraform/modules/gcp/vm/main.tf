@@ -1,24 +1,9 @@
-resource "google_service_account" "workload" {
-  for_each = local.selected_vms
-
-  account_id   = "${local.resource_prefix}-${each.key}"
-  display_name = "${local.resource_prefix}-${each.key}"
-  description  = "Runtime identity for the ${each.key} workload VM"
-}
-
-resource "google_compute_address" "public" {
-  for_each = { for name, vm in local.selected_vms : name => vm if vm.assign_public_ip }
-
-  name   = "${local.resource_prefix}-${each.key}-ip"
-  labels = merge(local.merged_common_labels, try(each.value.labels, {}), { role = each.value.role })
-}
-
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 resource "google_compute_instance" "workload" {
   for_each = local.selected_vms
 
   name                      = "${local.resource_prefix}-${each.key}"
-  machine_type              = var.machine_types[each.value.machine_type]["gcp"]
+  machine_type              = var.config.machine_types[each.value.machine_type]["gcp"]
   allow_stopping_for_update = true
 
   tags = [
@@ -31,9 +16,9 @@ resource "google_compute_instance" "workload" {
     auto_delete = true
 
     initialize_params {
-      image  = var.images[coalesce(try(each.value.image, null), var.default_image)]["gcp"]
+      image  = var.config.images[coalesce(try(each.value.image, null), var.config.image)]["gcp"]
       size   = each.value.boot_disk.size_gb
-      type   = var.disk_types[each.value.boot_disk.type]["gcp"]
+      type   = var.config.disk_types[each.value.boot_disk.type]["gcp"]
       labels = merge(local.merged_common_labels, try(each.value.labels, {}), { role = each.value.role })
     }
   }
@@ -46,13 +31,13 @@ resource "google_compute_instance" "workload" {
       for_each = each.value.assign_public_ip ? [1] : []
 
       content {
-        nat_ip = google_compute_address.public[each.key].address
+        nat_ip = var.public_ips[each.key]
       }
     }
   }
 
   service_account {
-    email  = google_service_account.workload[each.key].email
+    email  = var.service_account_emails[each.key]
     scopes = ["cloud-platform"]
   }
 
@@ -72,7 +57,7 @@ resource "google_compute_instance" "workload" {
   metadata = {
     "enable-oslogin" = "FALSE"
     "ssh-keys" = join("\n", [
-      for username, public_key in var.ssh_users :
+      for username, public_key in var.config.ssh_users :
       "${username}:${trimspace(public_key)}"
     ])
   }

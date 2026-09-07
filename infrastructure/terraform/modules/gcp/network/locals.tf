@@ -1,5 +1,5 @@
 locals {
-  resource_prefix = "${var.name_prefix}-${var.environment}"
+  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
 
   network_tags = {
     bastion = "${local.resource_prefix}-bastion"

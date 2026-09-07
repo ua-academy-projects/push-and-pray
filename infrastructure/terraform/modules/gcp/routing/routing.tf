@@ -1,6 +1,6 @@
 resource "google_compute_router" "main" {
   name    = "${local.resource_prefix}-router"
-  network = google_compute_network.main.id
+  network = var.network_id
 }
 
 resource "google_compute_router_nat" "main" {
@@ -11,7 +11,7 @@ resource "google_compute_router_nat" "main" {
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
 
   subnetwork {
-    name                    = google_compute_subnetwork.workload.id
+    name                    = var.workload_subnet_id
     source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
   }
 }

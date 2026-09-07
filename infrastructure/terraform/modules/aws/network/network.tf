@@ -11,7 +11,7 @@ resource "aws_vpc" "main" {
 
 resource "aws_subnet" "management" {
     vpc_id = aws_vpc.main.id
-    cidr_block = var.management_subnet_cidr
+    cidr_block = var.config.network.management_subnet_cidr
     availability_zone = local.az
 
     tags = {
@@ -21,7 +21,7 @@ resource "aws_subnet" "management" {
 
 resource "aws_subnet" "workload" {
     vpc_id = aws_vpc.main.id
-    cidr_block = var.workload_subnet_cidr
+    cidr_block = var.config.network.workload_subnet_cidr
     availability_zone = local.az
 
     tags = {

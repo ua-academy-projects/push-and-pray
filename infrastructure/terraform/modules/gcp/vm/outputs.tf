@@ -12,7 +12,7 @@ output "public_ips" {
   description = "Static public IP addresses, or null when none is assigned, by VM key."
   value = {
     for name, vm in local.selected_vms :
-    name => vm.assign_public_ip ? google_compute_address.public[name].address : null
+    name => vm.assign_public_ip ? var.public_ips[name] : null
   }
 }
 
@@ -21,7 +21,3 @@ output "network_tags" {
   value       = { for name, vm in google_compute_instance.workload : name => vm.tags }
 }
 
-output "service_account_emails" {
-  description = "Emails of each workload VM's dedicated service account, by VM key."
-  value       = { for name, sa in google_service_account.workload : name => sa.email }
-}

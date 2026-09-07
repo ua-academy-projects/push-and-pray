@@ -1,3 +1,3 @@
 variable "config" {
-  type = any
+    type = any
 }
