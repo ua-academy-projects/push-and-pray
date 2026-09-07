@@ -30,7 +30,7 @@ resource "google_secret_manager_secret" "this" {
     auto {}
   }
 
-  depends_on = [google_project_service.required]
+  depends_on = [module.gcp_apis]
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {

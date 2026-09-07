@@ -1,3 +1,8 @@
+module "gcp_apis" {
+  source  = "./modules/gcp/apis"
+  enabled = length(local.gcp_vms) > 0
+}
+
 module "gcp_network" {
   source = "./modules/gcp/network"
   count  = length(local.gcp_vms) > 0 ? 1 : 0
@@ -18,7 +23,7 @@ module "gcp_network" {
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
 
-  depends_on = [google_project_service.required]
+  depends_on = [module.gcp_apis]
 }
 
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
@@ -56,7 +61,7 @@ module "gcp_vm" {
     },
   )
 
-  depends_on = [google_project_service.required]
+  depends_on = [module.gcp_apis]
 }
 
 module "aws_network" {
