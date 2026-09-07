@@ -37,3 +37,21 @@ output "common_labels" {
   description = "Labels or tags applied to every resource, including the cloud key the Ansible inventory selects on."
   value       = local.common_labels
 }
+
+output "cloud" {
+  description = "The cloud this instance of the module answered for."
+  value       = var.cloud
+}
+
+output "cloud_vms" {
+  description = "Every VM the configuration assigns to this cloud, whether or not it is built. Compare with my_vms to see what the active check dropped."
+  value       = local.cloud_vms
+}
+
+output "skipped_vms" {
+  description = "VMs assigned to this cloud that are deliberately not built, because the cloud hosts no workload. Empty whenever the cloud is active."
+  value = {
+    for name, vm in local.cloud_vms : name => vm
+    if !local.is_active
+  }
+}
