@@ -1,25 +1,27 @@
 resource "google_compute_firewall" "bastion_ssh" {
-  name    = "${var.resource_prefix}-allow-bastion-ssh"
-  network = google_compute_network.main.id
+  count = local.enabled ? 1 : 0
 
-  source_ranges = var.bastion_allowed_cidrs
+  name    = "${local.resource_prefix}-allow-bastion-ssh"
+  network = google_compute_network.main[0].id
+
+  source_ranges = var.config.vms.bastion.allowed_cidrs
   target_tags   = [local.network_tags.bastion]
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.bastion_ssh_port)]
+    ports    = [tostring(var.config.vms.bastion.ssh_port)]
   }
 }
 
 resource "google_compute_firewall" "bastion_ssh_bootstrap" {
   # A fresh bastion listens on 22 until Ansible installs the final sshd policy.
   # This rule must be explicitly enabled and removed immediately after bootstrap.
-  count = var.enable_bastion_ssh_bootstrap && var.bastion_ssh_port != 22 ? 1 : 0
+  count = local.enabled && local.enable_bastion_ssh_bootstrap && var.config.vms.bastion.ssh_port != 22 ? 1 : 0
 
-  name    = "${var.resource_prefix}-allow-bastion-ssh-bootstrap"
-  network = google_compute_network.main.id
+  name    = "${local.resource_prefix}-allow-bastion-ssh-bootstrap"
+  network = google_compute_network.main[0].id
 
-  source_ranges = var.bastion_allowed_cidrs
+  source_ranges = var.config.vms.bastion.allowed_cidrs
   target_tags   = [local.network_tags.bastion]
 
   allow {
@@ -29,8 +31,10 @@ resource "google_compute_firewall" "bastion_ssh_bootstrap" {
 }
 
 resource "google_compute_firewall" "workload_ssh" {
-  name    = "${var.resource_prefix}-allow-workload-ssh"
-  network = google_compute_network.main.id
+  count = local.enabled ? 1 : 0
+
+  name    = "${local.resource_prefix}-allow-workload-ssh"
+  network = google_compute_network.main[0].id
 
   source_tags = [local.network_tags.bastion]
   target_tags = [
@@ -47,34 +51,40 @@ resource "google_compute_firewall" "workload_ssh" {
 }
 
 resource "google_compute_firewall" "ui_web" {
-  name    = "${var.resource_prefix}-allow-ui-web"
-  network = google_compute_network.main.id
+  count = local.enabled ? 1 : 0
+
+  name    = "${local.resource_prefix}-allow-ui-web"
+  network = google_compute_network.main[0].id
 
   source_ranges = ["0.0.0.0/0"]
   target_tags   = [local.network_tags.ui]
 
   allow {
     protocol = "tcp"
-    ports    = var.ui_public_ports
+    ports    = local.ui_public_ports
   }
 }
 
 resource "google_compute_firewall" "history_api" {
-  name    = "${var.resource_prefix}-allow-history-api"
-  network = google_compute_network.main.id
+  count = local.enabled ? 1 : 0
+
+  name    = "${local.resource_prefix}-allow-history-api"
+  network = google_compute_network.main[0].id
 
   source_tags = [local.network_tags.ui]
   target_tags = [local.network_tags.history]
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.history_api_port)]
+    ports    = [tostring(var.config.service_ports.history_api)]
   }
 }
 
 resource "google_compute_firewall" "postgresql" {
-  name    = "${var.resource_prefix}-allow-postgresql"
-  network = google_compute_network.main.id
+  count = local.enabled ? 1 : 0
+
+  name    = "${local.resource_prefix}-allow-postgresql"
+  network = google_compute_network.main[0].id
 
   source_tags = [
     local.network_tags.fetcher,
@@ -86,6 +96,6 @@ resource "google_compute_firewall" "postgresql" {
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.postgresql_port)]
+    ports    = [tostring(var.config.service_ports.postgresql)]
   }
 }

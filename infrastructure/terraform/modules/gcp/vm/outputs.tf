@@ -1,24 +1,17 @@
-output "name" {
-  description = "Name of the workload VM."
-  value       = google_compute_instance.workload.name
+output "vms" {
+  description = "GCP workload VMs, keyed by name."
+  value = {
+    for name, instance in google_compute_instance.workload : name => {
+      name                  = instance.name
+      internal_ip           = instance.network_interface[0].network_ip
+      public_ip             = local.gcp_vms[name].assign_public_ip ? google_compute_address.public[name].address : null
+      network_tags          = instance.tags
+      service_account_email = google_service_account.workload[name].email
+    }
+  }
 }
 
-output "internal_ip" {
-  description = "Internal IP address of the workload VM."
-  value       = google_compute_instance.workload.network_interface[0].network_ip
-}
-
-output "public_ip" {
-  description = "Static external IP address, or null when none is assigned."
-  value       = var.assign_public_ip ? google_compute_address.public[0].address : null
-}
-
-output "network_tags" {
-  description = "Effective network tags attached to the workload VM."
-  value       = google_compute_instance.workload.tags
-}
-
-output "service_account_email" {
-  description = "Email of the workload VM's dedicated service account."
-  value       = google_service_account.workload.email
+output "gcp_vms" {
+  description = "Resolved GCP VM configuration (post cloud/size/image resolution), keyed by name."
+  value       = local.gcp_vms
 }

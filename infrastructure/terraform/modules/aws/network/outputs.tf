@@ -1,17 +1,17 @@
 output "management_subnet_id" {
-  value = aws_subnet.management.id
+  value = try(aws_subnet.management[0].id, null)
 }
 
 output "workload_subnet_id" {
-  value = aws_subnet.workload.id
+  value = try(aws_subnet.workload[0].id, null)
 }
 
 output "security_group_ids" {
   value = {
-    bastion  = aws_security_group.bastion.id
-    database = aws_security_group.database.id
-    history  = aws_security_group.history.id
-    fetcher  = aws_security_group.fetcher.id
-    ui       = aws_security_group.ui.id
+    bastion  = try(aws_security_group.bastion[0].id, null)
+    database = try(aws_security_group.database[0].id, null)
+    history  = try(aws_security_group.history[0].id, null)
+    fetcher  = try(aws_security_group.fetcher[0].id, null)
+    ui       = try(aws_security_group.ui[0].id, null)
   }
 }

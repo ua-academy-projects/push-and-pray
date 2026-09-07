@@ -1,13 +1,13 @@
-variable "project_config_path" {
-  description = "Path to the external JSON file containing project-specific configuration."
-  type        = string
-  nullable    = false
-  default     = "/Users/pavlo/Desktop/project-config.new.json"
+variable "config" {
+  description = "Full parsed project configuration (see project_config_path in the root module)."
+  type        = any
+}
 
-  validation {
-    condition     = fileexists(var.project_config_path)
-    error_message = "project_config_path must point to an existing file."
-  }
+variable "vms" {
+  description = "Outputs of the gcp_vm module, keyed by name."
+  type = map(object({
+    service_account_email = string
+  }))
 }
 
 variable "secret_version_managers" {

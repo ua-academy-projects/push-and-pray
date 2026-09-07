@@ -1,5 +1,7 @@
 resource "aws_iam_role" "ec2_role" {
-  name = var.name
+  for_each = local.aws_vms
+
+  name = "${local.resource_prefix}-${each.key}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -16,42 +18,47 @@ resource "aws_iam_role" "ec2_role" {
 }
 
 resource "aws_iam_instance_profile" "workload" {
-  name = var.name
-  role = aws_iam_role.ec2_role.name
-}
+  for_each = local.aws_vms
 
-resource "aws_eip" "public" {
-  count = var.assign_public_ip ? 1 : 0
-
-  domain   = "vpc"
-  instance = aws_instance.workload.id
+  name = "${local.resource_prefix}-${each.key}"
+  role = aws_iam_role.ec2_role[each.key].name
 }
 
 data "aws_ssm_parameter" "ami" {
-  count = startswith(var.ami, "/") ? 1 : 0
+  for_each = { for name, vm in local.aws_vms : name => vm if startswith(vm.native_image, "/") }
 
-  name = var.ami
+  name = each.value.native_image
 }
 
 resource "aws_instance" "workload" {
-  ami           = startswith(var.ami, "/") ? data.aws_ssm_parameter.ami[0].value : var.ami
-  instance_type = var.instance_type
+  for_each = local.aws_vms
 
-  subnet_id              = local.subnet_id
-  private_ip             = var.internal_ip
-  vpc_security_group_ids = [local.security_group_id]
+  ami           = startswith(each.value.native_image, "/") ? data.aws_ssm_parameter.ami[each.key].value : each.value.native_image
+  instance_type = each.value.native_vm_type
 
-  iam_instance_profile = aws_iam_instance_profile.workload.name
+  subnet_id              = local.subnet_ids[each.key]
+  private_ip             = each.value.internal_ip
+  vpc_security_group_ids = [local.security_group_ids[each.key]]
+
+  iam_instance_profile = aws_iam_instance_profile.workload[each.key].name
 
   root_block_device {
-    volume_size = var.boot_disk_size_gb
-    volume_type = var.boot_disk_type
-    iops        = var.boot_disk_type == "io2" ? 3000 : null
+    volume_size = each.value.disk_size_gb
+    volume_type = each.value.native_disk_type
+    iops        = each.value.native_disk_type == "io2" ? 3000 : null
   }
 
   user_data = local.cloud_init_user_data
 
-  tags = merge(var.labels, {
-    Name = var.name
-  })
+  tags = merge(
+    local.vm_labels[each.key],
+    { Name = "${local.resource_prefix}-${each.key}" },
+  )
+}
+
+resource "aws_eip" "public" {
+  for_each = { for name, vm in local.aws_vms : name => vm if vm.assign_public_ip }
+
+  domain   = "vpc"
+  instance = aws_instance.workload[each.key].id
 }

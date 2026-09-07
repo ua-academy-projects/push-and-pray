@@ -1,26 +1,3 @@
-locals {
-  all_secret_ids = distinct(flatten([
-    for workload in values(local.gcp_vms) : values(workload.secret_mappings)
-  ]))
-
-  workload_secret_pairs = flatten([
-    for name, workload in local.gcp_vms : [
-      for secret_id in distinct(values(workload.secret_mappings)) : {
-        vm_name   = name
-        secret_id = secret_id
-      }
-    ]
-  ])
-
-  secret_version_writers = {
-    for pair in setproduct(sort(local.all_secret_ids), var.secret_version_managers) :
-    "${pair[0]}/${pair[1]}" => {
-      secret_id = pair[0]
-      member    = pair[1]
-    }
-  }
-}
-
 resource "google_secret_manager_secret" "this" {
   for_each  = toset(local.all_secret_ids)
   secret_id = each.value
@@ -29,8 +6,6 @@ resource "google_secret_manager_secret" "this" {
   replication {
     auto {}
   }
-
-  depends_on = [module.gcp_apis]
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {
@@ -38,7 +13,7 @@ resource "google_secret_manager_secret_iam_member" "workload_access" {
 
   secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${module.gcp_vm[each.value.vm_name].service_account_email}"
+  member    = "serviceAccount:${var.vms[each.value.vm_name].service_account_email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "version_adder" {
