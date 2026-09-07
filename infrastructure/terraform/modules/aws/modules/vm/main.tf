@@ -1,26 +1,3 @@
-resource "aws_iam_role" "workload" {
-  name        = var.name
-  description = "Runtime identity for the ${var.name} workload instance"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Action    = "sts:AssumeRole"
-      Principal = { Service = "ec2.amazonaws.com" }
-    }]
-  })
-
-  tags = var.tags
-}
-
-resource "aws_iam_instance_profile" "workload" {
-  name = var.name
-  role = aws_iam_role.workload.name
-
-  tags = var.tags
-}
-
 resource "aws_eip" "public" {
   count = var.vm.assign_public_ip ? 1 : 0
 
@@ -37,7 +14,7 @@ resource "aws_instance" "workload" {
   private_ip             = var.vm.internal_ip
   vpc_security_group_ids = var.security_group_ids
 
-  iam_instance_profile = aws_iam_instance_profile.workload.name
+  iam_instance_profile = var.instance_profile_name
   user_data            = local.user_data
 
   root_block_device {

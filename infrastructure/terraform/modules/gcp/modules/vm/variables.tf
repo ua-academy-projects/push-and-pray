@@ -42,6 +42,11 @@ variable "profile" {
   })
 }
 
+variable "service_account_email" {
+  description = "Email of the runtime identity to attach. Created by the identity module, which outlives this instance."
+  type        = string
+}
+
 variable "subnetwork_id" {
   description = "ID of the subnet where the VM is created."
   type        = string

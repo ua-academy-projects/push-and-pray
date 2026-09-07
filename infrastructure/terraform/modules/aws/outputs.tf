@@ -50,7 +50,7 @@ output "workload_network_scopes" {
 output "workload_identities" {
   description = "IAM role ARN of each workload."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].identity
+    for name, workload in local.workload_vms : name => module.identity[name].identity
   }
 }
 

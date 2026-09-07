@@ -42,6 +42,11 @@ variable "profile" {
   })
 }
 
+variable "instance_profile_name" {
+  description = "Instance profile carrying the runtime identity. Created by the identity module, which outlives this instance."
+  type        = string
+}
+
 variable "subnet_id" {
   description = "ID of the subnet where the instance is created."
   type        = string

@@ -18,11 +18,6 @@ output "network_tags" {
   value       = google_compute_instance.workload.tags
 }
 
-output "service_account_email" {
-  description = "Email of the workload VM's dedicated service account."
-  value       = google_service_account.workload.email
-}
-
 output "instance_id" {
   description = "Server-assigned unique identifier of the instance."
   value       = google_compute_instance.workload.instance_id
@@ -55,26 +50,6 @@ output "boot_disk" {
 output "role" {
   description = "Functional role of this VM, echoed back for callers indexing by role."
   value       = var.vm.role
-}
-
-output "identity" {
-  description = "Email of the VM's dedicated service account. Named to match the AWS module, which returns a role ARN here."
-  value       = google_service_account.workload.email
-}
-
-output "identity_member" {
-  description = "The service account as an IAM member string, ready to use in a binding."
-  value       = "serviceAccount:${google_service_account.workload.email}"
-}
-
-output "service_account_id" {
-  description = "Fully qualified resource ID of the service account."
-  value       = google_service_account.workload.id
-}
-
-output "service_account_unique_id" {
-  description = "Numeric unique ID of the service account, which survives a rename."
-  value       = google_service_account.workload.unique_id
 }
 
 output "public_address_name" {

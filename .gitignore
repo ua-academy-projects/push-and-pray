@@ -1,4 +1,5 @@
 .env
+.idea/
 .venv/
 __pycache__/
 *.py[cod]
@@ -39,3 +40,4 @@ infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/oilscope.gcp.yml
 
 *.local.gcp.yml
+bootstrap.sh

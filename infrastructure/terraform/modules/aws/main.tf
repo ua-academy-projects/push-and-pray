@@ -1,5 +1,3 @@
-# The VPC foundation: a VPC, its subnets and outbound routing. Long-lived and
-# unaware of which ports the application happens to need.
 module "network" {
   source = "./modules/network"
   count  = local.is_active ? 1 : 0
@@ -11,9 +9,6 @@ module "network" {
   tags               = local.common_tags
 }
 
-# Who may talk to whom. Separate from the network because it changes with the
-# application's ports rather than with the network layout, and because the two
-# are different privilege boundaries.
 module "firewall" {
   source = "./modules/firewall"
   count  = local.is_active ? 1 : 0
@@ -27,6 +22,15 @@ module "firewall" {
   tags                         = local.common_tags
 }
 
+module "identity" {
+  source   = "./modules/identity"
+  for_each = local.my_vms
+
+  name        = "${local.resource_prefix}-${each.key}"
+  description = "Runtime identity for the ${each.value.role} workload ${local.resource_prefix}-${each.key}"
+  tags        = local.common_tags
+}
+
 module "vm" {
   source   = "./modules/vm"
   for_each = local.my_vms
@@ -35,9 +39,7 @@ module "vm" {
   vm      = each.value
   profile = local.profile
 
-  # GCP places the bastion by role because an external address works from any
-  # subnet there. On AWS reachability follows the route table, so every VM that
-  # holds a public IP has to sit in the subnet routed to the gateway.
+  instance_profile_name = module.identity[each.key].instance_profile_name
   subnet_id = each.value.assign_public_ip ? module.network[0].public_subnet_id : module.network[0].private_subnet_id
   security_group_ids = [
     for scope in each.value.network_tags :

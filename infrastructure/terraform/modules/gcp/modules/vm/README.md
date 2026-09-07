@@ -1,8 +1,12 @@
 # GCP VM module
 
-Creates one Compute Engine instance together with the things that only exist
-for it: its dedicated service account and, when it needs one, its reserved
+Creates one Compute Engine instance and, when it needs one, its reserved
 external address.
+
+Its runtime identity is not created here. That lives in the sibling
+[identity module](../identity/README.md), because a service account outlives
+the instance and belongs to a different privilege boundary; this module simply
+takes the email to attach.
 
 The module is called once per VM. It takes that VM's entry from the project
 configuration and the cloud profile, and resolves the abstract labels itself:
@@ -17,7 +21,6 @@ boot_disk_type = var.profile.disk_types[var.vm.boot_disk.type]
 
 | Resource | Purpose |
 | --- | --- |
-| `google_service_account` | Runtime identity; secret bindings are attached to it by the caller |
 | `google_compute_instance` | The VM, with Shielded VM settings and OS Login disabled |
 | `google_compute_address` | Reserved external address, only when `vm.assign_public_ip` |
 
@@ -31,9 +34,10 @@ a public address for any role other than `ui` or `bastion`.
 
 | Name | Description |
 | --- | --- |
-| `name` | Name for the instance and its service account |
+| `name` | Name for the instance |
 | `vm` | This VM's configuration entry: `role`, `size`, `image`, `internal_ip`, `assign_public_ip`, `boot_disk` |
 | `profile` | Cloud profile; only `machine_sizes`, `images` and `disk_types` are read |
+| `service_account_email` | Identity to run as, from the identity module |
 | `subnetwork_id` | Subnet to place the instance in |
 | `network_tags` | Prefixed tags the firewall rules match on |
 | `labels` | Labels for every resource that supports them |
@@ -54,12 +58,6 @@ in `modules/shared/selection`, not here.
 | `public_address_name` | Name of the reserved address, or `null` |
 | `machine_type`, `boot_disk` | What the size and disk labels resolved to |
 | `network_tags` | Tags actually attached |
-| `identity`, `service_account_email` | Service-account email |
-| `identity_member` | The same, as an IAM member string ready for a binding |
-| `service_account_id`, `service_account_unique_id` | Resource ID and rename-proof numeric ID |
-
-`identity` and `identity_member` are named to match the AWS module, which
-returns a role ARN in the same places.
 
 ## Usage
 
@@ -71,6 +69,8 @@ module "vm" {
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value
   profile = local.profile
+
+  service_account_email = module.identity[each.key].email
 
   subnetwork_id = module.network[0].workload_subnet_id
   network_tags  = [for tag in each.value.network_tags : "${local.resource_prefix}-${tag}"]

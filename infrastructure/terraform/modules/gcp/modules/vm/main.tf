@@ -1,9 +1,3 @@
-resource "google_service_account" "workload" {
-  account_id   = var.name
-  display_name = var.name
-  description  = "Runtime identity for the ${var.name} workload VM"
-}
-
 resource "google_compute_address" "public" {
   count = var.vm.assign_public_ip ? 1 : 0
 
@@ -44,7 +38,7 @@ resource "google_compute_instance" "workload" {
   }
 
   service_account {
-    email  = google_service_account.workload.email
+    email  = var.service_account_email
     scopes = ["cloud-platform"]
   }
 

@@ -22,6 +22,14 @@ module "firewall" {
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 }
 
+module "identity" {
+  source   = "./modules/identity"
+  for_each = local.my_vms
+
+  name        = "${local.resource_prefix}-${each.key}"
+  description = "Runtime identity for the ${each.value.role} workload ${local.resource_prefix}-${each.key}"
+}
+
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
   source   = "./modules/vm"
@@ -30,6 +38,8 @@ module "vm" {
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value
   profile = local.profile
+
+  service_account_email = module.identity[each.key].email
 
   subnetwork_id = each.value.role == "bastion" ? module.network[0].management_subnet_id : module.network[0].workload_subnet_id
   network_tags = [

@@ -8,9 +8,6 @@ resource "aws_security_group" "scope" {
   tags = merge(var.tags, { Name = "${var.resource_prefix}-${each.value}" })
 }
 
-# A GCP network permits all egress unless a rule denies it; an AWS security
-# group permits none unless a rule allows it. This restores the GCP behaviour
-# these rules were written against.
 resource "aws_vpc_security_group_egress_rule" "allow_all" {
   for_each = aws_security_group.scope
 

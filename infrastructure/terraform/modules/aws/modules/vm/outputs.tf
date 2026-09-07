@@ -18,16 +18,6 @@ output "security_group_ids" {
   value       = aws_instance.workload.vpc_security_group_ids
 }
 
-output "identity" {
-  description = "ARN of the workload instance's dedicated IAM role."
-  value       = aws_iam_role.workload.arn
-}
-
-output "iam_role_name" {
-  description = "Name of the workload instance's IAM role, for attaching inline policies."
-  value       = aws_iam_role.workload.name
-}
-
 output "instance_id" {
   description = "ID of the instance."
   value       = aws_instance.workload.id
@@ -70,26 +60,6 @@ output "root_volume_id" {
 output "role" {
   description = "Functional role of this VM, echoed back for callers indexing by role."
   value       = var.vm.role
-}
-
-output "identity_member" {
-  description = "The IAM role ARN, named to match the GCP module's IAM member string."
-  value       = aws_iam_role.workload.arn
-}
-
-output "iam_role_unique_id" {
-  description = "Stable unique ID of the IAM role, which survives a rename."
-  value       = aws_iam_role.workload.unique_id
-}
-
-output "iam_instance_profile_name" {
-  description = "Name of the instance profile carrying the role onto the instance."
-  value       = aws_iam_instance_profile.workload.name
-}
-
-output "iam_instance_profile_arn" {
-  description = "ARN of the instance profile."
-  value       = aws_iam_instance_profile.workload.arn
 }
 
 output "public_address_allocation_id" {

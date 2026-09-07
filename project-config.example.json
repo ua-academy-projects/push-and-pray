@@ -15,7 +15,7 @@
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
   "network": {
-    "ui_public_ports": [80, 443]
+    "ui_public_ports": [443]
   },
   "service_ports": {
     "history_api": 8001,
@@ -48,6 +48,7 @@
     "aws": {
       "region": "eu-central-1",
       "zone": "eu-central-1a",
+      "network_cidr": "10.1.0.0/16",
       "subnets": {
         "management": "10.1.0.0/28",
         "workload": "10.1.1.0/26"

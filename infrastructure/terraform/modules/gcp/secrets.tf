@@ -38,7 +38,7 @@ resource "google_secret_manager_secret_iam_member" "workload_access" {
 
   secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${module.vm[each.value.vm_name].service_account_email}"
+  member    = module.identity[each.value.vm_name].member
 }
 
 resource "google_secret_manager_secret_iam_member" "version_adder" {

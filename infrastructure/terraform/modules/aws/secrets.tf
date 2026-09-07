@@ -23,7 +23,7 @@ resource "aws_iam_role_policy" "secret_access" {
   }
 
   name = "${local.resource_prefix}-${each.key}-secret-access"
-  role = module.vm[each.key].iam_role_name
+  role = module.identity[each.key].role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
