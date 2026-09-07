@@ -15,7 +15,7 @@
   ansible.builtin.set_fact:
     secret_versions_pairs: >-
       {{ secret_versions_pairs | default([])
-         + (secret_versions_vm.value.secret_mappings | default({}) | dict2items
+         + (secret_versions_config.application.secret_mappings[secret_versions_vm.value.role] | default({}) | dict2items
             | map(attribute='value') | unique | list
             | zip_longest([], fillvalue=secret_versions_vm.key) | list) }}
   loop: "{{ secret_versions_config.vms | dict2items }}"
@@ -27,7 +27,7 @@
      | default(secret_versions_config.default_cloud)) == 'gcp'
 
 # The variable name comes from the container ID, not from the key side of
-# secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
+# secret_mappings: that key is scoped to one application role, so DB_PASSWORD means a
 # different secret on every workload and one shell cannot hold them all.
 - name: Derive a variable name for every container
   ansible.builtin.set_fact:

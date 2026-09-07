@@ -12,7 +12,7 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
       - >-
         --certificatesresolvers.letsencrypt.acme.email={{
-          compose_project_config.vms.ui.public_endpoint.acme_email }}
+          compose_project_config.application.public_endpoint.acme_email }}
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--ping=true"
       - "--log.level=INFO"

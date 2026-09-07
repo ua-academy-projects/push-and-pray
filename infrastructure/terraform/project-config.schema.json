@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Cloud-agnostic contract for non-secret Terraform project configuration.",
+  "description": "Non-secret project configuration shared by infrastructure and application deployment.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,8 @@
     "registry",
     "network",
     "service_ports",
-    "vms"
+    "vms",
+    "application"
   ],
   "properties": {
     "environment": {
@@ -140,7 +141,8 @@
         },
         "image_sha": {
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Shared deployment source commit SHA. CI tags database, history, fetcher, and UI images with this same full github.sha."
         }
       }
     },
@@ -168,8 +170,7 @@
           "minLength": 1
         },
         "aws_enable_nat_gateway": {
-          "type": "boolean",
-          "default": false
+          "type": "boolean"
         },
         "ui_public_ports": {
           "type": "array",
@@ -238,6 +239,59 @@
       "additionalProperties": {
         "$ref": "#/$defs/vm"
       }
+    },
+    "application": {
+      "description": "Application deployment settings. Terraform consumes only secret IDs for containers and IAM.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secret_mappings",
+        "public_endpoint"
+      ],
+      "properties": {
+        "secret_mappings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "database",
+            "history",
+            "fetcher",
+            "ui"
+          ],
+          "properties": {
+            "database": {
+              "$ref": "#/$defs/secret_mappings"
+            },
+            "history": {
+              "$ref": "#/$defs/secret_mappings"
+            },
+            "fetcher": {
+              "$ref": "#/$defs/secret_mappings"
+            },
+            "ui": {
+              "$ref": "#/$defs/secret_mappings"
+            }
+          }
+        },
+        "public_endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hostname",
+            "acme_email"
+          ],
+          "properties": {
+            "hostname": {
+              "type": "string",
+              "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
+            },
+            "acme_email": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -255,10 +309,6 @@
     "string_mapping": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "gcp",
-        "aws"
-      ],
       "properties": {
         "gcp": {
           "type": "string",
@@ -268,15 +318,12 @@
           "type": "string",
           "minLength": 1
         }
-      }
+      },
+      "minProperties": 1
     },
     "region_mapping": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "gcp",
-        "aws"
-      ],
       "properties": {
         "gcp": {
           "type": "object",
@@ -314,15 +361,12 @@
             }
           }
         }
-      }
+      },
+      "minProperties": 1
     },
     "image_mapping": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "gcp",
-        "aws"
-      ],
       "properties": {
         "gcp": {
           "type": "object",
@@ -365,7 +409,8 @@
             }
           }
         }
-      }
+      },
+      "minProperties": 1
     },
     "boot_disk": {
       "type": "object",
@@ -442,8 +487,7 @@
         "size",
         "image",
         "boot_disk",
-        "assign_public_ip",
-        "secret_mappings"
+        "assign_public_ip"
       ],
       "properties": {
         "cloud": {
@@ -477,9 +521,6 @@
         "labels": {
           "$ref": "#/$defs/labels"
         },
-        "secret_mappings": {
-          "$ref": "#/$defs/secret_mappings"
-        },
         "ssh_port": {
           "type": "integer",
           "minimum": 1,
@@ -492,24 +533,6 @@
           "items": {
             "type": "string",
             "minLength": 1
-          }
-        },
-        "public_endpoint": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "hostname",
-            "acme_email"
-          ],
-          "properties": {
-            "hostname": {
-              "type": "string",
-              "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
-            },
-            "acme_email": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
-            }
           }
         }
       },
@@ -555,9 +578,6 @@
             "properties": {
               "assign_public_ip": {
                 "const": true
-              },
-              "secret_mappings": {
-                "maxProperties": 0
               }
             }
           },
@@ -590,9 +610,6 @@
             ]
           },
           "then": {
-            "required": [
-              "public_endpoint"
-            ],
             "properties": {
               "assign_public_ip": {
                 "const": true

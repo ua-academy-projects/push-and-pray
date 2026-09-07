@@ -1,29 +1,29 @@
 locals {
   gcp_workload_vms = {
-    for name, workload in local.gcp_vms :
+    for name, workload in local.workload_vms :
     name => workload
-    if workload.role != "bastion"
+    if workload.cloud == "gcp"
   }
 
   aws_workload_vms = {
-    for name, workload in local.aws_vms :
+    for name, workload in local.workload_vms :
     name => workload
-    if workload.role != "bastion"
+    if workload.cloud == "aws"
   }
 
   gcp_secret_ids = distinct(flatten([
     for workload in values(local.gcp_workload_vms) :
-    values(workload.secret_mappings)
+    values(local.config.application.secret_mappings[workload.role])
   ]))
 
   aws_secret_ids = distinct(flatten([
     for workload in values(local.aws_workload_vms) :
-    values(workload.secret_mappings)
+    values(local.config.application.secret_mappings[workload.role])
   ]))
 
   gcp_workload_secret_pairs = flatten([
     for name, workload in local.gcp_workload_vms : [
-      for secret_id in distinct(values(workload.secret_mappings)) : {
+      for secret_id in distinct(values(local.config.application.secret_mappings[workload.role])) : {
         vm_name   = name
         secret_id = secret_id
       }
@@ -67,7 +67,7 @@ resource "google_secret_manager_secret_iam_member" "workload_access" {
 
   role = "roles/secretmanager.secretAccessor"
 
-  member = "serviceAccount:${module.vm[
+  member = "serviceAccount:${module.vm.vms[
     each.value.vm_name
   ].service_account_email}"
 }
@@ -101,12 +101,12 @@ resource "aws_iam_role_policy" "workload_secret_access" {
   for_each = {
     for name, workload in local.aws_workload_vms :
     name => workload
-    if length(workload.secret_mappings) > 0
+    if length(local.config.application.secret_mappings[workload.role]) > 0
   }
 
   name = "${local.resource_prefix}-${each.key}-secret-access"
 
-  role = module.aws_vm[
+  role = module.aws_vm.vms[
     each.key
   ].iam_role_name
 
@@ -123,7 +123,7 @@ resource "aws_iam_role_policy" "workload_secret_access" {
 
         Resource = [
           for secret_id in sort(
-            distinct(values(each.value.secret_mappings))
+            distinct(values(local.config.application.secret_mappings[each.value.role]))
           ) :
           aws_secretsmanager_secret.this[secret_id].arn
         ]

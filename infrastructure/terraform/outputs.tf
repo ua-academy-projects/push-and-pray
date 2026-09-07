@@ -3,8 +3,8 @@ output "bastion_public_ip" {
 
   value = (
     local.bastion_vm.cloud == "gcp"
-    ? module.vm["bastion"].public_ip
-    : module.aws_vm["bastion"].public_ip
+    ? module.vm.vms["bastion"].public_ip
+    : module.aws_vm.vms["bastion"].public_ip
   )
 }
 
@@ -15,8 +15,8 @@ output "workload_vm_names" {
     for name, workload in local.workload_vms :
     name => (
       workload.cloud == "gcp"
-      ? module.vm[name].name
-      : module.aws_vm[name].name
+      ? module.vm.vms[name].name
+      : module.aws_vm.vms[name].name
     )
   }
 }
@@ -46,8 +46,8 @@ output "workload_internal_ips" {
     for name, workload in local.workload_vms :
     name => (
       workload.cloud == "gcp"
-      ? module.vm[name].internal_ip
-      : module.aws_vm[name].internal_ip
+      ? module.vm.vms[name].internal_ip
+      : module.aws_vm.vms[name].internal_ip
     )
   }
 }
@@ -59,8 +59,8 @@ output "workload_external_ips" {
     for name, workload in local.workload_vms :
     name => (
       workload.cloud == "gcp"
-      ? module.vm[name].public_ip
-      : module.aws_vm[name].public_ip
+      ? module.vm.vms[name].public_ip
+      : module.aws_vm.vms[name].public_ip
     )
   }
 }
@@ -72,7 +72,7 @@ output "workload_network_tags" {
     for name, workload in local.workload_vms :
     name => (
       workload.cloud == "gcp"
-      ? module.vm[name].network_tags
+      ? module.vm.vms[name].network_tags
       : []
     )
   }
@@ -85,7 +85,7 @@ output "workload_aws_tags" {
     for name, workload in local.workload_vms :
     name => (
       workload.cloud == "aws"
-      ? module.aws_vm[name].tags
+      ? module.aws_vm.vms[name].tags
       : {}
     )
   }
@@ -96,7 +96,7 @@ output "workload_service_account_emails" {
 
   value = {
     for name, workload in local.gcp_workload_vms :
-    name => module.vm[name].service_account_email
+    name => module.vm.vms[name].service_account_email
   }
 }
 
@@ -105,7 +105,7 @@ output "workload_iam_role_arns" {
 
   value = {
     for name, workload in local.aws_workload_vms :
-    name => module.aws_vm[name].iam_role_arn
+    name => module.aws_vm.vms[name].iam_role_arn
   }
 }
 
@@ -145,7 +145,7 @@ output "workload_secret_access" {
     for name, workload in local.workload_vms :
     name => sort(
       distinct(
-        values(workload.secret_mappings)
+        values(local.config.application.secret_mappings[workload.role])
       )
     )
   }
@@ -155,7 +155,7 @@ output "resolved_vm_configuration" {
   description = "Provider-neutral and resolved placement values for validation and operations."
 
   value = {
-    for name, vm in local.resolved_vms : name => {
+    for name, vm in merge(module.vm.resolved_vms, module.aws_vm.resolved_vms) : name => {
       role               = vm.role
       cloud              = vm.cloud
       logical_region     = vm.region_key

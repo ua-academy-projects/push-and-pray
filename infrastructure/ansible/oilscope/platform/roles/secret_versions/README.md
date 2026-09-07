@@ -60,7 +60,7 @@ oilscope-dev-db-password-fetcher   ->  DB_PASSWORD_FETCHER
 oilscope-dev-oilpriceapi-key       ->  OILPRICEAPI_KEY
 ```
 
-It is deliberately not the key side of `secret_mappings`. That key is the
+It is deliberately not the key side of `application.secret_mappings`. That key is the
 variable the application reads *inside one VM*: `DB_PASSWORD` is the fetcher's
 password on `fetcher` and the history service's password on `history`, and one
 shell cannot hold both under one name. If dropping the prefix would make two

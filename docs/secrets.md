@@ -1,7 +1,8 @@
 # Secrets
 
 Secret values never enter Terraform configuration, plans, or state. The
-provider-neutral `secret_mappings` values are logical container IDs. Terraform
+provider-neutral `application.secret_mappings` values are logical container IDs,
+grouped by application role rather than VM key. Terraform
 creates a container in the same cloud as each consuming workload and grants
 that VM's runtime identity least-privilege read access.
 
@@ -36,8 +37,11 @@ because account identity administration is outside the project and no AWS
 credentials belong in project config.
 
 The GCP uploader's `secret_version_managers` Terraform variable likewise
-accepts IAM members allowed to add versions without reading them. It defaults
-to an empty list.
+accepts IAM members allowed to add versions without reading them. This input
+is required: persist the deployment's members in an ignored `*.auto.tfvars`
+file so later plans retain the grants. Use an explicit empty list only when
+the deployment should have no uploader grants. Omitting this input fails
+instead of silently planning to revoke existing access.
 
 ## Runtime resolution
 

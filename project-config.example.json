@@ -23,11 +23,11 @@
       }
     },
     "sizes": {
-      "small": {
+      "micro": {
         "gcp": "e2-micro",
         "aws": "t3.micro"
       },
-      "medium": {
+      "small": {
         "gcp": "e2-small",
         "aws": "t3.small"
       }
@@ -82,14 +82,13 @@
   "vms": {
     "bastion": {
       "role": "bastion",
-      "size": "small",
+      "size": "micro",
       "image": "ubuntu_26_04",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
       },
       "assign_public_ip": true,
-      "secret_mappings": {},
       "ssh_port": 8787,
       "allowed_cidrs": [
         "192.0.2.10/32"
@@ -97,64 +96,68 @@
     },
     "infra": {
       "role": "database",
-      "size": "small",
+      "size": "micro",
       "image": "ubuntu_26_04",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
       },
-      "assign_public_ip": false,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "assign_public_ip": false
     },
     "history": {
       "role": "history",
-      "size": "medium",
+      "size": "small",
       "image": "ubuntu_26_04",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
       },
-      "assign_public_ip": false,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "assign_public_ip": false
     },
     "fetcher": {
       "role": "fetcher",
-      "size": "small",
+      "size": "micro",
       "image": "ubuntu_26_04",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
       },
-      "assign_public_ip": false,
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "assign_public_ip": false
     },
     "ui": {
       "role": "ui",
-      "size": "small",
+      "size": "micro",
       "image": "ubuntu_26_04",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
       },
-      "assign_public_ip": true,
-      "secret_mappings": {
+      "assign_public_ip": true
+    }
+  },
+  "application": {
+    "secret_mappings": {
+      "database": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
       },
-      "public_endpoint": {
-        "hostname": "oilscope.example.com",
-        "acme_email": "example-operator@example.com"
+      "history": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "fetcher": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "OILPRICEAPI_KEY": "example-api-key",
+        "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "ui": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
       }
+    },
+    "public_endpoint": {
+      "hostname": "oilscope.example.com",
+      "acme_email": "example-operator@example.com"
     }
   }
 }

@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Refuse unsupported cross-cloud application deployment
+- name: Require one cloud for the application SSH and private service paths
   ansible.builtin.assert:
     that:
-      - oilscope_application_topology_supported | default(false) | bool
+      - >-
+        (groups['all'] | map('extract', hostvars, 'oilscope_cloud')
+         | unique | list | length) == 1
     fail_msg: >-
-      {{ oilscope_application_topology_error
-         | default('Inventory did not provide OilScope topology metadata.') }}
+      Deploy one application in one cloud. Mixed-cloud Terraform provisioning
+      and discovery are supported, but cross-cloud private connectivity is not.
     quiet: true
 
 - name: Gather facts after topology validation

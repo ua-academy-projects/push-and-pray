@@ -22,49 +22,29 @@ locals {
   default_cloud  = local.config.default_cloud
   default_region = local.config.default_region
 
-  resolved_vms = {
-    for name, vm in local.config.vms : name => merge(
-      vm,
-      {
-        cloud      = try(vm.cloud, local.default_cloud)
-        region_key = try(vm.region, local.default_region)
-
-        provider_region = local.config.cloud_mappings.regions[
-          try(vm.region, local.default_region)
-        ][try(vm.cloud, local.default_cloud)].region
-
-        provider_zone = local.config.cloud_mappings.regions[
-          try(vm.region, local.default_region)
-        ][try(vm.cloud, local.default_cloud)].zone
-
-        machine_type = local.config.cloud_mappings.sizes[
-          vm.size
-        ][try(vm.cloud, local.default_cloud)]
-
-        disk_type = local.config.cloud_mappings.disk_types[
-          vm.boot_disk.type
-        ][try(vm.cloud, local.default_cloud)]
-
-        image_settings = local.config.cloud_mappings.images[
-          vm.image
-        ][try(vm.cloud, local.default_cloud)]
-      }
-    )
+  # Cross-cutting role/secret metadata; VM creation mappings live in the children.
+  vms = {
+    for name, vm in local.config.vms : name => merge(vm, {
+      cloud = try(vm.cloud, local.default_cloud)
+    })
   }
 
-  gcp_vms = {
-    for name, vm in local.resolved_vms :
-    name => vm
-    if vm.cloud == "gcp"
+  placements = {
+    for name, vm in local.vms : name => {
+      cloud = vm.cloud
+      provider_region = local.config.cloud_mappings.regions[
+        try(vm.region, local.default_region)
+      ][vm.cloud].region
+      provider_zone = local.config.cloud_mappings.regions[
+        try(vm.region, local.default_region)
+      ][vm.cloud].zone
+    }
   }
 
-  aws_vms = {
-    for name, vm in local.resolved_vms :
-    name => vm
-    if vm.cloud == "aws"
-  }
+  gcp_placements = { for name, vm in local.placements : name => vm if vm.cloud == "gcp" }
+  aws_placements = { for name, vm in local.placements : name => vm if vm.cloud == "aws" }
 
-  bastion_vm = local.resolved_vms.bastion
+  bastion_vm = local.vms.bastion
 
   required_roles = ["bastion", "database", "history", "fetcher", "ui"]
 
@@ -78,7 +58,7 @@ locals {
   ]
 
   workload_vms = {
-    for name, vm in local.resolved_vms :
+    for name, vm in local.vms :
     name => vm
     if vm.role != "bastion"
   }
@@ -86,19 +66,19 @@ locals {
   gcp_project_id = try(local.config.clouds.gcp.project_id, null)
 
   gcp_regions = distinct([
-    for vm in values(local.gcp_vms) : vm.provider_region
+    for vm in values(local.gcp_placements) : vm.provider_region
   ])
 
   gcp_zones = distinct([
-    for vm in values(local.gcp_vms) : vm.provider_zone
+    for vm in values(local.gcp_placements) : vm.provider_zone
   ])
 
   aws_regions = distinct([
-    for vm in values(local.aws_vms) : vm.provider_region
+    for vm in values(local.aws_placements) : vm.provider_region
   ])
 
   aws_zones = distinct([
-    for vm in values(local.aws_vms) : vm.provider_zone
+    for vm in values(local.aws_placements) : vm.provider_zone
   ])
 
   gcp_region = try(local.gcp_regions[0], null)
@@ -106,16 +86,6 @@ locals {
 
   aws_region = try(local.aws_regions[0], null)
   aws_zone   = try(local.aws_zones[0], null)
-
-  gcp_ui_direct_ssh = local.bastion_vm.cloud != "gcp" && anytrue([
-    for vm in values(local.gcp_vms) :
-    vm.role == "ui" && vm.assign_public_ip
-  ])
-
-  aws_ui_direct_ssh = local.bastion_vm.cloud != "aws" && anytrue([
-    for vm in values(local.aws_vms) :
-    vm.role == "ui" && vm.assign_public_ip
-  ])
 
   resource_prefix = "${local.config.name_prefix}-${local.config.environment}"
 
@@ -134,7 +104,7 @@ resource "terraform_data" "configuration_validation" {
 
   lifecycle {
     precondition {
-      condition = length(local.gcp_vms) == 0 || (
+      condition = length(local.gcp_placements) == 0 || (
         local.gcp_project_id != null &&
         can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", local.gcp_project_id))
       )
@@ -151,7 +121,7 @@ resource "terraform_data" "configuration_validation" {
 
     precondition {
       condition = alltrue([
-        for vm in values(local.resolved_vms) :
+        for vm in values(local.vms) :
         contains(keys(local.config.clouds), vm.cloud)
       ])
       error_message = "Every effective VM cloud must have a matching declaration in clouds."
@@ -159,10 +129,10 @@ resource "terraform_data" "configuration_validation" {
 
     precondition {
       condition = (
-        length(local.resolved_vms) == length(local.required_roles) &&
+        length(local.vms) == length(local.required_roles) &&
         alltrue([
           for role in local.required_roles :
-          length([for vm in values(local.resolved_vms) : vm if vm.role == role]) == 1
+          length([for vm in values(local.vms) : vm if vm.role == role]) == 1
         ])
       )
       error_message = "The application requires exactly one VM for each role: bastion, database, history, fetcher, and ui."
@@ -170,7 +140,7 @@ resource "terraform_data" "configuration_validation" {
 
     precondition {
       condition = alltrue([
-        for name in keys(local.resolved_vms) :
+        for name in keys(local.vms) :
         length("${local.resource_prefix}-${name}") <= 30
       ])
       error_message = "Every generated resource name must be at most 30 characters to satisfy the strictest provider limit. Shorten name_prefix or VM keys."
@@ -185,7 +155,7 @@ resource "terraform_data" "configuration_validation" {
           )) == 0
         ],
         [
-          for vm in values(local.resolved_vms) :
+          for vm in values(local.vms) :
           length(setintersection(
             toset(keys(try(vm.labels, {}))),
             toset(local.reserved_identity_labels),
@@ -203,7 +173,7 @@ resource "terraform_data" "configuration_validation" {
           can(regex("^[a-z0-9_-]{0,63}$", value))
         ]],
         [
-          for vm in values(local.resolved_vms) : [
+          for vm in values(local.vms) : [
             for key, value in try(vm.labels, {}) :
             can(regex("^[a-z][a-z0-9_-]{0,62}$", key)) &&
             can(regex("^[a-z0-9_-]{0,63}$", value))
@@ -215,7 +185,7 @@ resource "terraform_data" "configuration_validation" {
 
     precondition {
       condition = alltrue([
-        for vm in values(local.resolved_vms) :
+        for vm in values(local.vms) :
         vm.assign_public_ip == contains(["bastion", "ui"], vm.role)
       ])
       error_message = "Only bastion and ui may have public IPs, and both must have them."
@@ -223,7 +193,7 @@ resource "terraform_data" "configuration_validation" {
 
     precondition {
       condition = (
-        length(local.gcp_vms) == 0 ||
+        length(local.gcp_placements) == 0 ||
         (length(local.gcp_regions) == 1 && length(local.gcp_zones) == 1)
       )
       error_message = "The current GCP network supports one resolved region and zone per deployment."
@@ -231,20 +201,10 @@ resource "terraform_data" "configuration_validation" {
 
     precondition {
       condition = (
-        length(local.aws_vms) == 0 ||
+        length(local.aws_placements) == 0 ||
         (length(local.aws_regions) == 1 && length(local.aws_zones) == 1)
       )
       error_message = "The current AWS VPC supports one resolved region and availability zone per deployment."
-    }
-
-    precondition {
-      condition = alltrue([
-        for vm in values(local.resolved_vms) :
-        vm.cloud == "gcp"
-        ? startswith(vm.provider_zone, "${vm.provider_region}-")
-        : startswith(vm.provider_zone, vm.provider_region)
-      ])
-      error_message = "Every provider zone must belong to its resolved provider region."
     }
 
     precondition {
@@ -279,29 +239,23 @@ resource "terraform_data" "configuration_validation" {
       )
       error_message = "Management and workload subnet CIDRs must not overlap."
     }
+  }
+}
 
-    precondition {
-      condition = length(local.aws_vms) == 0 || try(
-        local.network_ranges.vpc.prefix >= 16 &&
-        local.network_ranges.vpc.prefix <= 28 &&
-        local.network_ranges.management.prefix >= 16 &&
-        local.network_ranges.management.prefix <= 28 &&
-        local.network_ranges.workload.prefix >= 16 &&
-        local.network_ranges.workload.prefix <= 28,
-        false,
-      )
-      error_message = "AWS VPC and subnet IPv4 prefixes must be between /16 and /28."
-    }
+locals {
+  firewall_policy = {
+    bastion_ssh_port      = local.bastion_vm.ssh_port
+    bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
+    history_api_port      = local.config.service_ports.history_api
+    postgresql_port       = local.config.service_ports.postgresql
+    ui_public_ports       = local.config.network.ui_public_ports
+  }
+}
 
-    precondition {
-      condition = length(local.gcp_vms) == 0 || try(
-        local.network_ranges.management.prefix >= 16 &&
-        local.network_ranges.management.prefix <= 29 &&
-        local.network_ranges.workload.prefix >= 16 &&
-        local.network_ranges.workload.prefix <= 29,
-        false,
-      )
-      error_message = "GCP subnet IPv4 prefixes must be between /16 and /29."
-    }
+locals {
+  startup_scripts = {
+    bastion = templatefile("${path.module}/templates/ssh-bootstrap.sh.tftpl", {
+      ssh_port = local.bastion_vm.ssh_port
+    })
   }
 }

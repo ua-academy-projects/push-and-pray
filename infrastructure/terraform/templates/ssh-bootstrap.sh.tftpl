@@ -22,13 +22,16 @@ EOF
 
 chmod 0644 "$SSHD_DROP_IN"
 /usr/sbin/sshd -t
+ports="$(/usr/sbin/sshd -T | sed -n 's/^port //p')"
+test "$ports" = "${ssh_port}"
 
-# Ubuntu 24.04 derives ssh.socket listeners from sshd_config during daemon-reload.
+# Ubuntu derives ssh.socket listeners from sshd_config during daemon-reload.
 systemctl daemon-reload
 if systemctl is-active --quiet ssh.socket; then
   systemctl restart ssh.socket
+  systemctl restart ssh.service
 else
   systemctl restart ssh.service
 fi
 
-echo "Bastion SSH is configured on port ${ssh_port}."
+echo "SSH is configured on port ${ssh_port}."

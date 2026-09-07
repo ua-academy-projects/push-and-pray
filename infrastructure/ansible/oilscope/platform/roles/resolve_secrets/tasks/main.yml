@@ -14,18 +14,10 @@
                   | default(''), true) }}
   when: oilscope_cloud == 'gcp'
 
-- name: Derive this VM's configuration key
-  ansible.builtin.set_fact:
-    resolve_secrets_vm_key: >-
-      {{ inventory_hostname
-         | regex_replace('^' ~ (resolve_secrets_config.name_prefix
-                                 ~ '-' ~ resolve_secrets_config.environment
-                                 ~ '-') | regex_escape, '') }}
-
-- name: Select the host's secret mappings
+- name: Select the application's secret mappings for this role
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
-      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
+      {{ resolve_secrets_config.application.secret_mappings[oilscope_role]
          | default({}) }}
 
 - name: Fetch an access token from the instance metadata server

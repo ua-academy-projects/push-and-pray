@@ -108,11 +108,14 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "the oilscope inventory plugin requires PyYAML"
             )
 
-        config = self._load_project_config(path)
+        config, project_config_path = self._load_project_config(path)
         providers = self._configured_providers(config)
 
         if "gcp" in providers:
-            settings = self._build_gcp_settings(config)
+            settings = self._build_gcp_settings(
+                config,
+                project_config_path,
+            )
             generated = self._write_settings(
                 settings,
                 suffix="gcp_compute.yml",
@@ -130,7 +133,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 self._cleanup(generated)
 
         if "aws" in providers:
-            settings = self._build_aws_settings(config)
+            settings = self._build_aws_settings(
+                config,
+                project_config_path,
+            )
             generated = self._write_settings(
                 settings,
                 suffix="aws_ec2.yml",
@@ -187,7 +193,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "the project configuration must contain a JSON object"
             )
 
-        return config
+        return config, config_path
 
     def _require_string(self, mapping, key, context):
         value = mapping.get(key)
@@ -260,41 +266,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         }
 
         return providers
-
-    def _application_topology(self, config):
-        default_cloud = self._default_cloud(config)
-        clouds = sorted({
-            self._vm_cloud(vm, default_cloud)
-            for vm in self._vms(config).values()
-            if isinstance(vm, dict)
-        })
-
-        supported = len(clouds) == 1
-        error = ""
-
-        if not supported:
-            error = (
-                "OilScope application deployment requires bastion and all "
-                "workloads in one cloud until cross-cloud private networking "
-                "is configured; inventory discovery and Terraform provisioning "
-                f"remain available for this hybrid topology ({', '.join(clouds)})"
-            )
-
-        return supported, error
-
-    def _bastion_cloud(self, config):
-        default_cloud = self._default_cloud(config)
-        bastions = [
-            vm for vm in self._vms(config).values()
-            if isinstance(vm, dict) and vm.get("role") == "bastion"
-        ]
-
-        if len(bastions) != 1:
-            raise AnsibleParserError(
-                "expected exactly one VM with role 'bastion'"
-            )
-
-        return self._vm_cloud(bastions[0], default_cloud)
 
     def _cloud_mappings(self, config):
         mappings = config.get("cloud_mappings")
@@ -440,7 +411,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 f"the {bastion_role!r} VM must define an integer ssh_port"
             ) from error
 
-    def _build_gcp_settings(self, config):
+    def _build_gcp_settings(self, config, project_config_path):
         clouds = config.get("clouds")
 
         if not isinstance(clouds, dict):
@@ -475,8 +446,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         zones = self._provider_zones(config, "gcp")
         provider_region = self._single_provider_region(config, "gcp")
-        bastion_cloud = self._bastion_cloud(config)
-        topology_supported, topology_error = self._application_topology(config)
 
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port = self._bastion_ssh_port(config)
@@ -529,9 +498,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 ),
                 "ansible_host": (
                     f"{public_ip} if {is_bastion} "
-                    f"else ({public_ip} if "
-                    f"{bastion_cloud != 'gcp'!r} and {has_public} "
-                    f"else {private_ip})"
+                    f"else {private_ip}"
                 ),
                 "ansible_port": (
                     f"{bastion_port} if {is_bastion} "
@@ -542,14 +509,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 ),
                 "oilscope_cloud": "'gcp'",
                 "oilscope_region": repr(provider_region),
-                "oilscope_application_topology_supported": repr(
-                    topology_supported
-                ),
-                "oilscope_application_topology_error": repr(topology_error),
+                "project_config_path": repr(project_config_path),
             },
         }
 
-    def _build_aws_settings(self, config):
+    def _build_aws_settings(self, config, project_config_path):
         name_prefix = self._require_string(
             config,
             "name_prefix",
@@ -563,8 +527,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         )
 
         provider_region = self._single_provider_region(config, "aws")
-        bastion_cloud = self._bastion_cloud(config)
-        topology_supported, topology_error = self._application_topology(config)
 
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port = self._bastion_ssh_port(config)
@@ -603,10 +565,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "ansible_host": (
                     "public_ip_address "
                     f"if tags.role == '{bastion_role}' "
-                    "else (public_ip_address "
-                    f"if {bastion_cloud != 'aws'!r} and "
-                    "public_ip_address is defined "
-                    "else private_ip_address)"
+                    "else private_ip_address"
                 ),
                 "ansible_port": (
                     f"{bastion_port} "
@@ -616,10 +575,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "'aws'",
                 "oilscope_region": repr(provider_region),
-                "oilscope_application_topology_supported": repr(
-                    topology_supported
-                ),
-                "oilscope_application_topology_error": repr(topology_error),
+                "project_config_path": repr(project_config_path),
             },
         }
 

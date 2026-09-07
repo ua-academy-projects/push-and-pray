@@ -41,4 +41,5 @@
             ~ '/database:'
             ~ compose_project_config.registry.image_sha
           }}
+        database_host_port: "{{ compose_project_config.service_ports.postgresql }}"
         database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

@@ -4,26 +4,21 @@
   hosts: bastion
   become: true
   gather_facts: false
-  roles:
-    - role: oilscope.platform.bastion
-  post_tasks:
-    - name: Wait for the final bastion SSH port from the controller
+  pre_tasks:
+    - name: Wait for the bastion SSH port from the controller
       become: false
       ansible.builtin.wait_for:
-        host: "{{ hostvars[inventory_hostname].ansible_host }}"
-        port: "{{ bastion_ssh_port }}"
+        host: "{{ ansible_host }}"
+        port: "{{ ansible_port }}"
         state: started
         connect_timeout: 5
-        timeout: 60
+        timeout: 300
       delegate_to: localhost
 
-    - name: Use the final bastion SSH port
-      ansible.builtin.set_fact:
-        ansible_port: "{{ bastion_ssh_port }}"
+  roles:
+    - role: oilscope.platform.bastion
 
-    - name: Reset the bootstrap SSH connection
-      ansible.builtin.meta: reset_connection
-
+  post_tasks:
     - name: Check the SSH connection on the final port
       ansible.builtin.ping:
       changed_when: false

@@ -1,39 +1,20 @@
-output "name" {
-  description = "Name of the EC2 instance."
-  value       = aws_instance.workload.tags["Name"]
+output "vms" {
+  description = "VM resource attributes keyed by project VM key."
+  value = {
+    for name, instance in aws_instance.workload : name => {
+      name          = instance.tags["Name"]
+      instance_id   = instance.id
+      internal_ip   = instance.private_ip
+      public_ip     = try(aws_eip.public[name].public_ip, null)
+      role          = local.resolved_vms[name].role
+      tags          = instance.tags
+      iam_role_name = aws_iam_role.workload[name].name
+      iam_role_arn  = aws_iam_role.workload[name].arn
+    }
+  }
 }
 
-output "instance_id" {
-  description = "EC2 instance ID."
-  value       = aws_instance.workload.id
-}
-
-output "internal_ip" {
-  description = "Private IP address of the EC2 instance."
-  value       = aws_instance.workload.private_ip
-}
-
-output "public_ip" {
-  description = "Elastic IP address, or null when the VM is private."
-  value       = var.assign_public_ip ? aws_eip.public[0].public_ip : null
-}
-
-output "role" {
-  description = "Functional role of the EC2 instance."
-  value       = var.role
-}
-
-output "tags" {
-  description = "Tags attached to the EC2 instance."
-  value       = aws_instance.workload.tags
-}
-
-output "iam_role_name" {
-  description = "IAM role attached to the EC2 instance."
-  value       = aws_iam_role.workload.name
-}
-
-output "iam_role_arn" {
-  description = "ARN of the IAM role attached to the EC2 instance."
-  value       = aws_iam_role.workload.arn
+output "resolved_vms" {
+  description = "Provider-resolved VM configuration, independent of created resources."
+  value       = local.resolved_vms
 }

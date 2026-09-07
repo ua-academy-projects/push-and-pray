@@ -15,13 +15,12 @@ does not write them to disk.
 - GCP hosts need the Terraform-managed service account.
 - AWS hosts need the Terraform-managed instance profile and `python3-boto3`,
   which the `host_baseline` role installs.
-- Inventory must expose `oilscope_cloud` and use Terraform's instance name,
-  `<name_prefix>-<environment>-<vms key>`.
+- Inventory must expose `oilscope_cloud` and `oilscope_role`.
 - Inventory must expose `oilscope_region`; the AWS client uses it explicitly
   instead of relying on an ambient SDK default region.
 
-The exact VM key is derived from `inventory_hostname`, so `vms.infra` still
-uses its own mappings even though its functional role is `database`.
+Mappings are selected by role, so `vms.infra` consumes the `database`
+application mapping without deriving a VM key from its hostname.
 
 Optional GCP settings are `resolve_secrets_project_id`,
 `resolve_secrets_metadata_url`, and `resolve_secrets_secretmanager_url`.
@@ -29,8 +28,8 @@ Project lookup falls back to `$GOOGLE_PROJECT`, then
 `clouds.gcp.project_id`.
 
 The result is `resolve_secrets_result`, keyed by the application environment
-variable names from `secret_mappings`. Hosts without mappings get an empty
-dictionary.
+variable names from `application.secret_mappings[oilscope_role]`. Hosts without
+mappings get an empty dictionary.
 
 ## License
 

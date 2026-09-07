@@ -44,6 +44,29 @@ def main() -> None:
     ]
     write_config("invalid-subnet-overlap", invalid_subnet)
 
+    role_duplicate = deepcopy(base)
+    role_duplicate["vms"]["history"]["role"] = "fetcher"
+    write_config("invalid-role-duplicate", role_duplicate)
+
+    public_ip = deepcopy(base)
+    public_ip["vms"]["ui"]["assign_public_ip"] = False
+    write_config("invalid-public-ip", public_ip)
+
+    reserved_label = deepcopy(base)
+    reserved_label["common_labels"]["managed_by"] = "operator"
+    write_config("invalid-reserved-label", reserved_label)
+
+    undeclared = deepcopy(hybrid)
+    undeclared["clouds"].pop("aws", None)
+    write_config("invalid-provider-declaration", undeclared)
+
+    region_override = deepcopy(base)
+    region_override["cloud_mappings"]["regions"]["alias"] = deepcopy(
+        base["cloud_mappings"]["regions"][base["default_region"]]
+    )
+    region_override["vms"]["history"]["region"] = "alias"
+    write_config("region-override", region_override)
+
 
 if __name__ == "__main__":
     main()

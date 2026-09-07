@@ -8,7 +8,7 @@ locals {
 
 resource "google_project_service" "required" {
   for_each = (
-    length(local.gcp_vms) > 0
+    length(local.gcp_placements) > 0
     ? toset(local.required_apis)
     : toset([])
   )

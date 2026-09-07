@@ -1,86 +1,38 @@
-variable "name" {
-  description = "Name of the EC2 instance and related AWS resources."
-  type        = string
-
+variable "config" {
+  description = "Structured project configuration decoded once by the root module."
+  type        = any
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]*[a-z0-9]$", var.name))
-    error_message = "name must start with a lowercase letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens."
+    condition = alltrue([
+      for vm in values(var.config.vms) : (
+        can(var.config.cloud_mappings.regions[try(vm.region, var.config.default_region)].aws.region) &&
+        can(var.config.cloud_mappings.regions[try(vm.region, var.config.default_region)].aws.zone) &&
+        can(var.config.cloud_mappings.sizes[vm.size].aws) &&
+        can(var.config.cloud_mappings.disk_types[vm.boot_disk.type].aws) &&
+        can(var.config.cloud_mappings.images[vm.image].aws)
+      ) if try(vm.cloud, var.config.default_cloud) == "aws"
+    ])
+    error_message = "Every AWS VM must have region, size, disk and image mappings for its provider."
   }
+
 }
 
-variable "role" {
-  description = "Functional role of the VM."
-  type        = string
-
-  validation {
-    condition = contains([
-      "bastion",
-      "database",
-      "history",
-      "fetcher",
-      "ui",
-    ], var.role)
-
-    error_message = "role must be bastion, database, history, fetcher, or ui."
-  }
-}
-
-variable "subnet_id" {
-  description = "AWS subnet ID where the EC2 instance is created."
+variable "resource_prefix" {
+  description = "Shared deployment resource name prefix."
   type        = string
 }
 
-variable "security_group_id" {
-  description = "Security group assigned to the EC2 instance."
-  type        = string
+variable "common_labels" {
+  description = "Validated cross-cutting deployment labels."
+  type        = map(string)
 }
 
-variable "instance_type" {
-  description = "Resolved AWS EC2 instance type."
-  type        = string
-}
-
-variable "image_owners" {
-  description = "AWS account IDs allowed to own the selected AMI."
-  type        = list(string)
-
-  validation {
-    condition = (
-      length(var.image_owners) > 0 &&
-      alltrue([
-        for owner in var.image_owners :
-        can(regex("^[0-9]{12}$", owner))
-      ])
-    )
-
-    error_message = "image_owners must contain at least one valid 12-digit AWS account ID."
-  }
-}
-
-variable "image_name_pattern" {
-  description = "Name pattern used to locate the Ubuntu AMI."
-  type        = string
-}
-
-variable "boot_disk_size_gb" {
-  description = "Size of the EC2 root EBS volume in GiB."
-  type        = number
-
-  validation {
-    condition     = var.boot_disk_size_gb >= 8
-    error_message = "boot_disk_size_gb must be at least 8 GiB."
-  }
-}
-
-variable "boot_disk_type" {
-  description = "Resolved AWS EBS volume type."
-  type        = string
-}
-
-variable "assign_public_ip" {
-  description = "Whether to allocate and associate an Elastic IP."
-  type        = bool
-  default     = false
+variable "network" {
+  description = "Existing provider network outputs; null when this provider has no VMs."
+  type = object({
+    management_subnet_id = string
+    workload_subnet_id   = string
+    security_group_ids   = map(string)
+  })
 }
 
 variable "ssh_users" {
@@ -98,8 +50,8 @@ variable "ssh_users" {
   }
 }
 
-variable "tags" {
-  description = "Tags applied to AWS resources."
+variable "startup_scripts" {
+  description = "Optional non-secret bootstrap shell scripts keyed by VM configuration key."
   type        = map(string)
   default     = {}
 }

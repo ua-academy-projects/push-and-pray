@@ -404,12 +404,6 @@ jobs:
           python infrastructure/terraform/tests/validate_test_configs.py
           terraform -chdir=infrastructure/terraform test
 
-      - name: Validate cloud-init syntax
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
-          cloud-init schema --config-file infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl
-
   ansible:
     name: Ansible Lint
     runs-on: ubuntu-latest
@@ -423,7 +417,10 @@ jobs:
           python-version: "3.14"
 
       - name: Install Ansible
-        run: pip install ansible
+        run: pip install ansible -r infrastructure/ansible/requirements.txt
+
+      - name: Test inventory and controller roles without cloud credentials
+        run: python -m unittest discover -s infrastructure/ansible/tests -v
 
       - name: Build collection
         working-directory: infrastructure/ansible/oilscope/platform

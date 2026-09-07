@@ -68,30 +68,26 @@ username. Use Ansible's standard `ANSIBLE_PRIVATE_KEY_FILE`, SSH agent, or
 normal `~/.ssh` configuration for keys; there is no provider-specific key-path
 default.
 
-Workloads in the bastion's cloud use their private address through that
-bastion. A public UI in the other cloud is managed directly; Terraform opens
-its SSH port only to the bastion's operator CIDRs. This direct management path
-does not provide connectivity from the UI to private application services.
-The bastion starts on port 22, and the bootstrap play changes it to the
-configured `vms.bastion.ssh_port`. For bootstrap, temporarily enable Terraform's
-`enable_bastion_ssh_bootstrap` and set `OILSCOPE_BASTION_CONNECT_PORT=22`;
-remove both overrides afterward.
+Workloads use their private address through the bastion, including the public
+UI. The nested ProxyCommand explicitly passes `ANSIBLE_PRIVATE_KEY_FILE` when
+set. Bastion first-boot logic configures `vms.bastion.ssh_port` (8787 in the
+example); Ansible waits for that port and enforces the same SSH policy.
+No temporary public port 22 or bootstrap connection override is needed.
+The inventory plugin propagates the absolute project-config path as a host
+variable, so deployment roles consume the same file used for discovery.
 
 ## Cross-cloud limitation
 
 Terraform provider dispatch and inventory discovery support GCP-only,
 AWS-only, and hybrid configurations. Application deployment supports only a
-topology where all five roles are in one cloud. In a hybrid configuration the
-inventory publishes `oilscope_application_topology_supported=false` and a
-specific error; every workload play checks it on the controller before fact
-gathering or SSH. An impossible private cross-cloud SSH proxy also exits with
-an explicit error instead of waiting for a timeout.
+topology where all five roles are in one cloud. The small `topology_guard`
+role checks discovered host cloud labels on the controller before gathering
+facts or opening workload SSH connections. It fails with an explicit message
+for a mixed application, without duplicating topology metadata in inventory.
 
-A GCP bastion cannot reach an AWS private subnet, and workloads in different
-clouds cannot use each other's private service addresses, without a VPN,
-transit design, or authenticated overlay. Private workloads are deliberately
-not exposed publicly as a workaround. Keep all communicating application
-roles in one cloud until cross-cloud private networking is added.
+Cross-cloud private application networking is outside this project's scope.
+Keep all communicating roles in one cloud. Terraform provider assignment and
+discovery tests may still exercise per-VM overrides independently.
 
 AWS private-subnet internet egress is disabled by default. Setting
 `network.aws_enable_nat_gateway` to `true` creates a paid NAT Gateway; review

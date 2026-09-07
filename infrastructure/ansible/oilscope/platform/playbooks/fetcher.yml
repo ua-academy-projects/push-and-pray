@@ -34,6 +34,8 @@
 
     - role: oilscope.platform.fetcher
       vars:
+        fetcher_compose_environment:
+          DATABASE_PORT: "{{ compose_project_config.service_ports.postgresql | string }}"
         fetcher_database_host: >-
           {{ hostvars[groups['database'][0]].internal_ip }}
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
