@@ -23,7 +23,7 @@ EOF
 chmod 0644 "$SSHD_DROP_IN"
 /usr/sbin/sshd -t
 
-# Ubuntu 24.04 derives ssh.socket listeners from sshd_config during daemon-reload.
+# Ubuntu 26.04 derives ssh.socket listeners from sshd_config during daemon-reload.
 systemctl daemon-reload
 if systemctl is-active --quiet ssh.socket; then
   systemctl restart ssh.socket

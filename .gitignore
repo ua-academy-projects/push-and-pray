@@ -27,12 +27,11 @@ infrastructure/docker/deployment
 **/tfplan
 crash.log
 crash.*.log
-*.json
-!infrastructure/terraform/*.json
+/project-config.json
+
 # Credentials and private keys
 *.pem
 *.key
-!project-config.example.json
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz

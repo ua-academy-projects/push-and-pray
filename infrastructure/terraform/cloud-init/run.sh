@@ -1,4 +1,5 @@
 #!/bin/sh
+# Historical educational example; it is not referenced by the active Terraform modules.
 set -eu
 
 : "${AUTOMATION_ROLE:?AUTOMATION_ROLE is required}"

@@ -37,6 +37,6 @@
           {{
             compose_project_config.registry.repository
             ~ '/database:'
-            ~ compose_project_config.registry.image_sha
+            ~ compose_project_config.registry.image_tag
           }}
         database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

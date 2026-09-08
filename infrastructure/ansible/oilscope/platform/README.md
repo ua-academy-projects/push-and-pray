@@ -8,7 +8,7 @@ Before deploying, validate your project configuration file against the schema:
 
 ​```bash
 uvx check-jsonschema \
-  --schemafile infrastructure/terraform/project-config.schema.json \
+  --schemafile project-config.schema.json \
   /absolute/path/project-config.json
 ​```
 

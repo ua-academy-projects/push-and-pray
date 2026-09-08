@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Contract for non-secret Terraform project configuration.",
+  "description": "Contract for the non-secret project configuration.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "environment",
     "default_cloud",
-    "location",
+    "default_location",
     "name_prefix",
     "common_labels",
     "ssh_users",
@@ -22,6 +22,10 @@
     "disk_types"
   ],
   "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "./project-config.schema.json"
+    },
     "environment": {
       "type": "string",
       "enum": ["dev", "stage", "prod"]
@@ -30,7 +34,7 @@
       "type": "string",
       "enum": ["gcp", "aws"]
     },
-    "location": {
+    "default_location": {
       "type": "string",
       "enum": ["stockholm", "ohio", "mexico"]
     },
@@ -47,7 +51,7 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "username", "image_sha"],
+      "required": ["repository", "username", "image_tag"],
       "properties": {
         "repository": {
           "type": "string",
@@ -57,7 +61,8 @@
           "type": "string",
           "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
-        "image_sha": {
+        "image_tag": {
+          "description": "OCI image tag containing the Git commit SHA used to build the images.",
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         }
@@ -129,11 +134,13 @@
             },
             {
               "properties": {
-                "role": {
-                  "const": "bastion"
+                "tags": {
+                  "contains": {
+                    "const": "bastion"
+                  }
                 }
               },
-              "required": ["role"]
+              "required": ["tags"]
             }
           ]
         }
@@ -294,8 +301,11 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ubuntu_2604"],
+      "required": ["ubuntu_2404", "ubuntu_2604"],
       "properties": {
+        "ubuntu_2404": {
+          "$ref": "#/$defs/image"
+        },
         "ubuntu_2604": {
           "$ref": "#/$defs/image"
         }
@@ -359,9 +369,9 @@
     "disk_types": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["balanced", "performance"],
+      "required": ["general_purpose", "performance"],
       "properties": {
-        "balanced": {
+        "general_purpose": {
           "$ref": "#/$defs/disk_type"
         },
         "performance": {
@@ -380,8 +390,42 @@
         },
         "disk_type": {
           "type": "string",
-          "enum": ["balanced", "performance"]
+          "enum": ["general_purpose", "performance"]
+        },
+        "iops": {
+          "description": "Optional per-VM IOPS override for disk types that support provisioned IOPS.",
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 256000
         }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "disk_type": {
+                "const": "general_purpose"
+              }
+            },
+            "required": ["disk_type"]
+          },
+          "then": {
+            "not": {
+              "required": ["iops"]
+            }
+          }
+        }
+      ]
+    },
+    "data_disks": {
+      "description": "Optional additional persistent disks keyed by a stable logical device name.",
+      "type": "object",
+      "maxProperties": 11,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/boot_disk"
       }
     },
     "labels": {
@@ -402,7 +446,8 @@
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
       }
     },
-    "vm_network_tags": {
+    "vm_tags": {
+      "description": "Functional VM classifications used for network policy and Ansible inventory groups.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
@@ -426,13 +471,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "role",
         "machine_type",
         "image",
         "internal_ip",
         "boot_disk",
         "assign_public_ip",
-        "network_tags",
+        "tags",
         "secret_mappings"
       ],
       "properties": {
@@ -440,9 +484,9 @@
           "type": "string",
           "enum": ["gcp", "aws"]
         },
-        "role": {
+        "location": {
           "type": "string",
-          "enum": ["bastion", "database", "history", "fetcher", "ui"]
+          "enum": ["stockholm", "ohio", "mexico"]
         },
         "machine_type": {
           "type": "string",
@@ -450,7 +494,7 @@
         },
         "image": {
           "type": "string",
-          "enum": ["ubuntu_2604"]
+          "enum": ["ubuntu_2404", "ubuntu_2604"]
         },
         "internal_ip": {
           "type": "string",
@@ -459,11 +503,14 @@
         "boot_disk": {
           "$ref": "#/$defs/boot_disk"
         },
+        "data_disks": {
+          "$ref": "#/$defs/data_disks"
+        },
         "assign_public_ip": {
           "type": "boolean"
         },
-        "network_tags": {
-          "$ref": "#/$defs/vm_network_tags"
+        "tags": {
+          "$ref": "#/$defs/vm_tags"
         },
         "labels": {
           "$ref": "#/$defs/labels"
@@ -513,8 +560,10 @@
           },
           "then": {
             "properties": {
-              "role": {
-                "enum": ["bastion", "ui"]
+              "tags": {
+                "contains": {
+                  "enum": ["bastion", "ui"]
+                }
               }
             }
           }
@@ -522,22 +571,19 @@
         {
           "if": {
             "properties": {
-              "role": {
-                "const": "bastion"
+              "tags": {
+                "contains": {
+                  "const": "bastion"
+                }
               }
             },
-            "required": ["role"]
+            "required": ["tags"]
           },
           "then": {
             "required": ["ssh_port", "allowed_cidrs"],
             "properties": {
               "assign_public_ip": {
                 "const": true
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "bastion"
-                }
               },
               "secret_mappings": {
                 "maxProperties": 0
@@ -560,21 +606,16 @@
         {
           "if": {
             "properties": {
-              "role": {
-                "const": "ui"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {
-            "required": ["public_endpoint"],
-            "properties": {
-              "network_tags": {
+              "tags": {
                 "contains": {
                   "const": "ui"
                 }
               }
-            }
+            },
+            "required": ["tags"]
+          },
+          "then": {
+            "required": ["public_endpoint"]
           }
         }
       ]

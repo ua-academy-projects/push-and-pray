@@ -1,7 +1,8 @@
 {
+  "$schema": "./project-config.schema.json",
   "environment": "dev",
   "default_cloud": "aws",
-  "location": "stockholm",
+  "default_location": "stockholm",
   "name_prefix": "oilscope",
   "common_labels": {
     "project": "example-oil-price-tracker",
@@ -13,7 +14,7 @@
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "username": "example-operator",
-    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+    "image_tag": "0123456789abcdef0123456789abcdef01234567"
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
@@ -27,64 +28,73 @@
   },
   "vms": {
     "bastion": {
-      "role": "bastion",
       "cloud": "gcp",
+      "location": "ohio",
       "machine_type": "micro",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.0.4",
       "boot_disk": {
         "size_gb": 10,
-        "disk_type": "balanced"
+        "disk_type": "general_purpose"
+      },
+      "data_disks": {
+        "audit-data": {
+          "size_gb": 10,
+          "disk_type": "general_purpose"
+        }
       },
       "assign_public_ip": true,
-      "network_tags": ["bastion"],
+      "tags": ["bastion"],
       "secret_mappings": {},
       "ssh_port": 8787,
       "allowed_cidrs": ["192.0.2.10/32"]
     },
     "infra": {
-      "role": "database",
       "machine_type": "micro",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.1.10",
       "boot_disk": {
         "size_gb": 10,
-        "disk_type": "balanced"
+        "disk_type": "general_purpose"
+      },
+      "data_disks": {
+        "postgres-data": {
+          "size_gb": 30,
+          "disk_type": "general_purpose"
+        }
       },
       "assign_public_ip": false,
-      "network_tags": ["database"],
+      "tags": ["database"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
     "history": {
-      "role": "history",
       "machine_type": "small",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.1.11",
       "boot_disk": {
         "size_gb": 10,
-        "disk_type": "balanced"
+        "disk_type": "general_purpose"
       },
       "assign_public_ip": false,
-      "network_tags": ["history"],
+      "tags": ["history"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
     "fetcher": {
-      "role": "fetcher",
       "machine_type": "micro",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.1.12",
       "boot_disk": {
         "size_gb": 10,
-        "disk_type": "balanced"
+        "disk_type": "general_purpose"
       },
       "assign_public_ip": false,
-      "network_tags": ["fetcher"],
+      "tags": ["fetcher"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "OILPRICEAPI_KEY": "example-api-key",
@@ -92,16 +102,15 @@
       }
     },
     "ui": {
-      "role": "ui",
       "machine_type": "micro",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.1.13",
       "boot_disk": {
         "size_gb": 10,
-        "disk_type": "balanced"
+        "disk_type": "general_purpose"
       },
       "assign_public_ip": true,
-      "network_tags": ["ui"],
+      "tags": ["ui"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
@@ -164,6 +173,15 @@
     }
   },
   "images": {
+    "ubuntu_2404": {
+      "gcp": {
+        "project": "ubuntu-os-cloud",
+        "family": "ubuntu-2404-lts-amd64"
+      },
+      "aws": {
+        "ssm_parameter": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+      }
+    },
     "ubuntu_2604": {
       "gcp": {
         "project": "ubuntu-os-cloud",
@@ -175,7 +193,7 @@
     }
   },
   "disk_types": {
-    "balanced": {
+    "general_purpose": {
       "gcp": {
         "type": "pd-balanced"
       },
@@ -189,7 +207,7 @@
       },
       "aws": {
         "type": "io2",
-        "iops": 5000
+        "iops": 7000
       }
     }
   }

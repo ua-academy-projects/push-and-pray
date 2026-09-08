@@ -1,59 +1,54 @@
-module "network" {
-  source = "./modules/network"
+module "aws_network" {
+  source = "./modules/aws-network"
 
-  resource_prefix = local.resource_prefix
-
-  management_subnet_cidr = local.config.network.management_subnet_cidr
-  workload_subnet_cidr   = local.config.network.workload_subnet_cidr
-
-  ui_public_ports = [
-    for port in local.config.network.ui_public_ports : tostring(port)
-  ]
-
-  bastion_ssh_port             = local.bastion_vm.ssh_port
-  bastion_allowed_cidrs        = local.bastion_vm.allowed_cidrs
-  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-
-  history_api_port = local.config.service_ports.history_api
-  postgresql_port  = local.config.service_ports.postgresql
-
-  depends_on = [google_project_service.required]
+  config = local.config
 }
 
-#trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
-module "vm" {
-  source   = "./modules/vm"
-  for_each = local.config.vms
+module "aws_security" {
+  source = "./modules/aws-security"
 
-  name                = "${local.resource_prefix}-${each.key}"
-  subnetwork_id       = each.value.role == "bastion" ? module.network.management_subnet_id : module.network.workload_subnet_id
-  role                = each.value.role
-  registry_repository = local.config.registry.repository
-  image_sha           = local.config.registry.image_sha
-  ssh_users           = local.config.ssh_users
-  network_tags = [
-    for tag in each.value.network_tags :
-    "${local.resource_prefix}-${tag}"
-  ]
+  config   = local.config
+  networks = module.aws_network.networks
+}
 
-  machine_type = each.value.machine_type
-  image        = each.value.image
-  internal_ip  = each.value.internal_ip
-  ssh_port     = lookup(each.value, "ssh_port", 22)
+module "aws_secrets" {
+  source = "./modules/aws-secrets"
 
-  boot_disk_size_gb = each.value.boot_disk.size_gb
-  boot_disk_type    = each.value.boot_disk.type
+  config = local.config
+}
 
-  assign_public_ip = each.value.assign_public_ip
+module "aws_vm" {
+  source = "./modules/aws-vm"
 
+  config             = local.config
+  instance_profiles  = module.aws_secrets.instance_profile_names
+  networks           = module.aws_network.networks
+  security_group_ids = module.aws_security.security_group_ids
+}
 
-  labels = merge(
-    local.common_labels,
-    try(each.value.labels, {}),
-    {
-      role = each.value.role
-    },
-  )
+module "gcp_network" {
+  source = "./modules/gcp-network"
 
-  depends_on = [google_project_service.required]
+  config = local.config
+}
+
+module "gcp_firewall" {
+  source = "./modules/gcp-firewall"
+
+  config   = local.config
+  networks = module.gcp_network.networks
+}
+
+module "gcp_secrets" {
+  source = "./modules/gcp-secrets"
+
+  config = local.config
+}
+
+module "gcp_vm" {
+  source = "./modules/gcp-vm"
+
+  config                 = local.config
+  networks               = module.gcp_network.networks
+  service_account_emails = module.gcp_secrets.service_account_emails
 }
