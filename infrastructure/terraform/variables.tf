@@ -10,6 +10,7 @@ variable "project_config_path" {
   }
 }
 
+//for GCP
 variable "secret_version_managers" {
   description = "IAM members allowed to add new versions to every secret. Adding a version does not grant reading one."
   type        = list(string)

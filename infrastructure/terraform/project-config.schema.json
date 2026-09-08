@@ -65,7 +65,7 @@
       "minProperties": 1,
       "propertyNames": { "pattern": "^[a-z][a-z0-9_.-]*$" },
       "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
-      "description": "Abstract image keys (e.g. \"ubuntu-26.04\") to native image reference per cloud. For aws this is an SSM parameter path or AMI id, resolved by the aws module — not a raw value Terraform can use directly."
+      "description": "Abstract image keys (e.g. \"ubuntu-26.04\") to native image reference per cloud. For aws this must be an SSM parameter path starting with /, which the aws module resolves to an AMI ID. Direct AMI IDs are not supported."
     },
 
     "clouds": {

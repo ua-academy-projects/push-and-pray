@@ -25,7 +25,7 @@ resource "aws_iam_instance_profile" "workload" {
 }
 
 data "aws_ssm_parameter" "ami" {
-  for_each = { for name, vm in local.aws_vms : name => vm if startswith(vm.native_image, "/") }
+  for_each = local.aws_vms
 
   name = each.value.native_image
 }
@@ -33,7 +33,7 @@ data "aws_ssm_parameter" "ami" {
 resource "aws_instance" "workload" {
   for_each = local.aws_vms
 
-  ami           = startswith(each.value.native_image, "/") ? data.aws_ssm_parameter.ami[each.key].value : each.value.native_image
+  ami           = data.aws_ssm_parameter.ami[each.key].value
   instance_type = each.value.native_vm_type
 
   subnet_id              = local.subnet_ids[each.key]
