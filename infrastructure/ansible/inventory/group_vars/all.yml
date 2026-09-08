@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-ansible_user: >-
-  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_USER')
-     | default(lookup('ansible.builtin.env', 'USER'), true) }}
+oilscope_ssh_key: "{{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_KEY') }}"
 
-ansible_ssh_private_key_file: >-
-  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_KEY')
-     | default(lookup('ansible.builtin.env', 'HOME')
-               ~ '/.ssh/google_compute_engine', true) }}
+oilscope_ssh_identity_args: >-
+  {{ ('-i ' ~ (oilscope_ssh_key | quote))
+     if (oilscope_ssh_key | length > 0)
+     else '' }}
 
 oilscope_ssh_base_args: >-
   -o StrictHostKeyChecking=accept-new
   -o IdentitiesOnly=yes
-ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"
+
+ansible_ssh_common_args: >-
+  {{ oilscope_ssh_base_args }}
+  {{ oilscope_ssh_identity_args }}

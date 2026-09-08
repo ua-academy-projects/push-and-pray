@@ -1,7 +1,7 @@
 # Compose project
 
 Installs the Compose definition for one OilScope workload VM. Each target gets
-only the services assigned to its role:
+only the selected workload's services:
 
 - `database`: PostgreSQL and the one-shot migration service;
 - `history`: History only;
@@ -17,7 +17,7 @@ The controller must have access to the external project configuration JSON.
 
 - `compose_project_config_path`: required controller-side path to the non-secret
   project configuration JSON.
-- `compose_project_workload`: required host role: `database`, `history`,
+- `compose_project_workload`: required workload name: `database`, `history`,
   `fetcher`, or `ui`.
 - `compose_project_dir`: installation directory; defaults to `/opt/oilscope/app`.
 - `compose_project_owner` and `compose_project_group`: installed file ownership;
@@ -32,13 +32,13 @@ registry authentication are not handled by this role.
 ```yaml
 ---
 - name: Install Compose project
-  hosts: workloads
+  hosts: history
   become: true
   roles:
     - role: oilscope.platform.compose_project
       vars:
         compose_project_config_path: /srv/oilscope/project-config.json
-        compose_project_workload: "{{ oilscope_role }}"
+        compose_project_workload: history
 ```
 
 The installed file is `/opt/oilscope/app/compose.yaml`.

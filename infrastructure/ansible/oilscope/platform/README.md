@@ -25,8 +25,7 @@ Run from the repository root:
 
 ```bash
 ansible-playbook oilscope.platform.deploy_workloads \
-  -i infrastructure/ansible/inventory/oilscope.gcp.yml \
-  -e project_config_path=/absolute/path/project-config.json
+  -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
 The deployment stops if a workload fails, preventing dependent workloads from being deployed.

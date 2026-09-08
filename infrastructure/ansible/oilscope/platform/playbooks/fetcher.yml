@@ -14,7 +14,7 @@
     - role: oilscope.platform.compose_project
       vars:
         compose_project_config_path: "{{ project_config_path }}"
-        compose_project_workload: "{{ oilscope_role }}"
+        compose_project_workload: fetcher
 
     - role: oilscope.platform.resolve_secrets
       vars:

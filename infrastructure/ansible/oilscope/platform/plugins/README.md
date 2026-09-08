@@ -1,31 +1,15 @@
-# Collections Plugins Directory
+# Inventory plugin
 
-This directory can be used to ship various plugins inside an Ansible collection. Each plugin is placed in a folder that
-is named after the type of plugin it is in. It can also include the `module_utils` and `modules` directory that
-would contain module utils and modules respectively.
+`inventory/oilscope_cloud.py` provides the
+`oilscope.platform.oilscope_cloud` dynamic inventory plugin. It reads the
+project configuration shared with Terraform and delegates live discovery to
+the `amazon.aws.aws_ec2` and `google.cloud.gcp_compute` plugins.
 
-Here is an example directory of the majority of plugins currently supported by Ansible:
+The provider plugins run only when the configuration contains VMs for their
+cloud. The wrapper normalizes discovered hosts, creates the `aws`, `gcp`, and
+`workloads` groups, and creates functional groups from each VM's `tags`.
 
-```
-└── plugins
-    ├── action
-    ├── become
-    ├── cache
-    ├── callback
-    ├── cliconf
-    ├── connection
-    ├── filter
-    ├── httpapi
-    ├── inventory
-    ├── lookup
-    ├── module_utils
-    ├── modules
-    ├── netconf
-    ├── shell
-    ├── strategy
-    ├── terminal
-    ├── test
-    └── vars
-```
-
-A full list of plugin types can be found at [Working With Plugins](https://docs.ansible.com/ansible-core/2.21/plugins/plugins.html).
+The inventory source and its connection variables remain outside the
+collection under `infrastructure/ansible/inventory`. See the
+[cloud inventory guide](../../../inventory/README.md) for installation,
+authentication, and usage.

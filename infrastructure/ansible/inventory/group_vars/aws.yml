@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+ansible_user: >-
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_USER')
+     | default('ubuntu', true) }}

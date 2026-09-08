@@ -7,7 +7,7 @@ existing Docker health check.
 
 - Docker and the Compose plugin are installed.
 - `/opt/oilscope/app/compose.yaml` is installed.
-- The dynamic GCP inventory contains hosts in the `database` and `history`
+- The dynamic cloud inventory contains hosts in the `database` and `history`
   groups, each with an `internal_ip` variable.
 - Database is healthy and migrated, and History is healthy.
 
