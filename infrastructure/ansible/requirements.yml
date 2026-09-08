@@ -5,6 +5,9 @@
 #
 #   ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
 collections:
-  # Provides the gcp_compute inventory plugin used by inventory/oilscope.gcp.yml.
+  # Discovery plugins the oilscope_cloud inventory plugin delegates to, one per
+  # cloud the project configuration can place a workload on.
   - name: google.cloud
     version: ">=1.14.0"
+  - name: amazon.aws
+    version: ">=9.0.0"

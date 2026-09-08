@@ -1,5 +1,3 @@
-# The VPC foundation: a network, its subnets and outbound routing. Long-lived
-# and unaware of which ports the application happens to need.
 module "network" {
   source = "./modules/network"
   count  = local.is_active ? 1 : 0

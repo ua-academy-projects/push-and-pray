@@ -1,8 +1,8 @@
 # Inventory
 
-`oilscope.yml` builds the deployment inventory from live Compute Engine state,
-so a `terraform apply` that replaces a VM or changes an address is picked up
-without editing a host list.
+`oilscope.yml` builds the deployment inventory from live cloud state across
+every provider the project configuration uses, so a `terraform apply` that
+replaces a VM or changes an address is picked up without editing a host list.
 
 Every environment-specific value is derived from the project configuration
 JSON that Terraform also reads, so this file is identical for every
@@ -15,21 +15,49 @@ response is reused.
 
 ## How it fits together
 
-`oilscope.platform.oilscope_gcp` does not talk to GCP itself. It reads the
-project configuration, derives the settings below, and hands them to
-`google.cloud.gcp_compute`, which performs the discovery.
+`oilscope.platform.oilscope_cloud` talks to no cloud itself. It reads the
+project configuration, works out which clouds actually host workloads, derives
+the settings below for each of them, and hands each set to the discovery plugin
+that speaks to that provider:
 
-The wrapper exists because `gcp_compute` can neither read the project
-configuration nor evaluate Jinja in its own configuration file — a template
-expression placed there is sent to the API as literal text.
+| Cloud | Discovery plugin | Collection |
+| --- | --- | --- |
+| `gcp` | `google.cloud.gcp_compute` | `google.cloud` |
+| `aws` | `amazon.aws.aws_ec2` | `amazon.aws` |
 
-| Derived from the JSON | Becomes |
-| --- | --- |
-| `project_id` | the project queried |
-| `zone` | the zone queried |
-| `name_prefix` | the `labels.application` filter |
-| `environment` | the `labels.environment` filter |
-| `ssh_port` of the VM whose `role` is `bastion` | the bastion's `ansible_port` |
+Hosts from every cloud land in one inventory, in the same role groups.
+
+The wrapper exists because neither discovery plugin can read the project
+configuration, and neither evaluates Jinja in its own configuration file — a
+template expression placed there is sent to the API as literal text.
+
+| Derived from the JSON | Becomes on GCP | Becomes on AWS |
+| --- | --- | --- |
+| `clouds.<cloud>.project_id` | the project queried | — |
+| `clouds.<cloud>.zone` | the zone queried | — |
+| `clouds.<cloud>.region` | — | the region queried |
+| `name_prefix` | `labels.application` filter | `tag:application` filter |
+| `environment` | `labels.environment` filter | `tag:environment` filter |
+| the cloud's own name | `labels.cloud` filter | `tag:cloud` filter |
+| `ssh_port` of that cloud's bastion | that bastion's `ansible_port` | same |
+
+## Which clouds are queried
+
+A cloud is queried only when it hosts at least one workload. This mirrors the
+Terraform modules: a cloud whose only VM is a bastion is never built, because a
+bastion with nothing to reach serves no purpose, so there is nothing to
+discover either.
+
+Each cloud must own exactly one bastion. The plugin refuses a configuration
+where a cloud with workloads has none or has two.
+
+## Crossing clouds is not possible
+
+Every host gets `oilscope_cloud` from its own `cloud` label or tag, and
+`group_vars/workloads.yml` uses it to pick the bastion of that same cloud.
+Routing a GCP host through an AWS bastion would produce an SSH timeout rather
+than an error, so the selection is explicit rather than "the first bastion in
+the group".
 
 Everything else — the grouping rules, the host-variable expressions, the
 workload SSH port — lives in the plugin's defaults. Changing those means
@@ -207,7 +235,7 @@ key with `OILSCOPE_SSH_KEY`.
 | Symptom | Cause |
 | --- | --- |
 | `No inventory was parsed`, doubled path in the message | not run from the repository root |
-| `unknown plugin 'oilscope.platform.oilscope_gcp'` | this repository's collection is not installed, or was not rebuilt |
+| `unknown plugin 'oilscope.platform.oilscope_cloud'` | this repository's collection is not installed, or was not rebuilt |
 | `unknown plugin 'google.cloud.gcp_compute'` | `requirements.yml` not installed |
 | `cannot start: ... library (google-auth)` | `requirements.txt` not installed |
 | `must define a 'vms' object` | the JSON is still `config_version` 2 |

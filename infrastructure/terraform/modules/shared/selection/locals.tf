@@ -11,9 +11,6 @@ locals {
     if vm.role != "bastion"
   }
 
-  # A bastion exists only to reach workloads. A cloud that hosts none has
-  # nothing to reach, so the entire cloud is skipped - the bastion included -
-  # rather than standing up a network around a jump host with no destination.
   is_active = length(local.workload_vms) > 0
 
   my_vms = {
@@ -33,8 +30,6 @@ locals {
       managed_by  = "terraform"
     },
     var.config.common_labels,
-    # Last, so the project configuration cannot overwrite it: the Ansible
-    # inventory selects hosts by this label.
     {
       cloud = var.cloud
     },

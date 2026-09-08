@@ -3,3 +3,6 @@ provider "google" {
   region  = try(local.config.clouds.gcp.region, null)
   zone    = try(local.config.clouds.gcp.zone, null)
 }
+provider "aws" {
+  region = try(local.config.clouds.aws.region, null)
+}

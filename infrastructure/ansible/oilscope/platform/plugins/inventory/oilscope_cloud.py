@@ -1,0 +1,388 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (c) Push and Pray team
+"""Derive per-cloud inventory settings from the shared project configuration JSON."""
+
+import hashlib
+import json
+import os
+import tempfile
+
+from ansible.errors import AnsibleError, AnsibleParserError
+from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
+from ansible.utils.display import Display
+
+try:
+    import yaml
+
+    HAS_YAML = True
+except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
+    HAS_YAML = False
+
+# DO NOT DELETE BECAUSE PLUGIN WILL FAIL
+DOCUMENTATION = r"""
+name: oilscope_cloud
+short_description: OilScope inventory derived from the project configuration
+version_added: "0.2.0"
+author:
+  - Push and Pray team
+description:
+  - Reads the project configuration JSON that Terraform also reads, works out
+    which clouds actually host workloads, and hands each one to the discovery
+    plugin that speaks to it - C(google.cloud.gcp_compute) for GCP and
+    C(amazon.aws.aws_ec2) for AWS. Hosts from every cloud land in one inventory.
+  - A cloud is skipped when it hosts no workload. Terraform applies the same
+    rule - a bastion with nothing to reach is not built, so there is nothing to
+    discover either.
+  - Every host gets C(oilscope_cloud) from the resource's own C(cloud) label or
+    tag. Workloads use it to pick the bastion of their own cloud, because
+    without cross-cloud networking a bastion cannot reach the other provider.
+  - The wrapper exists because neither discovery plugin reads that file, and
+    neither evaluates Jinja in its own configuration - a template expression
+    there reaches the API as literal text.
+extends_documentation_fragment:
+  - inventory_cache
+options:
+  plugin:
+    description:
+      - Token that identifies this plugin. Must be
+        C(oilscope.platform.oilscope_cloud).
+    type: str
+    required: true
+    choices:
+      - oilscope.platform.oilscope_cloud
+  project_config_path:
+    description:
+      - Path to the project configuration JSON. Absolute is used as given;
+        relative is tried against the working directory, then against this
+        file's directory.
+      - Set C(OILSCOPE_PROJECT_CONFIG) for a configuration kept elsewhere. A
+        value written into the inventory file wins over the environment, so
+        leave the key out to make the variable effective.
+    type: str
+    required: false
+    default: ../../terraform/env/dev.json
+    env:
+      - name: OILSCOPE_PROJECT_CONFIG
+  workload_ssh_port:
+    description:
+      - Port the workload VMs listen on. The Terraform firewall rules open 22
+        and nothing else, so a bastion's port must not apply to them.
+    type: int
+    default: 22
+  bastion_connect_port:
+    description:
+      - Overrides the port used to reach every bastion, for the window in which
+        a freshly created host still listens on 22. Leave unset to use the port
+        each bastion declares in the configuration.
+    type: int
+    required: false
+    env:
+      - name: OILSCOPE_BASTION_CONNECT_PORT
+  bastion_role:
+    description:
+      - Value of C(role) identifying a bastion, in the configuration and in the
+        instance label or tag.
+    type: str
+    default: bastion
+  auth_kind:
+    description:
+      - Passed straight through to C(google.cloud.gcp_compute). Ignored by AWS,
+        which authenticates the way boto3 does.
+    type: str
+    default: application
+requirements:
+  - google.cloud collection, google-auth and requests, for GCP discovery
+  - amazon.aws collection and boto3, for AWS discovery
+notes:
+  - GCP authenticates with Application Default Credentials. Run
+    C(gcloud auth application-default login) on the controller first.
+  - AWS authenticates through the standard boto3 chain - environment variables,
+    a shared credentials file, or an instance role.
+"""
+
+EXAMPLES = r"""
+# inventory/oilscope.yml - the path comes from OILSCOPE_PROJECT_CONFIG or the
+# option default, so it is deliberately not set here.
+plugin: oilscope.platform.oilscope_cloud
+cache: true
+cache_plugin: ansible.builtin.jsonfile
+cache_connection: ~/.cache/oilscope-inventory
+cache_timeout: 300
+"""
+
+DELEGATES = {
+    "gcp": "google.cloud.gcp_compute",
+    "aws": "amazon.aws.aws_ec2",
+}
+
+COLLECTIONS = {
+    "gcp": "google.cloud",
+    "aws": "amazon.aws",
+}
+
+display = Display()
+
+
+def plain(value):
+    return str(value)
+
+
+class InventoryModule(BaseInventoryPlugin, Cacheable):
+    NAME = "oilscope.platform.oilscope_cloud"
+
+    def verify_file(self, path):
+        return super().verify_file(path) and path.endswith(("oilscope.yml", "oilscope.yaml"))
+
+    def parse(self, inventory, loader, path, cache=True):
+        super().parse(inventory, loader, path, cache=cache)
+        self._read_config_data(path)
+
+        if not HAS_YAML:
+            raise AnsibleParserError("the oilscope_cloud inventory plugin requires PyYAML")
+
+        config = self._load_project_config(path)
+
+        for cloud in self._active_clouds(config):
+            settings = self._build_settings(config, cloud)
+            generated = self._write_settings(settings, cloud)
+
+            try:
+                self._delegate(inventory, loader, generated, cache, cloud)
+            finally:
+                try:
+                    os.unlink(generated)
+                except OSError as cleanup_error:
+                    display.vvv(f"could not remove {generated}: {cleanup_error}")
+
+    # ------------------------------------------------------------------ config
+
+    def _resolve_config_path(self, path):
+        configured = plain(self.get_option("project_config_path"))
+
+        if os.path.isabs(configured):
+            return os.path.normpath(configured)
+
+        from_cwd = os.path.abspath(configured)
+
+        if os.path.isfile(from_cwd):
+            return from_cwd
+
+        beside = os.path.join(os.path.dirname(os.path.abspath(path)), configured)
+        return os.path.normpath(beside)
+
+    def _load_project_config(self, path):
+        config_path = self._resolve_config_path(path)
+
+        try:
+            with open(config_path, "rb") as handle:
+                config = json.load(handle)
+        except (OSError, ValueError) as error:
+            raise AnsibleParserError(
+                f"could not load the project configuration at {config_path}: {error}"
+            ) from error
+
+        if not isinstance(config, dict):
+            raise AnsibleParserError(
+                f"the project configuration at {config_path} must contain a JSON object"
+            )
+
+        return config
+
+    def _require(self, mapping, key, where):
+        value = mapping.get(key)
+
+        if not value or not isinstance(value, str):
+            raise AnsibleParserError(
+                f"the project configuration must define a non-empty string {key!r} in {where}"
+            )
+
+        return value
+
+    def _vms(self, config):
+        vms = config.get("vms")
+
+        if not isinstance(vms, dict):
+            raise AnsibleParserError("the project configuration must define a 'vms' object")
+
+        return vms
+
+    def _placement(self, config, vm):
+        return vm.get("cloud") or self._require(config, "default_cloud", "the configuration root")
+
+    # ------------------------------------------------------------------ clouds
+
+    def _active_clouds(self, config):
+        bastion_role = plain(self.get_option("bastion_role"))
+        declared = config.get("clouds")
+
+        if not isinstance(declared, dict):
+            raise AnsibleParserError("the project configuration must define a 'clouds' object")
+
+        active = set()
+
+        for name, vm in self._vms(config).items():
+            if not isinstance(vm, dict):
+                raise AnsibleParserError(f"the {name!r} VM must be a JSON object")
+
+            if vm.get("role") == bastion_role:
+                continue
+
+            active.add(self._placement(config, vm))
+
+        for cloud in sorted(active):
+            if cloud not in declared:
+                raise AnsibleParserError(
+                    f"workloads are placed on {cloud!r} but 'clouds' declares no profile for it"
+                )
+
+            if cloud not in DELEGATES:
+                raise AnsibleParserError(
+                    f"no discovery plugin is known for cloud {cloud!r}; "
+                    f"supported clouds are {', '.join(sorted(DELEGATES))}"
+                )
+
+        return sorted(active)
+
+    def _bastion_ssh_port(self, config, cloud):
+        bastion_role = plain(self.get_option("bastion_role"))
+
+        ports = [
+            vm.get("ssh_port")
+            for vm in self._vms(config).values()
+            if isinstance(vm, dict)
+            and vm.get("role") == bastion_role
+            and self._placement(config, vm) == cloud
+        ]
+
+        if len(ports) != 1:
+            raise AnsibleParserError(
+                f"expected exactly one VM with role {bastion_role!r} on {cloud!r}, "
+                f"found {len(ports)}; each cloud needs its own bastion because "
+                "there is no cross-cloud networking"
+            )
+
+        try:
+            return int(ports[0])
+        except (TypeError, ValueError) as port_error:
+            raise AnsibleParserError(
+                f"the {cloud!r} bastion must define an integer ssh_port"
+            ) from port_error
+
+    def _connect_ports(self, config, cloud):
+        """(bastion port, workload port) to connect on, honouring the override."""
+        override = self.get_option("bastion_connect_port")
+        bastion_port = int(override) if override else self._bastion_ssh_port(config, cloud)
+
+        return bastion_port, int(self.get_option("workload_ssh_port"))
+
+    # ---------------------------------------------------------------- settings
+
+    def _build_settings(self, config, cloud):
+        builders = {"gcp": self._gcp_settings, "aws": self._aws_settings}
+
+        return builders[cloud](config, cloud)
+
+    def _gcp_settings(self, config, cloud):
+        profile = config["clouds"][cloud]
+        project_id = self._require(profile, "project_id", f"clouds.{cloud}")
+        zone = self._require(profile, "zone", f"clouds.{cloud}")
+        bastion_role = plain(self.get_option("bastion_role"))
+        bastion_port, workload_port = self._connect_ports(config, cloud)
+
+        is_bastion = f"labels.role | default('') == '{bastion_role}'"
+        has_public = "networkInterfaces[0].accessConfigs | default([])"
+        public = "networkInterfaces[0].accessConfigs[0].natIP"
+        private = "networkInterfaces[0].networkIP"
+
+        return {
+            "plugin": DELEGATES[cloud],
+            "projects": [plain(project_id)],
+            "zones": [plain(zone)],
+            "filters": [
+                f"labels.application = {self._require(config, 'name_prefix', 'the configuration root')}",
+                f"labels.environment = {self._require(config, 'environment', 'the configuration root')}",
+                f"labels.cloud = {cloud}",
+            ],
+            "auth_kind": plain(self.get_option("auth_kind")),
+            "hostnames": ["name"],
+            "vars_prefix": f"{cloud}_",
+            "keyed_groups": [{"key": "labels.role", "prefix": "", "separator": ""}],
+            "groups": {"workloads": f"labels.role is defined and labels.role != '{bastion_role}'"},
+            "compose": {
+                "internal_ip": private,
+                "public_ip": f"{public} if {has_public} else ''",
+                "ansible_host": f"{public} if {is_bastion} else {private}",
+                "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+                "oilscope_role": "labels.role | default('')",
+                "oilscope_cloud": f"'{cloud}'",
+                "oilscope_ssh_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+            },
+        }
+
+    def _aws_settings(self, config, cloud):
+        profile = config["clouds"][cloud]
+        region = self._require(profile, "region", f"clouds.{cloud}")
+        bastion_role = plain(self.get_option("bastion_role"))
+        bastion_port, workload_port = self._connect_ports(config, cloud)
+
+        is_bastion = f"tags.role | default('') == '{bastion_role}'"
+        public = "public_ip_address | default('')"
+        private = "private_ip_address"
+
+        return {
+            "plugin": DELEGATES[cloud],
+            "regions": [plain(region)],
+            "filters": {
+                "tag:application": self._require(config, "name_prefix", "the configuration root"),
+                "tag:environment": self._require(config, "environment", "the configuration root"),
+                "tag:cloud": cloud,
+                "instance-state-name": ["pending", "running"],
+            },
+            "hostnames": ["tag:Name"],
+            "vars_prefix": f"{cloud}_",
+            "keyed_groups": [{"key": "tags.role", "prefix": "", "separator": ""}],
+            "groups": {"workloads": f"tags.role is defined and tags.role != '{bastion_role}'"},
+            "compose": {
+                "internal_ip": private,
+                "public_ip": public,
+                "ansible_host": f"{public} if {is_bastion} else {private}",
+                "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+                "oilscope_role": "tags.role | default('')",
+                "oilscope_cloud": f"'{cloud}'",
+                "oilscope_ssh_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+            },
+        }
+
+    def _write_settings(self, settings, cloud):
+        digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
+        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.{cloud}.yml")
+
+        try:
+            with open(generated, "w") as handle:
+                yaml.safe_dump(settings, handle, default_flow_style=False)
+        except OSError as write_error:
+            raise AnsibleParserError(
+                f"could not write the generated {cloud} settings to {generated}: {write_error}"
+            ) from write_error
+
+        return generated
+
+    def _delegate(self, inventory, loader, generated, cache, cloud):
+        from ansible.plugins.loader import inventory_loader
+
+        name = DELEGATES[cloud]
+        delegate = inventory_loader.get(name)
+
+        if delegate is None:
+            raise AnsibleParserError(
+                f"the {name} inventory plugin is unavailable; "
+                f"install the {COLLECTIONS[cloud]} collection"
+            )
+
+        for option in ("cache", "cache_plugin", "cache_connection", "cache_timeout"):
+            try:
+                delegate.set_option(option, self.get_option(option))
+            except (AnsibleError, KeyError) as option_error:
+                display.vvv(f"{name} rejected the {option} option: {option_error}")
+
+        delegate.parse(inventory, loader, generated, cache=cache)
