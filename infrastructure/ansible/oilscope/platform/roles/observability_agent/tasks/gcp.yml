@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check whether the Google Cloud Ops Agent is installed
+  ansible.builtin.command:
+    argv:
+      - dpkg-query
+      - --show
+      - google-cloud-ops-agent
+  register: observability_agent_ops_package
+  changed_when: false
+  failed_when: false
+
+- name: Download the Google Cloud Ops Agent installer
+  ansible.builtin.get_url:
+    url: "{{ observability_agent_ops_install_script_url }}"
+    dest: "{{ observability_agent_ops_install_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: observability_agent_ops_package.rc != 0
+
+- name: Install the Google Cloud Ops Agent
+  ansible.builtin.command:
+    argv:
+      - "{{ observability_agent_ops_install_script_path }}"
+      - --also-install
+  changed_when: true
+  when: observability_agent_ops_package.rc != 0
+
+- name: Install the Ops Agent configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ observability_agent_ops_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the Google Cloud Ops Agent
+
+- name: Enable and start the Google Cloud Ops Agent
+  ansible.builtin.systemd_service:
+    name: google-cloud-ops-agent
+    enabled: true
+    state: started
+    daemon_reload: true

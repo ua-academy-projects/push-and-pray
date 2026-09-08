@@ -1,52 +1,60 @@
 resource "google_service_account" "workload" {
-  account_id   = var.name
-  display_name = var.name
-  description  = "Runtime identity for the ${var.name} workload VM"
+  for_each = var.vms
+
+  account_id   = local.vm_names[each.key]
+  display_name = local.vm_names[each.key]
+  description  = "Runtime identity for the ${local.vm_names[each.key]} workload VM"
 }
 
 resource "google_compute_address" "public" {
-  count = var.assign_public_ip ? 1 : 0
+  for_each = {
+    for name, vm in var.vms :
+    name => vm
+    if vm.assign_public_ip
+  }
 
-  name   = "${var.name}-ip"
-  region = var.region
-  labels = var.labels
+  name   = "${local.vm_names[each.key]}-ip"
+  region = each.value.location.region
+  labels = local.labels_by_vm[each.key]
 }
 
 resource "google_compute_instance" "workload" {
-  name                      = var.name
-  machine_type              = var.machine_type
-  zone                      = var.zone
+  for_each = var.vms
+
+  name                      = local.vm_names[each.key]
+  machine_type              = each.value.instance_type
+  zone                      = each.value.location.zone
   allow_stopping_for_update = true
 
-  tags   = var.network_tags
-  labels = var.labels
+  tags   = local.network_tags_by_vm[each.key]
+  labels = local.labels_by_vm[each.key]
 
   boot_disk {
     auto_delete = true
 
     initialize_params {
-      image  = var.image
-      size   = var.boot_disk_size_gb
-      type   = var.boot_disk_type
-      labels = var.labels
+      image  = each.value.image_config.reference
+      size   = each.value.boot_disk.size_gb
+      type   = each.value.disk_type
+      labels = local.labels_by_vm[each.key]
     }
   }
 
   network_interface {
-    subnetwork = var.subnetwork_id
-    network_ip = var.internal_ip
+    subnetwork = local.subnet_ids_by_vm[each.key]
+    network_ip = each.value.internal_ip
 
     dynamic "access_config" {
-      for_each = var.assign_public_ip ? [1] : []
+      for_each = each.value.assign_public_ip ? [1] : []
 
       content {
-        nat_ip = google_compute_address.public[0].address
+        nat_ip = google_compute_address.public[each.key].address
       }
     }
   }
 
   service_account {
-    email  = google_service_account.workload.email
+    email  = google_service_account.workload[each.key].email
     scopes = ["cloud-platform"]
   }
 
@@ -58,7 +66,7 @@ resource "google_compute_instance" "workload" {
 
   lifecycle {
     precondition {
-      condition     = !var.assign_public_ip || contains(["ui", "bastion"], var.role)
+      condition     = !each.value.assign_public_ip || contains(["ui", "bastion"], each.value.role)
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }

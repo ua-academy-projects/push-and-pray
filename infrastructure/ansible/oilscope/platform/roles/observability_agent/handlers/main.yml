@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Restart the Google Cloud Ops Agent
+  ansible.builtin.systemd_service:
+    name: google-cloud-ops-agent
+    state: restarted
+  listen: Restart the Google Cloud Ops Agent

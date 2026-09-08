@@ -3,7 +3,8 @@
   "default_region": "europe",
   "clouds": {
     "gcp": {
-        "project_id": "example-id"
+        "project_id": "example-id",
+        "billing_account_id": "000000-000000-000000"
     }
   },
   "environment": "dev",
@@ -64,6 +65,34 @@
   "service_ports": {
     "history_api": 8001,
     "postgresql": 5432
+  },
+  "monitoring": {
+    "enabled": true,
+    "notification_email": "example-operator@example.com",
+    "cpu": {
+      "threshold_percent": 80,
+      "duration_seconds": 300
+    },
+    "disk": {
+      "threshold_percent": 85,
+      "duration_seconds": 600
+    },
+    "uptime": {
+      "enabled": true,
+      "path": "/",
+      "period_seconds": 60,
+      "timeout_seconds": 10
+    },
+    "logs": {
+      "enabled": true,
+      "error_pattern": "(?i)(error|exception|critical)"
+    },
+    "budget": {
+      "enabled": true,
+      "amount": 10,
+      "currency": "USD",
+      "thresholds": [0.5, 0.9, 1.0]
+    }
   },
   "vms": {
     "bastion": {

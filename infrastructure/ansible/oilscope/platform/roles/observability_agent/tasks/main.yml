@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure the GCP Ops Agent
+  ansible.builtin.include_tasks: gcp.yml
+  when: oilscope_cloud | default('') == 'gcp'

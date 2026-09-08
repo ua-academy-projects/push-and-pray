@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Configure observability before deploying workloads
+  ansible.builtin.import_playbook: configure_observability.yml
+
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml
 

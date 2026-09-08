@@ -19,6 +19,7 @@
     "registry",
     "network",
     "service_ports",
+    "monitoring",
     "vms"
   ],
   "properties": {
@@ -43,6 +44,11 @@
             "project_id": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+            },
+            "billing_account_id": {
+              "$comment": "Required only when monitoring.budget.enabled is true.",
+              "type": "string",
+              "pattern": "^[0-9A-Z]{6}-[0-9A-Z]{6}-[0-9A-Z]{6}$"
             }
           }
         }
@@ -253,6 +259,98 @@
         }
       }
     },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "notification_email",
+        "cpu",
+        "disk",
+        "uptime",
+        "logs",
+        "budget"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "notification_email": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        },
+        "cpu": {
+          "$ref": "#/$defs/percentage_alert"
+        },
+        "disk": {
+          "$ref": "#/$defs/percentage_alert"
+        },
+        "uptime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "path", "period_seconds", "timeout_seconds"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "period_seconds": {
+              "type": "integer",
+              "enum": [60, 300, 600, 900]
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            }
+          }
+        },
+        "logs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "error_pattern"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "error_pattern": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "amount", "currency", "thresholds"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "amount": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "thresholds": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
     "vms": {
       "type": "object",
       "minProperties": 2,
@@ -283,6 +381,23 @@
     }
   },
   "$defs": {
+    "percentage_alert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["threshold_percent", "duration_seconds"],
+      "properties": {
+        "threshold_percent": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "multipleOf": 60
+        }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,

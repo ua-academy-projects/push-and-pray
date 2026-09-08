@@ -305,10 +305,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "internal_ip": private,
                 "public_ip": f"{public} if {has_public} else ''",
                 "ansible_host": f"{public} if {is_bastion} else {private}",
-                "ansible_port": (
-                    f"{common['bastion_port']} if {is_bastion} "
-                    f"else {common['workload_port']}"
-                ),
                 "oilscope_role": role,
                 "oilscope_cloud": "labels.cloud | default('')",
             },
@@ -343,10 +339,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "internal_ip": private,
                 "public_ip": public,
                 "ansible_host": f"{public} if {is_bastion} else {private}",
-                "ansible_port": (
-                    f"{common['bastion_port']} if {is_bastion} "
-                    f"else {common['workload_port']}"
-                ),
                 "oilscope_role": role,
                 "oilscope_cloud": "ec2_tags.cloud | default('')",
             },

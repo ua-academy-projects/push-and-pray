@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure cloud observability agents
+  hosts: all
+  gather_facts: false
+  become: true
+
+  roles:
+    - role: oilscope.platform.observability_agent

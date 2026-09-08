@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+observability_agent_ops_install_script_url: >-
+  https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+observability_agent_ops_install_script_path: /tmp/add-google-cloud-ops-agent-repo.sh
+observability_agent_ops_config_path: /etc/google-cloud-ops-agent/config.yaml
+observability_agent_docker_log_paths:
+  - /var/lib/docker/containers/*/*.log

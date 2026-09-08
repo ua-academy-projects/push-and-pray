@@ -1,24 +1,33 @@
-output "name" {
-  description = "Name of the workload VM."
-  value       = google_compute_instance.workload.name
+output "names" {
+  description = "Compute Engine VM names by logical VM key."
+  value       = local.vm_names
 }
 
-output "internal_ip" {
-  description = "Internal IP address of the workload VM."
-  value       = google_compute_instance.workload.network_interface[0].network_ip
+output "private_ips" {
+  description = "Internal IPv4 addresses by logical VM key."
+  value = {
+    for name, instance in google_compute_instance.workload :
+    name => instance.network_interface[0].network_ip
+  }
 }
 
-output "public_ip" {
-  description = "Static external IP address, or null when none is assigned."
-  value       = var.assign_public_ip ? google_compute_address.public[0].address : null
+output "public_ips" {
+  description = "External IPv4 addresses by logical VM key, or null when private."
+  value = {
+    for name, vm in var.vms :
+    name => try(google_compute_address.public[name].address, null)
+  }
 }
 
 output "network_tags" {
-  description = "Effective network tags attached to the workload VM."
-  value       = google_compute_instance.workload.tags
+  description = "Effective GCP network tags by logical VM key."
+  value       = local.network_tags_by_vm
 }
 
-output "service_account_email" {
-  description = "Email of the workload VM's dedicated service account."
-  value       = google_service_account.workload.email
+output "service_account_emails" {
+  description = "Dedicated workload service-account emails by logical VM key."
+  value = {
+    for name, service_account in google_service_account.workload :
+    name => service_account.email
+  }
 }

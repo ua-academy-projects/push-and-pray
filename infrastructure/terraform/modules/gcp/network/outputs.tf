@@ -8,7 +8,7 @@ output "workload_subnet_id" {
   value       = google_compute_subnetwork.workload.id
 }
 
-output "network_tags" {
-  description = "Network tags used by firewall rules and Compute Engine instances."
-  value       = local.network_tags
+output "network_id" {
+  description = "ID of the VPC network used by the security module."
+  value       = google_compute_network.main.id
 }

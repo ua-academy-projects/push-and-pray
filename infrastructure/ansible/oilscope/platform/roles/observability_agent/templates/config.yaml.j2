@@ -1,0 +1,16 @@
+# Managed by Ansible.
+logging:
+  receivers:
+    docker_json:
+      type: files
+      include_paths: {{ observability_agent_docker_log_paths | to_json }}
+      record_log_file_path: true
+  processors:
+    parse_docker_json:
+      type: parse_json
+      field: message
+  service:
+    pipelines:
+      docker:
+        receivers: [docker_json]
+        processors: [parse_docker_json]

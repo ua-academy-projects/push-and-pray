@@ -57,3 +57,8 @@ output "aws_workload_secret_access" {
   description = "Secret IDs each AWS workload instance role may read."
   value       = module.aws.workload_secret_access
 }
+
+output "gcp_monitoring" {
+  description = "GCP observability resource identifiers, or null when monitoring is disabled."
+  value       = module.gcp.monitoring
+}

@@ -42,6 +42,50 @@ locals {
     if vm.role != "bastion"
   }
 
+  ui_vm = try(one([
+    for vm in values(local.resolved_vms) : vm
+    if vm.role == "ui"
+  ]), null)
+
+  monitoring_config  = lookup(local.config, "monitoring", {})
+  monitoring_enabled = local.has_vms && lookup(local.monitoring_config, "enabled", false)
+  monitoring_settings = {
+    notification_email = lookup(
+      local.monitoring_config,
+      "notification_email",
+      try(local.ui_vm.public_endpoint.acme_email, ""),
+    )
+    cpu = merge(
+      { threshold_percent = 80, duration_seconds = 300 },
+      lookup(local.monitoring_config, "cpu", {}),
+    )
+    disk = merge(
+      { threshold_percent = 85, duration_seconds = 600 },
+      lookup(local.monitoring_config, "disk", {}),
+    )
+    uptime = merge(
+      { enabled = true, path = "/", period_seconds = 60, timeout_seconds = 10 },
+      lookup(local.monitoring_config, "uptime", {}),
+    )
+    logs = merge(
+      { enabled = true, error_pattern = "(?i)(error|exception|critical)" },
+      lookup(local.monitoring_config, "logs", {}),
+    )
+    budget = merge(
+      { enabled = false, amount = 10, currency = "USD", thresholds = [0.5, 0.9, 1.0] },
+      lookup(local.monitoring_config, "budget", {}),
+    )
+  }
+
+  all_secret_ids = distinct(flatten([
+    for workload in values(local.workload_vms) : values(workload.secret_mappings)
+  ]))
+
+  secret_ids_by_vm = {
+    for name, workload in local.workload_vms :
+    name => distinct(values(workload.secret_mappings))
+  }
+
   has_vms    = length(local.resolved_vms) > 0
   bastion_vm = local.config.vms.bastion
 }
