@@ -38,7 +38,6 @@ only be granted a secret that is written next to its own name.
 | --- | --- |
 | creates | `google_secret_manager_secret` — the container, automatic replication, project labels |
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretAccessor` binding per (workload, secret) pair |
-| creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretVersionAdder` binding per configured version manager |
 | never creates | `google_secret_manager_secret_version` — the payload |
 
 The last row is the whole point. A secret value passed into Terraform ends up in
@@ -101,22 +100,10 @@ Generate database passwords with `openssl rand -hex 32`. `-hex` rather than
 `-base64`, because base64 contains `+` and `/`, which have to be percent-encoded
 inside a `postgres://` URL and break it if they are not.
 
-Adding versions requires `roles/secretmanager.secretVersionAdder`. That grant is
-made by Terraform from the `secret_version_managers` variable:
-
-```hcl
-secret_version_managers = [
-  "user:name@example.com",
-]
-```
-
-`secretVersionAdder` is deliberately not `secretAccessor`. It allows adding a new
-version and nothing else — a person listed here can rotate a credential without
-being able to read the current one. Reading is what the workload service accounts
-do, and they hold only `secretAccessor`, only on their own secrets.
-
-Leave the list empty and nobody but a project owner can upload a value, which is
-a reasonable default: it fails closed.
+Adding versions requires the operator to already have sufficient permission in
+the GCP project, such as `roles/secretmanager.secretVersionAdder`. Terraform does
+not manage operator permissions. Workload service accounts receive only
+`secretAccessor`, and only for the secrets assigned to them.
 
 ## Uploading every value at once
 
@@ -192,8 +179,9 @@ ansible-playbook oilscope.platform.upload_secret_versions \
   -e '{"secret_versions_only": ["DB_PASSWORD_UI"]}'
 ```
 
-Adding a version requires `roles/secretmanager.secretVersionAdder`, so whoever
-runs this does not need to be able to read what is already stored.
+Adding a version requires the operator to already have sufficient permission in
+the GCP project. Grant narrowly scoped uploader access separately if a non-owner
+operator or automation identity needs to manage secret versions in the future.
 
 ## Rotation
 
