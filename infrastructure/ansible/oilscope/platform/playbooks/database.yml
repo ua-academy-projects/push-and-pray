@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Validate the operator's SSH configuration
+  ansible.builtin.import_playbook: preflight.yml
+
 - name: Deploy Database
   hosts: database
   become: true

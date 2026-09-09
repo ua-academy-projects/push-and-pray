@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Validate the operator's SSH configuration
+  ansible.builtin.import_playbook: preflight.yml
+
 - name: Deploy UI
   hosts: ui
   become: true
@@ -41,3 +44,4 @@
     - role: oilscope.platform.ui
       vars:
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_history_port: "{{ compose_project_config.service_ports.history_api }}"

@@ -16,9 +16,9 @@ repos:
         language: fail
         entry: >-
           This kind of file must never be committed. Runtime secrets belong in
-          Google Secret Manager (see docs/secrets.md); Terraform variables and
-          state stay on your machine. If it is already staged, remove it with
-          `git rm --cached <file>`.
+          Secret Manager or Secrets Manager (see docs/secrets.md); Terraform
+          variables and state stay on your machine. If it is already staged,
+          remove it with `git rm --cached <file>`.
         files: |
           (?x)^(
             .*\.env(\..*)?

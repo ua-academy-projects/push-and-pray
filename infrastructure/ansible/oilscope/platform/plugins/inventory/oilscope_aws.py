@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) Push and Pray team
-"""Derive gcp_compute settings from the shared project configuration JSON."""
+"""Derive aws_ec2 settings from the shared project configuration JSON."""
 
 import hashlib
 import json
@@ -30,32 +30,31 @@ try:
 except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
     HAS_YAML = False
 
-# DO NOT DELETE BECAUSE PLUGIN WILL FAIL
 DOCUMENTATION = r"""
-name: oilscope_gcp
+name: oilscope_aws
 short_description: OilScope inventory derived from the project configuration
-version_added: "0.1.0"
+version_added: "0.2.0"
 author:
   - Push and Pray team
 description:
-  - Derives the GCP project, zone, C(application) and C(environment) label
-    filters and the bastion SSH port from the project configuration JSON that
-    Terraform also reads, then hands them to C(google.cloud.gcp_compute), which
-    performs the discovery. No environment value is repeated here.
-  - The wrapper exists because C(gcp_compute) neither reads that file nor
-    evaluates Jinja in its own configuration - a template expression there
-    reaches the API as literal text.
+  - Derives the AWS region, the C(application)/C(environment) tag filters and
+    the bastion SSH port from the project configuration JSON that Terraform
+    also reads, then hands them to C(amazon.aws.aws_ec2), which performs the
+    discovery. No environment value is repeated here.
+  - The wrapper exists for the same reason C(oilscope.platform.oilscope_gcp)
+    exists for GCP - C(aws_ec2) neither reads that file nor evaluates Jinja in
+    its own configuration file.
 extends_documentation_fragment:
   - inventory_cache
 options:
   plugin:
     description:
       - Token that identifies this plugin. Must be
-        C(oilscope.platform.oilscope_gcp).
+        C(oilscope.platform.oilscope_aws).
     type: str
     required: true
     choices:
-      - oilscope.platform.oilscope_gcp
+      - oilscope.platform.oilscope_aws
   project_config_path:
     description:
       - Path to the project configuration JSON. Absolute is used as given;
@@ -72,66 +71,59 @@ options:
   bastion_role:
     description:
       - Value of C(role) identifying the bastion, in the configuration and in
-        the instance label.
+        the instance's C(role) tag.
     type: str
     default: bastion
-  auth_kind:
-    description:
-      - Passed straight through to C(gcp_compute).
-    type: str
-    default: application
-  vars_prefix:
-    description:
-      - Prefix for the raw instance fields C(gcp_compute) copies into host
-        variables; without one its C(name) and C(tags) collide with reserved
-        names.
-    type: str
-    default: gcp_
 requirements:
-  - google.cloud collection
-  - google-auth
-  - requests
+  - amazon.aws collection >= 11.2.0
+  - boto3
+  - botocore
 notes:
-  - Authenticates with Application Default Credentials. Run
-    C(gcloud auth application-default login) on the controller first.
-  - Every discovered host carries C(oilscope_cloud) (always C(gcp)),
+  - Authenticates through the standard boto3 credential chain (environment
+    variables, a shared credentials/config file, or an assumed/instance
+    role) - there is no equivalent of gcp_compute's C(auth_kind) option to
+    set here.
+  - Every discovered host carries C(oilscope_cloud) (always C(aws)),
     C(oilscope_vm_key) (its key in the configuration's C(vms) object,
-    recovered from the instance name) and C(oilscope_role). Roles that need a
-    VM's own configuration entry - C(resolve_secrets), C(secret_versions) -
-    should read C(oilscope_vm_key) rather than parsing C(inventory_hostname)
-    themselves.
+    recovered from the instance's C(Name) tag) and C(oilscope_role). Roles
+    that need a VM's own configuration entry - C(resolve_secrets),
+    C(secret_versions) - should read C(oilscope_vm_key) rather than parsing
+    C(inventory_hostname) themselves.
   - Does not set C(ansible_port). A composed host var would outrank the
     C(ansible_port) computed in C(group_vars/bastion.yml), which is what lets
     C(OILSCOPE_BASTION_CONNECT_PORT) override it during first-boot bootstrap.
     C(bastion_ssh_port) is exposed instead, as data.
+  - Uses C(ec2_tags) (added in amazon.aws 11.2.0), not the deprecated C(tags)
+    host variable, so tag-keyed groups and composed variables keep working
+    after C(tags) is removed.
 """
 
 EXAMPLES = r"""
-# inventory/oilscope.yml - the path comes from OILSCOPE_PROJECT_CONFIG or the
-# option default, so it is deliberately not set here.
-plugin: oilscope.platform.oilscope_gcp
+# inventory/oilscope-aws.yml - the path comes from OILSCOPE_PROJECT_CONFIG or
+# the option default, so it is deliberately not set here.
+plugin: oilscope.platform.oilscope_aws
 cache: true
 cache_plugin: ansible.builtin.jsonfile
-cache_connection: ~/.cache/oilscope-inventory
+cache_connection: ~/.cache/oilscope-inventory-aws
 cache_timeout: 300
 """
 
-DELEGATE = "google.cloud.gcp_compute"
+DELEGATE = "amazon.aws.aws_ec2"
 display = Display()
 
 
 class InventoryModule(BaseInventoryPlugin, Cacheable):
-    NAME = "oilscope.platform.oilscope_gcp"
+    NAME = "oilscope.platform.oilscope_aws"
 
     def verify_file(self, path):
-        return super().verify_file(path) and path.endswith(("oilscope.yml", "oilscope.yaml"))
+        return super().verify_file(path) and path.endswith(("oilscope-aws.yml", "oilscope-aws.yaml"))
 
     def parse(self, inventory, loader, path, cache=True):
         super().parse(inventory, loader, path, cache=cache)
         self._read_config_data(path)
 
         if not HAS_YAML:
-            raise AnsibleParserError("the oilscope_gcp inventory plugin requires PyYAML")
+            raise AnsibleParserError("the oilscope_aws inventory plugin requires PyYAML")
 
         config_path = resolve_config_path(plain(self.get_option("project_config_path")), path)
         config = load_project_config(config_path)
@@ -146,60 +138,60 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             except OSError as cleanup_error:
                 display.vvv(f"could not remove {generated}: {cleanup_error}")
 
-        validate_inventory_hosts(inventory, config, "GCP")
+        validate_inventory_hosts(inventory, config, "AWS")
 
     def _build_settings(self, config):
         region_key = require_str(config, "region")
         name_prefix = require_str(config, "name_prefix")
         environment = require_str(config, "environment")
-        project_id = require_str(config, "clouds", "gcp", "project_id")
-        zone = require_str(config, "region_map", region_key, "gcp", "zone")
+        region = require_str(config, "region_map", region_key, "aws", "region")
 
         bastion_role = plain(self.get_option("bastion_role"))
-        auth_kind = plain(self.get_option("auth_kind"))
-        vars_prefix = plain(self.get_option("vars_prefix"))
         bastion_port = compute_bastion_ssh_port(config, bastion_role)
         vm_key_pattern = vm_key_regex(name_prefix, environment)
 
-        is_bastion = f"labels.role | default('') == '{bastion_role}'"
-        has_public = "networkInterfaces[0].accessConfigs | default([])"
-        public = "networkInterfaces[0].accessConfigs[0].natIP"
-        private = "networkInterfaces[0].networkIP"
+        is_bastion = f"ec2_tags.role | default('') == '{bastion_role}'"
+        public = "public_ip_address"
+        private = "private_ip_address"
 
         return {
             "plugin": DELEGATE,
-            "projects": [plain(project_id)],
-            "zones": [plain(zone)],
-            "filters": [
-                f"labels.application = {plain(name_prefix)}",
-                f"labels.environment = {plain(environment)}",
-            ],
-            "auth_kind": auth_kind,
-            "hostnames": ["name"],
-            "vars_prefix": vars_prefix,
-            "keyed_groups": [{"key": "labels.role", "prefix": "", "separator": ""}],
-            "groups": {"workloads": f"labels.role is defined and labels.role != '{bastion_role}'"},
+            "regions": [plain(region)],
+            "filters": {
+                "tag:application": plain(name_prefix),
+                "tag:environment": plain(environment),
+                "instance-state-name": "running",
+            },
+            "hostnames": ["tag:Name"],
+            "keyed_groups": [{"key": "ec2_tags.role", "prefix": "", "separator": ""}],
+            "groups": {"workloads": f"ec2_tags.role is defined and ec2_tags.role != '{bastion_role}'"},
             "compose": {
                 "internal_ip": private,
-                "public_ip": f"{public} if {has_public} else ''",
-                "ansible_host": f"{public} if {is_bastion} else {private}",
+                # default(..., true) rather than `public if public else ''`:
+                # a private instance has no public_ip_address key at all, and
+                # testing an undefined field's truthiness is exactly what
+                # broke this for private instances - see the GCP plugin's
+                # has_public, which sidesteps the same trap by testing a
+                # field (accessConfigs) that's always present.
+                "public_ip": f"{public} | default('', true)",
+                "ansible_host": f"{public} if ({is_bastion}) else {private}",
                 "bastion_ssh_port": str(bastion_port),
-                "oilscope_role": "labels.role | default('')",
-                "oilscope_cloud": "'gcp'",
-                "oilscope_vm_key": f"name | regex_replace('{vm_key_pattern}', '')",
+                "oilscope_role": "ec2_tags.role | default('')",
+                "oilscope_cloud": "'aws'",
+                "oilscope_vm_key": f"ec2_tags.Name | regex_replace('{vm_key_pattern}', '')",
             },
         }
 
     def _write_settings(self, settings):
         digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
-        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.gcp.yml")
+        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.aws.yml")
 
         try:
             with open(generated, "w") as handle:
                 yaml.safe_dump(settings, handle, default_flow_style=False)
         except OSError as write_error:
             raise AnsibleParserError(
-                f"could not write the generated gcp_compute settings to {generated}: {write_error}"
+                f"could not write the generated aws_ec2 settings to {generated}: {write_error}"
             ) from write_error
 
         return generated
@@ -212,7 +204,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         if delegate is None:
             raise AnsibleParserError(
                 f"the {DELEGATE} inventory plugin is unavailable; "
-                "install the google.cloud collection"
+                "install the amazon.aws collection"
             )
 
         for option in ("cache", "cache_plugin", "cache_connection", "cache_timeout"):

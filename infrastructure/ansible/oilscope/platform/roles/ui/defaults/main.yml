@@ -5,6 +5,9 @@ ui_compose_file: "{{ ui_compose_project_dir }}/compose.yaml"
 ui_compose_project_name: petroscope
 
 ui_postgres_password: ""
+# Must match service_ports.history_api in the project configuration - see the
+# same note in roles/history/defaults/main.yml.
+ui_history_port: 8001
 ui_health_retries: 30
 ui_health_delay: 2
 ui_docker_config_dir: /run/oilscope/docker-auth

@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 resolve_secrets_config_path: ""
+
+# GCP only. AWS needs no equivalent override: the region is always derived
+# from region_map in the project configuration.
 resolve_secrets_project_id: ""
 resolve_secrets_metadata_url: >-
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token

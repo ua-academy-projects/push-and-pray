@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+plugin: oilscope.platform.oilscope_aws
+cache: false

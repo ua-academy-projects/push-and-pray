@@ -1,7 +1,7 @@
 # Controller-side Python requirements for the OilScope Ansible tooling.
 #
 # The google.cloud.gcp_compute inventory plugin used by
-# inventory/oilscope.gcp.yml talks to the Compute Engine API through these
+# inventory/oilscope.yml talks to the Compute Engine API through these
 # libraries, authenticating with Application Default Credentials:
 #
 #     pip install -r infrastructure/ansible/requirements.txt
@@ -9,3 +9,18 @@
 #
 google-auth>=2.0.0
 requests>=2.25.0
+
+# The amazon.aws.aws_ec2 inventory plugin used by inventory/oilscope-aws.yml
+# talks to the EC2 API through these libraries, authenticating through the
+# standard boto3 credential chain (environment variables, a shared
+# credentials/config file, or an assumed/instance role):
+#
+#     pip install -r infrastructure/ansible/requirements.txt
+#
+# Floors match what amazon.aws itself requires at the version pinned in
+# requirements.yml (checked against its own requirements.txt) - installing
+# collections does not upgrade an already-installed, already-satisfying-on-
+# paper but actually-too-old SDK, so a lower floor here would silently work
+# until it doesn't.
+boto3>=1.35.0
+botocore>=1.35.0

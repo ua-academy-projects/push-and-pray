@@ -5,6 +5,11 @@ history_compose_file: "{{ history_compose_project_dir }}/compose.yaml"
 history_compose_project_name: petroscope
 
 history_postgres_password: ""
+# Published host port. Must match service_ports.history_api in the project
+# configuration, which is also what the AWS/GCP security group or firewall
+# rule between the UI and History VMs allows - a mismatch here means UI
+# traffic to History is silently dropped at the network layer.
+history_host_port: 8001
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth

@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: MIT-0
 ---
 # Collections must specify a minimum required ansible version to upload
-# to galaxy
-requires_ansible: ">=2.16.0"
+# to galaxy.
+#
+# >=2.17.0 because amazon.aws (pinned in requirements.yml) itself requires
+# it at the version this collection depends on - declaring a lower floor
+# here would let someone install onto an ansible-core that amazon.aws
+# itself refuses to run on.
+requires_ansible: ">=2.17.0"
 
 # Content that Ansible needs to load from another location or that has
 # been deprecated/removed

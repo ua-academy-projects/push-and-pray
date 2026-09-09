@@ -4,7 +4,7 @@ galaxy_info:
   author: Push and Pray team
   description: Deploy the OilScope UI service
   license: GPL-2.0-or-later
-  min_ansible_version: "2.16"
+  min_ansible_version: "2.17"
   galaxy_tags:
     - docker
     - ui

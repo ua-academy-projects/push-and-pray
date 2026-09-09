@@ -1,6 +1,7 @@
 locals {
   aws_vms = {
-    for name in keys(var.vms) : name => var.config.vms[name]
+    for name, vm in var.config.vms : name => vm
+    if try(vm.cloud, var.config.default_cloud) == "aws"
   }
 
   all_secret_ids = distinct(flatten([

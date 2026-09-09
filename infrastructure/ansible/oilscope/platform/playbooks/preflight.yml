@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Two plays, deliberately - see preflight_checks.yml for why the checks
+# themselves are shared between them rather than living in just one.
+#
+# This first play is what catches a totally failed inventory source (no real
+# host discovered at all): it targets only `localhost`, which always exists
+# even when every real inventory source failed to parse, and connection:
+# local throughout - nothing here ever opens a real SSH socket. A fatal
+# failure on localhost halts every later play in the whole invocation -
+# including ones targeting entirely different hosts - which is what makes
+# this a real gate rather than a check that itself can be silently skipped.
+#
+# It is NOT sufficient by itself: --limit can exclude "localhost" from the
+# pattern, in which case this whole play is skipped, not merely its checks.
+# The second play exists for exactly that case.
+- name: Verify the discovered inventory matches the configuration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run the shared preflight checks
+      ansible.builtin.include_tasks: tasks/preflight_checks.yml
+
+# Runs second, and re-runs every check from preflight_checks.yml again here
+# - not merely the SSH one below. hosts: all (not localhost) so this play's
+# host pattern still intersects correctly with --limit: a play scoped to
+# localhost alone would simply not match, and be silently skipped, under
+# e.g. --limit history. groups['all']/hostvars still reflect the complete,
+# unrestricted inventory even when --limit narrows which hosts actually run
+# a task here (verified), so as long as --limit leaves at least one real
+# host in this play, the shared checks still see the true picture and still
+# catch an incomplete or inconsistent inventory that a narrower run would
+# otherwise sail past.
+- name: Validate the operator's SSH configuration
+  hosts: all
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run the shared preflight checks
+      ansible.builtin.include_tasks: tasks/preflight_checks.yml
+
+    # Checking ansible_user per host, rather than re-deriving it from
+    # OILSCOPE_SSH_USER/$USER here, is what makes this see the user Ansible
+    # will actually connect with - including one set via -e
+    # ansible_user=... or a host_vars override, neither of which an
+    # environment-variable-only check would ever see.
+    - name: Require this host's effective SSH user to be one of the configuration's ssh_users
+      ansible.builtin.fail:
+        msg: >-
+          '{{ ansible_user }}' (connecting to {{ inventory_hostname }}) is not
+          one of this configuration's ssh_users
+          ({{ oilscope_preflight_config.ssh_users.keys() | join(', ') }}).
+          This connection would fail with 'Permission denied'. Set
+          OILSCOPE_SSH_USER to one of them (and OILSCOPE_SSH_KEY to the
+          matching private key), or pass -e ansible_user=<one of them>.
+      when: ansible_user not in oilscope_preflight_config.ssh_users

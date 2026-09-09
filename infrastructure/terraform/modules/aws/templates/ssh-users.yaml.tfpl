@@ -7,6 +7,14 @@ users:
     shell: /bin/bash
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
     lock_passwd: true
+    # "operator" (and possibly other usernames) collides with a pre-existing
+    # reserved Ubuntu *group* of the same name (GID 37) - useradd's default
+    # behavior tries to create a matching primary group for every new user,
+    # which fails against that collision and aborts the whole user creation.
+    # Verified: reproducing this exact user_data against a stock Ubuntu image
+    # fails with "useradd: group operator exists" (exit 9) without this, and
+    # succeeds with it.
+    no_user_group: true
     ssh_authorized_keys:
       - ${public_key}
 %{ endfor ~}

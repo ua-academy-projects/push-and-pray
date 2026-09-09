@@ -1,0 +1,161 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Included from both plays in preflight.yml. Every check here is global
+# (config-only, or read from groups['all']/hostvars) rather than specific to
+# whichever host happens to be running it - that's deliberate, and the whole
+# reason this file is included from a hosts: all play as well as a hosts:
+# localhost one. groups['all'] and hostvars reflect the full, unrestricted
+# inventory even inside a --limit-restricted run (verified: a play limited
+# to one host out of three still reports groups['all'] with all three), so
+# as long as --limit leaves at least one real host for the second play to
+# run this against, these checks still see the true picture - closing the
+# gap the localhost-only play alone can't, since --limit can exclude
+# localhost itself and skip that play entirely.
+#
+# This duplicates what the inventory plugins' own validate_inventory_hosts
+# already checks in Python, deliberately: a plugin raising during parse()
+# does not stop Ansible from using hosts it already added to the shared
+# inventory before the exception - verified directly. Ansible-core degrades
+# a failed inventory source to a warning and falls back to "no inventory
+# parsed", but any host already added via add_host()/add_group() earlier in
+# that same parse() call remains live and targetable by a later hosts:
+# pattern. The Python-side check is still useful for a human reading
+# `ansible-inventory --graph` output directly; it is not sufficient on its
+# own to stop a deployment play from running against a wrongly-tagged host.
+- name: Load the project configuration
+  ansible.builtin.set_fact:
+    oilscope_preflight_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+- name: Determine this configuration's effective clouds
+  ansible.builtin.set_fact:
+    oilscope_preflight_clouds: >-
+      {{ oilscope_preflight_config.vms.values()
+         | map(attribute='cloud', default=oilscope_preflight_config.default_cloud)
+         | unique | list }}
+
+- name: Refuse a mixed-cloud configuration
+  ansible.builtin.fail:
+    msg: >-
+      this configuration deploys VMs to more than one cloud
+      ({{ oilscope_preflight_clouds | join(', ') }}); connecting to a
+      mixed-cloud topology in one run is not supported.
+  when: oilscope_preflight_clouds | length > 1
+
+- name: Collect the VM keys actually discovered
+  ansible.builtin.set_fact:
+    oilscope_preflight_discovered_keys: >-
+      {{ (groups['all'] | default([]))
+         | map('extract', hostvars, 'oilscope_vm_key')
+         | select('defined') | list }}
+
+- name: Refuse an incomplete or empty inventory
+  ansible.builtin.fail:
+    msg: >-
+      this run's inventory is missing VMs the project configuration
+      expects: {{ oilscope_preflight_missing | join(', ') }}. An empty or
+      partial discovery must not be mistaken for a successful deployment -
+      check the inventory source(s) passed with -i, the region and
+      application/environment filters, and that terraform apply has run.
+  vars:
+    oilscope_preflight_missing: >-
+      {{ oilscope_preflight_config.vms.keys()
+         | difference(oilscope_preflight_discovered_keys) | sort }}
+  when: oilscope_preflight_missing | length > 0
+
+# Catches a discovered instance whose role/cloud tag disagrees with the
+# configuration for its own VM key - the inventory plugins reject this
+# themselves, but as explained above that rejection alone does not stop the
+# host from being used.
+- name: Identify any discovered host whose role or cloud doesn't match the configuration
+  ansible.builtin.set_fact:
+    oilscope_preflight_inconsistent: >-
+      {{ oilscope_preflight_inconsistent | default([]) + (
+           [oilscope_preflight_host]
+           if (
+             (hostvars[oilscope_preflight_host].oilscope_vm_key | default('')) not in oilscope_preflight_config.vms
+             or hostvars[oilscope_preflight_host].oilscope_role
+                != oilscope_preflight_config.vms[hostvars[oilscope_preflight_host].oilscope_vm_key].role
+             or hostvars[oilscope_preflight_host].oilscope_cloud
+                != (oilscope_preflight_config.vms[hostvars[oilscope_preflight_host].oilscope_vm_key].cloud
+                    | default(oilscope_preflight_config.default_cloud))
+           )
+           else []
+         ) }}
+  loop: "{{ groups['all'] | default([]) }}"
+  loop_control:
+    loop_var: oilscope_preflight_host
+
+- name: Refuse hosts whose discovered role or cloud doesn't match the configuration
+  ansible.builtin.fail:
+    msg: >-
+      the following discovered hosts don't match the project configuration's
+      role/cloud for their VM key - a stale tag/label, or an inventory
+      plugin accepting a host its own validation should have rejected:
+      {{ oilscope_preflight_inconsistent | join(', ') }}
+  when: oilscope_preflight_inconsistent | default([]) | length > 0
+
+# Catches a VM key claimed by more than one live instance - most plausibly a
+# create-before-destroy replacement window, or two VMs whose Name/tag
+# happens to collide.
+- name: Count how many discovered hosts claim each VM key
+  ansible.builtin.set_fact:
+    oilscope_preflight_key_counts: >-
+      {{ oilscope_preflight_key_counts | default({}) | combine({
+           oilscope_preflight_key: (oilscope_preflight_discovered_keys
+                                     | select('equalto', oilscope_preflight_key)
+                                     | list | length)
+         }) }}
+  loop: "{{ oilscope_preflight_discovered_keys | unique }}"
+  loop_control:
+    loop_var: oilscope_preflight_key
+
+- name: Refuse VM keys discovered on more than one host
+  ansible.builtin.fail:
+    msg: >-
+      more than one discovered host claims the same VM key - a
+      create-before-destroy overlap or a naming collision:
+      {{ oilscope_preflight_duplicate_keys | join(', ') }}
+  vars:
+    oilscope_preflight_duplicate_keys: >-
+      {{ oilscope_preflight_key_counts | dict2items
+         | selectattr('value', 'gt', 1) | map(attribute='key') | list }}
+  when: oilscope_preflight_duplicate_keys | length > 0
+
+# Correct hostvars are not the same guarantee as correct group membership: a
+# host can carry the right oilscope_role/oilscope_vm_key and still be absent
+# from the Ansible group its own role implies (a keyed_groups/caching
+# mismatch, most plausibly). Every deployment play targets a role's group
+# name (hosts: history, hosts: ui, ...), never oilscope_role itself, so a
+# host missing from that group is silently skipped by its own deploy play -
+# reached this point only because the checks above only ever asked "does
+# this discovered host's data agree with the configuration", never "is it
+# actually a member of the group that data implies it should be in".
+- name: Identify any discovered host missing from its own role group or from workloads
+  ansible.builtin.set_fact:
+    oilscope_preflight_missing_group: >-
+      {{ oilscope_preflight_missing_group | default([]) + (
+           [oilscope_preflight_host]
+           if (
+             oilscope_preflight_host
+             not in (groups[hostvars[oilscope_preflight_host].oilscope_role] | default([]))
+             or (
+               hostvars[oilscope_preflight_host].oilscope_role != 'bastion'
+               and oilscope_preflight_host not in (groups['workloads'] | default([]))
+             )
+           )
+           else []
+         ) }}
+  loop: "{{ groups['all'] | default([]) }}"
+  loop_control:
+    loop_var: oilscope_preflight_host
+
+- name: Refuse hosts missing from their own role group or from workloads
+  ansible.builtin.fail:
+    msg: >-
+      the following discovered hosts are missing from the Ansible group
+      their own role implies (or from 'workloads', for non-bastion roles) -
+      every deployment play targets that group by name, so a host missing
+      from it is silently skipped rather than deployed to:
+      {{ oilscope_preflight_missing_group | join(', ') }}
+  when: oilscope_preflight_missing_group | default([]) | length > 0

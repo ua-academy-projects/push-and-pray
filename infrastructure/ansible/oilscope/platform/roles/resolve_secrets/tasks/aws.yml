@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# AWS Secrets Manager, unlike GCP Secret Manager, requires every request to be
+# SigV4-signed - there is no bearer-token endpoint plain HTTP can use. The AWS
+# CLI's default credential chain finds the instance's own IAM role via IMDS
+# automatically, so this is the read-side equivalent of the GCP metadata-token
+# call above without hand-rolling request signing.
+- name: Ensure the AWS CLI is installed
+  become: true
+  ansible.builtin.apt:
+    name: awscli
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+
+- name: Resolve the target AWS region
+  ansible.builtin.set_fact:
+    resolve_secrets_region: >-
+      {{ resolve_secrets_config.region_map[resolve_secrets_config.region].aws.region }}
+
+# No credential is supplied here and none is written to disk or to an AWS
+# profile on this host - the CLI resolves the instance's own role from IMDS.
+- name: Fetch each mapped secret's current value
+  ansible.builtin.command:
+    argv:
+      - aws
+      - secretsmanager
+      - get-secret-value
+      - --secret-id
+      - "{{ item.value }}"
+      - --region
+      - "{{ resolve_secrets_region }}"
+      - --output
+      - json
+  register: resolve_secrets_fetched
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  # A freshly attached instance-profile policy can take a few seconds to
+  # propagate; a bare failure here on the first attempt is usually that, not
+  # a real access denial or a missing secret.
+  retries: 5
+  delay: 5
+  until: resolve_secrets_fetched.rc == 0
+
+- name: Reject binary secret values
+  ansible.builtin.fail:
+    msg: >-
+      secret '{{ item.item.value }}' is a binary secret (SecretBinary); only
+      string secrets (SecretString) are supported.
+  no_log: true
+  loop: "{{ resolve_secrets_fetched.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: "'SecretString' not in (item.stdout | from_json)"
+
+- name: Merge the resolved secrets into the result
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | combine({
+           item.item.key: (item.stdout | from_json).SecretString
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_fetched.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

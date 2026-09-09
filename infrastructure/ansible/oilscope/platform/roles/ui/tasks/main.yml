@@ -6,7 +6,7 @@
     POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
     DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
     HISTORY_SERVICE_URL: >-
-      http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
+      http://{{ hostvars[groups['history'][0]].internal_ip }}:{{ ui_history_port }}
   no_log: true
   block:
     - name: Pull the UI image

@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Resolve the target AWS region
+  ansible.builtin.set_fact:
+    secret_versions_region: >-
+      {{ secret_versions_config.region_map[secret_versions_config.region].aws.region }}
+
+- name: Look for the containers
+  ansible.builtin.command:
+    argv:
+      - aws
+      - secretsmanager
+      - describe-secret
+      - --secret-id
+      - "{{ item.secret_id }}"
+      - --region
+      - "{{ secret_versions_region }}"
+      - --query
+      - Name
+      - --output
+      - text
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_describe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# Terraform owns container creation; this role only ever writes a version
+# into a container that already exists, and fails rather than create one.
+# Not every non-zero rc means "missing": expired credentials, a wrong
+# region and throttling all fail the same way, and none of them should be
+# reported as a missing container - only ResourceNotFoundException means that.
+- name: Refuse to upload to a container Terraform never created
+  ansible.builtin.fail:
+    msg: >-
+      {{ secret_versions_missing | map(attribute='item.secret_id') | join(', ') }}
+      {{ 'does' if (secret_versions_missing | length == 1) else 'do' }} not
+      exist in Secrets Manager. Apply Terraform first.
+  vars:
+    secret_versions_missing: >-
+      {{ secret_versions_describe.results
+         | selectattr('rc', 'ne', 0)
+         | selectattr('stderr', 'search', 'ResourceNotFoundException')
+         | list }}
+  when: secret_versions_missing | length > 0
+
+- name: Refuse to continue after an unexpected describe-secret failure
+  ansible.builtin.fail:
+    msg: >-
+      checking {{ secret_versions_unexpected | map(attribute='item.secret_id') | join(', ') }}
+      failed for a reason other than a missing container - see stderr above.
+  vars:
+    secret_versions_unexpected: >-
+      {{ secret_versions_describe.results
+         | selectattr('rc', 'ne', 0)
+         | rejectattr('stderr', 'search', 'ResourceNotFoundException')
+         | list }}
+  when: secret_versions_unexpected | length > 0
+
+# The AWS CLI has no stdin-based way to pass --secret-string, unlike gcloud's
+# --data-file=-. A private, 0600 temporary file plus file:// is the closest
+# equivalent: the value never becomes a literal command argument, and the
+# file is guaranteed removed below regardless of how the loop finishes.
+# Not check_mode on the whole block: there is nothing useful to do with a
+# temporary file under --check, and creating one just to immediately discard
+# it needlessly registers a skipped-task result for it (see the always below).
+- name: Upload every value through a private temporary file
+  when: not ansible_check_mode
+  block:
+    - name: Create a private temporary file for secret payloads
+      ansible.builtin.tempfile:
+        state: file
+        suffix: oilscope-secret
+      register: secret_versions_tempfile
+
+    - name: Write each value and add a new version
+      ansible.builtin.include_tasks: put_secret_version.yml
+      loop: "{{ secret_versions_catalog }}"
+      loop_control:
+        loop_var: secret_versions_item
+        label: "{{ secret_versions_item.secret_id }}"
+  always:
+    # secret_versions_tempfile.path (not just secret_versions_tempfile) is
+    # defined: under --check, the block above never runs, but if this whole
+    # play were ever invoked with --check further up the call stack in a way
+    # that still reaches here, or the tempfile task itself fails/skips for
+    # any other reason, the registered result exists without a .path
+    # attribute - templating that directly is a hard failure, not a skip.
+    - name: Remove the private temporary file
+      ansible.builtin.file:
+        path: "{{ secret_versions_tempfile.path }}"
+        state: absent
+      when: >-
+        secret_versions_tempfile is defined
+        and secret_versions_tempfile.path is defined

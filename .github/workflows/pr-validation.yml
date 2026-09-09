@@ -406,6 +406,12 @@ jobs:
       - name: Install Ansible
         run: pip install ansible
 
+      - name: Install this repository's declared Python requirements
+        run: pip install -r infrastructure/ansible/requirements.txt
+
+      - name: Install this repository's declared collection requirements
+        run: ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+
       - name: Build collection
         working-directory: infrastructure/ansible/oilscope/platform
         run: ansible-galaxy collection build
@@ -422,4 +428,4 @@ jobs:
           setup_python: "true"
           python-version: "3.14"
           working-directory: infrastructure/ansible
-          requirements_file: ""
+          requirements_file: requirements.yml

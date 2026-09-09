@@ -1,7 +1,8 @@
 # Resolve secrets role
 
 Resolves the secret values permitted for the current host from Secret
-Manager, using the workload VM's own attached service account — not the
+Manager (GCP) or Secrets Manager (AWS), using the workload VM's own attached
+identity — its service account on GCP, its instance role on AWS — never the
 operator's credentials. It runs on the workload host itself, as part of a
 deployment play, not on `localhost`.
 
@@ -29,34 +30,47 @@ containers.
 
 ## Requirements
 
-The host must be a GCE instance with a service account attached, granted
-`roles/secretmanager.secretAccessor` on the secrets in its own
-`secret_mappings` — this is what `infrastructure/terraform/secrets-gcp.tf`
+On GCP, the host must be a GCE instance with a service account attached,
+granted `roles/secretmanager.secretAccessor` on the secrets in its own
+`secret_mappings` — this is what `infrastructure/terraform/modules/gcp/secrets`
 grants automatically.
 
-The role identifies which `vms` entry is "this host" from `inventory_hostname`
-itself, not from a role or group name. Terraform names every instance
-`<name_prefix>-<environment>-<vms key>` (`main.tf`), and the dynamic
-inventory's `hostnames: - name` setting makes `inventory_hostname` exactly
-that instance name — so stripping the known `<name_prefix>-<environment>-`
-prefix recovers the literal `vms` dict key, the same key Terraform itself
-uses for `for_each`. This matters because a VM's `role` is not always its
-`vms` key (the database VM's key is `infra`, its role is `database`), and the
-schema does not require `role` to be unique across `vms` — two VMs could
+On AWS, the host must be an EC2 instance with an instance profile attached,
+granted `secretsmanager:GetSecretValue` on the secrets in its own
+`secret_mappings` — this is what `infrastructure/terraform/modules/aws/secrets`
+grants automatically. The role installs the AWS CLI itself; no credential is
+ever supplied by the operator or written to disk, since the CLI's default
+credential chain discovers the instance's own role via IMDS.
+
+The role identifies which `vms` entry is "this host" from `oilscope_vm_key`,
+a host variable set by the dynamic inventory plugin (`oilscope_gcp` /
+`oilscope_aws`), which derives it from the instance's own name (GCP) or
+`Name` tag (AWS) — not from a role or group name, and not by re-parsing
+`inventory_hostname` here. This matters because a VM's `role` is not always
+its `vms` key (the database VM's key is `infra`, its role is `database`), and
+the schema does not require `role` to be unique across `vms` — two VMs could
 share one. Matching by the exact key, rather than by role, means a host can
-never resolve to a sibling's secrets even in that case.
+never resolve to a sibling's secrets even in that case. `oilscope_cloud`
+(also set by the inventory plugin) selects which cloud's read path runs. An
+`oilscope_vm_key` that isn't in the configuration's `vms`, or an
+`oilscope_cloud` that isn't `gcp`/`aws`, fails the play immediately rather
+than silently resolving nothing.
 
 ## Required variables
 
 - `resolve_secrets_config_path`: path to the project configuration JSON —
-  the same file `project_config_path` points at in Terraform. It must
-  include `name_prefix` and `environment` at the top level, and a `vms`
-  entry whose key matches this host's derived key.
+  the same file `project_config_path` points at in Terraform.
+- `oilscope_vm_key`, `oilscope_cloud`: normally inherited automatically from
+  the dynamic inventory (see above); only need setting by hand outside of it,
+  such as in a role test against a static inventory.
 
 ## Optional variables
 
+GCP only - AWS needs no equivalent, since the region is always derived from
+`region_map` in the project configuration:
+
 - `resolve_secrets_project_id`: target project. Falls back to
-  `$GOOGLE_PROJECT`, then to `project_id` in the configuration.
+  `$GOOGLE_PROJECT`, then to `clouds.gcp.project_id` in the configuration.
 - `resolve_secrets_metadata_url`: the instance metadata token endpoint.
 - `resolve_secrets_secretmanager_url`: the Secret Manager REST API base URL.
 

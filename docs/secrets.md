@@ -1,8 +1,10 @@
 # Secrets
 
-Deployment credentials live in Google Secret Manager. Terraform creates the
-containers and decides who may read them; it never sees, stores or transports a
-value.
+Deployment credentials live in Google Secret Manager (GCP) or AWS Secrets
+Manager (AWS), depending on `default_cloud` in the project configuration.
+Terraform creates the containers and decides who may read them; it never
+sees, stores or transports a value. Everything below applies to both clouds
+unless a section says otherwise.
 
 ## Where the catalog comes from
 
@@ -24,9 +26,10 @@ The key is the environment variable the application expects; the value is the
 Secret Manager container ID. Both halves are non-secret, which is why the whole
 mapping can live in a file the repository reads.
 
-`infrastructure/terraform/secrets-gcp.tf`/`secrets-aws.tf` flatten those maps
-into the set of containers to create, and into the list of (workload, secret)
-pairs to grant.
+`infrastructure/terraform/modules/gcp/secrets` and
+`infrastructure/terraform/modules/aws/secrets` each flatten those maps into
+the set of containers to create, and into the list of (workload, secret)
+pairs to grant, for their own cloud.
 Giving a workload a new secret is a one-line change to that JSON — the
 container, the grant and the environment-variable name all follow from it.
 
@@ -35,6 +38,8 @@ only be granted a secret that is written next to its own name.
 
 ## What Terraform does, and what it deliberately does not
 
+GCP:
+
 | Terraform | |
 | --- | --- |
 | creates | `google_secret_manager_secret` — the container, automatic replication, project labels |
@@ -42,16 +47,32 @@ only be granted a secret that is written next to its own name.
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretVersionAdder` binding per configured version manager |
 | never creates | `google_secret_manager_secret_version` — the payload |
 
-The last row is the whole point. A secret value passed into Terraform ends up in
-three places you cannot fully control: the configuration file, the plan file, and
-the state file. State lives in a bucket, plans get attached to pull requests, and
-neither is a place for a credential. So versions are added out of band and
-Terraform is told nothing about them.
+AWS:
+
+| Terraform | |
+| --- | --- |
+| creates | `aws_secretsmanager_secret` — the container, tags |
+| creates | `aws_iam_role_policy` — one `secretsmanager:GetSecretValue` grant per workload, scoped to that workload's own secrets |
+| never creates | a secret *version* — the payload |
+
+The last row of each table is the whole point. A secret value passed into
+Terraform ends up in three places you cannot fully control: the configuration
+file, the plan file, and the state file. State lives in a bucket, plans get
+attached to pull requests, and neither is a place for a credential. So
+versions are added out of band and Terraform is told nothing about them.
 
 `google_secret_manager_secret_iam_member` is used rather than
 `..._iam_binding`. The `_binding` form is authoritative for the whole role on
 that secret: it silently removes any grant made outside Terraform. `_member` adds
 one principal and leaves the rest of the policy alone.
+
+One asymmetry: on GCP, `secret_version_managers` lets Terraform also grant
+specific principals permission to *add* versions (`secretVersionAdder`,
+deliberately not `secretAccessor` — see below). AWS has no equivalent
+Terraform-managed grant yet; whoever uploads a version on AWS needs
+`secretsmanager:PutSecretValue` (and `DescribeSecret`, since the uploader
+checks a container exists before writing to it) from their own broader AWS
+identity, not from anything this repository's Terraform grants.
 
 ## Who can read what
 
@@ -69,8 +90,9 @@ terraform output workload_secret_access
 }
 ```
 
-Each workload VM runs as its own service account and is granted only the secrets
-listed against it. There is no project-wide `secretAccessor` binding, so a
+Each workload VM runs as its own identity — a service account on GCP, an
+instance role on AWS — and is granted only the secrets listed against it.
+There is no project-wide (GCP) or account-wide (AWS) read grant, so a
 compromised VM reaches its own credentials and nothing else. This is also why the
 database passwords are separate secrets rather than one shared value: a single
 password would hand every workload the same blast radius.
@@ -81,8 +103,9 @@ None of the three outputs exposes a value.
 
 ## Storing a value
 
-Values are written with `gcloud`, from a pipe, never from a command-line
-argument — arguments are visible in `ps` output and land in shell history:
+On GCP, values are written with `gcloud`, from a pipe, never from a
+command-line argument — arguments are visible in `ps` output and land in
+shell history:
 
 ```bash
 printf '%s' "${DB_PASSWORD_HISTORY}" \
@@ -92,6 +115,25 @@ printf '%s' "${DB_PASSWORD_HISTORY}" \
 
 Note `printf` rather than `echo`: `echo` appends a newline, which becomes part of
 the stored value and then fails an exact comparison somewhere far away from here.
+
+On AWS, the AWS CLI has no stdin equivalent of `--data-file=-` for
+`put-secret-value` — its `--secret-string` takes either a literal argument or
+a `file://` path. Never pass the value as a literal argument; write it to a
+private (`0600`), short-lived file instead and reference that:
+
+```bash
+umask 077
+printf '%s' "${DB_PASSWORD_HISTORY}" > /tmp/db-password-history.tmp
+aws secretsmanager put-secret-value \
+  --secret-id oilscope-dev-db-password-history \
+  --region "${AWS_REGION}" \
+  --secret-string file:///tmp/db-password-history.tmp
+rm -f /tmp/db-password-history.tmp
+```
+
+The `oilscope.platform.secret_versions` role (below) does exactly this and
+guarantees the temporary file is removed even if the upload fails - prefer it
+over the manual form above for anything beyond a one-off.
 
 Which environment variable the *application* reads is not a convention to
 remember: it is the key side of `secret_mappings`. It is scoped to one VM
@@ -119,13 +161,19 @@ do, and they hold only `secretAccessor`, only on their own secrets.
 Leave the list empty and nobody but a project owner can upload a value, which is
 a reasonable default: it fails closed.
 
+AWS has no `secret_version_managers` equivalent: Terraform grants no one
+write access to a secret's versions. Whoever uploads needs
+`secretsmanager:PutSecretValue` from their own broader AWS identity.
+
 ## Uploading every value at once
 
 Doing that by hand for every secret is where a value eventually ends up in the
 wrong place. The `oilscope.platform.secret_versions` role does the whole
 catalog in one pass, taking each value from the environment of the operator who
-runs it. It targets `localhost`: this is an operator task against the Google
-API, not host configuration.
+runs it. It targets `localhost`: this is an operator task against the cloud
+API, not host configuration. It uploads to whichever single cloud the
+configuration's VMs resolve to, and refuses to run against a configuration
+that resolves to more than one.
 
 ```bash
  export DB_PASSWORD_ADMIN="$(openssl rand -hex 32)"
@@ -167,20 +215,25 @@ collide, every container keeps the fully qualified name
 | | |
 | --- | --- |
 | reads values from | the environment of the process, and nowhere else |
-| passes the payload to gcloud | on stdin, through `--data-file=-` |
-| writes to disk | nothing |
+| passes the payload to gcloud (GCP) | on stdin, through `--data-file=-` |
+| passes the payload to the AWS CLI (AWS) | via `--secret-string file://...`, a private (`0600`) temporary file removed unconditionally once the upload finishes or fails |
+| writes to disk | nothing left behind once the role finishes |
 | prints | container IDs and variable names, never a value |
 
 Every value and every container is checked before the first version is added. A
 missing one fails the play with the full list, before anything is written.
 Half-rotated is the state that costs an evening — one service on the new
-password, three on the old.
+password, three on the old. On both clouds, the container itself must already
+exist — this role only ever writes a version into what Terraform already
+created; it never creates a container.
 
-The upload task carries `no_log`, so the payload stays out of the Ansible output
-and any callback log at every verbosity, and `stdin_add_newline` is off because
-a trailing newline would become part of the stored value. The task is also
-skipped explicitly in check mode rather than being left to the module: a
-check-mode skip result carries the module arguments, and `-vvv` prints those
+Every task that touches a value carries `no_log`, so the payload stays out of
+the Ansible output and any callback log at every verbosity, and no trailing
+newline is ever added (`stdin_add_newline: false` on GCP; a plain, unmodified
+file write on AWS) because it would become part of the stored value. The
+sensitive tasks are also skipped explicitly in check mode rather than being
+left to the module: a check-mode skip result carries the module arguments,
+and `-vvv` prints those
 uncensored.
 
 Rotating a single credential:
@@ -193,19 +246,30 @@ ansible-playbook oilscope.platform.upload_secret_versions \
   -e '{"secret_versions_only": ["DB_PASSWORD_UI"]}'
 ```
 
-Adding a version requires `roles/secretmanager.secretVersionAdder`, so whoever
-runs this does not need to be able to read what is already stored.
+Adding a version requires `roles/secretmanager.secretVersionAdder` (GCP) or
+`secretsmanager:PutSecretValue` (AWS), so whoever runs this does not need to
+be able to read what is already stored.
 
 ## Rotation
 
-Adding a version does not remove the old one. Secret Manager keeps every version
-until it is destroyed, and consumers that ask for `latest` pick up the new value
-on their next read.
+Adding a version does not remove the old one. Both Secret Manager and Secrets
+Manager keep every version until it is destroyed, and consumers that ask for
+the latest one pick up the new value on their next read.
 
 ```bash
+# GCP
 printf '%s' "${NEW_VALUE}" | gcloud secrets versions add SECRET_ID --data-file=-
 gcloud secrets versions list SECRET_ID
 gcloud secrets versions destroy VERSION --secret=SECRET_ID   # once nothing reads it
+
+# AWS
+umask 077; printf '%s' "${NEW_VALUE}" > /tmp/v.tmp
+aws secretsmanager put-secret-value --secret-id SECRET_ID --region "${AWS_REGION}" --secret-string file:///tmp/v.tmp
+rm -f /tmp/v.tmp
+aws secretsmanager list-secret-version-ids --secret-id SECRET_ID --region "${AWS_REGION}"
+# AWS has no destroy-one-version equivalent; the previous version stays as
+# AWSPREVIOUS until the next PutSecretValue rotates the labels again, or the
+# whole secret is deleted.
 ```
 
 Destroy the previous version only after every consumer has restarted. Until then

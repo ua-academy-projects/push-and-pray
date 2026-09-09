@@ -4,6 +4,9 @@ ansible_user: >-
   {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_USER')
      | default(lookup('ansible.builtin.env', 'USER'), true) }}
 
+# The gcloud-managed key is a reasonable default only on GCP - an AWS
+# operator's key is never provisioned there, so OILSCOPE_SSH_KEY is
+# effectively required on AWS. See inventory/README.md.
 ansible_ssh_private_key_file: >-
   {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_KEY')
      | default(lookup('ansible.builtin.env', 'HOME')

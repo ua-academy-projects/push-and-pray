@@ -3,13 +3,11 @@
 # Run with -e project_config_path=<path to a project configuration JSON>,
 # e.g. the repository's project-config.example.json, or a real one.
 #
-# The role derives which vms entry is "this host" from inventory_hostname,
-# by stripping the config's own "<name_prefix>-<environment>-" prefix (the
-# same convention Terraform uses to name every instance). The second play
-# below targets a host literally named "oilscope-dev-bastion" to exercise
-# that derivation, so the config passed in must use name_prefix "oilscope"
-# and environment "dev", and must have a "bastion" vms entry with no
-# secret_mappings — every project configuration does per the schema.
+# In real use, oilscope_vm_key and oilscope_cloud come from the dynamic
+# inventory plugin (oilscope_gcp / oilscope_aws). This static test inventory
+# has no plugin behind it, so they're set directly as host vars on
+# oilscope-dev-bastion in ./inventory instead, exercising a host with a
+# "bastion" vms entry, which has no secret_mappings per the schema.
 - name: Test the resolve_secrets role (missing configuration)
   hosts: localhost
   connection: local

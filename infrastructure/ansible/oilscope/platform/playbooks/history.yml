@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Validate the operator's SSH configuration
+  ansible.builtin.import_playbook: preflight.yml
+
 - name: Deploy History
   hosts: history
   become: true
@@ -33,3 +36,4 @@
     - role: oilscope.platform.history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        history_host_port: "{{ compose_project_config.service_ports.history_api }}"
