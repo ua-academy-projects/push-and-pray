@@ -8,24 +8,9 @@ output "is_active" {
   value       = local.is_active
 }
 
-output "my_vms" {
-  description = "VMs the calling module manages. Empty unless the cloud is active."
-  value       = local.my_vms
-}
-
 output "workload_vms" {
-  description = "Managed VMs that are not bastions."
+  description = "Workloads the calling module manages. Empty unless the cloud is active."
   value       = local.workload_vms
-}
-
-output "bastion_vms" {
-  description = "Managed VMs that are bastions."
-  value       = local.bastion_vms
-}
-
-output "bastion_vm" {
-  description = "The single bastion of this cloud, or null when it is inactive."
-  value       = one(values(local.bastion_vms))
 }
 
 output "resource_prefix" {
@@ -44,12 +29,12 @@ output "cloud" {
 }
 
 output "cloud_vms" {
-  description = "Every VM the configuration assigns to this cloud, whether or not it is built. Compare with my_vms to see what the active check dropped."
+  description = "Every workload the configuration assigns to this cloud, whether or not it is built. Compare with workload_vms to see what the active check dropped."
   value       = local.cloud_vms
 }
 
 output "skipped_vms" {
-  description = "VMs assigned to this cloud that are deliberately not built, because the cloud hosts no workload. Empty whenever the cloud is active."
+  description = "Workloads assigned to this cloud that are deliberately not built. Empty whenever the cloud is active."
   value = {
     for name, vm in local.cloud_vms : name => vm
     if !local.is_active

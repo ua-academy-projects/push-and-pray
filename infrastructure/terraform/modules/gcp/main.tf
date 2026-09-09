@@ -1,3 +1,5 @@
+# The VPC foundation: a network, its subnets and outbound routing. Long-lived
+# and unaware of which ports the application happens to need.
 module "network" {
   source = "./modules/network"
   count  = local.is_active ? 1 : 0
@@ -13,14 +15,50 @@ module "firewall" {
   resource_prefix = local.resource_prefix
   network_id      = module.network[0].network_id
   config          = var.config
-  bastion         = local.bastion_vm
+  bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 }
 
+module "bastion_spec" {
+  source = "../shared/bastion"
+  count  = local.is_active ? 1 : 0
+
+  config     = var.config
+  cloud      = local.this_cloud
+  profile    = local.profile
+  host_index = 2
+}
+
+module "bastion_identity" {
+  source = "./modules/identity"
+  count  = local.is_active ? 1 : 0
+
+  name        = local.bastion_name
+  description = "Runtime identity for the bastion ${local.bastion_name}"
+}
+
+#trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
+module "bastion" {
+  source = "./modules/vm"
+  count  = local.is_active ? 1 : 0
+
+  name    = local.bastion_name
+  vm      = module.bastion_spec[0].vm
+  profile = local.profile
+
+  service_account_email = module.bastion_identity[0].email
+  subnetwork_id         = module.network[0].management_subnet_id
+  network_tags          = [module.firewall[0].network_tags["bastion"]]
+
+  ssh_users = var.config.ssh_users
+
+  labels = merge(local.common_labels, { role = "bastion" })
+}
+
 module "identity" {
   source   = "./modules/identity"
-  for_each = local.my_vms
+  for_each = local.workload_vms
 
   name        = "${local.resource_prefix}-${each.key}"
   description = "Runtime identity for the ${each.value.role} workload ${local.resource_prefix}-${each.key}"
@@ -29,15 +67,14 @@ module "identity" {
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.my_vms
+  for_each = local.workload_vms
 
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value
   profile = local.profile
 
   service_account_email = module.identity[each.key].email
-
-  subnetwork_id = each.value.role == "bastion" ? module.network[0].management_subnet_id : module.network[0].workload_subnet_id
+  subnetwork_id         = module.network[0].workload_subnet_id
   network_tags = [
     for scope in each.value.network_tags :
     module.firewall[0].network_tags[scope]

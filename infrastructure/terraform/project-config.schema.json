@@ -12,6 +12,7 @@
     "common_labels",
     "ssh_users",
     "registry",
+    "bastion",
     "network",
     "service_ports",
     "clouds",
@@ -55,6 +56,10 @@
           "pattern": "^[0-9a-f]{40}$"
         }
       }
+    },
+    "bastion": {
+      "$comment": "Core infrastructure, not a workload. One block for the whole project: a bastion is created on every cloud that hosts a workload, and its size, image, disk and address are derived from that cloud's profile.",
+      "$ref": "#/$defs/bastion"
     },
     "network": {
       "$comment": "Provider-independent networking. Subnet ranges are per-cloud and live in clouds.<name>.subnets.",
@@ -133,9 +138,9 @@
       }
     },
     "vms": {
-      "$comment": "Every VM lives on default_cloud unless it sets cloud. Each cloud in use needs its own bastion: there is no cross-cloud networking, so a bastion cannot reach workloads on the other provider.",
+      "$comment": "Application workloads only. Every one lives on default_cloud unless it sets cloud; the bastion each cloud needs is derived from the top-level bastion block, not listed here.",
       "type": "object",
-      "minProperties": 2,
+      "minProperties": 1,
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -225,10 +230,43 @@
         }
       }
     },
+    "bastion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ssh_port", "allowed_cidrs"],
+      "properties": {
+        "ssh_port": {
+          "$comment": "Port Ansible moves the SSH daemon to. Until it does, a fresh bastion listens on 22.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "allowed_cidrs": {
+          "$comment": "Source ranges permitted to reach the bastion. Never 0.0.0.0/0 - that defeats the point of having one.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "size": {
+          "$comment": "Defaults to tiny. A bastion forwards connections and nothing else.",
+          "$ref": "#/$defs/resource_label"
+        },
+        "image": {
+          "$comment": "Defaults to ubuntu-lts.",
+          "$ref": "#/$defs/resource_label"
+        },
+        "boot_disk": {
+          "$ref": "#/$defs/boot_disk"
+        }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["size_gb", "type"],
       "properties": {
         "size_gb": {
           "type": "integer",
@@ -264,7 +302,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["bastion", "infra", "history", "fetcher", "ui"]
+        "enum": ["infra", "history", "fetcher", "ui"]
       }
     },
     "secret_mappings": {
@@ -298,7 +336,7 @@
         },
         "role": {
           "type": "string",
-          "enum": ["bastion", "database", "history", "fetcher", "ui"]
+          "enum": ["database", "history", "fetcher", "ui"]
         },
         "size": {
           "$comment": "Label resolved through the hosting cloud's machine_sizes map.",
@@ -327,20 +365,6 @@
         },
         "secret_mappings": {
           "$ref": "#/$defs/secret_mappings"
-        },
-        "ssh_port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "allowed_cidrs": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         },
         "public_endpoint": {
           "type": "object",
@@ -371,46 +395,8 @@
           "then": {
             "properties": {
               "role": {
-                "enum": ["bastion", "ui"]
+                "const": "ui"
               }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "bastion"
-              }
-            },
-            "required": ["role"]
-          },
-          "then": {
-            "required": ["ssh_port", "allowed_cidrs"],
-            "properties": {
-              "assign_public_ip": {
-                "const": true
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "bastion"
-                }
-              },
-              "secret_mappings": {
-                "maxProperties": 0
-              }
-            }
-          },
-          "else": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": ["ssh_port"]
-                },
-                {
-                  "required": ["allowed_cidrs"]
-                }
-              ]
             }
           }
         },

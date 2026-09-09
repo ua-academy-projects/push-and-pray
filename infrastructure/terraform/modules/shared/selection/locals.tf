@@ -6,21 +6,11 @@ locals {
     if try(vm.cloud, var.config.default_cloud) == var.cloud
   }
 
+  is_active = length(local.cloud_vms) > 0
+
   workload_vms = {
     for name, vm in local.cloud_vms : name => vm
-    if vm.role != "bastion"
-  }
-
-  is_active = length(local.workload_vms) > 0
-
-  my_vms = {
-    for name, vm in local.cloud_vms : name => vm
     if local.is_active
-  }
-
-  bastion_vms = {
-    for name, vm in local.my_vms : name => vm
-    if vm.role == "bastion"
   }
 
   common_labels = merge(

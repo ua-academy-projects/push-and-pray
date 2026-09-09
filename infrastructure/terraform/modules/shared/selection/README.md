@@ -10,21 +10,22 @@ labels go on everything.
 
 ## The active check
 
-A bastion exists only to reach workloads. A cloud that hosts none has nothing
-to reach, so `is_active` is false and `my_vms` comes back empty - the caller
-then builds nothing, the lone bastion included. `skipped_vms` reports what was
-dropped, since the skip is otherwise silent.
+`vms` holds workloads only - the bastion each cloud needs is derived by
+[modules/shared/bastion](../bastion/README.md) from the project-wide `bastion`
+block. A cloud that hosts no workload has nothing to run and nothing to reach,
+so `is_active` is false and `workload_vms` comes back empty; the caller then
+builds nothing at all on it, its bastion included. `skipped_vms` reports what
+was dropped, since the skip is otherwise silent.
 
 ## Validation
 
-Five cross-references live here because JSON Schema cannot express them: a
+Four cross-references live here because JSON Schema cannot express them: a
 label is only valid against a sibling map in the same document.
 
 | Check | Message names |
 | --- | --- |
 | the cloud declares a profile | `clouds.<cloud>` |
 | the profile carries what the provider needs | `required_profile_fields` |
-| exactly one bastion where there are workloads | the bastion count |
 | every `size`, `image` and `boot_disk.type` label exists | the missing label |
 | every value in every lookup map is one the provider accepts | each offending entry |
 
@@ -49,12 +50,9 @@ name, so adding a provider adds an argument and not a branch.
 | --- | --- |
 | `profile` | This cloud's profile, or `null` when it declares none |
 | `is_active` | Whether this cloud hosts any workload |
-| `my_vms` | VMs the caller manages; empty unless active |
-| `workload_vms` | Managed VMs that are not bastions |
-| `bastion_vms` | Managed VMs that are bastions |
-| `bastion_vm` | The single bastion, or `null` when inactive |
-| `cloud_vms` | Every VM assigned to this cloud, built or not |
-| `skipped_vms` | VMs dropped by the active check |
+| `workload_vms` | Workloads the caller manages; empty unless active |
+| `cloud_vms` | Every workload assigned to this cloud, built or not |
+| `skipped_vms` | Workloads dropped by the active check |
 | `resource_prefix` | Prefix shared by every resource name |
 | `common_labels` | Labels applied to every resource, including the `cloud` key |
 | `cloud` | The cloud this instance answered for |

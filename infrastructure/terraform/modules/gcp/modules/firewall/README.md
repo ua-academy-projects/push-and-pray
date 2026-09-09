@@ -66,7 +66,7 @@ has configured and verified the final port.
 | `resource_prefix` | Prefix for every rule name and tag |
 | `network_id` | The VPC these rules apply to |
 | `config` | Project configuration; only `network.ui_public_ports` and `service_ports` are read |
-| `bastion` | The bastion's `ssh_port` and `allowed_cidrs` |
+| `bastion` | The project-wide `bastion` block: its `ssh_port` and `allowed_cidrs` |
 | `enable_bastion_ssh_bootstrap` | Opt in to the temporary port 22 rule |
 
 ## Outputs
@@ -87,7 +87,7 @@ module "firewall" {
   resource_prefix = local.resource_prefix
   network_id      = module.network[0].network_id
   config          = var.config
-  bastion         = local.bastion_vm
+  bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 }
@@ -95,8 +95,8 @@ module "firewall" {
 
 ## Access procedure
 
-Add an operator's office or VPN CIDR to the bastion's `allowed_cidrs` in the
-project configuration. The resulting administration path is:
+Add an operator's office or VPN CIDR to `bastion.allowed_cidrs` in the project
+configuration. The resulting administration path is:
 
 ```text
 operator -> bastion -> private workload VM

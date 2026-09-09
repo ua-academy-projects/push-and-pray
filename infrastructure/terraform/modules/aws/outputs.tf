@@ -1,7 +1,7 @@
 output "bastion_public_ips" {
-  description = "Public IP of every bastion this cloud hosts, by VM name."
+  description = "Public IP of this cloud's bastion, keyed by cloud name. Empty when the cloud is inactive."
   value = {
-    for name, vm in local.bastion_vms : name => module.vm[name].public_ip
+    for instance in module.bastion : local.this_cloud => instance.public_ip
   }
 }
 

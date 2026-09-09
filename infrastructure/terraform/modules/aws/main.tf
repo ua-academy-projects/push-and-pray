@@ -1,3 +1,5 @@
+# The VPC foundation: a VPC, its subnets and outbound routing. Long-lived and
+# unaware of which ports the application happens to need.
 module "network" {
   source = "./modules/network"
   count  = local.is_active ? 1 : 0
@@ -16,15 +18,59 @@ module "firewall" {
   resource_prefix = local.resource_prefix
   vpc_id          = module.network[0].vpc_id
   config          = var.config
-  bastion         = local.bastion_vm
+  bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
   tags                         = local.common_tags
 }
 
+# --------------------------------------------------------------------- bastion
+# Core infrastructure, not a workload. Its specification is derived from the
+# cloud profile rather than written into vms, so it costs nothing to add a
+# provider and cannot drift between them.
+
+module "bastion_spec" {
+  source = "../shared/bastion"
+  count  = local.is_active ? 1 : 0
+
+  config  = var.config
+  cloud   = local.this_cloud
+  profile = local.profile
+  # AWS reserves the first four addresses of every subnet, so .4 is the first free.
+  host_index = 4
+}
+
+module "bastion_identity" {
+  source = "./modules/identity"
+  count  = local.is_active ? 1 : 0
+
+  name        = local.bastion_name
+  description = "Runtime identity for the bastion ${local.bastion_name}"
+  tags        = local.common_tags
+}
+
+module "bastion" {
+  source = "./modules/vm"
+  count  = local.is_active ? 1 : 0
+
+  name    = local.bastion_name
+  vm      = module.bastion_spec[0].vm
+  profile = local.profile
+
+  instance_profile_name = module.bastion_identity[0].instance_profile_name
+  subnet_id             = module.network[0].public_subnet_id
+  security_group_ids    = [module.firewall[0].security_group_ids["bastion"]]
+
+  ssh_users = var.config.ssh_users
+
+  tags = merge(local.common_tags, { role = "bastion" })
+}
+
+# -------------------------------------------------------------------- workloads
+
 module "identity" {
   source   = "./modules/identity"
-  for_each = local.my_vms
+  for_each = local.workload_vms
 
   name        = "${local.resource_prefix}-${each.key}"
   description = "Runtime identity for the ${each.value.role} workload ${local.resource_prefix}-${each.key}"
@@ -33,13 +79,16 @@ module "identity" {
 
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.my_vms
+  for_each = local.workload_vms
 
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value
   profile = local.profile
 
   instance_profile_name = module.identity[each.key].instance_profile_name
+
+  # Reachability on AWS follows the route table, not the address: a workload
+  # holding a public IP has to sit in the subnet routed to the gateway.
   subnet_id = each.value.assign_public_ip ? module.network[0].public_subnet_id : module.network[0].private_subnet_id
   security_group_ids = [
     for scope in each.value.network_tags :

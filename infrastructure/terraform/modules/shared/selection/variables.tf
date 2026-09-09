@@ -3,11 +3,17 @@ variable "config" {
   type        = any
   nullable    = false
 
+  # Cross-references JSON Schema cannot express, because a label is only valid
+  # against a sibling map in the same document.
+  #
+  # Every check is skipped when this cloud hosts no workload: the calling module
+  # then builds nothing, so nothing about its profile has to hold.
+
   validation {
     condition = (
       length([
         for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
       ]) == 0
       || can(var.config.clouds[var.cloud])
     )
@@ -18,7 +24,7 @@ variable "config" {
     condition = (
       length([
         for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
       ]) == 0
       || alltrue([
         for field in var.required_profile_fields :
@@ -32,21 +38,7 @@ variable "config" {
     condition = (
       length([
         for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
-      ]) == 0
-      || length([
-        for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role == "bastion"
-      ]) == 1
-    )
-    error_message = "A cloud that hosts workloads needs exactly one bastion: there is no cross-cloud networking, so a bastion on another provider cannot reach them."
-  }
-
-  validation {
-    condition = (
-      length([
-        for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
       ]) == 0
       || alltrue([
         for name, vm in var.config.vms :
@@ -54,14 +46,14 @@ variable "config" {
         if try(vm.cloud, var.config.default_cloud) == var.cloud
       ])
     )
-    error_message = "Every VM on this cloud must use a size label declared in its machine_sizes."
+    error_message = "Every workload on this cloud must use a size label declared in its machine_sizes."
   }
 
   validation {
     condition = (
       length([
         for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
       ]) == 0
       || alltrue([
         for name, vm in var.config.vms :
@@ -69,14 +61,14 @@ variable "config" {
         if try(vm.cloud, var.config.default_cloud) == var.cloud
       ])
     )
-    error_message = "Every VM on this cloud must use an image label declared in its images."
+    error_message = "Every workload on this cloud must use an image label declared in its images."
   }
 
   validation {
     condition = (
       length([
         for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
       ]) == 0
       || alltrue([
         for name, vm in var.config.vms :
@@ -84,14 +76,14 @@ variable "config" {
         if try(vm.cloud, var.config.default_cloud) == var.cloud
       ])
     )
-    error_message = "Every VM on this cloud must use a boot disk label declared in its disk_types."
+    error_message = "Every workload on this cloud must use a boot disk label declared in its disk_types."
   }
 
   validation {
     condition = (
       length([
         for name, vm in var.config.vms : name
-        if try(vm.cloud, var.config.default_cloud) == var.cloud && vm.role != "bastion"
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
       ]) == 0
       || alltrue(flatten([
         for dictionary, pattern in var.profile_value_patterns : [

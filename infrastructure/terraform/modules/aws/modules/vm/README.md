@@ -7,8 +7,10 @@ Its runtime identity is not created here. That lives in the sibling
 instance and belongs to a different privilege boundary; this module simply
 takes the instance profile to attach.
 
-The module is called once per VM. It takes that VM's entry from the project
-configuration and the cloud profile, and resolves the abstract labels itself:
+The module is called once per VM - once per workload from the project
+configuration, and once more for the bastion, whose entry is derived by
+[modules/shared/bastion](../../../shared/bastion/README.md) instead of written
+by hand. It takes that entry and the cloud profile, and resolves the abstract labels itself:
 
 ```hcl
 instance_type  = var.profile.machine_sizes[var.vm.size]

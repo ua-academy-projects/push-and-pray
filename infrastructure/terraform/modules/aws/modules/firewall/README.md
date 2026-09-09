@@ -67,7 +67,7 @@ it immediately after Ansible has configured and verified the final port.
 | `resource_prefix` | Prefix for every group name |
 | `vpc_id` | The VPC these groups live in |
 | `config` | Project configuration; only `network.ui_public_ports` and `service_ports` are read |
-| `bastion` | The bastion's `ssh_port` and `allowed_cidrs` |
+| `bastion` | The project-wide `bastion` block: its `ssh_port` and `allowed_cidrs` |
 | `enable_bastion_ssh_bootstrap` | Opt in to the temporary port 22 rule |
 | `tags` | Tags for every group and rule |
 
@@ -89,7 +89,7 @@ module "firewall" {
   resource_prefix = local.resource_prefix
   vpc_id          = module.network[0].vpc_id
   config          = var.config
-  bastion         = local.bastion_vm
+  bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
   tags                         = local.common_tags

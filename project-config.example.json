@@ -14,6 +14,10 @@
     "username": "example-operator",
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
+  "bastion": {
+    "ssh_port": 8787,
+    "allowed_cidrs": ["192.0.2.10/32"]
+  },
   "network": {
     "ui_public_ports": [443]
   },
@@ -70,37 +74,6 @@
     }
   },
   "vms": {
-    "bastion-gcp": {
-      "role": "bastion",
-      "size": "tiny",
-      "image": "ubuntu-lts",
-      "internal_ip": "10.0.0.2",
-      "boot_disk": {
-        "size_gb": 10,
-        "type": "balanced"
-      },
-      "assign_public_ip": true,
-      "network_tags": ["bastion"],
-      "secret_mappings": {},
-      "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
-    },
-    "bastion-aws": {
-      "cloud": "aws",
-      "role": "bastion",
-      "size": "tiny",
-      "image": "ubuntu-lts",
-      "internal_ip": "10.1.0.4",
-      "boot_disk": {
-        "size_gb": 10,
-        "type": "balanced"
-      },
-      "assign_public_ip": true,
-      "network_tags": ["bastion"],
-      "secret_mappings": {},
-      "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
-    },
     "infra": {
       "role": "database",
       "size": "tiny",
