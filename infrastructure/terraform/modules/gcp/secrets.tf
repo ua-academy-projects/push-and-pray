@@ -29,8 +29,6 @@ resource "google_secret_manager_secret" "this" {
   replication {
     auto {}
   }
-
-  depends_on = [google_project_service.required]
 }
 
 resource "google_secret_manager_secret_iam_member" "workload_access" {

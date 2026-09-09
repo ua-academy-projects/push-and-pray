@@ -4,8 +4,6 @@ module "network" {
 
   resource_prefix = local.resource_prefix
   profile         = local.profile
-
-  depends_on = [google_project_service.required]
 }
 
 module "firewall" {
@@ -54,6 +52,4 @@ module "vm" {
       role = each.value.role
     },
   )
-
-  depends_on = [google_project_service.required]
 }
