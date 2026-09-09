@@ -73,15 +73,16 @@ options:
     description:
       - Overrides the port used to reach every bastion, for the window in which
         a freshly created host still listens on 22. Leave unset to use the port
-        each bastion declares in the configuration.
+        the project-wide bastion block declares.
     type: int
     required: false
     env:
       - name: OILSCOPE_BASTION_CONNECT_PORT
   bastion_role:
     description:
-      - Value of C(role) identifying a bastion, in the configuration and in the
-        instance label or tag.
+      - Value of C(role) identifying a bastion in the instance label or tag.
+        Terraform stamps it on the bastion it derives from the C(bastion)
+        block; no entry under C(vms) carries it.
     type: str
     default: bastion
   auth_kind:
@@ -212,7 +213,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     # ------------------------------------------------------------------ clouds
 
     def _active_clouds(self, config):
-        bastion_role = plain(self.get_option("bastion_role"))
         declared = config.get("clouds")
 
         if not isinstance(declared, dict):
@@ -220,12 +220,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         active = set()
 
+        # vms holds workloads only; the bastion of each active cloud is derived
+        # from the top-level 'bastion' block, so it never appears here.
         for name, vm in self._vms(config).items():
             if not isinstance(vm, dict):
                 raise AnsibleParserError(f"the {name!r} VM must be a JSON object")
-
-            if vm.get("role") == bastion_role:
-                continue
 
             active.add(self._placement(config, vm))
 
@@ -243,35 +242,34 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return sorted(active)
 
-    def _bastion_ssh_port(self, config, cloud):
-        bastion_role = plain(self.get_option("bastion_role"))
+    def _bastion_ssh_port(self, config):
+        """Port from the project-wide bastion block.
 
-        ports = [
-            vm.get("ssh_port")
-            for vm in self._vms(config).values()
-            if isinstance(vm, dict)
-            and vm.get("role") == bastion_role
-            and self._placement(config, vm) == cloud
-        ]
+        Every active cloud runs the same bastion specification, so this is one
+        value for the whole project rather than one per cloud.
+        """
+        bastion = config.get("bastion")
 
-        if len(ports) != 1:
+        if not isinstance(bastion, dict):
             raise AnsibleParserError(
-                f"expected exactly one VM with role {bastion_role!r} on {cloud!r}, "
-                f"found {len(ports)}; each cloud needs its own bastion because "
-                "there is no cross-cloud networking"
+                "the project configuration must define a 'bastion' object"
             )
 
         try:
-            return int(ports[0])
+            return int(bastion["ssh_port"])
+        except KeyError as missing:
+            raise AnsibleParserError(
+                "the 'bastion' block must define ssh_port"
+            ) from missing
         except (TypeError, ValueError) as port_error:
             raise AnsibleParserError(
-                f"the {cloud!r} bastion must define an integer ssh_port"
+                "the 'bastion' block must define an integer ssh_port"
             ) from port_error
 
     def _connect_ports(self, config, cloud):
         """(bastion port, workload port) to connect on, honouring the override."""
         override = self.get_option("bastion_connect_port")
-        bastion_port = int(override) if override else self._bastion_ssh_port(config, cloud)
+        bastion_port = int(override) if override else self._bastion_ssh_port(config)
 
         return bastion_port, int(self.get_option("workload_ssh_port"))
 

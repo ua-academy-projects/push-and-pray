@@ -146,7 +146,7 @@ configuration: `vms.infra` has `role: database` and therefore lands in the
 `ui` role resolves its Database and History peers through that exact variable
 name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
 For the bastion, `bastion_ssh_port` is always the final port from
-`vms.bastion.ssh_port`. `ansible_port` normally uses that value, but can use
+`bastion.ssh_port`. `ansible_port` normally uses that value, but can use
 `OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
 
 Raw instance fields from the API are prefixed with `gcp_`, because two of them
@@ -155,7 +155,7 @@ Raw instance fields from the API are prefixed with `gcp_`, because two of them
 ## SSH
 
 The bastion is normally reached on its external address at the final port read
-from `vms.bastion.ssh_port` in the project config by
+from `bastion.ssh_port` in the project config by
 `group_vars/bastion.yml`. Every workload is reached on its internal address at
 port 22, through a `ProxyCommand` defined in `group_vars/workloads.yml`. The
 ProxyCommand always uses the bastion's final port; the bootstrap connection
@@ -170,7 +170,7 @@ on port 22, and Ansible changes it to the final configured port. Use this
 bootstrap sequence whenever the bastion has not yet been configured.
 
 1. Apply Terraform with the temporary port-22 rule enabled. The rule is
-   restricted to `vms.bastion.allowed_cidrs`, targets only the bastion, and is
+   restricted to `bastion.allowed_cidrs`, targets only the bastion, and is
    not created when the final port is already 22.
 
 ```sh
