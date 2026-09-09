@@ -7,7 +7,12 @@ secret_versions_config_file: ""
 # configuration.
 secret_versions_project_id: ""
 
+# Target AWS region. Falls back to $AWS_DEFAULT_REGION, then to the root
+# region label's AWS placement in the configuration.
+secret_versions_aws_region: ""
+
 # Upload a subset. Entries match a container ID or a variable name.
 secret_versions_only: []
 
 secret_versions_gcloud: gcloud
+secret_versions_aws_cli: aws

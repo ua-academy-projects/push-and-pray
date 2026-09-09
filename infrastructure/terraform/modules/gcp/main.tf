@@ -1,11 +1,13 @@
 module "network" {
   source = "./network"
 
+  has_selected_vms = local.has_selected_vms
   config = var.config
 }
 
 module "routing" {
   source = "./routing"
+  has_selected_vms = local.has_selected_vms
 
   config              = var.config
   network_id          = module.network.network_id
@@ -14,11 +16,11 @@ module "routing" {
 
 module "firewall" {
   source = "./firewall"
+  has_selected_vms = local.has_selected_vms
 
-  config                       = var.config
-  network_id                   = module.network.network_id
-  network_tags                 = module.network.network_tags
-  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+  config       = var.config
+  network_id   = module.network.network_id
+  network_tags = module.network.network_tags
 }
 
 module "iam" {

@@ -39,3 +39,8 @@ infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/oilscope.gcp.yml
 
 *.local.gcp.yml
+
+# AI tooling (local only, not a shared team convention)
+.claude/
+CLAUDE.md
+graphify-out/

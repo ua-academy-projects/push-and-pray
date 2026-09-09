@@ -152,8 +152,6 @@
     },
     "vms": {
       "type": "object",
-      "minProperties": 2,
-      "required": ["bastion"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },

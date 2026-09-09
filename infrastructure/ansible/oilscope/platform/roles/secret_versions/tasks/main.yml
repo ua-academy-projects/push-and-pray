@@ -19,6 +19,20 @@
     loop_var: secret_versions_vm
     label: "{{ secret_versions_vm.key }}"
 
+# A container's cloud is not on the container itself - it is created wherever
+# its readers are. Resolving each VM's cloud the same way Terraform does lets
+# the catalog below route each container to gcloud, aws, or both.
+- name: Map every VM to its resolved cloud
+  ansible.builtin.set_fact:
+    secret_versions_vm_clouds: >-
+      {{ secret_versions_vm_clouds | default({}) | combine({
+           secret_versions_vm.key: (secret_versions_vm.value.cloud | default(secret_versions_config.cloud))
+         }) }}
+  loop: "{{ secret_versions_config.vms | dict2items }}"
+  loop_control:
+    loop_var: secret_versions_vm
+    label: "{{ secret_versions_vm.key }}"
+
 # The variable name comes from the container ID, not from the key side of
 # secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
 # different secret on every workload and one shell cannot hold them all.
@@ -59,7 +73,12 @@
            'variable': secret_versions_entry.1,
            'read_by': secret_versions_pairs
                       | selectattr('0', 'eq', secret_versions_entry.0)
-                      | map(attribute='1') | sort | list
+                      | map(attribute='1') | sort | list,
+           'clouds': secret_versions_pairs
+                      | selectattr('0', 'eq', secret_versions_entry.0)
+                      | map(attribute='1')
+                      | map('extract', secret_versions_vm_clouds)
+                      | unique | sort | list
          }] }}
   loop: "{{ secret_versions_ids | zip(secret_versions_variables) | list }}"
   loop_control:
@@ -94,6 +113,13 @@
       {{ secret_versions_project_id
          | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
          | default(secret_versions_config.project_id | default(''), true) }}
+
+- name: Resolve the target AWS region
+  ansible.builtin.set_fact:
+    secret_versions_region: >-
+      {{ secret_versions_aws_region
+         | default(lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION'), true)
+         | default(secret_versions_config.regions[secret_versions_config.region].aws.region | default(''), true) }}
 
 # Everything is checked before anything is written. A value that turns out to
 # be missing halfway through leaves some workloads on the new credential and
@@ -132,6 +158,7 @@
   changed_when: false
   failed_when: false
   check_mode: false
+  when: "'gcp' in item.clouds"
 
 # secretVersionAdder allows adding a version without reading the metadata, so a
 # permission error is not proof that the container is missing.
@@ -139,7 +166,7 @@
 # argument and cannot appear in ps output or a shell history. no_log keeps it
 # out of the Ansible output and any callback log, and stdin_add_newline is off
 # because a trailing newline would become part of the stored value.
-- name: Add a new version to every container
+- name: Add a new version to every GCP container
   ansible.builtin.command:
     argv:
       - "{{ secret_versions_gcloud }}"
@@ -155,19 +182,55 @@
   loop: "{{ secret_versions_catalog }}"
   loop_control:
     label: "{{ item.secret_id }}"
-  register: secret_versions_added
+  register: secret_versions_added_gcp
   changed_when: true
   no_log: true
   # Not check_mode - a skipped-in-check-mode result carries the module
   # arguments, and at -vvv Ansible prints those uncensored even under no_log.
-  when: not ansible_check_mode
+  when: not ansible_check_mode and 'gcp' in item.clouds
+
+# Unlike the GCP secret_id, which is the bare container ID, the AWS secret
+# name carries the same <name_prefix>-<environment>- prefix every other AWS
+# resource does (infrastructure/terraform/modules/aws/secrets/main.tf).
+#
+# file:///dev/stdin gets the AWS CLI the same stdin-only guarantee as gcloud's
+# --data-file=- above: the value is read from the process's own stdin, never
+# written to a real file and never exposed as a command argument.
+- name: Add a new version to every AWS container
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws_cli }}"
+      - secretsmanager
+      - put-secret-value
+      - --secret-id
+      - "{{ secret_versions_prefix }}{{ item.secret_id }}"
+      - --region
+      - "{{ secret_versions_region }}"
+      - --secret-string
+      - file:///dev/stdin
+      - --query
+      - VersionId
+      - --output
+      - text
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_added_aws
+  changed_when: true
+  no_log: true
+  when: not ansible_check_mode and 'aws' in item.clouds
 
 - name: Report the new versions
   ansible.builtin.debug:
     msg: >-
       {{ item.item.secret_id }} <- ${{ item.item.variable }}
       (version {{ item.stdout | trim | regex_replace('^.*/', '') }})
-  loop: "{{ secret_versions_added.results | default([]) }}"
+  loop: >-
+    {{ ((secret_versions_added_gcp.results | default([]))
+        + (secret_versions_added_aws.results | default([])))
+       | selectattr('stdout', 'defined') | list }}
   loop_control:
     label: "{{ item.item.secret_id }}"
   when: not ansible_check_mode

@@ -34,14 +34,14 @@
     return_content: true
   register: resolve_secrets_token
   no_log: true
-  when: resolve_secrets_mappings | length > 0
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'gcp'
 
 - name: Extract the access token
   ansible.builtin.set_fact:
     resolve_secrets_access_token: >-
       {{ (resolve_secrets_token.content | from_json).access_token }}
   no_log: true
-  when: resolve_secrets_mappings | length > 0
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'gcp'
 
 - name: Access each mapped secret's latest version
   ansible.builtin.uri:
@@ -55,7 +55,7 @@
   loop: "{{ resolve_secrets_mappings | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
-  when: resolve_secrets_mappings | length > 0
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'gcp'
 
 - name: Build the resolved secrets mapping
   ansible.builtin.set_fact:
@@ -67,7 +67,63 @@
   loop: "{{ resolve_secrets_accessed.results | default([]) }}"
   loop_control:
     label: "{{ item.item.key }}"
-  when: resolve_secrets_mappings | length > 0
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'gcp'
+
+# AWS has no per-request metadata token step: the aws CLI's own credential
+# chain resolves the instance's attached IAM role from IMDS by itself.
+- name: Ensure the AWS CLI is available
+  become: true
+  ansible.builtin.apt:
+    name: awscli
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'aws'
+
+- name: Resolve the AWS region for Secrets Manager
+  ansible.builtin.set_fact:
+    resolve_secrets_region: >-
+      {{ resolve_secrets_aws_region
+         | default(lookup('ansible.builtin.env', 'AWS_DEFAULT_REGION'), true)
+         | default(resolve_secrets_config.regions[resolve_secrets_config.region].aws.region | default(''), true) }}
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'aws'
+
+- name: Access each mapped secret's current value
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_aws_cli }}"
+      - secretsmanager
+      - get-secret-value
+      - --secret-id
+      # Unlike the GCP secret_id, the AWS secret name carries the same
+      # <name_prefix>-<environment>- prefix every other AWS resource does
+      # (infrastructure/terraform/modules/aws/secrets/main.tf).
+      - "{{ resolve_secrets_config.name_prefix }}-{{ resolve_secrets_config.environment }}-{{ item.value }}"
+      - --region
+      - "{{ resolve_secrets_region }}"
+      - --query
+      - SecretString
+      - --output
+      - text
+  register: resolve_secrets_aws_accessed
+  no_log: true
+  changed_when: false
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'aws'
+
+- name: Build the resolved secrets mapping (AWS)
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: (item.stdout | trim)
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_aws_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'aws'
 
 - name: Default to an empty result when there is nothing to resolve
   ansible.builtin.set_fact:

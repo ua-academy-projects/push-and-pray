@@ -10,8 +10,6 @@ variable "network_tags" {
   type = map(string)
 }
 
-variable "enable_bastion_ssh_bootstrap" {
-  description = "Whether to temporarily allow direct bastion SSH on port 22 when the final SSH port differs."
-  type        = bool
-  default     = false
+variable "has_selected_vms" {
+  type = bool
 }

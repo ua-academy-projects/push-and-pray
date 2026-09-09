@@ -1,0 +1,34 @@
+#cloud-config
+# GCP provisions ssh_users through instance metadata that the guest agent
+# reads on every boot. AWS has no equivalent - this cloud-config is that
+# mechanism here, run once at first boot by cloud-init.
+users:
+%{ for username, public_key in ssh_users ~}
+  - name: ${username}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - "${public_key}"
+%{ endfor ~}
+%{ if bastion_ssh_port != "" ~}
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-oilscope-bastion.conf
+    permissions: "0644"
+    content: |
+      Port ${bastion_ssh_port}
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitEmptyPasswords no
+      PermitRootLogin no
+      AllowTcpForwarding yes
+      AllowAgentForwarding no
+      GatewayPorts no
+      X11Forwarding no
+      PermitTunnel no
+runcmd:
+  - install -d -m 0755 /etc/ssh/sshd_config.d
+  - /usr/sbin/sshd -t
+  - systemctl daemon-reload
+  - systemctl restart ssh.socket || systemctl restart ssh.service
+%{ endif ~}

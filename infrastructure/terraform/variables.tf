@@ -9,9 +9,3 @@ variable "project_config_path" {
   }
 }
 
-variable "enable_bastion_ssh_bootstrap" {
-  description = "Temporarily allow direct bastion SSH on port 22 while Ansible configures the final SSH port. Disable after bootstrap."
-  type        = bool
-  default     = false
-}
-

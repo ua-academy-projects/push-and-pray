@@ -9,6 +9,7 @@ galaxy_info:
   min_ansible_version: "2.16"
   galaxy_tags:
     - gcp
+    - aws
     - secrets
     - security
 

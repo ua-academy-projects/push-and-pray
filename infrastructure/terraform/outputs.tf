@@ -6,10 +6,10 @@ locals {
 }
 
 output "bastion_public_ip" {
-  value = coalesce(
+  value = try(coalesce(
     try(module.gcp_vm.public_ips["bastion"], null),
     try(module.aws_vm.public_ips["bastion"], null),
-  )
+  ), null)
 }
 
 output "workload_vm_names" {

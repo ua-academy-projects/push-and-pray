@@ -10,7 +10,9 @@ resource "google_compute_instance" "workload" {
     for tag in each.value.network_tags :
     "${local.resource_prefix}-${tag}"
   ]
-  labels = merge(local.merged_common_labels, try(each.value.labels, {}), { role = each.value.role })
+  labels = merge(local.merged_common_labels, try(each.value.labels, {}), { role = each.value.role, cloud = "gcp"} )
+
+  metadata_startup_script = try(local.bastion_startup_scripts[each.key], null)
 
   boot_disk {
     auto_delete = true

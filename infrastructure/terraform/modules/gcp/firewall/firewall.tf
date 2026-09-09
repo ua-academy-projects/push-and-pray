@@ -1,44 +1,26 @@
 resource "google_compute_firewall" "bastion_ssh" {
+  count = local.bastion != null ? 1 : 0
+
   name    = "${local.resource_prefix}-allow-bastion-ssh"
   network = var.network_id
 
-  source_ranges = var.config.vms.bastion.allowed_cidrs
+  source_ranges = local.bastion.allowed_cidrs
   target_tags   = [var.network_tags.bastion]
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.config.vms.bastion.ssh_port)]
-  }
-}
-
-resource "google_compute_firewall" "bastion_ssh_bootstrap" {
-  # A fresh bastion listens on 22 until Ansible installs the final sshd policy.
-  # This rule must be explicitly enabled and removed immediately after bootstrap.
-  count = var.enable_bastion_ssh_bootstrap && var.config.vms.bastion.ssh_port != 22 ? 1 : 0
-
-  name    = "${local.resource_prefix}-allow-bastion-ssh-bootstrap"
-  network = var.network_id
-
-  source_ranges = var.config.vms.bastion.allowed_cidrs
-  target_tags   = [var.network_tags.bastion]
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
+    ports    = [tostring(local.bastion.ssh_port)]
   }
 }
 
 resource "google_compute_firewall" "workload_ssh" {
+  count = local.bastion != null && length(local.workload_target_tags) > 0 ? 1 : 0
+
   name    = "${local.resource_prefix}-allow-workload-ssh"
   network = var.network_id
 
   source_tags = [var.network_tags.bastion]
-  target_tags = [
-    var.network_tags.infra,
-    var.network_tags.history,
-    var.network_tags.fetcher,
-    var.network_tags.ui,
-  ]
+  target_tags = local.workload_target_tags
 
   allow {
     protocol = "tcp"
@@ -47,6 +29,7 @@ resource "google_compute_firewall" "workload_ssh" {
 }
 
 resource "google_compute_firewall" "ui_web" {
+  count = local.tag_present["ui"] ? 1 : 0
   name    = "${local.resource_prefix}-allow-ui-web"
   network = var.network_id
 
@@ -60,6 +43,7 @@ resource "google_compute_firewall" "ui_web" {
 }
 
 resource "google_compute_firewall" "history_api" {
+  count = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0
   name    = "${local.resource_prefix}-allow-history-api"
   network = var.network_id
 
@@ -73,6 +57,7 @@ resource "google_compute_firewall" "history_api" {
 }
 
 resource "google_compute_firewall" "postgresql" {
+  count = local.tag_present["infra"] ? 1 : 0
   name    = "${local.resource_prefix}-allow-postgresql"
   network = var.network_id
 

@@ -1,4 +1,6 @@
 resource "aws_security_group" "bastion" {
+    count = local.bastion != null ? 1 : 0
+
     name   = "${local.resource_prefix}-bastion"
     vpc_id = var.vpc_id
 
@@ -8,6 +10,8 @@ resource "aws_security_group" "bastion" {
 }
 
 resource "aws_security_group" "infra" {
+    count = local.tag_present["infra"] ? 1 : 0
+
     name   = "${local.resource_prefix}-infra"
     vpc_id = var.vpc_id
 
@@ -17,6 +21,8 @@ resource "aws_security_group" "infra" {
 }
 
 resource "aws_security_group" "history" {
+    count = local.tag_present["history"] ? 1 : 0
+
     name   = "${local.resource_prefix}-history"
     vpc_id = var.vpc_id
 
@@ -26,6 +32,8 @@ resource "aws_security_group" "history" {
 }
 
 resource "aws_security_group" "fetcher" {
+    count = local.tag_present["fetcher"] ? 1 : 0
+
     name   = "${local.resource_prefix}-fetcher"
     vpc_id = var.vpc_id
 
@@ -35,6 +43,8 @@ resource "aws_security_group" "fetcher" {
 }
 
 resource "aws_security_group" "ui" {
+    count = local.tag_present["ui"] ? 1 : 0
+
     name   = "${local.resource_prefix}-ui"
     vpc_id = var.vpc_id
 
@@ -44,44 +54,34 @@ resource "aws_security_group" "ui" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
-    for_each = toset(var.config.vms.bastion.allowed_cidrs)
+    for_each = local.bastion != null ? toset(local.bastion.allowed_cidrs) : toset([])
 
-    security_group_id = aws_security_group.bastion.id
+    security_group_id = aws_security_group.bastion[0].id
     cidr_ipv4 = each.value
-    from_port = var.config.vms.bastion.ssh_port
-    to_port  = var.config.vms.bastion.ssh_port
+    from_port = local.bastion.ssh_port
+    to_port  = local.bastion.ssh_port
     ip_protocol = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "bastion_ssh_bootstrap" {
-    for_each = var.enable_bastion_ssh_bootstrap && var.config.vms.bastion.ssh_port != 22 ? toset(var.config.vms.bastion.allowed_cidrs) : toset([])
-
-    security_group_id = aws_security_group.bastion.id
-    cidr_ipv4 = each.value
-    from_port = 22
-    to_port = 22
-    ip_protocol= "tcp"
-}
-
 resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
-    for_each = {
-        infra   = aws_security_group.infra.id
-        history = aws_security_group.history.id
-        fetcher = aws_security_group.fetcher.id
-        ui = aws_security_group.ui.id
-    }
+    for_each = local.bastion != null ? toset(local.workload_tags_present) : toset([])
 
-    security_group_id = each.value
-    referenced_security_group_id = aws_security_group.bastion.id
+    security_group_id = (
+        each.value == "infra"   ? aws_security_group.infra[0].id :
+        each.value == "history" ? aws_security_group.history[0].id :
+        each.value == "fetcher" ? aws_security_group.fetcher[0].id :
+        aws_security_group.ui[0].id
+    )
+    referenced_security_group_id = aws_security_group.bastion[0].id
     from_port = 22
     to_port = 22
     ip_protocol = "tcp"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ui_web" {
-    for_each = toset(local.ui_public_ports_str)
+    for_each = local.tag_present["ui"] ? toset(local.ui_public_ports_str) : toset([])
 
-    security_group_id = aws_security_group.ui.id
+    security_group_id = aws_security_group.ui[0].id
     cidr_ipv4 = "0.0.0.0/0"
     from_port = tonumber(each.value)
     to_port = tonumber(each.value)
@@ -89,21 +89,26 @@ resource "aws_vpc_security_group_ingress_rule" "ui_web" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "history_api" {
-    security_group_id = aws_security_group.history.id
-    referenced_security_group_id = aws_security_group.ui.id
+    count = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0
+
+    security_group_id = aws_security_group.history[0].id
+    referenced_security_group_id = aws_security_group.ui[0].id
     from_port = var.config.service_ports.history_api
     to_port = var.config.service_ports.history_api
     ip_protocol = "tcp"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgresql" {
-    for_each = {
-        fetcher = aws_security_group.fetcher.id
-        history = aws_security_group.history.id
-        ui = aws_security_group.ui.id
-    }
+    for_each = local.tag_present["infra"] ? {
+        for role in ["fetcher", "history", "ui"] : role => (
+            role == "fetcher" ? aws_security_group.fetcher[0].id :
+            role == "history" ? aws_security_group.history[0].id :
+            aws_security_group.ui[0].id
+        )
+        if local.tag_present[role]
+    } : {}
 
-    security_group_id            = aws_security_group.infra.id
+    security_group_id            = aws_security_group.infra[0].id
     referenced_security_group_id = each.value
     from_port = var.config.service_ports.postgresql
     to_port = var.config.service_ports.postgresql
@@ -111,31 +116,41 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "bastion" {
-    security_group_id = aws_security_group.bastion.id
+    count = local.bastion != null ? 1 : 0
+
+    security_group_id = aws_security_group.bastion[0].id
     cidr_ipv4 = "0.0.0.0/0"
     ip_protocol = "-1"
 }
 
 resource "aws_vpc_security_group_egress_rule" "infra" {
-    security_group_id = aws_security_group.infra.id
+    count = local.tag_present["infra"] ? 1 : 0
+
+    security_group_id = aws_security_group.infra[0].id
     cidr_ipv4 = "0.0.0.0/0"
     ip_protocol = "-1"
 }
 
 resource "aws_vpc_security_group_egress_rule" "history" {
-    security_group_id = aws_security_group.history.id
+    count = local.tag_present["history"] ? 1 : 0
+
+    security_group_id = aws_security_group.history[0].id
     cidr_ipv4 = "0.0.0.0/0"
     ip_protocol = "-1"
 }
 
 resource "aws_vpc_security_group_egress_rule" "fetcher" {
-    security_group_id = aws_security_group.fetcher.id
+    count = local.tag_present["fetcher"] ? 1 : 0
+
+    security_group_id = aws_security_group.fetcher[0].id
     cidr_ipv4 = "0.0.0.0/0"
     ip_protocol = "-1"
 }
 
 resource "aws_vpc_security_group_egress_rule" "ui" {
-    security_group_id = aws_security_group.ui.id
+    count = local.tag_present["ui"] ? 1 : 0
+
+    security_group_id = aws_security_group.ui[0].id
     cidr_ipv4 = "0.0.0.0/0"
     ip_protocol = "-1"
 }

@@ -1,11 +1,11 @@
 output "vpc_id" {
-    value = aws_vpc.main.id
+    value = try(aws_vpc.main[0].id, null)
 }
 
 output "management_subnet_id" {
-    value = aws_subnet.management.id
+    value = try(aws_subnet.management[0].id, null)
 }
 
 output "workload_subnet_id" {
-    value = aws_subnet.workload.id
+    value = try(aws_subnet.workload[0].id, null)
 }

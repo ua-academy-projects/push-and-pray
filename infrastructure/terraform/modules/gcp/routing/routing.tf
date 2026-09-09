@@ -1,11 +1,15 @@
 resource "google_compute_router" "main" {
+  count = var.has_selected_vms ? 1 : 0
+
   name    = "${local.resource_prefix}-router"
   network = var.network_id
 }
 
 resource "google_compute_router_nat" "main" {
+  count = var.has_selected_vms ? 1 : 0
+
   name   = "${local.resource_prefix}-nat"
-  router = google_compute_router.main.name
+  router = google_compute_router.main[0].name
 
   nat_ip_allocate_option             = "AUTO_ONLY"
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"

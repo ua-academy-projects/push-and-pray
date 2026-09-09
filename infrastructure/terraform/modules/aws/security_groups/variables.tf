@@ -2,11 +2,10 @@ variable "config" {
     type = any
 }
 
-variable "vpc_id" {
-    type = string
+variable "has_selected_vms" {
+    type = bool
 }
 
-variable "enable_bastion_ssh_bootstrap" {
-    type = bool
-    default = false
+variable "vpc_id" {
+    type = string
 }

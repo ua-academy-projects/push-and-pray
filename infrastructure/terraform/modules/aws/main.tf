@@ -1,13 +1,15 @@
 module "network" {
   source = "./network"
 
-  config = var.config
+  config            = var.config
+  has_selected_vms  = local.has_selected_vms
 }
 
 module "routing" {
   source = "./routing"
 
   config                = var.config
+  has_selected_vms      = local.has_selected_vms
   vpc_id                = module.network.vpc_id
   management_subnet_id  = module.network.management_subnet_id
   workload_subnet_id    = module.network.workload_subnet_id
@@ -16,9 +18,9 @@ module "routing" {
 module "security_groups" {
   source = "./security_groups"
 
-  config                       = var.config
-  vpc_id                       = module.network.vpc_id
-  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+  config           = var.config
+  has_selected_vms = local.has_selected_vms
+  vpc_id           = module.network.vpc_id
 }
 
 module "iam" {

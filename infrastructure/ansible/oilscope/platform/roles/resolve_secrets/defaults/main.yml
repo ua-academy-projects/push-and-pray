@@ -5,3 +5,10 @@ resolve_secrets_project_id: ""
 resolve_secrets_metadata_url: >-
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 resolve_secrets_secretmanager_url: https://secretmanager.googleapis.com/v1
+
+# AWS side. Authentication needs no equivalent of the token dance above: the
+# AWS CLI's own credential chain already resolves the instance's attached
+# IAM role via IMDS, the same "the workload's own identity, not the
+# operator's" guarantee the GCP path gets from the metadata server.
+resolve_secrets_aws_region: ""
+resolve_secrets_aws_cli: aws

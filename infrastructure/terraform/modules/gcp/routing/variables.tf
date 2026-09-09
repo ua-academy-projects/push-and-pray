@@ -9,3 +9,7 @@ variable "network_id" {
 variable "workload_subnet_id" {
   type = string
 }
+
+variable "has_selected_vms" {
+  type = bool
+}

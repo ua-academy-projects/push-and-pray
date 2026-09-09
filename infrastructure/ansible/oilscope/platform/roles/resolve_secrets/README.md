@@ -17,9 +17,10 @@ containers.
 - Only the secrets listed in the current host's own `secret_mappings` are
   ever requested — never another workload's, and never a sibling VM that
   happens to share the same `role`.
-- Authentication is the instance's attached service account, obtained from
-  the metadata server. No credential is supplied by the operator or stored
-  on the host.
+- Authentication is the instance's own attached identity: the service
+  account via the metadata server on GCP, the attached IAM role via the AWS
+  CLI's own credential chain (which resolves it from IMDS itself) on AWS. No
+  credential is supplied by the operator or stored on the host.
 - Nothing is written to disk. The result exists only as an in-memory fact
   for the duration of the play.
 - Every task that could carry a token or a secret value is marked `no_log`,
@@ -29,10 +30,20 @@ containers.
 
 ## Requirements
 
-The host must be a GCE instance with a service account attached, granted
-`roles/secretmanager.secretAccessor` on the secrets in its own
+Which cloud a host uses is read from `oilscope_cloud`, the same host
+variable the dynamic inventory sets from the `cloud`/`Cloud` label or tag
+Terraform stamps on the instance.
+
+On GCP, the host must be a GCE instance with a service account attached,
+granted `roles/secretmanager.secretAccessor` on the secrets in its own
 `secret_mappings` — this is what `infrastructure/terraform/secrets.tf`
 grants automatically.
+
+On AWS, the host must be an EC2 instance with an IAM role attached, granted
+`secretsmanager:GetSecretValue` on the secrets in its own `secret_mappings`
+— granted by the `aws/secrets` module. The role installs the `awscli` apt
+package on first use; the AWS CLI resolves the instance's credentials from
+IMDS on its own, with no separate token-fetch step.
 
 The role identifies which `vms` entry is "this host" from `inventory_hostname`
 itself, not from a role or group name. Terraform names every instance
@@ -55,10 +66,14 @@ never resolve to a sibling's secrets even in that case.
 
 ## Optional variables
 
-- `resolve_secrets_project_id`: target project. Falls back to
+- `resolve_secrets_project_id`: target GCP project. Falls back to
   `$GOOGLE_PROJECT`, then to `project_id` in the configuration.
 - `resolve_secrets_metadata_url`: the instance metadata token endpoint.
 - `resolve_secrets_secretmanager_url`: the Secret Manager REST API base URL.
+- `resolve_secrets_aws_region`: target AWS region. Falls back to
+  `$AWS_DEFAULT_REGION`, then to the root `region` label's AWS placement in
+  the configuration.
+- `resolve_secrets_aws_cli`: path to the `aws` executable.
 
 ## Output
 
