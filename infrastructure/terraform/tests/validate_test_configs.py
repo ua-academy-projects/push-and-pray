@@ -20,6 +20,8 @@ def main() -> None:
         TERRAFORM_ROOT / ".terraform" / "test-configs" / "aws-only.json",
         TERRAFORM_ROOT / ".terraform" / "test-configs" / "hybrid.json",
         TERRAFORM_ROOT / ".terraform" / "test-configs" / "region-override.json",
+        TERRAFORM_ROOT / ".terraform" / "test-configs" / "monitoring-absent.json",
+        TERRAFORM_ROOT / ".terraform" / "test-configs" / "monitoring-disabled.json",
     ]
 
     for path in configurations:

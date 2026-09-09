@@ -23,6 +23,14 @@ def main() -> None:
     aws_only["clouds"] = {"aws": {}}
     write_config("aws-only", aws_only)
 
+    monitoring_absent = deepcopy(base)
+    monitoring_absent.pop("monitoring")
+    write_config("monitoring-absent", monitoring_absent)
+
+    monitoring_disabled = deepcopy(base)
+    monitoring_disabled["monitoring"]["enabled"] = False
+    write_config("monitoring-disabled", monitoring_disabled)
+
     hybrid = deepcopy(base)
     hybrid["vms"]["ui"]["cloud"] = "aws"
     write_config("hybrid", hybrid)

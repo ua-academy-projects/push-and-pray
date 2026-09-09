@@ -89,6 +89,16 @@ locals {
 
   resource_prefix = "${local.config.name_prefix}-${local.config.environment}"
 
+  monitoring = {
+    enabled            = try(local.config.monitoring.enabled, false)
+    notification_email = try(local.config.monitoring.notification_email, "")
+    cpu = {
+      enabled           = try(local.config.monitoring.cpu.enabled, false)
+      threshold_percent = try(local.config.monitoring.cpu.threshold_percent, 80)
+      duration_minutes  = try(local.config.monitoring.cpu.duration_minutes, 5)
+    }
+  }
+
   common_labels = merge(
     local.config.common_labels,
     {

@@ -12,6 +12,8 @@ Children receive structured inputs and never reopen the JSON file.
 | `aws_network` | AWS VPC, subnets, internet gateway, routing and optional NAT |
 | `aws_security_groups` | AWS role security groups and ingress/egress policy |
 | `aws_vm` | AWS VM filtering/mappings, AMIs, EC2, identities and Elastic IPs |
+| `gcp_monitoring` | GCP CPU dashboard, per-VM alerts and email notification channel |
+| `aws_monitoring` | AWS CPU dashboard, per-VM alarms and SNS email notifications |
 
 VM modules are called once and iterate internally. Networks receive structured
 network configuration; policy modules receive a shared policy object. Root
@@ -19,6 +21,10 @@ keeps placement needed by provider configuration and single-region networks.
 Role, default/provider declaration, identity-label, naming, public-IP and CIDR
 relationship checks remain global. Provider mapping, disk, zone and subnet-size
 validation belongs to provider modules.
+
+Monitoring is optional and defaults to disabled when `monitoring` is absent.
+When enabled, each provider monitors only its Terraform-managed VMs. AWS SNS
+email subscriptions remain pending until the recipient confirms the AWS email.
 
 Terraform owns secret containers and IAM grants. It derives IDs from
 `application.secret_mappings`, keyed by application role. Only Ansible uses

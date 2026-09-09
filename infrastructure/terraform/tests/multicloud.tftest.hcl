@@ -78,6 +78,15 @@ run "gcp_only" {
     ])
     error_message = "The example configuration must resolve every VM to GCP."
   }
+
+  assert {
+    condition = (
+      output.monitoring_status.gcp.enabled &&
+      !output.monitoring_status.aws.enabled &&
+      toset(output.monitoring_status.gcp.vm_names) == toset([for name in keys(output.resolved_vm_configuration) : "oilscope-dev-${name}"])
+    )
+    error_message = "GCP-only monitoring must cover only Terraform-managed GCP VMs."
+  }
 }
 
 run "aws_only" {
@@ -104,6 +113,16 @@ run "aws_only" {
     )
     error_message = "AWS-only configuration must use the AWS size and disk mappings."
   }
+
+
+  assert {
+    condition = (
+      output.monitoring_status.aws.enabled &&
+      !output.monitoring_status.gcp.enabled &&
+      toset(output.monitoring_status.aws.vm_names) == toset([for name in keys(output.resolved_vm_configuration) : "oilscope-dev-${name}"])
+    )
+    error_message = "AWS-only monitoring must cover only Terraform-managed AWS VMs."
+  }
 }
 
 run "hybrid" {
@@ -123,6 +142,43 @@ run "hybrid" {
       output.resolved_vm_configuration.infra.provider_region == "europe-west1"
     )
     error_message = "A per-VM cloud override must resolve provider-specific values without changing other VMs."
+  }
+
+
+  assert {
+    condition = (
+      output.monitoring_status.gcp.enabled &&
+      output.monitoring_status.aws.enabled &&
+      toset(output.monitoring_status.gcp.vm_names) == toset(["oilscope-dev-bastion", "oilscope-dev-infra", "oilscope-dev-history", "oilscope-dev-fetcher"]) &&
+      toset(output.monitoring_status.aws.vm_names) == toset(["oilscope-dev-ui"])
+    )
+    error_message = "Hybrid monitoring must filter Terraform-managed VMs by provider."
+  }
+}
+
+run "monitoring_disabled" {
+  command = plan
+
+  variables {
+    project_config_path = ".terraform/test-configs/monitoring-disabled.json"
+  }
+
+  assert {
+    condition     = !output.monitoring_status.gcp.enabled && !output.monitoring_status.aws.enabled
+    error_message = "Explicitly disabled monitoring must create no provider monitoring resources."
+  }
+}
+
+run "monitoring_block_absent" {
+  command = plan
+
+  variables {
+    project_config_path = ".terraform/test-configs/monitoring-absent.json"
+  }
+
+  assert {
+    condition     = !output.monitoring_status.gcp.enabled && !output.monitoring_status.aws.enabled
+    error_message = "A missing optional monitoring block must safely default to disabled."
   }
 }
 

@@ -79,6 +79,15 @@
     "history_api": 8001,
     "postgresql": 5432
   },
+  "monitoring": {
+    "enabled": true,
+    "notification_email": "alerts@example.com",
+    "cpu": {
+      "enabled": true,
+      "threshold_percent": 80,
+      "duration_minutes": 5
+    }
+  },
   "vms": {
     "bastion": {
       "role": "bastion",

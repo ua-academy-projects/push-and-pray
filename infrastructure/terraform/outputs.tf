@@ -169,3 +169,17 @@ output "resolved_vm_configuration" {
     }
   }
 }
+
+output "monitoring_status" {
+  description = "Enabled provider monitoring and the Terraform-managed VM names it covers."
+  value = {
+    gcp = {
+      enabled  = module.gcp_monitoring.enabled
+      vm_names = module.gcp_monitoring.monitored_vm_names
+    }
+    aws = {
+      enabled  = module.aws_monitoring.enabled
+      vm_names = module.aws_monitoring.monitored_vm_names
+    }
+  }
+}

@@ -70,3 +70,22 @@ module "aws_vm" {
 
   depends_on = [module.aws_network]
 }
+
+module "gcp_monitoring" {
+  source = "./modules/gcp_monitoring"
+
+  resource_prefix = local.resource_prefix
+  monitoring      = local.monitoring
+  vms             = module.vm.vms
+
+  depends_on = [google_project_service.required]
+}
+
+module "aws_monitoring" {
+  source = "./modules/aws_monitoring"
+
+  resource_prefix = local.resource_prefix
+  monitoring      = local.monitoring
+  vms             = module.aws_vm.vms
+  tags            = local.common_labels
+}

@@ -207,6 +207,49 @@
         }
       }
     },
+    "monitoring": {
+      "description": "Optional provider-neutral CPU monitoring configuration.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "notification_email",
+        "cpu"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "notification_email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3
+        },
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "threshold_percent",
+            "duration_minutes"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "threshold_percent": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+            },
+            "duration_minutes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
     "vms": {
       "type": "object",
       "minProperties": 5,
