@@ -17,6 +17,12 @@ module "aws_secrets" {
   config = local.config
 }
 
+module "aws_observability" {
+  source = "./modules/aws-observability"
+
+  role_names = module.aws_secrets.role_names
+}
+
 module "aws_vm" {
   source = "./modules/aws-vm"
 
@@ -43,6 +49,13 @@ module "gcp_secrets" {
   source = "./modules/gcp-secrets"
 
   config = local.config
+}
+
+module "gcp_observability" {
+  source = "./modules/gcp-observability"
+
+  config                 = local.config
+  service_account_emails = module.gcp_secrets.service_account_emails
 }
 
 module "gcp_vm" {
