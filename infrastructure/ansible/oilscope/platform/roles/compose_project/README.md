@@ -1,16 +1,19 @@
 # Compose project
 
-Installs the Compose definition for one OilScope workload VM. Each target gets
-only the selected workload's services:
+Installs one selected OilScope Compose definition. Each workload VM receives
+only its own application services:
 
 - `database`: PostgreSQL and the one-shot migration service;
 - `history`: History only;
 - `fetcher`: Fetcher only;
 - `ui`: UI only.
 
+The UI VM also receives the separate `proxy` definition for Traefik.
+
 ## Requirements
 
-The target must have the `deploy` user and group created by the VM bootstrap.
+The target must have the `deploy` user and group created by the
+`oilscope.platform.host_baseline` role.
 The controller must have access to the external project configuration JSON.
 
 ## Role variables
@@ -18,7 +21,7 @@ The controller must have access to the external project configuration JSON.
 - `compose_project_config_path`: required controller-side path to the non-secret
   project configuration JSON.
 - `compose_project_workload`: required workload name: `database`, `history`,
-  `fetcher`, or `ui`.
+  `fetcher`, `ui`, or `proxy`.
 - `compose_project_dir`: installation directory; defaults to `/opt/oilscope/app`.
 - `compose_project_owner` and `compose_project_group`: installed file ownership;
   both default to `deploy`.
@@ -43,19 +46,9 @@ registry authentication are not handled by this role.
 
 The installed file is `/opt/oilscope/app/compose.yaml`.
 
-`compose.deployment.yaml.j2` remains temporarily as input to the legacy
-Terraform cloud-init path. The Ansible role does not install it.
-
-## Test
-
-From the collection directory, render and validate all four definitions with:
-
-```sh
-ansible-playbook \
-  -i roles/compose_project/tests/inventory \
-  roles/compose_project/tests/test.yml \
-  -e project_config_path=/absolute/path/to/project-config.json
-```
+`compose.deployment.yaml.j2` is retained only with the historical workload
+cloud-init implementation. The current Ansible role does not select or install
+it.
 
 ## License
 

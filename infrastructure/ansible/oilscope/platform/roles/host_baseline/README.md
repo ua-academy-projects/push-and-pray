@@ -35,6 +35,3 @@ separate collection roles.
   roles:
     - oilscope.platform.host_baseline
 ```
-
-The production inventory is supplied separately. For an isolated role test,
-provide an external inventory containing a `host_baseline_test` group.
