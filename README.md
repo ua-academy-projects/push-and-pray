@@ -17,9 +17,10 @@ have already been persisted in PostgreSQL.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
 - PostgreSQL-backed UI preferences with a sliding 30-day TTL.
-- Multi-stage Docker images and one Docker Compose project per VM.
+- Multi-stage Docker images and role-specific Docker Compose projects.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
-- Passwordless project-specific SSH access and journald-based container logging.
+- Terraform deployments on AWS and GCP with Ansible-managed workloads and
+  cloud-provider observability.
 
 ## Screenshots
 
@@ -57,6 +58,8 @@ have already been persisted in PostgreSQL.
 | Persistence    | PostgreSQL 18                                 |
 | UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
 | Packaging      | Docker Engine and Docker Compose              |
+| Infrastructure | Terraform, AWS, Google Cloud                  |
+| Automation     | Ansible                                       |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
@@ -120,7 +123,10 @@ scientific data source.
 ├── database/
 │   └── migrations/                 PostgreSQL migrations
 ├── infrastructure/
-│   ├── docker/                     Dockerfiles and per-VM Compose files
+│   ├── ansible/                    Cloud inventory and workload automation
+│   ├── docker/                     Dockerfiles and local Compose files
+│   ├── ssh/                        Example SSH client configuration
+│   ├── terraform/                  AWS and GCP infrastructure modules
 │   └── vagrant/
 │       ├── commands/               Host-side deployment commands
 │       ├── config/                 Vagrant configuration template
@@ -132,6 +138,8 @@ scientific data source.
 │       ├── backend/                Python UI gateway and PostgreSQL sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
+├── project-config.example.json     Non-secret deployment configuration example
+├── project-config.schema.json      Deployment configuration schema
 ├── pyproject.toml                  Python dependencies and tooling
 ├── uv.lock                         Locked Python dependencies
 └── Vagrantfile                     Four-VM QEMU definition
@@ -146,11 +154,11 @@ extension.
 
 ## Docker deployment details
 
-The supported production-style deployment pulls prebuilt GHCR images through
-the `oilscope.platform.compose_project` Ansible role. See
-[the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
-required parent-process environment, the one-command startup, independent VM roles,
-shutdown, and smoke test.
+The supported production-style deployment uses the `oilscope.platform`
+Ansible collection to install one role-specific Compose definition on each
+workload VM and pull prebuilt GHCR images. See
+[the supported Compose deployment guide](docs/supported-compose-deployment.md)
+for the deployment order, secrets flow, and operating commands.
 
 The older role-specific files below remain for the Vagrant development topology:
 
@@ -161,12 +169,11 @@ The older role-specific files below remain for the Vagrant development topology:
 | `compose.fetcher.yaml`  | `petroscope-fetcher`  | `fetcher`  |
 | `compose.ui.yaml`       | `petroscope-ui`       | `ui`       |
 
-Containers on the same VM use their Compose network and service names. Communication
-between VMs uses the configured bridged LAN addresses. PostgreSQL uses a named Docker volume. All containers use `restart: unless-stopped` and the journald
-logging driver.
-
-Journald is limited by provisioning to 200 MB and seven days per VM. Grafana and Loki are
-not part of this project.
+Containers on the same VM use their Compose network and service names.
+Communication between cloud VMs uses their configured private addresses, and
+PostgreSQL uses a named Docker volume. The current Ansible deployment leaves
+Docker's JSON logging enabled so the GCP Ops Agent or AWS CloudWatch Agent can
+collect workload logs. The legacy Vagrant Compose files use journald.
 
 ### Published application images
 

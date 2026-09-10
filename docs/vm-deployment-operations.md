@@ -1,99 +1,99 @@
 # VM deployment operations
 
-This describes operating a workload VM's automated deployment — the
-`oilscope-deploy.service` systemd unit that cloud-init installs, and the
-`run.sh` script it runs. This is the automated path; for manually running
-`compose.deployment.yaml` by hand instead, see
+The current cloud deployment is managed by the `oilscope.platform` Ansible
+collection. Workload VMs do not run an `oilscope-deploy.service`; Terraform
+uses cloud-init only to configure the bastion's SSH port during its first boot.
+
+For the complete deployment sequence, see
 [the supported Compose deployment guide](supported-compose-deployment.md).
 
-Every workload VM runs exactly one role (`database`, `history`, `fetcher`, or
-`ui`), and `oilscope-deploy.service` starts exactly that role's service(s)
-from `/opt/oilscope/deploy/compose.deployment.yaml`. All commands below run
-on the VM itself, over SSH through the bastion.
+## Check application containers
 
-There are two separate things to look at, not one: `oilscope-deploy.service`
-itself (the deploy *attempt* — did `run.sh` finish successfully) and the
-Docker container(s) it started (the *application* — is History/Fetcher/UI/
-Postgres actually running right now). Checking only one gives an incomplete
-picture.
-
-## Checking deployment status
-
-Whether the last deploy attempt succeeded:
+Connect to the required workload VM through the bastion and inspect its Compose
+project:
 
 ```sh
-systemctl status oilscope-deploy.service
+sudo docker compose \
+  --project-name petroscope \
+  --file /opt/oilscope/app/compose.yaml \
+  ps
 ```
 
-`active (exited)` with no error means `run.sh` ran to completion, including
-its own health check, on its last invocation. `failed` means it didn't —
-check the logs below for why. Since this is a `Type=oneshot` unit, it has no
-persistent "running" state between invocations; it only ever reports the
-result of its most recent run.
+The database VM contains `postgres` and the one-shot `migrate` service. The
+other workload VMs contain only their corresponding `history`, `fetcher`, or
+`ui` service.
 
-Whether the actual container(s) for this VM's role are up:
+On the UI VM, Traefik runs as a separate Compose project:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml ps
+sudo docker compose \
+  --project-name oilscope-proxy \
+  --file /opt/oilscope/proxy/compose.yaml \
+  ps
 ```
 
-## Reading deployment logs
+## Read logs
 
-**`run.sh`'s own output** — what the deploy script itself printed (which
-step it was on, any error message) — goes through the systemd journal, not
-Docker:
+Application containers use Docker's default JSON logging. Read a workload's
+local logs with:
 
 ```sh
-journalctl -u oilscope-deploy.service          # full history
-journalctl -u oilscope-deploy.service -f       # follow live
-journalctl -u oilscope-deploy.service --since "1 hour ago"
+sudo docker compose \
+  --project-name petroscope \
+  --file /opt/oilscope/app/compose.yaml \
+  logs --follow
 ```
 
-**The application's own logs** — what History/Fetcher/UI/Postgres printed
-while running — go through Docker's own logging, since
-`compose.deployment.yaml` does not configure a `journald` logging driver.
-Do not look for these in `journalctl`:
+For Traefik logs on the UI VM:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml logs <service>
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml logs -f <service>
+sudo docker compose \
+  --project-name oilscope-proxy \
+  --file /opt/oilscope/proxy/compose.yaml \
+  logs --follow traefik
 ```
 
-Replace `<service>` with whichever this VM's role actually runs
-(`postgres`/`migrate` on the `database` VM, otherwise the role name itself —
-`history`, `fetcher`, or `ui`).
+The GCP Ops Agent and AWS CloudWatch Agent roles collect workload Docker log
+files into the selected cloud's logging service.
 
-## Restarting a role
+## Redeploy
 
-`run.sh` is idempotent and safe to re-run — see the idempotency notes for
-why. To redeploy (for example, after a new `APP_IMAGE_TAG` is published),
-re-run the whole deploy script through systemd rather than calling
-`docker compose` directly:
+Rerun the complete deployment when shared dependencies or several services have
+changed:
 
 ```sh
-sudo systemctl restart oilscope-deploy.service
+ansible-playbook oilscope.platform.deploy_workloads \
+  -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-This re-authenticates to GHCR, re-pulls images, and re-applies the correct
-`up`/`run` sequence for this VM's role — it will only actually recreate a
-container if something about it changed (a newer image, for instance);
-otherwise it's a fast no-op.
-
-## Stopping a role
-
-There is no running process behind `oilscope-deploy.service` to stop — it
-already exited after its last successful run. What you actually want to stop
-is the application container(s) it started:
+For an isolated service change, rerun its playbook after confirming its
+dependencies are healthy:
 
 ```sh
-docker compose -f /opt/oilscope/deploy/compose.deployment.yaml stop <service>
+ansible-playbook oilscope.platform.fetcher \
+  -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-This stops the container(s) without removing them, so a later
-`systemctl restart oilscope-deploy.service` (or a VM reboot) brings them
-back. To also disable automatic restart on the next boot, additionally stop
-and disable the unit itself:
+The Ansible roles pull the configured immutable image, reconcile the service,
+and wait for its health check. No persistent secret environment file is stored
+on the VM.
+
+## Stop services
+
+To stop the application service on a workload VM without deleting its data:
 
 ```sh
-sudo systemctl disable --now oilscope-deploy.service
+sudo docker compose \
+  --project-name petroscope \
+  --file /opt/oilscope/app/compose.yaml \
+  stop
 ```
+
+The database's named volume remains present. Rerunning the corresponding
+Ansible playbook starts the service again.
+
+## Historical cloud-init workflow
+
+The files under `infrastructure/terraform/cloud-init/` document the earlier
+educational workload bootstrap implementation. They are retained for history
+but are not used by the current infrastructure.
