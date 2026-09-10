@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+aws_cloudwatch_agent_package: amazon-cloudwatch-agent
+aws_cloudwatch_agent_package_url: >-
+  https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+aws_cloudwatch_agent_package_path: /var/tmp/amazon-cloudwatch-agent.deb
+aws_cloudwatch_agent_service: amazon-cloudwatch-agent
+aws_cloudwatch_agent_control: >-
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+aws_cloudwatch_agent_config_path: >-
+  /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+aws_cloudwatch_agent_metrics_namespace: OilScope
+aws_cloudwatch_agent_metrics_interval: 60
+aws_cloudwatch_agent_log_retention_days: 30
+aws_cloudwatch_agent_system_log_group: /oilscope/system
+aws_cloudwatch_agent_docker_log_group: /oilscope/docker
+aws_cloudwatch_agent_collect_docker_logs: "{{ 'workloads' in group_names }}"

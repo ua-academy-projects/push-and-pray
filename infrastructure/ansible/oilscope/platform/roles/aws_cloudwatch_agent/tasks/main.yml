@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Gather installed package information
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Download the CloudWatch Agent package
+  ansible.builtin.get_url:
+    url: "{{ aws_cloudwatch_agent_package_url }}"
+    dest: "{{ aws_cloudwatch_agent_package_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: aws_cloudwatch_agent_package not in ansible_facts.packages
+
+- name: Install the CloudWatch Agent package
+  ansible.builtin.apt:
+    deb: "{{ aws_cloudwatch_agent_package_path }}"
+    state: present
+  when:
+    - aws_cloudwatch_agent_package not in ansible_facts.packages
+    - not ansible_check_mode
+
+- name: Remove the CloudWatch Agent package file
+  ansible.builtin.file:
+    path: "{{ aws_cloudwatch_agent_package_path }}"
+    state: absent
+
+- name: Install the CloudWatch Agent configuration
+  ansible.builtin.template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: "{{ aws_cloudwatch_agent_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the CloudWatch Agent configuration
+  when: >-
+    aws_cloudwatch_agent_package in ansible_facts.packages
+    or not ansible_check_mode
+
+- name: Apply CloudWatch Agent configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the CloudWatch Agent
+  ansible.builtin.service:
+    name: "{{ aws_cloudwatch_agent_service }}"
+    enabled: true
+    state: started
+  when: >-
+    aws_cloudwatch_agent_package in ansible_facts.packages
+    or not ansible_check_mode

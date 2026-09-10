@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Gather installed package information
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Download the GCP Ops Agent installer
+  ansible.builtin.get_url:
+    url: "{{ gcp_ops_agent_installer_url }}"
+    dest: "{{ gcp_ops_agent_installer_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: gcp_ops_agent_package not in ansible_facts.packages
+
+- name: Install the GCP Ops Agent
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ gcp_ops_agent_installer_path }}"
+      - --also-install
+      - "--version={{ gcp_ops_agent_version }}"
+  when:
+    - gcp_ops_agent_package not in ansible_facts.packages
+    - not ansible_check_mode
+  changed_when: true
+
+- name: Remove the GCP Ops Agent installer
+  ansible.builtin.file:
+    path: "{{ gcp_ops_agent_installer_path }}"
+    state: absent
+
+- name: Configure Docker log collection
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ gcp_ops_agent_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the GCP Ops Agent
+  when:
+    - gcp_ops_agent_collect_docker_logs | bool
+    - >-
+      gcp_ops_agent_package in ansible_facts.packages
+      or not ansible_check_mode
+
+- name: Enable and start the GCP Ops Agent
+  ansible.builtin.service:
+    name: "{{ gcp_ops_agent_service }}"
+    enabled: true
+    state: started
+  when: >-
+    gcp_ops_agent_package in ansible_facts.packages
+    or not ansible_check_mode

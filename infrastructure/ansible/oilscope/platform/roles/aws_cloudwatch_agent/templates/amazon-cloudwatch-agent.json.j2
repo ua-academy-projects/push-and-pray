@@ -1,0 +1,44 @@
+{
+  "agent": {
+    "metrics_collection_interval": {{ aws_cloudwatch_agent_metrics_interval }},
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "namespace": "{{ aws_cloudwatch_agent_metrics_namespace }}",
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}"
+    },
+    "metrics_collected": {
+      "disk": {
+        "measurement": ["used_percent"],
+        "resources": ["/"],
+        "drop_device": true
+      },
+      "mem": {
+        "measurement": ["used_percent"]
+      }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/syslog",
+            "log_group_name": "{{ aws_cloudwatch_agent_system_log_group }}",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ aws_cloudwatch_agent_log_retention_days }},
+            "timezone": "UTC"
+          }{% if aws_cloudwatch_agent_collect_docker_logs | bool %},
+          {
+            "file_path": "/var/lib/docker/containers/*/*-json.log",
+            "log_group_name": "{{ aws_cloudwatch_agent_docker_log_group }}",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": {{ aws_cloudwatch_agent_log_retention_days }},
+            "timezone": "UTC"
+          }{% endif %}
+        ]
+      }
+    }
+  }
+}

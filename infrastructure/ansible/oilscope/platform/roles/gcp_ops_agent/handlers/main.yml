@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Restart the GCP Ops Agent
+  become: true
+  ansible.builtin.service:
+    name: "{{ gcp_ops_agent_service }}"
+    state: restarted

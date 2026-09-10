@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure AWS observability
+  hosts: aws
+  become: true
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.aws_cloudwatch_agent
