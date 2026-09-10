@@ -197,6 +197,12 @@
           "size": 50
         }
       ],
+      "bootstrap": {
+        "commands": [
+          "apt-get update",
+          "apt-get install -y htop"
+        ]
+      },
       "size": "micro",
       "location": "europe",
       "internal_ip": "10.0.0.5",

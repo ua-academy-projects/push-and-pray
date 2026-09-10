@@ -113,14 +113,16 @@ resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
 resource "aws_instance" "workload" {
   for_each = local.vms
 
-  region                 = var.config.locations[each.value.location].aws.region
-  ami                    = data.aws_ssm_parameter.image[each.key].value
-  instance_type          = var.config.provider_mappings.instance_types[each.value.size].aws.instance_type
-  subnet_id              = (each.value.role == "bastion" || each.value.assign_public_ip) ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
-  private_ip             = each.value.internal_ip
-  vpc_security_group_ids = [var.security_group_ids_by_location[each.value.location][each.value.role]]
-  iam_instance_profile   = aws_iam_instance_profile.workload[each.key].name
-  key_name               = aws_key_pair.bootstrap[each.value.location].key_name
+  region                      = var.config.locations[each.value.location].aws.region
+  ami                         = data.aws_ssm_parameter.image[each.key].value
+  instance_type               = var.config.provider_mappings.instance_types[each.value.size].aws.instance_type
+  subnet_id                   = (each.value.role == "bastion" || each.value.assign_public_ip) ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
+  private_ip                  = each.value.internal_ip
+  vpc_security_group_ids      = [var.security_group_ids_by_location[each.value.location][each.value.role]]
+  iam_instance_profile        = aws_iam_instance_profile.workload[each.key].name
+  key_name                    = aws_key_pair.bootstrap[each.value.location].key_name
+  user_data                   = local.bootstrap_scripts[each.key]
+  user_data_replace_on_change = true
 
   associate_public_ip_address = false
 
@@ -169,8 +171,6 @@ resource "aws_instance" "workload" {
 
     ignore_changes = [
       associate_public_ip_address,
-      user_data,
-      user_data_replace_on_change,
     ]
 
     precondition {

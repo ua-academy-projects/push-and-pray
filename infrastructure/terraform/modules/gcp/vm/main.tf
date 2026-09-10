@@ -37,6 +37,7 @@ resource "google_compute_instance" "workload" {
   machine_type              = var.config.provider_mappings.instance_types[each.value.size].gcp.machine_type
   zone                      = var.config.locations[each.value.location].gcp.zone
   allow_stopping_for_update = true
+  metadata_startup_script   = local.bootstrap_scripts[each.key]
 
   tags   = [var.network_tags_by_location[each.value.location][each.value.role]]
   labels = local.labels_by_vm[each.key]
