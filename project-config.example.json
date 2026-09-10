@@ -56,6 +56,12 @@
     "budget_amount_usd": 1,
     "cpu_threshold_percent": 80
   },
+  "managed_db": {
+    "enabled": false,
+    "tier": { "gcp": "db-f1-micro", "aws": "db.t3.micro" },
+    "version": { "gcp": "POSTGRES_18", "aws": "18" },
+    "disk_size_gb": 10
+  },
   "vms": {
     "bastion": {
       "role": "bastion",

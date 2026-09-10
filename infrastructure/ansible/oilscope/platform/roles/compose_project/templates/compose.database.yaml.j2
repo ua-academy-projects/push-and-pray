@@ -42,7 +42,9 @@ services:
     restart: "no"
     command: ["petroscope-migrate"]
     environment:
-      PGHOST: postgres
+      PGHOST: ${DATABASE_HOST:-postgres}
+      PGSSLMODE: ${DATABASE_SSLMODE:-disable}
+      MIGRATION_SKIP: ${MIGRATION_SKIP:-}
       PGPORT: 5432
       PGUSER: ${POSTGRES_USER:-oil_tracker}
       PGDATABASE: ${POSTGRES_DB:-oil_tracker}

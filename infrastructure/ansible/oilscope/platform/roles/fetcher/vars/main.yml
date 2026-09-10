@@ -8,7 +8,8 @@ fetcher_runtime_environment: >-
       'POSTGRES_PASSWORD': fetcher_postgres_password,
       'POSTGRES_USER': fetcher_postgres_user,
       'POSTGRES_DB': fetcher_postgres_name,
-      'DATABASE_HOST': fetcher_database_host,
+      'DATABASE_HOST': (managed_db_host if (managed_db_enabled | bool) else fetcher_database_host),
+      'DATABASE_SSLMODE': ('require' if (managed_db_enabled | bool) else 'disable'),
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string

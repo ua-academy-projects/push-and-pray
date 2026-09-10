@@ -70,3 +70,10 @@ output "workload_secret_access" {
     name => sort(distinct(values(workload.secret_mappings)))
   }
 }
+
+output "managed_db_private_ip" {
+  value = try(coalesce(
+    try(module.gcp_vm.managed_db_private_ip, null),
+    try(module.aws_vm.managed_db_private_ip, null),
+  ), null)
+}

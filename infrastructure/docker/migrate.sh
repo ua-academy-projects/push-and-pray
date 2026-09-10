@@ -25,8 +25,19 @@ do
     sleep 2
 done
 
+MIGRATION_SKIP="${MIGRATION_SKIP:-}"
+
 for migration in /opt/petroscope/migrations/*.sql; do
-    echo "Applying $(basename "${migration}")"
+    base="$(basename "${migration}")"
+
+    case " ${MIGRATION_SKIP} " in
+        *" ${base} "*)
+            echo "Skipping ${base}"
+            continue
+            ;;
+    esac
+
+    echo "Applying ${base}"
 
     psql \
         --host="${PGHOST}" \
@@ -36,5 +47,4 @@ for migration in /opt/petroscope/migrations/*.sql; do
         --set=ON_ERROR_STOP=1 \
         --file="${migration}"
 done
-
 echo "Database migrations completed successfully"

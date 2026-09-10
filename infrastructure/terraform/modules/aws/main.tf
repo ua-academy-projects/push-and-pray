@@ -63,3 +63,15 @@ module "monitoring" {
   has_selected_vms = local.has_selected_vms
   instance_ids     = module.vm.ids
 }
+
+module "rds" {
+  source = "./rds"
+
+  config                = var.config
+  has_selected_vms      = local.has_selected_vms
+  vpc_id                = module.network.vpc_id
+  database_subnet_ids   = module.network.database_subnet_ids
+  db_password_secret_id = try(module.secrets.secret_arns[local.db_password_secret_id], null)
+
+  depends_on = [module.network, module.secrets]
+}

@@ -25,3 +25,7 @@ output "secret_ids" {
 output "secret_resource_names" {
   value = module.secrets.secret_resource_names
 }
+
+output "managed_db_private_ip" {
+  value = module.cloud_sql.private_ip
+}

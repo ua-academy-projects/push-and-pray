@@ -21,3 +21,7 @@ output "iam_role_arns" {
 output "iam_role_names" {
     value = module.iam.iam_role_names
 }
+
+output "managed_db_private_ip" {
+  value = module.rds.endpoint
+}

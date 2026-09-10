@@ -18,7 +18,8 @@
   changed_when: >-
     'Downloaded newer image' in database_image_pull.stdout or
     'Pull complete' in database_image_pull.stdout
-
+  when: not (managed_db_enabled | bool)
+  
 - name: Start the PostgreSQL service
   ansible.builtin.command:
     argv:
@@ -41,6 +42,7 @@
     'Started' in database_compose_up.stderr or
     'Recreated' in database_compose_up.stderr
   no_log: true
+  when: not (managed_db_enabled | bool)
 
 - name: Get the PostgreSQL container ID
   ansible.builtin.command:
@@ -61,6 +63,7 @@
   changed_when: false
   failed_when: database_container.stdout | trim | length == 0
   no_log: true
+  when: not (managed_db_enabled | bool)
 
 - name: Wait for PostgreSQL to become healthy
   ansible.builtin.command:
@@ -75,6 +78,7 @@
   retries: "{{ database_health_retries }}"
   delay: "{{ database_health_delay }}"
   until: database_health.stdout | trim == 'healthy'
+  when: not (managed_db_enabled | bool)
 
 - name: Apply database migrations
   ansible.builtin.command:
@@ -95,3 +99,4 @@
   register: database_migrations
   changed_when: "'Applying ' in database_migrations.stdout"
   no_log: true
+  

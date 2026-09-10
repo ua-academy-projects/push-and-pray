@@ -176,6 +176,25 @@
         }
       }
     },
+   "managed_db": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "tier", "version", "disk_size_gb"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "tier": { "$ref": "#/$defs/cloud_values" },
+        "version": { "$ref": "#/$defs/cloud_values" },
+        "disk_size_gb": { "type": "integer", "minimum": 10 },
+        "db_name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "db_user": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      }
+    },
     "vms": {
       "type": "object",
       "propertyNames": {

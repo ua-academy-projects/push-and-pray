@@ -4,7 +4,8 @@
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    DATABASE_HOST: "{{ managed_db_host if (managed_db_enabled | bool) else hostvars[groups['database'][0]].internal_ip }}"
+    DATABASE_SSLMODE: "{{ 'require' if (managed_db_enabled | bool) else 'disable' }}"
   no_log: true
   block:
     - name: Pull the History image

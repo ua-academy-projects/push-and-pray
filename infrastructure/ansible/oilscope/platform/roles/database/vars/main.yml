@@ -10,5 +10,8 @@ database_runtime_environment: >-
       'POSTGRES_DB': database_postgres_name,
       'DATABASE_BIND_ADDRESS': database_bind_address | string,
       'DATABASE_HOST_PORT': database_host_port | string
+      'DATABASE_HOST': (managed_db_host if (managed_db_enabled | bool) else 'postgres'),
+      'DATABASE_SSLMODE': ('require' if (managed_db_enabled | bool) else 'disable'),
+      'MIGRATION_SKIP': ('004_create_pgmq_queue.sql' if (managed_db_enabled | bool) else '')
     })
   }}

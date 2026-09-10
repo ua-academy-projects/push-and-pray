@@ -61,3 +61,14 @@ module "monitoring" {
   has_selected_vms = local.has_selected_vms
   instance_ids = module.vm.ids
 }
+
+module "cloud_sql" {
+  source = "./cloud_sql"
+
+  config = var.config
+  has_selected_vms = local.has_selected_vms
+  network_self_link = module.network.network_self_link
+  db_password_secret_id = try(module.secrets.secret_resource_names[local.db_password_secret_id], null)
+
+  depends_on = [module.network, module.secrets]
+}
