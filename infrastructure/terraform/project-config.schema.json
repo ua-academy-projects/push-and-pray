@@ -189,15 +189,27 @@
     "vm_defaults": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["image", "disk_type", "data_disk_size_gb"],
+      "required": ["image", "disk_type"],
       "properties": {
         "image": {
           "$ref": "#/$defs/logical_name"
         },
         "disk_type": {
-          "$ref": "#/$defs/disk_type"
+          "$ref": "#/$defs/disk_type",
+          "description": "Default abstract disk type for VM boot disks."
+        }
+      }
+    },
+    "data_disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size"],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/disk_type",
+          "default": "standard"
         },
-        "data_disk_size_gb": {
+        "size": {
           "type": "integer",
           "minimum": 1
         }
@@ -420,15 +432,21 @@
           "$ref": "#/$defs/logical_name"
         },
         "disk_type": {
-          "$ref": "#/$defs/disk_type"
+          "$ref": "#/$defs/disk_type",
+          "description": "Abstract disk type for the VM boot disk."
         },
         "disk_size": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Size in GiB for the VM boot disk."
         },
         "disks": {
-          "type": "integer",
-          "minimum": 1
+          "type": "array",
+          "description": "Optional additional data disks attached to the VM.",
+          "items": {
+            "$ref": "#/$defs/data_disk"
+          },
+          "default": []
         },
         "size": {
           "type": "string",

@@ -132,6 +132,24 @@ resource "aws_instance" "workload" {
     tags                  = local.labels_by_vm[each.key]
   }
 
+  dynamic "ebs_block_device" {
+    for_each = each.value.disks
+
+    content {
+      delete_on_termination = true
+      device_name           = "/dev/sd${substr("fghijklmnopqrstuvwxyz", ebs_block_device.key, 1)}"
+      encrypted             = true
+      volume_size           = ebs_block_device.value.size
+      volume_type           = var.config.provider_mappings.disk_types[ebs_block_device.value.type].aws
+      tags = merge(
+        local.labels_by_vm[each.key],
+        {
+          Name = "${local.resource_prefix}-${each.key}-data-${ebs_block_device.key + 1}"
+        },
+      )
+    }
+  }
+
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required"
@@ -160,31 +178,6 @@ resource "aws_instance" "workload" {
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }
-}
-
-resource "aws_ebs_volume" "data" {
-  for_each = local.data_disks
-
-  region            = var.config.locations[each.value.location].aws.region
-  availability_zone = var.config.locations[each.value.location].aws.availability_zone
-  size              = each.value.disk_size
-  type              = var.config.provider_mappings.disk_types[each.value.disk_type].aws
-  encrypted         = true
-  tags = merge(
-    local.labels_by_vm[each.value.vm_name],
-    {
-      Name = "${local.resource_prefix}-${each.key}"
-    },
-  )
-}
-
-resource "aws_volume_attachment" "data" {
-  for_each = local.data_disks
-
-  region      = var.config.locations[each.value.location].aws.region
-  device_name = format("/dev/sd%c", each.value.disk_index + 101)
-  volume_id   = aws_ebs_volume.data[each.key].id
-  instance_id = aws_instance.workload[each.value.vm_name].id
 }
 
 resource "aws_eip" "public" {

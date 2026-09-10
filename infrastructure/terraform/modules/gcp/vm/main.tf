@@ -52,6 +52,15 @@ resource "google_compute_instance" "workload" {
     }
   }
 
+  dynamic "attached_disk" {
+    for_each = each.value.disks
+
+    content {
+      source      = google_compute_disk.data["${each.key}-data-${attached_disk.key + 1}"].id
+      device_name = "${each.key}-data-${attached_disk.key + 1}"
+    }
+  }
+
   network_interface {
     subnetwork = each.value.role == "bastion" ? var.management_subnet_ids[each.value.location] : var.workload_subnet_ids[each.value.location]
     network_ip = each.value.internal_ip
@@ -100,13 +109,4 @@ resource "google_compute_disk" "data" {
   zone   = var.config.locations[each.value.location].gcp.zone
   size   = each.value.disk_size
   labels = local.labels_by_vm[each.value.vm_name]
-}
-
-resource "google_compute_attached_disk" "data" {
-  for_each = local.data_disks
-
-  disk        = google_compute_disk.data[each.key].id
-  instance    = google_compute_instance.workload[each.value.vm_name].id
-  zone        = var.config.locations[each.value.location].gcp.zone
-  device_name = each.key
 }

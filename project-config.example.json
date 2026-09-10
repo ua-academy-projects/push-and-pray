@@ -11,8 +11,7 @@
   "default_location": "europe",
   "vm_defaults": {
     "image": "ubuntu-24.04",
-    "disk_type": "standard",
-    "data_disk_size_gb": 10
+    "disk_type": "standard"
   },
   "clouds": {
     "gcp": {
@@ -188,9 +187,16 @@
     "ui": {
       "role": "ui",
       "cloud": "aws",
-      "disks": 2,
-      "disk_type": "balanced",
-      "disk_size": 20,
+      "disks": [
+        {
+          "type": "balanced",
+          "size": 20
+        },
+        {
+          "type": "ssd",
+          "size": 50
+        }
+      ],
       "size": "micro",
       "location": "europe",
       "internal_ip": "10.0.0.5",
