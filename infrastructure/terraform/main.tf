@@ -45,3 +45,10 @@ module "aws_monitoring" {
   config = local.config
   vms    = module.aws_vm.vms
 }
+
+module "gcp_monitoring" {
+  source = "./modules/gcp/monitoring"
+
+  config = local.config
+  vms    = module.gcp_vm.vms
+}

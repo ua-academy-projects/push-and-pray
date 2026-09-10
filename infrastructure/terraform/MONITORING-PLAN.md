@@ -1,6 +1,6 @@
 # Terraform cloud monitoring implementation plan
 
-Status: the AWS monitoring module is now implemented locally; see [its README](modules/aws/monitoring/README.md) for the actual interface, defaults, tests, and deployment limits. No infrastructure was applied. The remaining sections retain the broader AWS/GCP design; their illustrative code is not the authoritative implemented interface.
+Status: AWS and GCP monitoring modules are implemented locally. See the [AWS README](modules/aws/monitoring/README.md) and [GCP README](modules/gcp/monitoring/README.md) for their actual interfaces, defaults, tests, and deployment limits. Agent installation and budgets remain separate work. No infrastructure was applied. The remaining sections retain the broader AWS/GCP design; their illustrative code is not the authoritative implemented interface.
 Implement AWS and GCP monitoring through Terraform and the existing deployment system.
 Console resource-creation walkthroughs have been removed. Existing resources must be inventoried and imported where appropriate.
 
