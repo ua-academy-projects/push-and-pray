@@ -1,5 +1,0 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
----
-ansible_port: >-
-  {{ lookup('ansible.builtin.env', 'OILSCOPE_BASTION_CONNECT_PORT')
-     | default(bastion_ssh_port, true) | int }}

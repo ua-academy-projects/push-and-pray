@@ -285,11 +285,13 @@ class InventoryModule(BaseInventoryPlugin):
 
             if is_bastion:
                 try:
-                    host_variables["bastion_ssh_port"] = int(vm["ssh_port"])
+                    bastion_ssh_port = int(vm["ssh_port"])
                 except (KeyError, TypeError, ValueError) as error:
                     raise AnsibleParserError(
                         f"bastion VM {name!r} must define an integer ssh_port"
                     ) from error
+                host_variables["ansible_port"] = bastion_ssh_port
+                host_variables["bastion_ssh_port"] = bastion_ssh_port
             else:
                 host_variables["ansible_port"] = 22
 

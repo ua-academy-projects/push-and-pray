@@ -6,9 +6,9 @@ variable "config" {
 variable "networks" {
   description = "AWS network identifiers keyed by logical location."
   type = map(object({
-    region               = string
-    management_subnet_id = string
-    workload_subnet_id   = string
+    region            = string
+    public_subnet_id  = string
+    private_subnet_id = string
   }))
 }
 

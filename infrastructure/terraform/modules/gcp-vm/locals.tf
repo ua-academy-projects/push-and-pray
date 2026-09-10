@@ -25,6 +25,10 @@ locals {
       zone         = var.config.locations[vm.location].gcp.zone
       machine_type = var.config.machine_types[vm.machine_type].gcp
       image        = var.config.images[vm.image].gcp
+      cloud_init = contains(vm.tags, "bastion") ? templatefile(
+        "${path.root}/templates/bastion-cloud-config.yaml.tftpl",
+        { ssh_port = vm.ssh_port },
+      ) : null
       boot_disk = merge(vm.boot_disk, {
         type = var.config.disk_types[vm.boot_disk.disk_type].gcp.type
         iops = try(

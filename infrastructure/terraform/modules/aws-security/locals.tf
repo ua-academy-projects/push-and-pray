@@ -43,14 +43,12 @@ locals {
   bastion_ssh_rules = {
     for rule in flatten([
       for location, vm in local.bastions : [
-        for index, cidr in vm.allowed_cidrs : [
-          for port in toset([22, vm.ssh_port]) : {
-            key      = "${location}/${index}/${port}"
-            location = location
-            cidr     = cidr
-            port     = port
-          }
-        ]
+        for index, cidr in vm.allowed_cidrs : {
+          key      = "${location}/${index}/${vm.ssh_port}"
+          location = location
+          cidr     = cidr
+          port     = vm.ssh_port
+        }
       ]
     ]) : rule.key => rule
   }

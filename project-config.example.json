@@ -18,8 +18,8 @@
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
-    "management_subnet_cidr": "10.0.0.0/29",
-    "workload_subnet_cidr": "10.0.1.0/26",
+    "public_subnet_cidr": "10.0.0.0/24",
+    "private_subnet_cidr": "10.0.1.0/26",
     "ui_public_ports": [80, 443]
   },
   "service_ports": {
@@ -104,7 +104,7 @@
     "ui": {
       "machine_type": "micro",
       "image": "ubuntu_2604",
-      "internal_ip": "10.0.1.13",
+      "internal_ip": "10.0.0.13",
       "boot_disk": {
         "size_gb": 10,
         "disk_type": "general_purpose"

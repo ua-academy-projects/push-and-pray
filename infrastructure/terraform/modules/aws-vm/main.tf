@@ -21,12 +21,13 @@ resource "aws_instance" "this" {
   region                      = each.value.region
   ami                         = data.aws_ssm_parameter.image[each.key].value
   instance_type               = each.value.machine_type
-  subnet_id                   = contains(each.value.tags, "bastion") ? var.networks[each.value.location].management_subnet_id : var.networks[each.value.location].workload_subnet_id
+  subnet_id                   = each.value.assign_public_ip ? var.networks[each.value.location].public_subnet_id : var.networks[each.value.location].private_subnet_id
   private_ip                  = each.value.internal_ip
   vpc_security_group_ids      = [for tag in each.value.tags : var.security_group_ids[each.value.location][tag]]
-  associate_public_ip_address = false
   iam_instance_profile        = var.instance_profiles[each.key]
   key_name                    = aws_key_pair.bootstrap[each.value.location].key_name
+  user_data                   = each.value.cloud_init
+  user_data_replace_on_change = each.value.cloud_init != null
 
   root_block_device {
     volume_size           = each.value.boot_disk.size_gb

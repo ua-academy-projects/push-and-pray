@@ -73,22 +73,19 @@
       "additionalProperties": false,
       "required": [
         "vpc_cidr",
-        "management_subnet_cidr",
-        "workload_subnet_cidr",
+        "public_subnet_cidr",
+        "private_subnet_cidr",
         "ui_public_ports"
       ],
       "properties": {
         "vpc_cidr": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/ipv4_cidr"
         },
-        "management_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
+        "public_subnet_cidr": {
+          "$ref": "#/$defs/ipv4_cidr"
         },
-        "workload_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
+        "private_subnet_cidr": {
+          "$ref": "#/$defs/ipv4_cidr"
         },
         "ui_public_ports": {
           "type": "array",
@@ -166,6 +163,14 @@
     }
   },
   "$defs": {
+    "ipv4_address": {
+      "type": "string",
+      "format": "ipv4"
+    },
+    "ipv4_cidr": {
+      "type": "string",
+      "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/(?:[0-9]|[12][0-9]|3[0-2])$"
+    },
     "cloud_settings": {
       "type": "object",
       "additionalProperties": false,
@@ -497,8 +502,7 @@
           "enum": ["ubuntu_2404", "ubuntu_2604"]
         },
         "internal_ip": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/ipv4_address"
         },
         "boot_disk": {
           "$ref": "#/$defs/boot_disk"
@@ -528,8 +532,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/$defs/ipv4_cidr"
           }
         },
         "public_endpoint": {

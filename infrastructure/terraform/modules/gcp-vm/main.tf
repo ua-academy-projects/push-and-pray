@@ -8,6 +8,12 @@ resource "google_compute_address" "public" {
   labels = each.value.labels
 }
 
+resource "terraform_data" "cloud_init" {
+  for_each = local.vms
+
+  input = each.value.cloud_init
+}
+
 resource "google_compute_disk" "data" {
   for_each = local.data_disks
 
@@ -55,7 +61,7 @@ resource "google_compute_instance" "this" {
   }
 
   network_interface {
-    subnetwork = contains(each.value.tags, "bastion") ? var.networks[each.value.location].management_subnet_id : var.networks[each.value.location].workload_subnet_id
+    subnetwork = each.value.assign_public_ip ? var.networks[each.value.location].public_subnet_id : var.networks[each.value.location].private_subnet_id
     network_ip = each.value.internal_ip
 
     dynamic "access_config" {
@@ -78,11 +84,20 @@ resource "google_compute_instance" "this" {
     scopes = ["cloud-platform"]
   }
 
-  metadata = {
-    "enable-oslogin" = "FALSE"
-    "ssh-keys" = join("\n", [
-      for username, public_key in var.config.ssh_users :
-      "${username}:${trimspace(public_key)}"
-    ])
+  metadata = merge(
+    {
+      "enable-oslogin" = "FALSE"
+      "ssh-keys" = join("\n", [
+        for username, public_key in var.config.ssh_users :
+        "${username}:${trimspace(public_key)}"
+      ])
+    },
+    each.value.cloud_init == null ? {} : {
+      "user-data" = each.value.cloud_init
+    },
+  )
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.cloud_init[each.key].output]
   }
 }

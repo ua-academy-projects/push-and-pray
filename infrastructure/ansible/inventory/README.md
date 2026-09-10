@@ -105,8 +105,8 @@ Every discovered host receives:
 | `oilscope_tags` | functional tags from the VM definition |
 | `oilscope_vm_name` | VM key from the `vms` object |
 
-For a bastion, `ansible_host` is its public address and
-`bastion_ssh_port` comes from its VM definition. Other VMs use their internal
+For a bastion, `ansible_host` is its public address and both `ansible_port` and
+`bastion_ssh_port` come from its VM definition. Other VMs use their internal
 address and port 22.
 
 ## SSH routing
@@ -123,19 +123,10 @@ the controller-to-bastion and bastion-to-workload connections:
 export OILSCOPE_SSH_KEY="$HOME/.ssh/google_compute_engine"
 ```
 
-Workload connections use the host in the `bastion` group as an SSH proxy. The
-bastion's final custom port is used normally. A new bastion initially listens
-on port 22, so bootstrap it with:
-
-```sh
-export OILSCOPE_BASTION_CONNECT_PORT=22
-ansible-playbook oilscope.platform.bootstrap_bastion \
-  -i infrastructure/ansible/inventory/oilscope.yml
-unset OILSCOPE_BASTION_CONNECT_PORT
-```
-
-Terraform allows both port 22 and the configured bastion port, so this does not
-require a second Terraform apply. Ansible changes `sshd` to the configured port.
+Workload connections use the host in the `bastion` group as an SSH proxy.
+Terraform supplies cloud-init user data that configures the bastion's custom
+SSH port during its first boot, and the cloud firewall permits only that port.
+No separate bastion bootstrap playbook or temporary port override is required.
 
 Inventory discovery does not provide cross-cloud routing. For application
 deployment, the bastion and its private workloads must be mutually reachable.

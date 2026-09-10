@@ -6,6 +6,10 @@ services:
     restart: unless-stopped
     init: true
     command:
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
       - "--entrypoints.websecure.address=:443"
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=false"
@@ -17,6 +21,7 @@ services:
       - "--ping=true"
       - "--log.level=INFO"
     ports:
+      - "80:80"
       - "443:443"
     volumes:
       - "{{ compose_project_dir }}/dynamic:/etc/traefik/dynamic:ro"

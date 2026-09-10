@@ -1,0 +1,22 @@
+#cloud-config
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-oilscope-bastion.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      # Managed by Terraform cloud-init.
+      Port ${ssh_port}
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitEmptyPasswords no
+      PermitRootLogin no
+      AllowTcpForwarding yes
+      AllowAgentForwarding no
+      GatewayPorts no
+      X11Forwarding no
+      PermitTunnel no
+runcmd:
+  - [/usr/sbin/sshd, -t]
+  - [systemctl, daemon-reload]
+  - [sh, -c, "if systemctl is-active --quiet ssh.socket; then systemctl restart ssh.socket; else systemctl restart ssh.service; fi"]

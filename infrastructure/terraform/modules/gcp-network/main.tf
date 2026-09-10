@@ -6,22 +6,22 @@ resource "google_compute_network" "this" {
   routing_mode            = "REGIONAL"
 }
 
-resource "google_compute_subnetwork" "management" {
+resource "google_compute_subnetwork" "public" {
   for_each = local.placements
 
-  name          = "${local.context.resource_prefix}-${each.key}-management"
+  name          = "${local.context.resource_prefix}-${each.key}-public"
   region        = each.value.region
   network       = google_compute_network.this[each.key].id
-  ip_cidr_range = var.config.network.management_subnet_cidr
+  ip_cidr_range = var.config.network.public_subnet_cidr
 }
 
-resource "google_compute_subnetwork" "workload" {
+resource "google_compute_subnetwork" "private" {
   for_each = local.placements
 
-  name                     = "${local.context.resource_prefix}-${each.key}-workload"
+  name                     = "${local.context.resource_prefix}-${each.key}-private"
   region                   = each.value.region
   network                  = google_compute_network.this[each.key].id
-  ip_cidr_range            = var.config.network.workload_subnet_cidr
+  ip_cidr_range            = var.config.network.private_subnet_cidr
   private_ip_google_access = true
 }
 
@@ -43,7 +43,7 @@ resource "google_compute_router_nat" "this" {
   source_subnetwork_ip_ranges_to_nat = "LIST_OF_SUBNETWORKS"
 
   subnetwork {
-    name                    = google_compute_subnetwork.workload[each.key].id
+    name                    = google_compute_subnetwork.private[each.key].id
     source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
   }
 }

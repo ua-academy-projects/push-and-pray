@@ -6,8 +6,8 @@ variable "config" {
 variable "networks" {
   description = "GCP network identifiers keyed by logical location."
   type = map(object({
-    management_subnet_id = string
-    workload_subnet_id   = string
+    public_subnet_id  = string
+    private_subnet_id = string
   }))
 }
 
