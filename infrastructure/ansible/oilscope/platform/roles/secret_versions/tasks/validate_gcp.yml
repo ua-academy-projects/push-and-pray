@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Verify the GCP secret container
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_gcloud }}"
+      - secrets
+      - describe
+      - "{{ secret_versions_target.secret_id }}"
+      - "--project={{ secret_versions_target.scope }}"
+      - --format=value(name)
+  changed_when: false
+  check_mode: false

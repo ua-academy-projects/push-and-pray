@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Add the GCP secret version
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_gcloud }}"
+      - secrets
+      - versions
+      - add
+      - "{{ secret_versions_target.secret_id }}"
+      - "--project={{ secret_versions_target.scope }}"
+      - --data-file=-
+      - --format=value(name)
+    stdin: "{{ lookup('ansible.builtin.env', secret_versions_target.variable) }}"
+    stdin_add_newline: false
+  register: secret_versions_uploaded
+  changed_when: true
+  no_log: true
+
+- name: Report the GCP secret version
+  ansible.builtin.debug:
+    msg: >-
+      {{ secret_versions_target.key }} version
+      {{ secret_versions_uploaded.stdout | trim | regex_replace('^.*/', '') }} added

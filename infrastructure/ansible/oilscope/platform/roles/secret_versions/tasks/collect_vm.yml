@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Add VM secrets to the target catalog
+  ansible.builtin.set_fact:
+    secret_versions_target_map: >-
+      {{ secret_versions_target_map | combine({
+           secret_versions_target_key: {
+             'key': secret_versions_target_key,
+             'cloud': secret_versions_vm_cloud,
+             'scope': secret_versions_target_scope,
+             'secret_id': secret_versions_secret_id,
+             'read_by': (
+               secret_versions_target_map
+               .get(secret_versions_target_key, {})
+               .get('read_by', []) + [secret_versions_vm.key]
+             ) | unique | sort | list
+           }
+         }) }}
+  loop: >-
+    {{ secret_versions_vm.value.secret_mappings | default({})
+       | dict2items | map(attribute='value') | unique | sort | list }}
+  loop_control:
+    loop_var: secret_versions_secret_id
+    label: "{{ secret_versions_secret_id }}"
+  vars:
+    secret_versions_vm_cloud: >-
+      {{ secret_versions_vm.value.cloud
+         | default(secret_versions_config.default_cloud) }}
+    secret_versions_vm_location: >-
+      {{ secret_versions_vm.value.location
+         | default(secret_versions_config.default_location) }}
+    secret_versions_target_scope: >-
+      {{ secret_versions_gcp_project_id
+         | default(secret_versions_config.cloud_settings.gcp.project_id, true)
+         if secret_versions_vm_cloud == 'gcp'
+         else secret_versions_config.locations[secret_versions_vm_location].aws.region }}
+    secret_versions_target_key: >-
+      {{ secret_versions_vm_cloud ~ '/' ~ secret_versions_target_scope
+         ~ '/' ~ secret_versions_secret_id }}

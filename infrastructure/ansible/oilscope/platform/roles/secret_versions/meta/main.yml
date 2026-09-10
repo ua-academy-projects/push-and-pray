@@ -2,10 +2,11 @@
 ---
 galaxy_info:
   author: Push and Pray team
-  description: Add Secret Manager versions from the operator's environment
+  description: Add AWS and GCP secret versions from the operator's environment
   license: GPL-2.0-or-later
   min_ansible_version: "2.16"
   galaxy_tags:
+    - aws
     - gcp
     - secrets
     - security

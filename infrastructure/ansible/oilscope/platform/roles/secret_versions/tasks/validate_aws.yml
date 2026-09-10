@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Verify the AWS secret container
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_python }}"
+      - -c
+      - >-
+        import boto3, sys;
+        client = boto3.client('secretsmanager', region_name=sys.argv[1]);
+        client.describe_secret(SecretId=sys.argv[2])
+      - "{{ secret_versions_target.scope }}"
+      - "{{ secret_versions_target.secret_id }}"
+  changed_when: false
+  check_mode: false

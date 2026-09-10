@@ -1,220 +1,126 @@
 # Secrets
 
-Deployment credentials live in Google Secret Manager. Terraform creates the
-containers and decides who may read them; it never sees, stores or transports a
-value.
+Application credentials live in the secret manager of the cloud where each VM
+runs. Terraform manages containers and workload access; Ansible manages values
+and retrieves them during deployment. Secret values never pass through
+Terraform configuration, plans, or state.
 
-## Where the catalog comes from
+## Configuration model
 
-There is no hand-written list of secrets. Every container is derived from
-`secret_mappings` in the project configuration JSON:
+Each VM declares the application variable name and secret container ID:
 
 ```json
-"vms": {
-  "history": {
-    "role": "history",
-    "secret_mappings": {
-      "DB_PASSWORD_HISTORY": "oilscope-dev-db-password-history"
-    }
-  }
+"secret_mappings": {
+  "POSTGRES_PASSWORD": "db-password",
+  "GHCR_TOKEN": "ghcr-token"
 }
 ```
 
-The key is the environment variable the application expects; the value is the
-Secret Manager container ID. Both halves are non-secret, which is why the whole
-mapping can live in a file the repository reads.
+Both strings are identifiers, not secrets. The key is the variable consumed by
+the application on that VM. The value is the container ID in AWS Secrets
+Manager or Google Secret Manager.
 
-`infrastructure/terraform/secrets.tf` flattens those maps into the set of
-containers to create, and into the list of (workload, secret) pairs to grant.
-Giving a workload a new secret is a one-line change to that JSON — the
-container, the grant and the environment-variable name all follow from it.
+Terraform derives the containers and least-privilege read grants from this
+mapping. The same container ID may be shared by several VMs in one provider
+scope. AWS containers are regional, so the effective VM location determines the
+region; GCP containers are scoped to `cloud_settings.gcp.project_id`.
 
-The same derivation is what makes the access rule enforceable: a workload can
-only be granted a secret that is written next to its own name.
+## Responsibilities
 
-## What Terraform does, and what it deliberately does not
-
-| Terraform | |
+| Component | Responsibility |
 | --- | --- |
-| creates | `google_secret_manager_secret` — the container, automatic replication, project labels |
-| creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretAccessor` binding per (workload, secret) pair |
-| never creates | `google_secret_manager_secret_version` — the payload |
+| Terraform AWS secrets module | Create regional containers, EC2 roles and instance profiles, and `GetSecretValue` policies |
+| Terraform GCP secrets module | Create project containers and VM service accounts, and grant secret accessor membership |
+| `secret_versions` Ansible role | Upload versions from the operator environment to every required cloud and scope |
+| `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
 
-The last row is the whole point. A secret value passed into Terraform ends up in
-three places you cannot fully control: the configuration file, the plan file, and
-the state file. State lives in a bucket, plans get attached to pull requests, and
-neither is a place for a credential. So versions are added out of band and
-Terraform is told nothing about them.
+Terraform deliberately creates no secret versions. A value supplied to
+Terraform can be retained in state and plan artifacts, so values stay in the
+Ansible workflow.
 
-`google_secret_manager_secret_iam_member` is used rather than
-`..._iam_binding`. The `_binding` form is authoritative for the whole role on
-that secret: it silently removes any grant made outside Terraform. `_member` adds
-one principal and leaves the rest of the policy alone.
+## Uploading values
 
-## Who can read what
+The upload role derives its source variable from the container ID by converting
+it to upper case and replacing non-alphanumeric characters with underscores:
 
-The access map is an output, so it can be checked without reading any Terraform:
+```text
+db-password      -> DB_PASSWORD
+ghcr-token       -> GHCR_TOKEN
+external-api-key -> EXTERNAL_API_KEY
+```
+
+One source value is uploaded to every cloud/scope target that references that
+container ID. Use different container IDs when different clouds or workloads
+must receive different values.
+
+The controller needs both provider toolchains when the configuration contains
+both clouds:
+
+- AWS: boto3 in Ansible's Python and normal AWS credential resolution, such as
+  `AWS_PROFILE`.
+- GCP: an authenticated `gcloud` session.
+
+The operator also needs permission to describe containers and add versions.
+Terraform's workload-reader policies do not grant operator upload access.
+
+Run from the repository root:
 
 ```bash
-terraform output workload_secret_access
-```
-
-```
-{
-  "fetcher" = ["oilscope-dev-db-password-fetcher", "oilscope-dev-oilpriceapi-key"]
-  "history" = ["oilscope-dev-db-password-history"]
-  ...
-}
-```
-
-Each workload VM runs as its own service account and is granted only the secrets
-listed against it. There is no project-wide `secretAccessor` binding, so a
-compromised VM reaches its own credentials and nothing else. This is also why the
-database passwords are separate secrets rather than one shared value: a single
-password would hand every workload the same blast radius.
-
-`terraform output secret_ids` lists the containers, and
-`terraform output secret_resource_names` gives their fully qualified names.
-None of the three outputs exposes a value.
-
-## Storing a value
-
-Values are written with `gcloud`, from a pipe, never from a command-line
-argument — arguments are visible in `ps` output and land in shell history:
-
-```bash
-printf '%s' "${DB_PASSWORD_HISTORY}" \
-  | gcloud secrets versions add oilscope-dev-db-password-history \
-      --project="${GOOGLE_PROJECT}" --data-file=-
-```
-
-Note `printf` rather than `echo`: `echo` appends a newline, which becomes part of
-the stored value and then fails an exact comparison somewhere far away from here.
-
-Which environment variable the *application* reads is not a convention to
-remember: it is the key side of `secret_mappings`. It is scoped to one VM
-though, so it is not the variable you export when uploading — see
-[Uploading every value at once](#uploading-every-value-at-once).
-
-Generate database passwords with `openssl rand -hex 32`. `-hex` rather than
-`-base64`, because base64 contains `+` and `/`, which have to be percent-encoded
-inside a `postgres://` URL and break it if they are not.
-
-Adding versions requires the operator to already have sufficient permission in
-the GCP project, such as `roles/secretmanager.secretVersionAdder`. Terraform does
-not manage operator permissions. Workload service accounts receive only
-`secretAccessor`, and only for the secrets assigned to them.
-
-## Uploading every value at once
-
-Doing that by hand for every secret is where a value eventually ends up in the
-wrong place. The `oilscope.platform.secret_versions` role does the whole
-catalog in one pass, taking each value from the environment of the operator who
-runs it. It targets `localhost`: this is an operator task against the Google
-API, not host configuration.
-
-```bash
- export DB_PASSWORD_ADMIN="$(openssl rand -hex 32)"
- export DB_PASSWORD_FETCHER="$(openssl rand -hex 32)"
- export DB_PASSWORD_HISTORY="$(openssl rand -hex 32)"
- export DB_PASSWORD_UI="$(openssl rand -hex 32)"
- export OILPRICEAPI_KEY="..."
+export DB_PASSWORD="$(openssl rand -hex 32)"
+export GHCR_TOKEN="..."
+export EXTERNAL_API_KEY="..."
 
 ansible-playbook oilscope.platform.upload_secret_versions \
-  -e secret_versions_config_file=~/configs/oilscope/dev.json --check
+  -i localhost, \
+  -e secret_versions_config_file="$PWD/project-config.json" \
+  --check
 
 ansible-playbook oilscope.platform.upload_secret_versions \
-  -e secret_versions_config_file=~/configs/oilscope/dev.json
+  -i localhost, \
+  -e secret_versions_config_file="$PWD/project-config.json"
 ```
 
-The leading space keeps the export out of the shell history, in a shell
-configured to honour it. `--check` runs every check and uploads nothing; the
-role prints which variable feeds which container before it writes anything.
+Check mode verifies source variables and target containers without writing.
+The normal run passes payloads through stdin without an added newline. Tasks
+that handle values use `no_log`. All containers are checked before uploads
+start, although a provider failure during the write phase can still result in a
+partial rotation.
 
-### Why the variable is not the one the application sees
-
-The unit of upload is the container, so the variable name is derived from the
-container ID with the project prefix dropped — not from the key side of
-`secret_mappings`:
-
-```
-oilscope-dev-db-password-fetcher   ->  DB_PASSWORD_FETCHER
-oilscope-dev-oilpriceapi-key       ->  OILPRICEAPI_KEY
-```
-
-That key is scoped to one VM: `DB_PASSWORD` means the fetcher's password on
-`fetcher` and the history service's password on `history`, and one shell cannot
-hold both under one name. Where dropping the prefix would make two containers
-collide, every container keeps the fully qualified name
-(`OILSCOPE_DEV_DB_PASSWORD_FETCHER`) instead.
-
-### What it guarantees
-
-| | |
-| --- | --- |
-| reads values from | the environment of the process, and nowhere else |
-| passes the payload to gcloud | on stdin, through `--data-file=-` |
-| writes to disk | nothing |
-| prints | container IDs and variable names, never a value |
-
-Every value and every container is checked before the first version is added. A
-missing one fails the play with the full list, before anything is written.
-Half-rotated is the state that costs an evening — one service on the new
-password, three on the old.
-
-The upload task carries `no_log`, so the payload stays out of the Ansible output
-and any callback log at every verbosity, and `stdin_add_newline` is off because
-a trailing newline would become part of the stored value. The task is also
-skipped explicitly in check mode rather than being left to the module: a
-check-mode skip result carries the module arguments, and `-vvv` prints those
-uncensored.
-
-Rotating a single credential:
+Rotate a subset by container ID or derived source variable:
 
 ```bash
- export DB_PASSWORD_UI="$(openssl rand -hex 32)"
-
 ansible-playbook oilscope.platform.upload_secret_versions \
-  -e secret_versions_config_file=~/configs/oilscope/dev.json \
-  -e '{"secret_versions_only": ["DB_PASSWORD_UI"]}'
+  -i localhost, \
+  -e secret_versions_config_file="$PWD/project-config.json" \
+  -e '{"secret_versions_only": ["db-password"]}'
 ```
 
-Adding a version requires the operator to already have sufficient permission in
-the GCP project. Grant narrowly scoped uploader access separately if a non-owner
-operator or automation identity needs to manage secret versions in the future.
+## Reading values during deployment
 
-## Rotation
+The workload playbooks invoke `resolve_secrets` on each VM. The dynamic
+inventory identifies the exact VM key and cloud, and the role selects only that
+VM's mappings.
 
-Adding a version does not remove the old one. Secret Manager keeps every version
-until it is destroyed, and consumers that ask for `latest` pick up the new value
-on their next read.
+- On AWS, boto3 uses the attached EC2 instance profile and reads from the VM's
+  effective region.
+- On GCP, the role obtains a token for the attached service account from the
+  metadata server and reads the `latest` version from Secret Manager.
 
-```bash
-printf '%s' "${NEW_VALUE}" | gcloud secrets versions add SECRET_ID --data-file=-
-gcloud secrets versions list SECRET_ID
-gcloud secrets versions destroy VERSION --secret=SECRET_ID   # once nothing reads it
-```
+The result is an in-memory `resolve_secrets_result` dictionary keyed by the
+application variable names. The role does not intentionally write values to
+disk. Subsequent application roles must preserve the same care when passing
+those values to services or configuration files.
 
-Destroy the previous version only after every consumer has restarted. Until then
-it is the rollback.
+## Rotation and recovery
 
-## If a value leaks
+Adding a version leaves older versions in place. Restart consumers so they read
+the new `latest` version, verify the deployment, and only then disable or destroy
+the previous version according to the provider's recovery model.
 
-Rotate first, clean up second. A credential that has been pushed to a public
-repository, printed into a CI log or pasted into a chat is compromised from that
-moment; deleting the commit or the log does not undo it.
+If a value leaks, create a replacement version first, redeploy consumers, then
+disable or destroy the exposed version. Removing a leaked value from Git or a
+log does not make the credential safe again.
 
-1. Generate a new value and add it as a new version.
-2. Restart the consumers so they pick it up.
-3. Destroy the leaked version.
-4. Only then remove the exposed copy from wherever it appeared.
-
-`pre-commit` hooks and the `Secret scan` job in CI exist to make step 4 rare —
-see the README and [security-scanning.md](security-scanning.md).
-
-## One caveat on destroy
-
-`terraform destroy` removes the containers and every version inside them. There
-is no undo, and the values are not in state to be recovered from. Before
-destroying a project that anyone else relies on, confirm the values exist
-somewhere else first.
+Destroying Terraform-managed secret containers can also remove their versions
+or schedule them for deletion. Keep an independent recovery source for values
+needed after infrastructure teardown.

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Select the AWS region
+  ansible.builtin.set_fact:
+    resolve_secrets_aws_region: >-
+      {{ resolve_secrets_config.locations[
+           resolve_secrets_config.vms[resolve_secrets_vm_key].location
+           | default(resolve_secrets_config.default_location)
+         ].aws.region }}
+
+- name: Install the AWS Python SDK
+  become: true
+  ansible.builtin.apt:
+    name: "{{ resolve_secrets_aws_boto3_package }}"
+    state: present
+    install_recommends: false
+
+- name: Read each AWS secret version
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_aws_python }}"
+      - -c
+      - >-
+        import boto3, sys;
+        client = boto3.client('secretsmanager', region_name=sys.argv[1]);
+        response = client.get_secret_value(SecretId=sys.argv[2]);
+        print(response['SecretString'], end='')
+      - "{{ resolve_secrets_aws_region }}"
+      - "{{ item.value }}"
+  register: resolve_secrets_aws_accessed
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Build the resolved AWS secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | combine({item.item.key: item.stdout}) }}
+  no_log: true
+  loop: "{{ resolve_secrets_aws_accessed.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
