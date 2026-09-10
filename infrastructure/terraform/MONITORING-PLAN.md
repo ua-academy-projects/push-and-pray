@@ -1,339 +1,775 @@
-# Cloud monitoring: manual setup and implementation plan
+# Terraform cloud monitoring implementation plan
 
-Status: planning only. No cloud resources have been changed by this task.
-Start with the manual AWS steps below. Implement Terraform only after the manual setup is verified and implementation is requested.
+Status: the AWS monitoring module is now implemented locally; see [its README](modules/aws/monitoring/README.md) for the actual interface, defaults, tests, and deployment limits. No infrastructure was applied. The remaining sections retain the broader AWS/GCP design; their illustrative code is not the authoritative implemented interface.
+Implement AWS and GCP monitoring through Terraform and the existing deployment system.
+Console resource-creation walkthroughs have been removed. Existing resources must be inventoried and imported where appropriate.
 
-## Requirements and agreed decisions
+## 1. Scope and decisions
 
-| Task | Manual first | Later implementation |
-| --- | --- | --- |
-| 1. Base EC2 metrics | Inspect built-in CloudWatch metrics; optionally enable detailed monitoring | Per-instance detailed monitoring option |
-| 2. Native agents on EC2 | Install Amazon CloudWatch Agent | Shared agent configuration and installation assets |
-| 3. Cloud-aware agents | AWS uses CloudWatch Agent; GCP uses Ops Agent | Select according to each VM's effective cloud |
-| 4. HTTP 500 alerts | Traefik access logs → CloudWatch Logs → metric filter → alarm | Equivalent logging and alert resources for each cloud |
-| 5. AWS budget email alerts | Monthly $100 budget, alerts at $50 and $100 | User supplies recipient email |
-| 6. Budgets in both clouds | AWS first | AWS account budget; GCP project budget; same thresholds |
-| 7. AWS dashboard | Create in CloudWatch console | Verify useful charts before encoding |
-| 8. Dashboards in both clouds | AWS first | CloudWatch dashboard and Cloud Monitoring dashboard |
-| 9. Synthetic tests | Scheduled public HTTPS health check | AWS Synthetics and GCP uptime checks; journey tests separately |
-| 10. Operational alerts | Availability, CPU, memory, disk, missing telemetry | Matching policies, notifications, and runbooks |
+- Separate monitoring modules for AWS and GCP; separate budget modules for each cloud.
+- Existing VM modules own instance settings, runtime identities, agent permissions, and bootstrap integration.
+- Monitoring modules own telemetry destinations, alerts, dashboards, and synthetic checks.
+- Budget modules work independently of VM count and monitoring enablement.
+- Resolve each VM's cloud from `vm.cloud`, falling back to `default_cloud`; never select all agents using only the default cloud.
+- Preserve existing deployments when new settings are absent. Paid features require explicit enablement.
+- Operator supplies email addresses. Both clouds use monthly budgets of **100 USD**, with **actual-spend notifications at $50 and $100** (50% and 100%). No shutdown actions.
+- Cover CPU, memory, root filesystem usage, infrastructure/application availability, missing telemetry, HTTP 500 and all HTTP 5xx errors.
+- Use public `/health` synthetic tests initially. Browser journeys and private service/fetcher freshness probes are separate follow-up work.
+- No production application, Terraform configuration, or external JSON is changed by writing this plan.
 
-Email addresses will be entered by the operator. Both clouds should notify at **$50 and $100 of actual monthly spend**, not use separate cloud-specific budgets. Use a $100 monthly budget with 50% and 100% thresholds. Budgets notify; they do not cap spending or stop resources. Billing data and notifications are delayed.
+## 2. Proposed layout and ownership
 
-## Project-specific findings
+```text
+infrastructure/
+├── terraform/
+│   ├── monitoring.tf                  # root composition
+│   ├── budgets.tf                     # independent root composition
+│   ├── project-config.schema.json
+│   └── modules/
+│       ├── aws/
+│       │   ├── vm/                    # extend, preserve current resources
+│       │   ├── monitoring/
+│       │   │   ├── versions.tf
+│       │   │   ├── variables.tf
+│       │   │   ├── locals.tf
+│       │   │   ├── logs.tf
+│       │   │   ├── notifications.tf
+│       │   │   ├── alarms.tf
+│       │   │   ├── dashboard.tf
+│       │   │   ├── synthetics.tf
+│       │   │   ├── outputs.tf
+│       │   │   └── canary/nodejs/node_modules/health.js
+│       │   └── budget/{versions,variables,main,outputs}.tf
+│       └── gcp/
+│           ├── vm/
+│           ├── monitoring/
+│           │   ├── versions.tf
+│           │   ├── variables.tf
+│           │   ├── locals.tf
+│           │   ├── logs.tf
+│           │   ├── notifications.tf
+│           │   ├── alerts.tf
+│           │   ├── dashboard.tf
+│           │   ├── uptime.tf
+│           │   └── outputs.tf
+│           └── budget/{versions,variables,main,outputs}.tf
+└── ansible/oilscope/platform/
+    ├── roles/monitoring_agent/         # existing-VM installation/configuration
+    └── roles/compose_project/          # optional Traefik access logging
+```
 
-- Cloud infrastructure root: `infrastructure/terraform`; AWS and GCP modules are under `modules/aws` and `modules/gcp`.
-- Each VM resolves its cloud from `vm.cloud`, falling back to `default_cloud`.
-- Roles are bastion, database, history, fetcher, and UI. Monitor every VM, including the bastion.
-- The UI VM runs Traefik directly on port 443. There is no application load balancer in the inspected configuration, so ALB HTTP error metrics are not available.
-- The proxy Compose template is `../ansible/oilscope/platform/roles/compose_project/templates/compose.proxy.yaml.j2`. It currently has no access-log configuration.
-- The edge proxy's default deployed Compose path is `/opt/oilscope/proxy/compose.yaml`. Confirm the actual deployment path before editing a running VM.
-- The UI `/health` endpoint checks History connectivity and PostgreSQL session persistence. It can return 503; an exact-500 alarm alone would miss that outage.
-- Built-in EC2 monitoring does not provide guest memory utilization or filesystem fullness. Those require the agent.
-- Existing AWS instances have individual IAM roles and instance profiles. Add agent permissions to those roles; do not replace their existing permissions.
-- GCP instances have individual service accounts and `cloud-platform` access scopes. Agent IAM permissions must still be added.
-- The example image is Ubuntu 26.04. Verify the actual OS and architecture on each VM and check current agent support before installation.
+Budget modules own their notification recipients/channels. Do not reference monitoring-module notification outputs from budgets: disabling monitoring must not remove budget notifications.
 
-## Manual AWS setup
+Provider configuration remains in the root; child modules declare required providers, not credentials or provider configurations. Retain existing pinned AWS/Google versions. If canary packaging uses `archive_file`, add and pin the archive provider and update the lock file during implementation.
 
-### 1. Identify the target resources
+## 3. Configuration contract
 
-1. Sign in to the AWS account used by the project and select the EC2 region from the project configuration.
-2. In **EC2 → Instances**, record each VM's Name, instance ID, role, and IAM role.
-3. Record the UI public hostname from `vms.ui.public_endpoint.hostname`.
-4. Connect to each VM using the existing SSH configuration/bastion. Private VMs need outbound HTTPS through NAT or suitable VPC endpoints for telemetry, plus access to package download locations.
-5. On each VM, inspect `/etc/os-release` and run `uname -m` to identify the OS and architecture.
+Proposed additions to `project-config.example.json` (illustrative settings, all opt-in):
 
-Do not open monitoring ports to the internet. Both native agents send telemetry outbound.
+```json
+{
+  "monitoring": {
+    "enabled": false,
+    "email_recipients": [],
+    "agents_enabled": false,
+    "logs_enabled": false,
+    "alerts_enabled": false,
+    "dashboards_enabled": false,
+    "collection_interval_seconds": 60,
+    "log_retention_days": 7,
+    "cpu_threshold_percent": 80,
+    "memory_threshold_percent": 85,
+    "disk_threshold_percent": 85,
+    "aws": { "detailed_monitoring_enabled": false },
+    "synthetics": {
+      "enabled": false,
+      "clouds": [],
+      "hostname": "oilscope.example.com",
+      "path": "/health",
+      "period_seconds": 300,
+      "timeout_seconds": 30,
+      "aws_runtime_version": ""
+    }
+  },
+  "budgets": {
+    "email_recipients": [],
+    "aws": {
+      "enabled": false,
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [0.5, 1.0]
+    },
+    "gcp": {
+      "enabled": false,
+      "billing_account_id": "",
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [0.5, 1.0]
+    }
+  }
+}
+```
 
-### 2. Inspect base EC2 metrics
+Tasks:
 
-1. Open an instance's **Monitoring** tab, or **CloudWatch → Metrics → All metrics → EC2 → Per-Instance Metrics**.
-2. Select CPUUtilization, NetworkIn, NetworkOut, StatusCheckFailed, StatusCheckFailed_Instance, and StatusCheckFailed_System.
-3. For burstable T-family instances, also inspect CPUCreditBalance and the applicable surplus-credit metrics. For attached EBS storage, inspect volume read/write and latency/queue metrics in the EBS namespace as applicable.
-4. For one-minute EC2 performance metrics, use **EC2 → Actions → Monitor and troubleshoot → Manage detailed monitoring** and enable it. Basic monitoring generally reports at five-minute intervals; EC2 status checks have their own one-minute cadence.
-5. Use five-minute periods for CPU alarms until detailed monitoring is enabled. Confirm fresh timestamps, not just historical charts.
+1. Add optional schema properties with `additionalProperties: false`, typed booleans/numbers/arrays, positive amounts, percent ranges, and supported collection periods.
+2. Normalize defaults once in root locals; existing JSON without these properties must work unchanged. Validate semantic relationships through typed module inputs and preconditions.
+3. Require recipients when alerts or budgets are enabled. Limit budget recipient channels to supported provider/API limits (GCP at most five channels).
+4. Require agents for memory/disk alerts; require logs for HTTP error metrics; require synthetics before synthetic alarms.
+5. Require a hostname and supported pinned AWS runtime only if AWS synthetics is selected. An empty runtime is an invalid enabled configuration, not a working default.
+6. Validate budget currency against the GCP billing account. GCP budgets must use that account's currency; do not silently convert a non-USD account to USD.
+7. Endpoint checks are explicitly assigned to clouds, independently of where the UI VM runs. Do not create two duplicate paid checks implicitly.
+8. Keep secrets and provider credentials out of this JSON and all agent configurations.
 
-Detailed monitoring, custom metrics, logs, alarms, dashboards, and synthetic runs can incur charges. Start with a small metric set and five-minute synthetic runs.
+Example default normalization (repeat for all schema fields; snippets are not complete modules):
 
-### 3. Set up operational email notifications
+```hcl
+locals {
+  monitoring = merge({
+    enabled                       = false
+    email_recipients              = []
+    agents_enabled                = false
+    logs_enabled                  = false
+    alerts_enabled                = false
+    dashboards_enabled            = false
+    collection_interval_seconds   = 60
+    log_retention_days            = 7
+    cpu_threshold_percent         = 80
+    memory_threshold_percent      = 85
+    disk_threshold_percent        = 85
+  }, try(local.config.monitoring, {}))
 
-1. In the same region, open **SNS → Topics → Create topic**.
-2. Choose **Standard**, name it `<prefix>-<environment>-monitoring`, and create it.
-3. Create an **Email** subscription with your chosen address.
-4. Open the subscription confirmation email and confirm it.
-5. Verify that the subscription is confirmed. Select this topic when creating CloudWatch alarms.
+  monitoring_prefix = "${local.config.name_prefix}-${local.config.environment}"
+  access_log_group  = "/${local.config.name_prefix}/${local.config.environment}/traefik"
+}
+```
 
-Budget emails are configured separately in AWS Budgets; they do not require this SNS topic when using direct email recipients.
+Nested objects need their own normalization; shallow `merge` does not supply missing nested defaults.
 
-### 4. Install CloudWatch Agent manually on every EC2 VM
+## 4. Root wiring and module interfaces
 
-1. Open **IAM → Roles → the instance's existing role → Add permissions → Attach policies**.
-2. Attach AWS-managed `CloudWatchAgentServerPolicy` for the manual trial. Keep the role's existing secret and registry permissions. Later implementation should review whether a narrower policy is practical.
-3. On the VM, download and install the official package. For Ubuntu x86-64:
+Retain the existing unconditional VM module calls and their resource addresses. Monitoring modules receive maps keyed by stable configuration VM names; instance IDs are values, never `for_each` keys.
 
-   ```sh
-   curl -fSL --retry 5 \
-     https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb \
-     -o /tmp/amazon-cloudwatch-agent.deb
-   sudo dpkg -i /tmp/amazon-cloudwatch-agent.deb
-   ```
+Extend existing VM outputs without removing fields:
 
-   For Ubuntu ARM64 use the official `ubuntu/arm64/latest/` package URL instead. Use the vendor's signature verification procedure where required by your installation policy.
+```hcl
+# Add to each object in AWS output "vms":
+instance_id = instance.id
+role        = local.aws_vms[name].role
 
-4. Create `/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json` on the VM with the following configuration:
+# Add to each object in GCP output "vms":
+instance_id = instance.instance_id
+zone        = instance.zone
+role        = local.gcp_vms[name].role
+```
 
-   ```json
-   {
-     "agent": { "metrics_collection_interval": 60 },
-     "metrics": {
-       "namespace": "CWAgent",
-       "append_dimensions": { "InstanceId": "${aws:InstanceId}" },
-       "metrics_collected": {
-         "mem": { "measurement": ["mem_used_percent"] },
-         "disk": {
-           "measurement": ["used_percent"],
-           "resources": ["/"],
-           "drop_device": true
-         }
-       }
-     }
-   }
-   ```
+Proposed root composition:
 
-   Preserve `${aws:InstanceId}` literally. Do not let a shell expand it when creating the JSON. Add other actual filesystem mount paths if application data is on separate volumes.
+```hcl
+module "aws_monitoring" {
+  source = "./modules/aws/monitoring"
 
-5. Start the agent with that configuration:
+  enabled        = local.monitoring.enabled
+  name_prefix    = local.monitoring_prefix
+  region         = local.config.region_map[local.config.region].aws.region
+  vms            = module.aws_vm.vms
+  settings       = local.monitoring
+  log_group_name = local.access_log_group
+}
 
-   ```sh
-   sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-     -a fetch-config -m ec2 \
-     -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
-   sudo systemctl enable amazon-cloudwatch-agent
-   sudo systemctl status amazon-cloudwatch-agent --no-pager
-   ```
+module "gcp_monitoring" {
+  source = "./modules/gcp/monitoring"
 
-6. In **CloudWatch → Metrics → CWAgent**, find `mem_used_percent` and `disk_used_percent` for that instance. Allow several minutes for initial ingestion.
-7. Select the complete dimension set actually published. Disk series also include filesystem dimensions such as `path` and `fstype`; an alarm using only InstanceId will not match that series.
-8. If metrics are missing, inspect `/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log`, the VM role, outbound connectivity, and the selected AWS region.
+  enabled     = local.monitoring.enabled
+  name_prefix = local.monitoring_prefix
+  project_id  = try(local.config.clouds.gcp.project_id, null)
+  vms         = module.gcp_vm.vms
+  settings    = local.monitoring
+}
+```
 
-### 5. Collect Traefik access logs on the UI VM
+Each module internally gates resources according to feature settings and its VM map. Synthetic resources use explicit cloud selection, so they can monitor a public endpoint without local VMs. Disabled GCP resources must not evaluate a missing project ID through data sources.
 
-This is a manual change on the deployed UI VM, not a repository change. Back up the deployed Compose file first. A later Ansible deployment may overwrite it until the template is updated in the implementation phase.
+Example AWS input contract:
 
-1. Create a host directory with permissions allowing the proxy to write and the agent to read:
+```hcl
+variable "vms" {
+  type = map(object({
+    instance_id = string
+    name        = string
+    role        = string
+    role_name   = string
+  }))
+}
+```
 
-   ```sh
-   sudo install -d -m 0750 /var/log/oilscope
-   ```
+GCP counterpart: `instance_id`, `name`, `role`, `zone`, and `service_account_email`. Define a typed settings object with optional defaults, not `any`, in new modules. Output dashboard identifiers, alarm identifiers, log destination identifiers, and synthetic names for operations.
 
-2. Add these arguments under the deployed Traefik service's `command`:
+Avoid dependency cycles: VM bootstrap must not reference monitoring module outputs if that module already consumes VM IDs. Pass deterministic log destination names from root locals. Agents must retry initial publication until destinations/IAM are ready; alternatively provision destinations as a distinct foundation stage before VM rollout.
 
-   ```yaml
-   - "--accesslog=true"
-   - "--accesslog.format=json"
-   - "--accesslog.filepath=/var/log/oilscope/traefik-access.log"
-   - "--accesslog.fields.defaultmode=drop"
-   - "--accesslog.fields.names.StartUTC=keep"
-   - "--accesslog.fields.names.DownstreamStatus=keep"
-   - "--accesslog.fields.names.Duration=keep"
-   - "--accesslog.fields.headers.defaultmode=drop"
-   ```
+## 5. Native agents and EC2 base monitoring
 
-   Add the volume mapping `/var/log/oilscope:/var/log/oilscope` under that service's `volumes`. Keeping only these fields avoids collecting authorization headers, cookies, and query strings for this status-count use case.
+### AWS VM module changes
 
-3. Validate the deployed Compose file and recreate only Traefik using the same Compose file and project name as the deployment. Schedule the brief proxy restart appropriately. Confirm HTTPS still works.
-4. Request `https://<UI_HOSTNAME>/health` and check that the log contains JSON with a numeric `DownstreamStatus`.
-5. In **CloudWatch → Logs → Log groups**, create `/<prefix>/<environment>/traefik` and set a seven-day retention period for the trial.
-6. Add this top-level `logs` section to the agent JSON on the UI VM, alongside `agent` and `metrics`, replacing the log group placeholder:
+- Set `aws_instance.workload.monitoring` from the explicit detailed-monitoring switch; leave it false by default.
+- Attach a nonexclusive IAM policy to each monitored VM's existing role. Initially use `CloudWatchAgentServerPolicy`; later narrow permissions if practical. Never replace secret-access policies or instance profiles.
+- Collect memory and root filesystem usage at 60 seconds; avoid duplicate CPU metrics since EC2 already supplies CPU.
 
-   ```json
-   "logs": {
-     "logs_collected": {
-       "files": {
-         "collect_list": [{
-           "file_path": "/var/log/oilscope/traefik-access.log",
-           "log_group_name": "/<prefix>/<environment>/traefik",
-           "log_stream_name": "{instance_id}"
-         }]
-       }
-     }
-   }
-   ```
+```hcl
+resource "aws_iam_role_policy_attachment" "monitoring_agent" {
+  for_each = var.monitoring_agents_enabled ? local.aws_vms : {}
 
-7. Repeat the agent `fetch-config` command from step 4 to load the updated JSON. Confirm new events appear in the log group.
-8. Configure host log rotation before leaving the setup running. Use bounded size/retention and verify the writer reopens the rotated file; plan a tested Traefik-supported reopen procedure. CloudWatch retention does not limit the source file on the VM. Avoid an unbounded file on the small root disks.
+  role       = aws_iam_role.ec2_role[each.key].name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+```
 
-These logs measure responses passing through the UI proxy. They do not cover requests sent directly to private services.
+Use partition-aware ARN construction if expanding beyond the current commercial regions.
 
-### 6. Create HTTP 500 and 5xx alarms
+Proposed CloudWatch configuration as an HCL value for `jsonencode`:
 
-1. Open the access log group and choose **Metric filters → Create metric filter**.
-2. For exact HTTP 500 responses use `{ $.DownstreamStatus = 500 }`.
-3. Test with `{"DownstreamStatus":500}` and `{"DownstreamStatus":200}` in the console filter tester. Only the first should match.
-4. Set namespace `OilScope/HTTP`, metric name `HTTP500Count`, metric value `1`, and default value `0`. Do not add dimensions for this initial aggregate metric.
-5. Create a metric alarm using **Sum**, period **5 minutes**, threshold **>= 1**, and **1 of 1** datapoints. Select the confirmed SNS topic.
-6. Treat missing data as **not breaching** for this event-count alarm. Missing logs are not proof of healthy operation; use a separate synthetic availability alarm.
-7. Add a second filter `{ $.DownstreamStatus >= 500 && $.DownstreamStatus < 600 }` with metric name `HTTP5xxCount`. This includes the UI's 503 health failures and proxy 502/504 failures. Initially notify for >= 1 in five minutes, then tune based on observed traffic.
-8. Metric filters process new matching events, not old log history. A filter test does not publish a metric or prove delivery of an alarm email.
+```hcl
+locals {
+  agent_metrics = {
+    agent = { metrics_collection_interval = 60 }
+    metrics = {
+      namespace         = "CWAgent"
+      append_dimensions = { InstanceId = "$${aws:InstanceId}" }
+      metrics_collected = {
+        mem = { measurement = ["mem_used_percent"] }
+        disk = {
+          measurement = ["used_percent"]
+          resources   = ["/"]
+          drop_device = true
+        }
+      }
+    }
+  }
+}
+```
 
-For end-to-end validation, use a controlled test environment or an explicitly identified synthetic log stream in this group to publish one test 500 event, then verify the metric, alarm transition, and email. Separately verify real proxy responses reach the group. Do not deliberately break the production application merely to produce an error.
+The doubled dollar sign escapes Terraform interpolation. Published disk dimensions include InstanceId, path, and filesystem type. Do not create InstanceId-only disk alarms against these unaggregated metrics. Discover filesystem type during deployment and supply it as an explicit per-VM setting, or deliberately change the agent contract to publish an InstanceId-only root-disk aggregation. Test the selected contract before writing alarms.
 
-### 7. Create CPU, memory, disk, and availability alarms
+On UI VMs with logging enabled, merge a `logs.logs_collected.files.collect_list` entry containing:
 
-Create alarms per VM; do not average all VMs together, which can hide a single failing host.
+```json
+{
+  "file_path": "/var/log/oilscope/traefik-access.log",
+  "log_group_name": "/oilscope/dev/traefik",
+  "log_stream_name": "{instance_id}"
+}
+```
 
-| Signal | Initial condition | Period and evaluation | Missing data |
+Render the project/environment log group rather than hardcoding the example.
+
+### GCP VM module changes
+
+Grant additive roles to the existing VM identities:
+
+```hcl
+resource "google_project_iam_member" "agent_metrics" {
+  for_each = var.monitoring_agents_enabled ? local.gcp_vms : {}
+  project  = var.config.clouds.gcp.project_id
+  role     = "roles/monitoring.metricWriter"
+  member   = "serviceAccount:${google_service_account.workload[each.key].email}"
+}
+
+resource "google_project_iam_member" "agent_logs" {
+  for_each = var.monitoring_agents_enabled ? local.gcp_vms : {}
+  project  = var.config.clouds.gcp.project_id
+  role     = "roles/logging.logWriter"
+  member   = "serviceAccount:${google_service_account.workload[each.key].email}"
+}
+```
+
+Preserve the existing `cloud-platform` scopes and SSH metadata. Enable Monitoring/Logging APIs with a single clear owner in the root/foundation layer, before agent deployment. Use `disable_on_destroy = false` for shared project APIs.
+
+Proposed Ops Agent UI logging configuration, merged with existing settings:
+
+```yaml
+logging:
+  receivers:
+    oilscope_access:
+      type: files
+      include_paths: [/var/log/oilscope/traefik-access.log]
+  processors:
+    oilscope_json:
+      type: parse_json
+  service:
+    pipelines:
+      oilscope_access:
+        receivers: [oilscope_access]
+        processors: [oilscope_json]
+metrics:
+  receivers:
+    hostmetrics:
+      type: hostmetrics
+      collection_interval: 60s
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: [hostmetrics]
+```
+
+### Installation and existing-VM rollout
+
+Terraform provisions agent IAM and startup integration; Ansible installs/configures agents on already-running VMs. Do not use Terraform SSH provisioners or replace VMs to install an agent.
+
+Implementation tasks:
+
+1. Add `monitoring_agent` role with AWS/GCP task files selected from inventory's effective cloud. Unsupported values fail explicitly.
+2. Download official Ubuntu packages/repository installers for the detected architecture; pin/review versions and supported OS combinations. Validate downloads using vendor-supported verification.
+3. Render JSON/YAML from the same contract used by Terraform. Restart only when configuration changes; enable the agent service at boot.
+4. Add health checks that verify the agent process and recent cloud telemetry. Retry transient IAM/API propagation failures with a bounded timeout.
+5. If first-boot installation is required, compose AWS `write_files`/`runcmd` with existing SSH cloud-init, and GCP startup metadata with existing metadata. Keep all unrelated bootstrap content intact.
+6. AWS user-data changes do not rerun first-boot installation automatically and can cause instance lifecycle changes. Use the Ansible rollout for existing hosts and review Terraform plans for stop/start or replacement.
+7. No inbound monitoring ports. Verify NAT/endpoint access for APIs and package downloads; do not silently create new paid NAT gateways or VPC endpoints.
+
+## 6. Traefik logging through the existing deployment
+
+Update the actual Compose template and edge-proxy tasks, controlled by `logs_enabled`:
+
+```yaml
+# Proposed additions to Traefik command:
+- "--accesslog=true"
+- "--accesslog.format=json"
+- "--accesslog.filepath=/var/log/oilscope/traefik-access.log"
+- "--accesslog.fields.defaultmode=drop"
+- "--accesslog.fields.names.StartUTC=keep"
+- "--accesslog.fields.names.DownstreamStatus=keep"
+- "--accesslog.fields.names.Duration=keep"
+- "--accesslog.fields.headers.defaultmode=drop"
+# Proposed volume:
+# - /var/log/oilscope:/var/log/oilscope
+```
+
+Create the directory with suitable owner/mode before starting the proxy. Add size/retention-bounded rotation and a tested file-reopen mechanism. Cloud retention does not bound the VM source file. Test that deployment preserves logging across proxy recreation and rotation.
+
+This application has no ALB: errors come from Traefik logs, not `AWS/ApplicationELB`. UI `/health` can return 503, so retain both exact-500 and all-5xx counters. These counters cover requests through the proxy, not direct private-service traffic.
+
+## 7. AWS monitoring module
+
+### Notifications and logs
+
+```hcl
+resource "aws_sns_topic" "alerts" {
+  count = local.alerts_enabled ? 1 : 0
+  name  = "${var.name_prefix}-monitoring"
+}
+
+resource "aws_sns_topic_subscription" "email" {
+  for_each  = local.alerts_enabled ? toset(var.settings.email_recipients) : toset([])
+  topic_arn = aws_sns_topic.alerts[0].arn
+  protocol  = "email"
+  endpoint  = each.value
+}
+
+resource "aws_cloudwatch_log_group" "access" {
+  count             = local.logs_enabled ? 1 : 0
+  name              = var.log_group_name
+  retention_in_days = var.settings.log_retention_days
+}
+
+resource "aws_cloudwatch_log_metric_filter" "http" {
+  for_each = local.logs_enabled ? {
+    HTTP500Count = "{ $.DownstreamStatus = 500 }"
+    HTTP5xxCount = "{ $.DownstreamStatus >= 500 && $.DownstreamStatus < 600 }"
+  } : {}
+  name           = "${var.name_prefix}-${each.key}"
+  log_group_name = aws_cloudwatch_log_group.access[0].name
+  pattern        = each.value
+  metric_transformation {
+    name          = each.key
+    namespace     = "${var.name_prefix}/HTTP"
+    value         = "1"
+    default_value = 0
+  }
+}
+```
+
+SNS recipients must confirm email subscriptions; report pending confirmation as an incomplete notification setup, not a Terraform failure. Do not send test notifications until rollout testing is authorized.
+
+### Alarm contract
+
+| Signal | Statistic and threshold | Evaluation | Missing data |
 | --- | --- | --- | --- |
-| EC2 CPUUtilization | Average >= 80% | 5 minutes, 2 of 2 | Missing; use availability checks separately |
-| CWAgent mem_used_percent | Average >= 85% | 5 minutes, 2 of 2 | Missing; add missing-agent detection |
-| CWAgent disk_used_percent | Maximum >= 85% on each monitored filesystem | 5 minutes, 2 of 2 | Missing; add missing-agent detection |
-| EC2 StatusCheckFailed | Maximum >= 1 | 1 minute, 2 of 2 | Breaching for an always-on VM |
-| Agent heartbeat proxy | mem_used_percent < 0 (normally impossible) | 5 minutes, 2 of 2 | Breaching, so absent agent metrics trigger it |
-| Synthetic SuccessPercent | Average < 100 | 5 minutes, 2 of 2 | Breaching for an enabled canary |
+| CPUUtilization | Average >= 80% | 2 × 300s | missing |
+| mem_used_percent | Average >= 85% | 2 × 300s | missing |
+| disk_used_percent per filesystem | Maximum >= 85% | 2 × 300s | missing |
+| StatusCheckFailed | Maximum >= 1 | 2 × 60s | breaching for always-on VMs |
+| Agent heartbeat from memory | Minimum < 0 | 2 × 300s | breaching |
+| HTTP500Count / HTTP5xxCount | Sum >= 1 | 1 × 300s | notBreaching |
+| Canary SuccessPercent | Average < 100 | 2 × 300s | breaching while enabled |
 
-Send ALARM notifications to SNS; enable OK notifications for recovery if desired. Pause/adjust alarms during intentional maintenance. The missing-agent alarm also fires for stopped VMs; that is intentional for always-on workloads.
+The impossible negative-memory threshold makes the separate heartbeat alarm detect absence rather than high usage. Tune maintenance behavior deliberately. Infrastructure status does not replace application availability checks.
 
-EC2 status checks measure infrastructure health. A passing EC2 status check does not mean Docker, the application, or the database is healthy. Use the public health synthetic check for the user-facing dependency path and inspect individual service/container health during diagnosis. Add private service probes later without exposing database or service ports publicly.
+Representative per-VM CPU alarm:
 
-### 8. Create the AWS budget
+```hcl
+resource "aws_cloudwatch_metric_alarm" "cpu" {
+  for_each = local.alerts_enabled ? var.vms : {}
 
-1. Open **Billing and Cost Management → Budgets → Create budget**.
-2. Choose a customized **Cost budget**, recurring **Monthly**, fixed amount **100 USD**.
-3. For the first budget, include the whole AWS account and all services so NAT, EBS, public IPv4, and monitoring costs are included. Do not filter only to EC2.
-4. Add an **Actual** spending notification at **50%** ($50), with your email address.
-5. Add another **Actual** spending notification at **100%** ($100), with the same address.
-6. Optionally add a separate forecasted 100% notification; retain both actual thresholds.
-7. Review and create the budget. Check the scope and email address. Do not configure automatic shutdown actions.
+  alarm_name          = "${var.name_prefix}-${each.key}-cpu"
+  namespace           = "AWS/EC2"
+  metric_name         = "CPUUtilization"
+  dimensions          = { InstanceId = each.value.instance_id }
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = var.settings.cpu_threshold_percent
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  treat_missing_data  = "missing"
+  alarm_actions       = [aws_sns_topic.alerts[0].arn]
+  ok_actions          = [aws_sns_topic.alerts[0].arn]
+}
+```
 
-Budget alerts are threshold notifications based on delayed billing updates, not immediate transactions. Do not spend money just to test them. If moving this budget under Terraform later, import it rather than creating a duplicate.
+Generate corresponding resources from a local map of signal definitions; agent metrics depend on agent enablement and HTTP alarms on log enablement. All resource keys derive from configuration, not unknown IDs.
 
-### 9. Create synthetic tests
+### Dashboard
 
-1. Open **CloudWatch → Application Signals / Synthetics Canaries → Create canary** (navigation wording can vary).
-2. Select a heartbeat or API monitoring blueprint for `https://<UI_HOSTNAME>/health`.
-3. Use a currently supported runtime offered by the console. Start with a **five-minute** schedule, a **10–30 second** timeout, and a clear name such as `<prefix>-<environment>-health`.
-4. Require HTTP 200. Where the blueprint permits response validation, also assert JSON values `status = ok`, `history = connected`, and `sessions = postgresql`.
-5. Use public execution for this publicly reachable HTTPS endpoint. Let the console create the required canary execution role and artifact bucket, then review their permissions and retention. Keep screenshots/artifacts private and retain only a short troubleshooting window.
-6. Run it once and inspect results. Create the SuccessPercent alarm described above. Chart Duration as well; add a latency alarm after establishing a normal baseline.
-7. Verify a controlled failure and recovery in a test environment. Confirm that TLS/DNS/connection failures count as failed runs.
+```hcl
+resource "aws_cloudwatch_dashboard" "operations" {
+  count          = local.dashboards_enabled ? 1 : 0
+  dashboard_name = "${var.name_prefix}-operations"
+  dashboard_body = jsonencode({
+    widgets = [{
+      type = "metric", x = 0, y = 0, width = 12, height = 6
+      properties = {
+        title = "CPU by VM", region = var.region, period = 300, stat = "Average"
+        metrics = [for name, vm in var.vms :
+          ["AWS/EC2", "CPUUtilization", "InstanceId", vm.instance_id, { label = name }]
+        ]
+      }
+    }]
+  })
+}
+```
 
-A `/health` check is a synthetic API test, not a browser journey. In a second stage, add a browser canary that loads the UI and verifies a stable visible element. A price-history read test can exercise a real read path. Use a dedicated test account if authentication becomes necessary; keep credentials out of code and artifacts. Fetcher freshness and private service checks need separate signals.
+Expand with memory, disk, status checks, network, applicable CPU credits, HTTP counts, synthetic success/duration, and alarm status. Generate metrics from the same definitions as alarms. Omit disabled-feature widgets and avoid an empty dashboard with no monitored targets.
 
-### 10. Create the AWS dashboard
+## 8. GCP monitoring module
 
-In **CloudWatch → Dashboards → Create dashboard**, use `<prefix>-<environment>-operations` and add:
+### Notifications and HTTP counters
 
-- CPU per instance; memory per instance; root filesystem usage per instance.
-- EC2 status checks and an alarm-status widget.
-- NetworkIn/NetworkOut and CPUCreditBalance for applicable instances.
-- HTTP500Count and HTTP5xxCount as summed counts.
-- Canary SuccessPercent and Duration.
-- A text widget with the service hostname, region, VM-role mapping, and troubleshooting notes.
+```hcl
+resource "google_monitoring_notification_channel" "email" {
+  for_each     = local.alerts_enabled ? toset(var.settings.email_recipients) : toset([])
+  project      = var.project_id
+  display_name = "${var.name_prefix} operations ${each.value}"
+  type         = "email"
+  labels       = { email_address = each.value }
+}
 
-Choose metrics with the exact same dimensions as their alarms. Use a three-hour default view and five-minute periods. Confirm recent datapoints for every expected VM. Link to AWS Budgets for spending; the operational dashboard is not a substitute for budget notifications.
+resource "google_logging_metric" "http" {
+  for_each = local.logs_enabled ? {
+    http500 = "jsonPayload.DownstreamStatus = 500"
+    http5xx = "jsonPayload.DownstreamStatus >= 500 AND jsonPayload.DownstreamStatus < 600"
+  } : {}
+  project = var.project_id
+  name    = "${var.name_prefix}-${each.key}"
+  filter  = "resource.type=\"gce_instance\" AND log_id(\"oilscope_access\") AND (${local.ui_instance_filter}) AND ${each.value}"
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+```
 
-## Manual GCP reference, after AWS validation
+Build `local.ui_instance_filter` as an OR of monitored UI instance IDs. If no local UI exists, omit these metrics. Verify the actual Ops Agent log ID in a test deployment before freezing the filter. Use a dedicated log bucket and sink if seven-day retention is required; prevent duplicate storage in `_Default` with a narrowly scoped exclusion only for these logs. Do not change project-wide retention for unrelated logs.
 
-1. Enable Cloud Monitoring and Cloud Logging APIs in the project.
-2. Add `roles/monitoring.metricWriter` and `roles/logging.logWriter` to each VM's existing service account. Preserve existing permissions and verify the instance has appropriate OAuth access scopes.
-3. On a supported Ubuntu VM, download `https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh` and run the saved script with `sudo bash <script> --also-install`.
-4. Check `sudo systemctl status google-cloud-ops-agent`. Built-in host metrics should become visible in Metrics Explorer.
-5. For Traefik, configure an Ops Agent files receiver for `/var/log/oilscope/traefik-access.log` plus a `parse_json` processor in `/etc/google-cloud-ops-agent/config.yaml`; attach them to a logging pipeline and restart the agent. Preserve existing configuration. Verify `jsonPayload.DownstreamStatus` in Logs Explorer.
-6. Create an email notification channel in Monitoring, then CPU, memory, filesystem, metric-absence, and HTTPS uptime policies. Verify the scale of each metric: Compute CPU utilization is a fraction, while agent percentage metrics use percent units.
-7. Create a log-based counter scoped to the UI instance/log for `jsonPayload.DownstreamStatus=500`, and another for the 500–599 range.
-8. Use a public HTTPS uptime check for `/health`, with response/content checks where supported. Alert on persistent failure across checker locations; do not count a single checker failure as a global outage.
-9. In Cloud Billing, create a $100 monthly budget scoped to this project, with current-spend thresholds 50% and 100%. Select the email notification channel. The budget currency must match the billing account currency; if the account is not billed in USD, resolve that before claiming exact dollar thresholds.
-10. Build a Cloud Monitoring dashboard with the same operational signals as AWS.
+### Per-VM alert examples
 
-The Ops Agent is for GCP VMs; do not install it on EC2 as a substitute for CloudWatch Agent.
+```hcl
+resource "google_monitoring_alert_policy" "cpu" {
+  for_each     = local.alerts_enabled ? var.vms : {}
+  project      = var.project_id
+  display_name = "${var.name_prefix}-${each.key}-cpu"
+  combiner     = "OR"
+  notification_channels = [for channel in google_monitoring_notification_channel.email : channel.name]
+  conditions {
+    display_name = "CPU sustained high"
+    condition_threshold {
+      filter          = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${each.value.instance_id}\" AND metric.type=\"compute.googleapis.com/instance/cpu/utilization\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.settings.cpu_threshold_percent / 100
+      duration        = "600s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+      trigger { count = 1 }
+    }
+  }
+}
+```
 
-## Detailed later implementation plan — no implementation authorized yet
+Add policies for:
 
-### Phase A: configuration contract
+- `agent.googleapis.com/memory/percent_used`, selecting `metric.labels.state="used"`, threshold 85.
+- `agent.googleapis.com/disk/percent_used`, selecting used state and the intended device/filesystem, threshold 85. Verify agent descriptors/labels against a real sample rather than copying CloudWatch dimensions.
+- `condition_absent` on each VM's memory series for 600 seconds, to detect missing agents/stopped hosts after telemetry has been observed.
+- HTTP counter metrics `logging.googleapis.com/user/<metric-name>` with `ALIGN_SUM` over 300 seconds, threshold > 0, duration `0s`. Do not use a rate threshold for a count requirement.
+- Uptime failures as described below; use infrastructure uptime/absence signals separately from public endpoint health.
 
-- Add an optional `monitoring` configuration section and update `project-config.schema.json` plus the example config together.
-- Separate enable switches for agents, alerts, dashboards, synthetics, and budgets. Existing configurations must keep their current behavior when the section is absent.
-- Include operator-supplied email recipients, log retention, collection interval, alarm thresholds/durations, endpoint hostname/path, and synthetic schedule.
-- Configure each cloud's monthly amount as 100 USD and actual thresholds as `[0.5, 1.0]`. Keep AWS account scope explicit and GCP project scope explicit.
-- Include the GCP billing account ID and require a USD billing account for exact dollar thresholds. Do not put credentials in this config.
-- Validate that enabled email alerts have recipients, enabled GCP budgets have billing information, and enabled synthetics have a valid endpoint. Email is intentionally not supplied yet.
+Document unit differences: Compute CPU utilization uses 0–1; agent percentage metrics use 0–100. Keep resource filters per VM. Avoid project-wide averages masking one unhealthy VM.
 
-### Phase B: cloud-aware agents and permissions
+### Dashboard example
 
-- Determine the effective cloud per VM using the existing override/default logic. Reuse the resolved maps in the existing cloud VM modules.
-- Add AWS detailed monitoring only when enabled. Add CloudWatch permissions to the existing instance roles.
-- Add GCP metric-writer/log-writer IAM grants and API enablement dependencies without replacing existing service-account permissions.
-- Define one reviewed agent configuration per cloud, shared by documented manual installation and automatic bootstrap.
-- Preserve AWS SSH cloud-init by merging installation commands/files with the existing SSH user configuration, rather than replacing it.
-- On GCP, wire an idempotent installation mechanism into VM startup metadata or the chosen supported agent policy mechanism. Preserve SSH metadata.
-- Explicitly solve rollout to existing VMs: AWS user data normally runs only on first boot. Changing it is not an in-place agent deployment strategy and may stop/start instances. Document manual installation for existing hosts or implement a separately reviewed remote-management rollout. Do not replace VMs merely to install agents.
-- Make startup retries and installation errors observable. Verify IAM/API/network readiness, architecture selection, supported OS versions, and behavior after reboot.
+```hcl
+resource "google_monitoring_dashboard" "operations" {
+  count   = local.dashboards_enabled ? 1 : 0
+  project = var.project_id
+  dashboard_json = jsonencode({
+    displayName = "${var.name_prefix} operations"
+    gridLayout = {
+      columns = 2
+      widgets = [for name, vm in var.vms : {
+        title = "${name} CPU"
+        xyChart = {
+          dataSets = [{
+            plotType = "LINE"
+            timeSeriesQuery = {
+              timeSeriesFilter = {
+                filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${vm.instance_id}\" AND metric.type=\"compute.googleapis.com/instance/cpu/utilization\""
+                aggregation = { alignmentPeriod = "300s", perSeriesAligner = "ALIGN_MEAN" }
+              }
+            }
+          }]
+        }
+      }]
+    }
+  })
+}
+```
 
-### Phase C: access logging
+Expand from the same signal inventory as AWS with native GCP metric units and filters. Include incident/availability information and useful runbook links.
 
-- Extend the actual Traefik Compose template and deployment tasks to create the host log directory, bind-mount it, and emit the minimal JSON fields used by alerts.
-- Add tested log rotation with bounded source-file storage. Preserve file ownership and verify collection across rotation/restarts.
-- Create dedicated CloudWatch log groups with retention; configure Ops Agent structured collection and appropriate GCP retention.
-- Ensure Terraform alarm dimensions match the agent's emitted dimensions exactly; decide explicitly whether to retain filesystem dimensions or publish aggregate series.
-- Test both exact-500 and all-5xx filters using matching/nonmatching fixtures and a controlled end-to-end log event.
+## 9. Synthetic checks
 
-### Phase D: AWS monitoring resources
+### AWS canary
 
-- Add a dedicated AWS monitoring module receiving effective AWS VMs, instance IDs, region, notification settings, and endpoint settings.
-- Extend VM outputs with instance IDs if needed; keep outputs backward compatible.
-- Create SNS topic/subscriptions, log metric filters, per-instance CPU/memory/disk/status/missing-agent alarms, and HTTP alarms.
-- Create the CloudWatch dashboard from the same metric definitions used for alarms to avoid dimension drift.
-- Create the AWS monthly budget with direct email subscribers at 50% and 100%. Keep the budget independent of monitoring-region assumptions.
-- Create Synthetics canary packaging, IAM execution role, private artifact storage, log/artifact retention, schedule, and success/latency alarms. Verify the chosen current runtime and artifact structure before coding.
-- Document the human SNS email confirmation step; Terraform cannot click the confirmation link.
+Package a Node.js API canary using a currently supported pinned runtime. Keep its source under the monitoring module and use `archive_file` to build the runtime-required ZIP layout. The runtime string must be validated against AWS during implementation, not copied from an old example.
 
-### Phase E: GCP monitoring resources
+```hcl
+data "archive_file" "health" {
+  count       = local.synthetics_enabled ? 1 : 0
+  type        = "zip"
+  source_dir  = "${path.module}/canary"
+  output_path = "${path.root}/.terraform/${var.name_prefix}-health.zip"
+}
 
-- Add a GCP monitoring module receiving project details, GCE instance IDs/zones, notification settings, and billing configuration.
-- Enable required APIs with safe deletion behavior. Add email notification channels, log-based metrics, and per-VM policies for CPU/memory/disk/missing telemetry.
-- Create HTTPS uptime checks and availability policies with deliberate multi-location aggregation and missing-data behavior.
-- Add a Cloud Monitoring dashboard with appropriate metric filters, aligners, units, and instance labels.
-- Create a project-scoped `google_billing_budget` with 50% and 100% current-spend thresholds and the operator's email channels. Confirm billing permissions and quota-project requirements for the chosen authentication method.
-- Use public uptime checks for basic synthetic API coverage. If browser journeys are required on both clouds, define that separately; GCP uptime checks are not browser journeys.
+resource "aws_synthetics_canary" "health" {
+  count                = local.synthetics_enabled ? 1 : 0
+  name                 = "${var.name_prefix}-health"
+  artifact_s3_location = "s3://${aws_s3_bucket.canary[0].bucket}/results/"
+  execution_role_arn   = aws_iam_role.canary[0].arn
+  handler              = "health.handler"
+  runtime_version      = var.settings.synthetics.aws_runtime_version
+  zip_file             = data.archive_file.health[0].output_path
+  start_canary         = true
+  success_retention_period = 7
+  failure_retention_period = 7
+  schedule {
+    expression = "rate(5 minutes)"
+  }
+  run_config {
+    timeout_in_seconds = 30
+    environment_variables = {
+      HEALTH_URL = "https://${var.settings.synthetics.hostname}${var.settings.synthetics.path}"
+    }
+  }
+  depends_on = [aws_iam_role_policy.canary]
+}
+```
 
-### Phase F: transition and verification
+The literal schedule/timeout above illustrates the initial values; implementation renders validated settings. Enforce canary name constraints for the selected runtime/API and use collision-safe shortening if needed.
 
-1. Inventory the manually created resources and choose which to import. Record actual resource IDs and names.
-2. Use Terraform import for supported resources; avoid duplicate budgets, dashboards, and notifications. Review ownership of existing agent configuration and IAM grants.
-3. Run formatting, configuration/schema validation, and Terraform validation with the pinned providers.
-4. Review plans for disabled monitoring, AWS-only, GCP-only, and mixed-cloud VM configurations. A disabled optional feature must not create its resources.
-5. Verify plans do not replace VMs, erase SSH metadata, remove runtime permissions, or unexpectedly create resources in the other cloud.
-6. In a test environment, verify fresh metrics, structured logs, exact dimensions, synthetic success, controlled alarm failure/recovery, email delivery, and log rotation.
-7. Check agent persistence after reboot and ensure Ansible deployment preserves monitoring configuration.
-8. Apply only after implementation is requested and the concrete plan is reviewed. Keep manual resources active until replacements/imports are verified.
+Proposed handler behavior, using the runtime's Synthetics library:
 
-## Acceptance checklist
+```javascript
+const synthetics = require('Synthetics');
+exports.handler = async () => {
+  const url = new URL(process.env.HEALTH_URL);
+  await synthetics.executeHttpStep('health', {
+    hostname: url.hostname,
+    protocol: url.protocol,
+    port: 443,
+    method: 'GET',
+    path: url.pathname + url.search
+  }, async (response) => {
+    if (response.statusCode !== 200) throw new Error(`HTTP ${response.statusCode}`);
+    let body = '';
+    for await (const chunk of response) body += chunk;
+    const result = JSON.parse(body);
+    if (result.status !== 'ok' || result.history !== 'connected' || result.sessions !== 'postgresql') {
+      throw new Error('Health dependency check failed');
+    }
+  });
+};
+```
 
-- Every expected VM has current base metrics and agent memory/filesystem metrics.
-- Both native agents use instance identities rather than static credentials.
-- A controlled 500 event produces the intended metric/alarm/email; a 200 does not.
-- HTTP 503 and synthetic connectivity failures are also detected.
-- CPU, memory, disk, infrastructure availability, and missing-agent alerts can be diagnosed by VM.
-- Email confirmation and recovery notifications are tested where applicable.
-- Each cloud has actual monthly spend notifications at $50 and $100; scope and currency are documented.
-- Dashboards show real current data for each role.
-- Source logs and cloud artifacts have bounded retention.
-- Terraform migration preserves VM identity, SSH access, and existing application deployment.
+Validate handler/library compatibility against the pinned runtime before adopting this example. Add a response-size bound and redact captured headers/bodies. Do not record authentication cookies or secrets.
 
-## Official references
+Supporting tasks are mandatory, not implicit in the snippet:
 
-- [EC2 monitoring](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-cloudwatch.html)
-- [CloudWatch Agent installation packages](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/download-CloudWatch-Agent-on-EC2-Instance-commandline-first.html)
+- Private S3 artifact bucket with public-access block, encryption, and seven-day lifecycle expiry; globally unique name.
+- Lambda-trusted execution role with scoped artifact/log permissions and namespace-restricted metric publishing; no broad administrator policy.
+- Log retention for canary-generated logs and tracking/cleanup of implicit Lambda resources.
+- SuccessPercent alarm and duration widget. Keep latency alert optional until a baseline is known.
+- Account for ZIP change detection, explicit dependencies, retry policy, and failed cleanup during destroy.
+
+### GCP uptime check
+
+```hcl
+resource "google_monitoring_uptime_check_config" "health" {
+  count        = local.synthetics_enabled ? 1 : 0
+  project      = var.project_id
+  display_name = "${var.name_prefix}-health"
+  timeout      = "30s"
+  period       = "300s"
+  http_check {
+    path         = var.settings.synthetics.path
+    port         = 443
+    use_ssl      = true
+    validate_ssl = true
+    accepted_response_status_codes { status_value = 200 }
+  }
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = var.project_id
+      host       = var.settings.synthetics.hostname
+    }
+  }
+  content_matchers {
+    content = "ok"
+    matcher = "MATCHES_JSON_PATH"
+    json_path_matcher {
+      json_path    = "$.status"
+      json_matcher = "EXACT_MATCH"
+    }
+  }
+}
+```
+
+GCP currently supports one effective content matcher. The API's HTTP-200 contract covers dependencies; full multi-field validation needs a function-backed synthetic test. Do not describe this as equivalent to a browser journey.
+
+Build an alert scoped to this check's ID on `monitoring.googleapis.com/uptime_check/check_passed`. Align booleans using `ALIGN_NEXT_OLDER`, reduce across checker locations with `REDUCE_COUNT_FALSE`, and alert on at least two failing locations for a sustained window. Validate emitted labels and minimum checker-location coverage. Add a separate absence policy for missing check data; absence is not a false boolean.
+
+## 10. Independent budget modules
+
+Root `budgets.tf` creates each budget based only on that cloud's explicit budget enablement, not monitoring or VM count. Use typed inputs: `enabled`, `name_prefix`, `monthly_amount`, `currency`, `actual_thresholds`, `email_recipients`; GCP also takes project/billing account.
+
+### AWS
+
+```hcl
+resource "aws_budgets_budget" "monthly" {
+  count        = var.enabled ? 1 : 0
+  name         = "${var.name_prefix}-monthly"
+  budget_type  = "COST"
+  limit_amount = tostring(var.monthly_amount)
+  limit_unit   = var.currency
+  time_unit    = "MONTHLY"
+  dynamic "notification" {
+    for_each = var.actual_thresholds
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value * 100
+      threshold_type             = "PERCENTAGE"
+      notification_type          = "ACTUAL"
+      subscriber_email_addresses = var.email_recipients
+    }
+  }
+}
+```
+
+No service/tag filter for the first AWS budget: it covers the whole account, including NAT, EBS, IPv4, monitoring, and other services. Name/scope this explicitly so multiple environments do not accidentally create redundant account budgets. Do not attach shutdown actions.
+
+### GCP
+
+```hcl
+data "google_project" "budget" {
+  count      = var.enabled ? 1 : 0
+  project_id = var.project_id
+}
+resource "google_monitoring_notification_channel" "budget_email" {
+  for_each = var.enabled ? toset(var.email_recipients) : toset([])
+  project  = var.project_id
+  type     = "email"
+  labels   = { email_address = each.value }
+}
+resource "google_billing_budget" "monthly" {
+  count           = var.enabled ? 1 : 0
+  billing_account = var.billing_account_id
+  display_name    = "${var.name_prefix}-monthly"
+  budget_filter {
+    projects        = ["projects/${data.google_project.budget[0].number}"]
+    calendar_period = "MONTH"
+  }
+  amount {
+    specified_amount {
+      currency_code = var.currency
+      units         = tostring(var.monthly_amount)
+    }
+  }
+  dynamic "threshold_rules" {
+    for_each = var.actual_thresholds
+    content {
+      threshold_percent = threshold_rules.value
+      spend_basis       = "CURRENT_SPEND"
+    }
+  }
+  all_updates_rule {
+    monitoring_notification_channels = [for channel in google_monitoring_notification_channel.budget_email : channel.name]
+    disable_default_iam_recipients    = true
+  }
+}
+```
+
+Require whole-dollar monthly amounts for this `units` example; support `nanos` explicitly if fractional budgets are later allowed. Require at least one recipient before disabling default recipients. Ensure Monitoring/Billing Budgets APIs and billing-account permissions are available independently of VM monitoring. User ADC may require root-provider `billing_project` and `user_project_override`; configure these deliberately, preserving the existing authentication approach.
+
+Budget notifications are delayed spending notifications, not hard caps. Choose and document treatment of credits/tax consistently; display the AWS-account versus GCP-project scope in outputs.
+
+## 11. Cost controls and resource lifecycle
+
+- Keep detailed EC2 monitoring and synthetics disabled until explicitly enabled in configuration.
+- Calculate metric series, alarms, log volume, canary runs, artifact storage, and network processing before rollout. Free allowances are account-wide and must not be assumed unused.
+- Five VMs × two guest metrics already yields approximately ten custom series before HTTP/synthetic metrics or additional filesystem dimensions.
+- One check per five minutes produces 8,640 runs in 30 days; estimate supporting services separately and use current regional pricing.
+- Bound both cloud and host retention. Short cloud retention does not eliminate ingestion charges.
+- Disabling Terraform resources can destroy log groups/history. Document retention/import/removal behavior, and decide whether logs need a separate persistence switch before implementation.
+- Budgets stay enabled independently when monitoring is disabled. Removing all VMs must not remove budget alerts.
+
+## 12. Implementation order and completion criteria
+
+1. **Contract:** add schema/defaults/validation and examples. Confirm old configs still validate and monitoring remains opt-in.
+2. **Identity/output changes:** extend VM outputs and add conditional agent permissions without changing resource addresses.
+3. **Budget modules:** implement independent AWS/GCP modules, API prerequisites, recipients, $50/$100 thresholds, and scope outputs.
+4. **Telemetry destinations:** implement log destinations/retention and API ownership. Resolve dependency ordering before installing agents.
+5. **Agents and proxy:** add cloud-selected deployment role, bootstrap integration, minimal logs, and tested rotation. Roll out to existing VMs without replacement.
+6. **Monitoring modules:** notifications, per-VM alerts, error metrics, dashboards. Share metric definitions between dashboards/alarms.
+7. **Synthetics:** package/pin AWS runtime and artifact resources; configure GCP uptime check and failure/absence alerts.
+8. **Import existing resources:** inventory any previously created log groups, agents, budgets, alarms, SNS topics, and dashboards. Import supported resources using actual IDs; do not create duplicates or erase live configuration.
+9. **Validate:** run formatting/schema checks and Terraform validation with pinned providers; use targeted Terraform tests/mock providers for enablement and resource wiring. Review real plans for AWS-only, GCP-only, mixed cloud, and fully disabled configurations.
+10. **Deployment verification:** confirm no VM replacement, SSH metadata loss, IAM permission removal, unexpected cross-cloud resources, or duplicate notifications. In an authorized test environment verify metric dimensions, structured logs, one controlled 500 versus a nonmatching 200, synthetic failure/recovery, email delivery, reboot persistence, and log rotation.
+11. **Handoff:** expose identifiers and links, document required email confirmation, record costs/retention, and provide troubleshooting/rollback notes. Do not claim live validation from `terraform validate` alone.
+
+Definition of done: all ten original monitoring requirements have cloud-specific automated ownership; budgets remain independent; cloud selection respects VM overrides; every configured signal has observed telemetry and a tested alert path; no unexpected VM lifecycle changes occur.
+
+## References to verify during implementation
+
+The code above is an implementation blueprint with representative resource fragments. Variables, local feature gates, IAM details, packaging, and tests must be completed and validated together; this document itself has not been Terraform-planned or applied.
+
+- [AWS provider resources](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [AWS canary resource](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/synthetics_canary)
 - [CloudWatch Agent configuration](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Agent-Configuration-File-Details.html)
-- [Supported CloudWatch Agent operating systems](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/supported-operating-systems.html)
 - [Traefik access logs](https://doc.traefik.io/traefik/observability/access-logs/)
-- [CloudWatch Logs JSON filter syntax](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/matching-terms-json-log-events.html)
-- [AWS cost budget creation](https://docs.aws.amazon.com/cost-management/latest/userguide/create-cost-budget.html)
-- [AWS Synthetics creation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Synthetics_Canaries_Create.html)
-- [GCP Ops Agent support](https://docs.cloud.google.com/stackdriver/docs/solutions/agents/ops-agent)
 - [GCP Ops Agent configuration](https://docs.cloud.google.com/logging/docs/agent/ops-agent/configuration)
-- [Terraform AWS provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
-- [Terraform GCP budget resource](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/billing_budget)
-- [Terraform GCP alert policies](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/monitoring_alert_policy)
-- [Terraform GCP uptime checks](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/monitoring_uptime_check_config)
+- [GCP alert policy resource](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/monitoring_alert_policy)
+- [GCP uptime resource](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/monitoring_uptime_check_config)
+- [GCP budget resource](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/billing_budget)
+- [CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing/)
+- [AWS Budgets pricing](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)

@@ -38,3 +38,10 @@ module "aws_secrets" {
   config = local.config
   vms    = module.aws_vm.vms
 }
+
+module "aws_monitoring" {
+  source = "./modules/aws/monitoring"
+
+  config = local.config
+  vms    = module.aws_vm.vms
+}

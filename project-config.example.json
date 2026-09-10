@@ -4,6 +4,28 @@
   "environment": "dev",
   "name_prefix": "oilscope",
 
+  "monitoring": {
+    "email_recipients": [],
+    "enabled": true,
+    "logs_enabled": true,
+    "alarms_enabled": false,
+    "dashboard_enabled": false,
+    "agent_metrics_enabled": false,
+    "log_retention_days": 7,
+    "cpu_threshold_percent": 80,
+    "memory_threshold_percent": 85,
+    "disk_threshold_percent": 85,
+    "http_error_threshold": 1,
+    "disk_fstype": "ext4",
+    "synthetics": {
+      "enabled": false,
+      "hostname": "oilscope.example.com",
+      "path": "/health",
+      "period_minutes": 5,
+      "runtime_version": "syn-nodejs-puppeteer-17.0"
+    }
+  },
+
   "size_map": {
     "micro":  { "gcp": "e2-micro",      "aws": "t3.micro" },
     "small":  { "gcp": "e2-small",      "aws": "t3.small" },

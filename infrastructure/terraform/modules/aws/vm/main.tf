@@ -62,3 +62,5 @@ resource "aws_eip" "public" {
   domain   = "vpc"
   instance = aws_instance.workload[each.key].id
 }
+
+
