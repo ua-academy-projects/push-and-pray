@@ -54,12 +54,12 @@ resource "aws_security_group" "ui" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
-    for_each = local.bastion != null ? toset(local.bastion.allowed_cidrs) : toset([])
+    for_each = local.bastion_ssh_rules
 
     security_group_id = aws_security_group.bastion[0].id
-    cidr_ipv4 = each.value
-    from_port = local.bastion.ssh_port
-    to_port  = local.bastion.ssh_port
+    cidr_ipv4 = each.value.cidr
+    from_port = each.value.port
+    to_port  = each.value.port
     ip_protocol = "tcp"
 }
 

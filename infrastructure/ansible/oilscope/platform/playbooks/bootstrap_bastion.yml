@@ -1,11 +1,56 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Terraform boots the bastion listening on the final port already, so this
-# connects and applies the role's sshd policy in one pass. Safe to re-run at
-# any time to re-assert the policy on an already-configured bastion.
+# Terraform only makes the bastion reachable: the security group allows both
+# 22 and the final port from the operator CIDRs. Which of the two is actually
+# listening depends on whether this playbook has run before, so the first play
+# probes for it instead of requiring the operator to know.
+- name: Detect the bastion's current SSH port
+  hosts: bastion
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Check whether sshd already moved to the final port
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ bastion_ssh_port }}"
+        timeout: 5
+      register: bastion_final_port
+      # ignore_errors, not failed_when:false - the latter would rewrite
+      # .failed to false and the fallback below would never fire.
+      ignore_errors: true
+
+    - name: Fall back to 22 on a bastion this role has not configured yet
+      ansible.builtin.set_fact:
+        ansible_port: 22
+      when: bastion_final_port is failed
+
 - name: Configure the bastion
   hosts: bastion
   become: true
   gather_facts: false
   roles:
     - role: oilscope.platform.bastion
+  post_tasks:
+    # The role restarts sshd on the final port, which drops the connection
+    # this play opened on 22. Move to the final port and prove it works before
+    # the run is called a success.
+    - name: Wait for the final bastion SSH port from the controller
+      become: false
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[inventory_hostname].ansible_host }}"
+        port: "{{ bastion_ssh_port }}"
+        state: started
+        connect_timeout: 5
+        timeout: 60
+      delegate_to: localhost
+
+    - name: Use the final bastion SSH port
+      ansible.builtin.set_fact:
+        ansible_port: "{{ bastion_ssh_port }}"
+
+    - name: Reset the connection opened on the previous port
+      ansible.builtin.meta: reset_connection
+
+    - name: Check the SSH connection on the final port
+      ansible.builtin.ping:
+      changed_when: false

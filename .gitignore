@@ -13,6 +13,7 @@ node_modules/
 infrastructure/docker/deployment
 
 # Terraform
+*_override.tf
 **/.terraform/
 *.tfstate
 *.tfstate.*

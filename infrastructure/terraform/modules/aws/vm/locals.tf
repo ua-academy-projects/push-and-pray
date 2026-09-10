@@ -16,8 +16,7 @@ locals {
 
     instance_user_data = {
         for name, vm in local.selected_vms : name => templatefile("${path.module}/templates/user-data.yaml.tftpl", {
-            ssh_users        = var.config.ssh_users
-            bastion_ssh_port = vm.role == "bastion" ? tostring(vm.ssh_port) : ""
+            ssh_users = var.config.ssh_users
         })
     }
 }

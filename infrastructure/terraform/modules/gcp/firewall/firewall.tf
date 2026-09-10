@@ -9,7 +9,7 @@ resource "google_compute_firewall" "bastion_ssh" {
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(local.bastion.ssh_port)]
+    ports    = local.bastion_ssh_ports
   }
 }
 

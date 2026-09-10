@@ -51,6 +51,11 @@
     "history_api": 8001,
     "postgresql": 5432
   },
+  "monitoring": {
+    "notification_email": "hasdfasd@gmail.com",
+    "budget_amount_usd": 1,
+    "cpu_threshold_percent": 80
+  },
   "vms": {
     "bastion": {
       "role": "bastion",

@@ -20,3 +20,7 @@ output "network_tags" {
   description = "Effective network tags of workload VMs, by VM key."
   value       = { for name, vm in local.selected_vms : name => vm.network_tags }
 }
+
+output "ids" {
+  value       = { for name, vm in aws_instance.workload : name => vm.id }
+}

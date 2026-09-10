@@ -53,3 +53,11 @@ module "secrets" {
   service_account_emails  = module.iam.service_account_emails
   secret_version_managers = var.secret_version_managers
 }
+
+module "monitoring" {
+  source = "./monitoring"
+
+  config = var.config
+  has_selected_vms = local.has_selected_vms
+  instance_ids = module.vm.ids
+}

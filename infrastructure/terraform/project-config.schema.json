@@ -19,6 +19,7 @@
     "registry",
     "network",
     "service_ports",
+    "monitoring",
     "vms"
   ],
   "properties": {
@@ -147,6 +148,31 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notification_email", "budget_amount_usd"],
+      "properties": {
+        "notification_email": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        },
+        "budget_amount_usd": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "cpu_threshold_percent": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 80
+        },
+        "gcp_billing_account_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]{6}-[A-Za-z0-9]{6}-[A-Za-z0-9]{6}$"
         }
       }
     },

@@ -4,6 +4,8 @@ bastion_ssh_port: >-
   {{ (lookup('ansible.builtin.file', project_config_path) | from_json)
      .vms.bastion.ssh_port | int }}
 
-# Terraform boots the bastion listening on this port already, so there is no
-# separate bootstrap port to fall back to.
+# The final port sshd should end up on. Terraform does not configure sshd, so
+# a freshly created bastion is still on 22 - bootstrap_bastion.yml probes for
+# that and overrides ansible_port for its own run. Every other play assumes
+# the bastion has already been configured.
 ansible_port: "{{ bastion_ssh_port | int }}"

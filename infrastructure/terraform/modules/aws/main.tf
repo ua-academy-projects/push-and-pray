@@ -55,3 +55,11 @@ module "secrets" {
   iam_role_names              = module.iam.iam_role_names
   aws_secret_version_managers = var.aws_secret_version_managers
 }
+
+module "monitoring" {
+  source = "./monitoring"
+
+  config           = var.config
+  has_selected_vms = local.has_selected_vms
+  instance_ids     = module.vm.ids
+}
