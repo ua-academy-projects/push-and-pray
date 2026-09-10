@@ -10,32 +10,31 @@ Set these on **both** `develop` and `main`
 (Settings → Branches → branch protection rule → *Require status checks to pass
 before merging*). The names below are exactly what GitHub reports:
 
-| Check name              | What it guards                                        |
-| ----------------------- | ----------------------------------------------------- |
-| `YAML`                  | every versioned YAML file parses and passes yamllint   |
-| `Python`                | ruff lint, ruff format, pytest                         |
-| `Go`                    | gofmt, go vet, go test                                 |
-| `Frontend`              | npm ci, typecheck, production build                    |
-| `Docker Compose`        | all Compose files parse and interpolate                |
-| `Docker image (fetcher)`| the fetcher image builds                               |
-| `Docker image (history)`| the history image builds                               |
-| `Docker image (ui)`     | the UI image builds                                    |
-| `Terraform`             | terraform fmt and validate, once Terraform exists      |
+| Check name               | What it guards                                           |
+| ------------------------ | -------------------------------------------------------- |
+| `YAML`                   | every versioned YAML file parses and passes yamllint      |
+| `Python`                 | ruff lint, ruff format, pytest                            |
+| `Go`                     | gofmt, go vet, go test                                    |
+| `Frontend`               | npm ci, typecheck, production build                       |
+| `Docker Compose`         | local and historical combined Compose definitions parse  |
+| `Docker image (database)` | the PostgreSQL application image builds                  |
+| `Docker image (fetcher)` | the fetcher image builds                                  |
+| `Docker image (history)` | the history image builds                                  |
+| `Docker image (ui)`      | the UI image builds                                       |
+| `Terraform`              | Terraform formatting, validation, and cloud-init schema   |
 
 Also enable *Require branches to be up to date before merging*, otherwise two
 PRs that each pass individually can still break `develop` when both land.
 
-## Why `Terraform` is safe to require now
+## Terraform change detection
 
-There is no Terraform in the repository yet. A job guarded by an `if:` at the
-job level would be **skipped**, and a skipped job reports no status at all — a
-required check that never reports leaves every PR stuck on "Expected — waiting
-for status to be reported".
-
-So the `Terraform` job always runs. Its first step looks for any `*.tf` file;
-if none exists it logs that and the remaining steps are skipped, so the job
-still finishes green. The moment someone adds Terraform, `fmt -check` and
-`validate` start running against it with no change to branch protection.
+The `Terraform` job always reports a status so it can remain a required check.
+It compares the pull request or push range for changes under
+`infrastructure/terraform/`. When Terraform files are unchanged, the setup and
+validation steps are skipped while the job still finishes successfully. When
+they change, CI runs `terraform fmt -check`, initializes without the remote
+backend, validates the configuration, and validates the active bastion
+cloud-init template.
 
 ## Notes for people writing PRs
 
