@@ -4,7 +4,13 @@
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    POSTGRES_USER: "{{ database_connection.username }}"
+    POSTGRES_DB: "{{ database_connection.database_name }}"
+    DATABASE_HOST: "{{ database_connection.host }}"
+    DATABASE_PORT: "{{ database_connection.port | string }}"
+    MESSAGING_PROVIDER: "{{ messaging_connection.provider }}"
+    PUBSUB_PROJECT_ID: "{{ messaging_connection.project_id | default('') }}"
+    PUBSUB_SUBSCRIPTION_ID: "{{ messaging_connection.subscription_id | default('') }}"
   no_log: true
   block:
     - name: Pull the History image
@@ -63,9 +69,9 @@
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
+        'messaging_provider', ''
+      ) == messaging_connection.provider
     - >-
       (history_health.json | default({})).get(
-        'pgmq_consumer', ''
+        'messaging_consumer', ''
       ) == 'ready'

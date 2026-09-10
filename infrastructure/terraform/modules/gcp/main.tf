@@ -11,6 +11,41 @@ module "network" {
   depends_on = [google_project_service.required]
 }
 
+module "database" {
+  source = "./database"
+  count  = local.database_mode == "managed" ? 1 : 0
+
+  project_id = local.config.clouds.gcp.project_id
+  region     = local.config.regions[local.config.default_region][local.cloud_key].region
+
+  network_id = module.network[0].network_id
+
+  resource_prefix = local.resource_prefix
+
+  labels = local.common_labels
+
+  database                          = local.config.database
+  managed_settings                  = local.config.database.managed.gcp
+  managed_database_password         = var.managed_database_password
+  managed_database_password_version = var.managed_database_password_version
+  depends_on                        = [google_project_service.required]
+}
+
+module "messaging" {
+  source = "./messaging"
+  count  = local.has_vms ? 1 : 0
+
+  project_id      = local.config.clouds.gcp.project_id
+  resource_prefix = local.resource_prefix
+  labels          = local.common_labels
+  settings        = local.config.messaging
+
+  publisher_service_account_email = module.vm[0].service_account_emails[local.fetcher_vm_name]
+  consumer_service_account_email  = module.vm[0].service_account_emails[local.history_vm_name]
+
+  depends_on = [google_project_service.required]
+}
+
 module "security" {
   source = "./security"
   count  = local.has_vms ? 1 : 0
@@ -77,109 +112,4 @@ module "monitoring" {
   service_account_emails = module.vm[0].service_account_emails
 
   depends_on = [google_project_service.required]
-}
-
-moved {
-  from = module.network[0].google_compute_firewall.bastion_ssh
-  to   = module.security[0].google_compute_firewall.bastion_ssh
-}
-
-moved {
-  from = module.network[0].google_compute_firewall.bastion_ssh_bootstrap
-  to   = module.security[0].google_compute_firewall.bastion_ssh_bootstrap
-}
-
-moved {
-  from = module.network[0].google_compute_firewall.workload_ssh
-  to   = module.security[0].google_compute_firewall.workload_ssh
-}
-
-moved {
-  from = module.network[0].google_compute_firewall.ui_web
-  to   = module.security[0].google_compute_firewall.ui_web
-}
-
-moved {
-  from = module.network[0].google_compute_firewall.history_api
-  to   = module.security[0].google_compute_firewall.history_api
-}
-
-moved {
-  from = module.network[0].google_compute_firewall.postgresql
-  to   = module.security[0].google_compute_firewall.postgresql
-}
-
-moved {
-  from = google_secret_manager_secret.this
-  to   = module.secrets.google_secret_manager_secret.this
-}
-
-moved {
-  from = google_secret_manager_secret_iam_member.workload_access
-  to   = module.secrets.google_secret_manager_secret_iam_member.workload_access
-}
-
-moved {
-  from = google_secret_manager_secret_iam_member.version_adder
-  to   = module.secrets.google_secret_manager_secret_iam_member.version_adder
-}
-
-moved {
-  from = module.vm["bastion"].google_service_account.workload
-  to   = module.vm[0].google_service_account.workload["bastion"]
-}
-
-moved {
-  from = module.vm["infra"].google_service_account.workload
-  to   = module.vm[0].google_service_account.workload["infra"]
-}
-
-moved {
-  from = module.vm["history"].google_service_account.workload
-  to   = module.vm[0].google_service_account.workload["history"]
-}
-
-moved {
-  from = module.vm["fetcher"].google_service_account.workload
-  to   = module.vm[0].google_service_account.workload["fetcher"]
-}
-
-moved {
-  from = module.vm["ui"].google_service_account.workload
-  to   = module.vm[0].google_service_account.workload["ui"]
-}
-
-moved {
-  from = module.vm["bastion"].google_compute_address.public[0]
-  to   = module.vm[0].google_compute_address.public["bastion"]
-}
-
-moved {
-  from = module.vm["ui"].google_compute_address.public[0]
-  to   = module.vm[0].google_compute_address.public["ui"]
-}
-
-moved {
-  from = module.vm["bastion"].google_compute_instance.workload
-  to   = module.vm[0].google_compute_instance.workload["bastion"]
-}
-
-moved {
-  from = module.vm["infra"].google_compute_instance.workload
-  to   = module.vm[0].google_compute_instance.workload["infra"]
-}
-
-moved {
-  from = module.vm["history"].google_compute_instance.workload
-  to   = module.vm[0].google_compute_instance.workload["history"]
-}
-
-moved {
-  from = module.vm["fetcher"].google_compute_instance.workload
-  to   = module.vm[0].google_compute_instance.workload["fetcher"]
-}
-
-moved {
-  from = module.vm["ui"].google_compute_instance.workload
-  to   = module.vm[0].google_compute_instance.workload["ui"]
 }

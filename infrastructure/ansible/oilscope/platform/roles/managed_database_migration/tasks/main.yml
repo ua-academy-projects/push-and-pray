@@ -1,0 +1,23 @@
+---
+- name: Apply migrations to the managed PostgreSQL database
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --network
+      - host
+      - --env
+      - "PGHOST={{ managed_database_migration_connection.host }}"
+      - --env
+      - "PGPORT={{ managed_database_migration_connection.port | string }}"
+      - --env
+      - "PGUSER={{ managed_database_migration_connection.username }}"
+      - --env
+      - "PGDATABASE={{ managed_database_migration_connection.database_name }}"
+      - --env
+      - "PGPASSWORD={{ managed_database_migration_password }}"
+      - "{{ managed_database_migration_image }}"
+      - petroscope-migrate
+  when: managed_database_migration_enabled | bool
+  no_log: true

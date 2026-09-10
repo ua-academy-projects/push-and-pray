@@ -86,6 +86,10 @@ resource "aws_instance" "workload" {
 
   associate_public_ip_address = each.value.assign_public_ip
 
+  # One-minute EC2 metrics allow CloudWatch alarms to honor the monitoring
+  # configuration's minute-based durations.
+  monitoring = true
+
   iam_instance_profile = aws_iam_instance_profile.workload_profile[each.key].name
 
   tags = local.instance_tags_by_vm[each.key]

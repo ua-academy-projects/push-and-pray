@@ -9,6 +9,10 @@ fetcher_runtime_environment: >-
       'POSTGRES_USER': fetcher_postgres_user,
       'POSTGRES_DB': fetcher_postgres_name,
       'DATABASE_HOST': fetcher_database_host,
+      'DATABASE_PORT': fetcher_database_port | string,
+      'MESSAGING_PROVIDER': messaging_connection.provider,
+      'PUBSUB_PROJECT_ID': messaging_connection.project_id | default(''),
+      'PUBSUB_TOPIC_ID': messaging_connection.topic_id | default(''),
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string

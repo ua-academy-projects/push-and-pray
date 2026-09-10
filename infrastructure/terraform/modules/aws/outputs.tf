@@ -46,3 +46,8 @@ output "workload_secret_access" {
 output "secret_arns" {
   value = module.secrets.secret_arns
 }
+
+output "monitoring_summary" {
+  description = "AWS CloudWatch and SNS resources created for monitoring."
+  value       = local.monitoring_enabled ? module.monitoring[0].summary : null
+}

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import text
+from google.cloud import pubsub_v1
 
 from .config import Settings
 from .database import SessionLocal
@@ -15,7 +16,7 @@ from .schemas import ObservationEvent
 logger = logging.getLogger(__name__)
 
 
-class PGMQConsumer:
+class PubSubConsumer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.task: asyncio.Task[None] | None = None
@@ -30,7 +31,7 @@ class PGMQConsumer:
 
         self.task = asyncio.create_task(
             self._run(),
-            name="pgmq-history-consumer",
+            name="pubsub-history-consumer",
         )
 
     async def stop(self) -> None:
@@ -46,83 +47,53 @@ class PGMQConsumer:
 
     async def _run(self) -> None:
         logger.info(
-            "PGMQ consumer started",
+            "Pub/Sub consumer started",
             extra={
-                "queue": self.settings.pgmq_queue,
+                "subscription": self.settings.pubsub_subscription_id,
             },
         )
 
         while True:
             try:
-                processed = await asyncio.to_thread(self._process_next_message)
-
-                if not processed:
-                    await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)
+                await asyncio.to_thread(self._consume)
 
             except asyncio.CancelledError:
                 raise
 
             except Exception:
-                logger.exception("PGMQ consumer failed; retrying")
+                logger.exception("Pub/Sub consumer failed; retrying")
+                await asyncio.sleep(1)
 
-                await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)
-
-    def _process_next_message(self) -> bool:
-        with SessionLocal() as session:
-            result = session.execute(
-                text(
-                    """
-                    SELECT *
-                    FROM pgmq.read(
-                        queue_name => :queue_name,
-                        vt => :visibility_timeout,
-                        qty => 1
-                    )
-                    """
-                ),
-                {
-                    "queue_name": self.settings.pgmq_queue,
-                    "visibility_timeout": self.settings.pgmq_visibility_timeout_seconds,
-                },
-            )
-
-            row = result.mappings().first()
-
-            if row is None:
-                session.commit()
-                return False
-
-            message = dict(row)
-
-            session.commit()
-
-        self._handle_message(
-            msg_id=message["msg_id"],
-            read_count=message["read_ct"],
-            message=message["message"],
+    def _consume(self) -> None:
+        subscriber = pubsub_v1.SubscriberClient()
+        subscription = subscriber.subscription_path(
+            self.settings.pubsub_project_id,
+            self.settings.pubsub_subscription_id,
         )
-
-        return True
+        future = subscriber.subscribe(subscription, callback=self._handle_message)
+        try:
+            future.result()
+        finally:
+            future.cancel()
+            subscriber.close()
 
     def _handle_message(
         self,
-        msg_id: int,
-        read_count: int,
-        message: dict[str, Any],
+        message: pubsub_v1.subscriber.message.Message,
     ) -> None:
         try:
-            event = ObservationEvent.model_validate(message)
+            event = ObservationEvent.model_validate(json.loads(message.data))
 
         except ValidationError as exc:
             logger.error(
-                "permanently invalid PGMQ message",
+                "permanently invalid Pub/Sub message",
                 extra={
-                    "msg_id": msg_id,
+                    "message_id": message.message_id,
                     "error": str(exc),
                 },
             )
 
-            self._archive_message(msg_id)
+            message.ack()
 
             return
 
@@ -135,60 +106,23 @@ class PGMQConsumer:
 
         except Exception:
             logger.exception(
-                "failed to persist PGMQ message",
+                "failed to persist Pub/Sub message",
                 extra={
-                    "msg_id": msg_id,
-                    "read_count": read_count,
+                    "message_id": message.message_id,
                 },
             )
 
-            if read_count >= self.settings.pgmq_max_attempts:
-                logger.error(
-                    "PGMQ message exceeded retry limit",
-                    extra={
-                        "msg_id": msg_id,
-                        "read_count": read_count,
-                    },
-                )
-
-                self._archive_message(msg_id)
-
+            message.nack()
             return
 
-        self._archive_message(msg_id)
+        message.ack()
 
         logger.info(
-            "PGMQ message persisted",
+            "Pub/Sub message persisted",
             extra={
-                "msg_id": msg_id,
-                "read_count": read_count,
+                "message_id": message.message_id,
                 "event_key": event.event_key,
                 "inserted": inserted,
                 "duplicates": duplicates,
             },
         )
-
-    def _archive_message(
-        self,
-        msg_id: int,
-    ) -> None:
-        with SessionLocal() as session:
-            archived = session.execute(
-                text(
-                    """
-                    SELECT pgmq.archive(
-                        queue_name => :queue_name,
-                        msg_id => :msg_id
-                    )
-                    """
-                ),
-                {
-                    "queue_name": self.settings.pgmq_queue,
-                    "msg_id": msg_id,
-                },
-            ).scalar_one()
-
-            session.commit()
-
-            if not archived:
-                raise RuntimeError(f"failed to archive PGMQ message {msg_id}")

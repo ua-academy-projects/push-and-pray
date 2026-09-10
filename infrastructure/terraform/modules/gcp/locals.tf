@@ -22,7 +22,13 @@ locals {
   selected_raw_vms = {
     for name, vm in local.config.vms :
     name => vm
-    if local.effective_cloud_by_vm[name] == local.cloud_key
+    if(
+      local.effective_cloud_by_vm[name] == local.cloud_key &&
+      (
+        local.database_mode != "managed" ||
+        vm.role != "database"
+      )
+    )
   }
 
   resolved_vms = {
@@ -88,4 +94,16 @@ locals {
 
   has_vms    = length(local.resolved_vms) > 0
   bastion_vm = local.config.vms.bastion
+
+  database_mode = local.config.database.mode
+
+  fetcher_vm_name = one([for name, vm in local.resolved_vms : name if vm.role == "fetcher"])
+  history_vm_name = one([for name, vm in local.resolved_vms : name if vm.role == "history"])
+
+  # In self-managed mode, exactly one workload VM must own the database role.
+  # In managed mode the database VM is deliberately excluded from resolved_vms.
+  database_vm_name = local.database_mode == "self_managed" ? one([
+    for name, vm in local.resolved_vms : name
+    if vm.role == "database"
+  ]) : null
 }

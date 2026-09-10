@@ -18,3 +18,11 @@ output "public_ips" {
     name => instance.public_ip
   }
 }
+
+output "instance_ids" {
+  description = "EC2 instance IDs keyed by the logical VM name."
+  value = {
+    for name, instance in aws_instance.workload :
+    name => instance.id
+  }
+}

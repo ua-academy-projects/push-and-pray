@@ -14,3 +14,15 @@ variable "secret_version_managers" {
   type        = list(string)
   default     = []
 }
+
+variable "managed_database_password" {
+  description = "Password for the managed PostgreSQL application user."
+  type        = string
+  sensitive   = true
+  nullable    = true
+}
+
+variable "managed_database_password_version" {
+  description = "Non-secret version incremented whenever the managed database password changes."
+  type        = number
+}

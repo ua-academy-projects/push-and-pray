@@ -20,7 +20,9 @@
     "network",
     "service_ports",
     "monitoring",
-    "vms"
+    "vms",
+    "database",
+    "messaging"
   ],
   "properties": {
     "default_cloud": {
@@ -349,6 +351,76 @@
             }
           }
         }
+      }
+    },
+    "database": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode", "name", "user", "port"],
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["self_managed", "managed"]
+            },
+            "name": {
+                "type": "string",
+                "minLength": 1
+            },
+            "user": {
+                "type": "string",
+                "minLength": 1
+            },
+            "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+            },
+            "managed": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "gcp": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["database_version", "tier"],
+                        "properties": {
+                            "database_version": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "tier": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        }
+                    },
+                    "aws": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["engine_version", "instance_class"],
+                        "properties": {
+                            "engine_version": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "instance_class": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "messaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queue_name", "visibility_timeout_seconds", "max_delivery_attempts"],
+      "properties": {
+        "queue_name": { "type": "string", "minLength": 1 },
+        "visibility_timeout_seconds": { "type": "integer", "minimum": 1 },
+        "max_delivery_attempts": { "type": "integer", "minimum": 1 }
       }
     },
     "vms": {

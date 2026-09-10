@@ -9,6 +9,7 @@ fetcher_oilpriceapi_key: ""
 fetcher_postgres_user: oil_tracker
 fetcher_postgres_name: oil_tracker
 fetcher_database_host: postgres
+fetcher_database_port: 5432
 fetcher_bind_address: 0.0.0.0
 fetcher_host_port: 8002
 fetcher_health_retries: 30

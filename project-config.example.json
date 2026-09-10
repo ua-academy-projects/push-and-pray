@@ -94,6 +94,27 @@
       "thresholds": [0.5, 0.9, 1.0]
     }
   },
+  "database": {
+    "mode": "self_managed",
+    "name": "oil_tracker",
+    "user": "oil_tracker",
+    "port": 5432,
+    "managed": {
+      "gcp": {
+        "database_version": "POSTGRES_15",
+        "tier": "db-f1-micro"
+      },
+      "aws": {
+        "engine_version": "15",
+        "instance_class": "db.t3.micro"
+      }
+    }
+  },
+  "messaging": {
+    "queue_name": "price-observations",
+    "visibility_timeout_seconds": 60,
+    "max_delivery_attempts": 5
+  },
   "vms": {
     "bastion": {
       "role": "bastion",

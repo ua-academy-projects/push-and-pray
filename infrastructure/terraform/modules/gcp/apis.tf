@@ -5,6 +5,7 @@ locals {
       "compute.googleapis.com",
       "iam.googleapis.com",
       "secretmanager.googleapis.com",
+      "pubsub.googleapis.com",
     ],
     local.monitoring_enabled ? [
       "logging.googleapis.com",
@@ -12,6 +13,10 @@ locals {
     ] : [],
     local.monitoring_enabled && local.monitoring_settings.budget.enabled ? [
       "billingbudgets.googleapis.com",
+    ] : [],
+    local.database_mode == "managed" ? [
+      "sqladmin.googleapis.com",
+      "servicenetworking.googleapis.com",
     ] : [],
   )
 }

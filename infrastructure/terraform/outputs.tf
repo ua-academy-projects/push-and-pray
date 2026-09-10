@@ -62,3 +62,18 @@ output "gcp_monitoring" {
   description = "GCP observability resource identifiers, or null when monitoring is disabled."
   value       = module.gcp.monitoring
 }
+
+output "aws_monitoring" {
+  description = "AWS CloudWatch and SNS resource identifiers, or null when monitoring is disabled."
+  value       = module.aws.monitoring_summary
+}
+
+output "gcp_database_connection" {
+  description = "GCP database connection values for the selected database mode."
+  value       = module.gcp.database_connection
+}
+
+output "gcp_messaging_connection" {
+  description = "Non-secret GCP Pub/Sub connection values for application workloads."
+  value       = module.gcp.messaging_connection
+}

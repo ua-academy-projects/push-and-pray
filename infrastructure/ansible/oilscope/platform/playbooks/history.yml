@@ -30,6 +30,15 @@
         registry_auth_token: >-
           {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
+    - role: oilscope.platform.managed_database_migration
+      vars:
+        managed_database_migration_enabled: >-
+          {{ database_connection.mode == 'managed' }}
+        managed_database_migration_image: >-
+          {{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}
+        managed_database_migration_connection: "{{ database_connection }}"
+        managed_database_migration_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+
     - role: oilscope.platform.history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

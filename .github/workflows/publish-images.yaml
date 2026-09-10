@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - main
+      - DL-work
     tags:
       - "v*"
 

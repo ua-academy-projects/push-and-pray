@@ -1,0 +1,5 @@
+---
+managed_database_migration_enabled: false
+managed_database_migration_image: ""
+managed_database_migration_connection: {}
+managed_database_migration_password: ""

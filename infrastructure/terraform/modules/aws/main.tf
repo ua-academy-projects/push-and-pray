@@ -78,3 +78,14 @@ module "vm" {
 
   secret_arns_by_vm = local.secret_arns_by_vm
 }
+
+module "monitoring" {
+  source = "./monitoring"
+  count  = local.monitoring_enabled ? 1 : 0
+
+  resource_prefix    = local.resource_prefix
+  tags               = local.common_labels
+  notification_email = local.monitoring_settings.notification_email
+  cpu                = local.monitoring_settings.cpu
+  instance_ids       = module.vm[0].instance_ids
+}

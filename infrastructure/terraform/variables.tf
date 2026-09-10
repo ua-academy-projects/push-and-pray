@@ -28,3 +28,17 @@ variable "secret_version_managers" {
     error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
   }
 }
+
+variable "managed_database_password" {
+  description = "Password for the managed PostgreSQL application user. Supply it only when database.mode is managed."
+  type        = string
+  sensitive   = true
+  default     = null
+  nullable    = true
+}
+
+variable "managed_database_password_version" {
+  description = "Non-secret version incremented whenever managed_database_password is rotated."
+  type        = number
+  default     = 1
+}

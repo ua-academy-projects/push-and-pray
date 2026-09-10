@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: Push and Pray team
+  description: Runs the bundled SQL migrations against a provider-managed PostgreSQL endpoint.
+  license: GPL-2.0-or-later
+  min_ansible_version: '2.16'
+dependencies: []

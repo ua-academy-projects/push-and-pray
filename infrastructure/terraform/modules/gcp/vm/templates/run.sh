@@ -60,8 +60,8 @@ esac
 
 case "$AUTOMATION_ROLE" in
   database) ;;
-  history) health_url="http://127.0.0.1:${HISTORY_HOST_PORT:-8001}/health"; health_expected='"pgmq_consumer":"ready"' ;;
-  fetcher) health_url="http://127.0.0.1:${FETCHER_HOST_PORT:-8002}/health"; health_expected='"delivery":"pgmq"' ;;
+  history) health_url="http://127.0.0.1:${HISTORY_HOST_PORT:-8001}/health"; health_expected='"messaging_consumer":"ready"' ;;
+  fetcher) health_url="http://127.0.0.1:${FETCHER_HOST_PORT:-8002}/health"; health_expected="\"delivery\":\"${MESSAGING_PROVIDER:-pgmq}\"" ;;
   ui)      health_url="http://127.0.0.1:${UI_HTTP_PORT:-80}/health";       health_expected='"sessions":"postgresql"' ;;
 esac
 

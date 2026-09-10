@@ -10,7 +10,8 @@
     resolve_secrets_project: >-
       {{ resolve_secrets_project_id
         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-        | default(resolve_secrets_config.project_id | default(''), true) }}
+        | default(resolve_secrets_config.project_id | default(''), true)
+        | default(resolve_secrets_config.clouds.gcp.project_id | default(''), true) }}
 
 - name: Derive this VM's configuration key
   ansible.builtin.set_fact:

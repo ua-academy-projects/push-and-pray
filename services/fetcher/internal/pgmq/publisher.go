@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"oil-price-tracker/fetcher/internal/model"
 	"oil-price-tracker/fetcher/internal/provider"
 )
@@ -15,6 +17,17 @@ import (
 type Publisher struct {
 	DB        *sql.DB
 	QueueName string
+}
+
+func New(databaseURL, queueName string) (Publisher, error) {
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return Publisher{}, err
+	}
+	if err := database.Ping(); err != nil {
+		return Publisher{}, err
+	}
+	return Publisher{DB: database, QueueName: queueName}, nil
 }
 
 type batchMessage struct {

@@ -5,6 +5,7 @@
 
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml
+  when: database_connection.mode == 'self_managed'
 
 - name: Deploy History workload
   ansible.builtin.import_playbook: history.yml

@@ -26,9 +26,14 @@ locals {
   selected_raw_vms = {
     for name, vm in local.config.vms :
     name => vm
-    if local.effective_cloud_by_vm[name] == local.cloud_key
+    if(
+      local.effective_cloud_by_vm[name] == local.cloud_key &&
+      (
+        local.database_mode != "managed" ||
+        vm.role != "database"
+      )
+    )
   }
-
   resolved_vms = {
     for name, vm in local.selected_raw_vms :
     name => merge(vm, {
@@ -44,6 +49,16 @@ locals {
     for name, vm in local.resolved_vms :
     name => vm
     if vm.role != "bastion"
+  }
+
+  monitoring_config  = lookup(local.config, "monitoring", {})
+  monitoring_enabled = local.has_vms && lookup(local.monitoring_config, "enabled", false)
+  monitoring_settings = {
+    notification_email = lookup(local.monitoring_config, "notification_email", "")
+    cpu = merge(
+      { threshold_percent = 80, duration_seconds = 300 },
+      lookup(local.monitoring_config, "cpu", {}),
+    )
   }
 
   # Secret mappings are cloud-neutral configuration. This AWS wrapper turns
@@ -66,4 +81,6 @@ locals {
       module.secrets.secret_arns[secret_id]
     ]
   }
+
+  database_mode = local.config.database.mode
 }
