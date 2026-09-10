@@ -22,6 +22,7 @@
   environment:
     DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
+    POSTGRES_USER: "{{ ui_postgres_user }}"
     DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
     HISTORY_SERVICE_URL: >-
       http://{{ hostvars[groups['history'][0]].internal_ip }}:8001

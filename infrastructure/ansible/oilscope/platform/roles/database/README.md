@@ -16,9 +16,10 @@ The database image must contain `petroscope-migrate` and the migrations under
 
 - `database_postgres_image`: complete image reference pinned with
   a full 40-character Git SHA tag.
-- `database_postgres_password`: password supplied by the deployment secret
-  mechanism. The role marks tasks receiving it with `no_log` and does not write
-  it to disk.
+- `database_postgres_password`, `database_history_postgres_password`,
+  `database_fetcher_postgres_password`, and `database_ui_postgres_password`:
+  passwords supplied by the deployment secret mechanism. The role marks tasks
+  receiving them with `no_log` and does not write them to disk.
 
 ## Optional variables
 
@@ -28,6 +29,9 @@ The database image must contain `petroscope-migrate` and the migrations under
   directory.
 - `database_postgres_user` and `database_postgres_name`: both default to
   `oil_tracker`.
+- `database_history_postgres_user`, `database_fetcher_postgres_user`, and
+  `database_ui_postgres_user`: application login roles; they default to
+  `oil_tracker_history`, `oil_tracker_fetcher`, and `oil_tracker_ui`.
 - `database_bind_address`: defaults to `0.0.0.0`.
 - `database_host_port`: defaults to `5432`.
 - `database_health_retries` and `database_health_delay`: health polling
@@ -49,9 +53,12 @@ The database image must contain `petroscope-migrate` and the migrations under
         database_postgres_password: "{{ vault_database_password }}"
 ```
 
-Running the role again is safe: Compose reconciles the existing PostgreSQL
-container and the bundled migrations use idempotent SQL operations. The
-migration container is removed after every successful run.
+The role verifies each application login before creating or rotating it, so a
+repeat run does not rewrite working credentials. Each application role inherits
+the database owner's object permissions without inheriting its login password.
+Compose reconciles the existing PostgreSQL container and the bundled migrations
+use idempotent SQL operations. The migration container is removed after every
+successful run.
 
 ## License
 

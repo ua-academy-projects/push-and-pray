@@ -23,10 +23,7 @@
 - name: Collect application roles that need secrets
   ansible.builtin.set_fact:
     secret_versions_roles: >-
-      {{ secret_versions_targets | map(attribute='role') | unique | list
-         + (['registry_auth']
-            if secret_versions_config.registry.username | default('') | length > 0
-            else []) }}
+      {{ secret_versions_targets | map(attribute='role') | unique | list }}
 
 - name: Read each role's secret requirements
   ansible.builtin.include_vars:
@@ -51,13 +48,7 @@
     secret_versions_targets_with_requirements: >-
       {{ secret_versions_targets_with_requirements + [
            item | combine({
-             'secrets': (
-               secret_versions_requirements_by_role[item.role]
-               | combine(secret_versions_requirements_by_role.registry_auth
-                         if secret_versions_config.registry.username | default('') | length > 0
-                         else {})
-               | dict2items
-             )
+             'secrets': secret_versions_requirements_by_role[item.role] | dict2items
            })
          ] }}
   loop: "{{ secret_versions_targets }}"

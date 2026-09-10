@@ -20,6 +20,16 @@ Image references are rendered from `registry.repository` and
 secrets are read from the target cloud secret manager and passed directly to
 the Ansible tasks that invoke Compose. They are not written to `deployment.env`.
 
+The database owner remains `oil_tracker`. Ansible provisions dedicated
+`oil_tracker_history`, `oil_tracker_fetcher`, and `oil_tracker_ui` login roles
+from their corresponding password secrets and passes the matching login to each
+workload.
+
+When the UI VM has a `public_endpoint`, Traefik obtains its certificate through
+ACME and routes by hostname. Without that optional setting, Traefik uses its
+generated certificate and a catch-all HTTPS route, which keeps IP-based dev
+deployments functional without changing `project-config.json`.
+
 `compose.deployment.yaml.j2` is retained only for the legacy Terraform
 cloud-init path. The Ansible role does not install it.
 

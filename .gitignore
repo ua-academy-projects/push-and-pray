@@ -39,3 +39,8 @@ infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/oilscope.gcp.yml
 
 *.local.gcp.yml
+
+# Local Graphify installation and generated artifacts
+/.graphifyignore
+/graphify-out/
+/AGENTS.md

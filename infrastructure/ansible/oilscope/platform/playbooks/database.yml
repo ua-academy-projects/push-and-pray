@@ -18,13 +18,6 @@
         compose_project_workload: "{{ oilscope_role }}"
 
     - role: oilscope.platform.registry_auth
-      when: compose_project_config.registry.username | default('') | length > 0
-      vars:
-        registry_auth_registry: >-
-          {{ compose_project_config.registry.repository
-             | regex_replace('/.*$', '') }}
-        registry_auth_username: >-
-          {{ compose_project_config.registry.username | default('') }}
 
     - role: oilscope.platform.database
       vars:

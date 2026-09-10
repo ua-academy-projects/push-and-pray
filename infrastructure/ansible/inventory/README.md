@@ -36,6 +36,8 @@ expression placed there is sent to the API as literal text.
 Everything else — the grouping rules, the host-variable expressions, the
 workload SSH port — lives in the plugin's defaults. Changing those means
 editing the plugin and rebuilding the collection, not editing this directory.
+The resolved configuration path is also published as `project_config_path`, so
+the collection playbooks can reuse it without a duplicate `-e` argument.
 
 ## Setup
 
@@ -200,9 +202,11 @@ The command must return no rule. Workload playbooks do not use the bootstrap
 override; their existing ProxyCommand connects to the bastion through the
 final configured port and then reaches workload SSH on port 22.
 
-`ansible_user` defaults to `ubuntu` for AWS images and to the first configured
-SSH operator for GCP. Override for one run with `OILSCOPE_SSH_USER`, and the
-key with `OILSCOPE_SSH_KEY`.
+Inventory sets `ansible_user` to `ubuntu` for AWS hosts and to the first
+configured SSH operator for GCP hosts. This provider-specific selection does
+not use `OILSCOPE_SSH_USER`. OpenSSH selects identities from its standard
+files, agent, and per-host configuration; use Ansible's `--private-key` option
+when an explicit key is required.
 
 ## When it looks broken
 

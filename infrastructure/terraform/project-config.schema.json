@@ -16,6 +16,7 @@
     "common_labels",
     "ssh_users",
     "registry",
+    "monitoring",
     "network",
     "vms"
   ],
@@ -105,6 +106,9 @@
         }
       }
     },
+    "monitoring": {
+      "$ref": "#/$defs/monitoring"
+    },
     "network": {
       "type": "object",
       "additionalProperties": false,
@@ -185,13 +189,17 @@
     "vm_defaults": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["image", "disk_type"],
+      "required": ["image", "disk_type", "data_disk_size_gb"],
       "properties": {
         "image": {
           "$ref": "#/$defs/logical_name"
         },
         "disk_type": {
           "$ref": "#/$defs/disk_type"
+        },
+        "data_disk_size_gb": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },
@@ -348,6 +356,36 @@
         "type": "string"
       }
     },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alert_email"],
+      "properties": {
+        "alert_email": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        },
+        "monthly_budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["amount", "currency"],
+          "properties": {
+            "amount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "gcp_billing_account_id": {
+              "type": "string",
+              "pattern": "^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$"
+            }
+          }
+        }
+      }
+    },
     "ssh_users": {
       "$comment": "Maps Linux usernames to public SSH keys. Private keys and local key-file paths are not accepted.",
       "type": "object",
@@ -383,6 +421,14 @@
         },
         "disk_type": {
           "$ref": "#/$defs/disk_type"
+        },
+        "disk_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "disks": {
+          "type": "integer",
+          "minimum": 1
         },
         "size": {
           "type": "string",

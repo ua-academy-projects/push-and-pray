@@ -2,8 +2,9 @@
 
 Prepares Ubuntu workload VMs with the common operating-system state required
 before Docker and application roles run. The role installs prerequisite
-packages, creates the locked deployment account, and manages OilScope
-directories and permissions.
+packages, creates the locked deployment account, manages OilScope directories
+and permissions, and configures the provider-native host metrics and system log
+agent selected by the inventory's `oilscope_cloud` variable.
 
 ## Requirements
 
@@ -17,13 +18,17 @@ directories and permissions.
 - `host_baseline_deploy_group`: deployment system group; defaults to `deploy`.
 - `host_baseline_packages`: packages installed on every workload VM.
 - `host_baseline_directories`: directories with their owner, group, and mode.
+- `host_baseline_cloudwatch_agent_url`: regional Amazon CloudWatch Agent package.
+- `host_baseline_ops_agent_install_script_url`: official Google Cloud Ops Agent
+  repository installer.
 
 See `defaults/main.yml` for the complete default values.
 
 ## Dependencies
 
-None. Docker, Compose, runtime secrets, and application services are managed by
-separate collection roles.
+The production inventory must define `oilscope_cloud`; AWS hosts also use its
+`oilscope_region` variable. Docker, Compose, runtime secrets, and application
+services are managed by separate collection roles.
 
 ## Usage
 

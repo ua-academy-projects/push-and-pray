@@ -1,3 +1,5 @@
+{% set ui_vm = compose_project_config.vms.values() | selectattr('role', 'equalto', 'ui') | first %}
+{% set public_endpoint = ui_vm.public_endpoint | default({}) %}
 name: oilscope-proxy
 
 services:
@@ -9,11 +11,13 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=false"
+{% if public_endpoint %}
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
       - >-
         --certificatesresolvers.letsencrypt.acme.email={{
-          compose_project_config.vms.ui.public_endpoint.acme_email }}
+          public_endpoint.acme_email }}
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+{% endif %}
       - "--ping=true"
       - "--log.level=INFO"
     ports:

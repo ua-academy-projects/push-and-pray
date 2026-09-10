@@ -7,11 +7,11 @@ provisioning. This role derives the physical name as
 `<name_prefix>-<environment>-<secret_id>` and returns the retrieved value under
 the runtime-variable key.
 
-It selects `google.cloud.gcp_secret_manager` for GCP or
-`amazon.aws.secretsmanager_secret` for AWS. Project and region default to the
-host context supplied by the dynamic inventory; name prefix and environment
-come from the loaded project configuration.
+It selects `google.cloud.gcp_secret_manager` for GCP or the AWS CLI for AWS.
+Project and region default to the host context supplied by the dynamic
+inventory; name prefix and environment come from the loaded project
+configuration.
 
-Lookups execute on the Ansible controller with its cloud credentials. Results
-are returned in the in-memory `resolve_secrets_result` mapping, and all tasks
-that handle values use `no_log`.
+Secret reads execute on the Ansible controller with its cloud credentials.
+Results are returned in the in-memory `resolve_secrets_result` mapping, and all
+tasks that handle values use `no_log`.

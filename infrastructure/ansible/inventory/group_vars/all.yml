@@ -1,15 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-ansible_user: >-
-  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_USER')
-     | default(oilscope_bootstrap_user, true) }}
-
-ansible_ssh_private_key_file: >-
-  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_KEY')
-     | default(lookup('ansible.builtin.env', 'HOME')
-               ~ '/.ssh/id_ed25519', true) }}
-
+# Leave private-key selection to OpenSSH. This honors its standard identity
+# files, agent, and per-host configuration without a repository-specific path.
 oilscope_ssh_base_args: >-
   -o StrictHostKeyChecking=accept-new
-  -o IdentitiesOnly=yes
 ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"

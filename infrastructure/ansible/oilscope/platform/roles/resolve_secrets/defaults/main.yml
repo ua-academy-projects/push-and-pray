@@ -6,3 +6,4 @@ resolve_secrets_project_id: "{{ oilscope_project_id | default('') }}"
 resolve_secrets_region: "{{ oilscope_region | default('') }}"
 resolve_secrets_name_prefix: "{{ compose_project_config.name_prefix }}"
 resolve_secrets_environment: "{{ compose_project_config.environment }}"
+resolve_secrets_aws: aws

@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Download the Amazon CloudWatch Agent package
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ host_baseline_cloudwatch_agent_url }}"
+    dest: "{{ host_baseline_cloudwatch_agent_package_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Amazon CloudWatch Agent
+  become: true
+  ansible.builtin.apt:
+    deb: "{{ host_baseline_cloudwatch_agent_package_path }}"
+    state: present
+
+- name: Configure host metrics and system logs for CloudWatch
+  become: true
+  ansible.builtin.template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart CloudWatch agent
+
+- name: Apply pending CloudWatch agent configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the Amazon CloudWatch Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: amazon-cloudwatch-agent
+    enabled: true
+    state: started

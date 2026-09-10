@@ -25,8 +25,11 @@ Run from the repository root:
 
 ```bash
 ansible-playbook oilscope.platform.deploy_workloads \
-  -i infrastructure/ansible/inventory/oilscope.yml \
-  -e project_config_path=/absolute/path/project-config.json
+  -i infrastructure/ansible/inventory/oilscope.yml
 ```
+
+The dynamic inventory publishes the resolved project configuration path to the
+playbooks. Set `OILSCOPE_PROJECT_CONFIG` only when the file is not the
+repository-root `project-config.json`.
 
 The deployment stops if a workload fails, preventing dependent workloads from being deployed.

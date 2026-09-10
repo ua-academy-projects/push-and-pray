@@ -22,6 +22,7 @@
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
+    POSTGRES_USER: "{{ history_postgres_user }}"
     DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
   no_log: true
   block:

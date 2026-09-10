@@ -20,17 +20,31 @@
   no_log: true
   when: resolve_secrets_cloud == 'gcp'
 
+- name: Read AWS application secrets
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_aws }}"
+      - secretsmanager
+      - get-secret-value
+      - >-
+        --secret-id={{ resolve_secrets_name_prefix }}-{{ resolve_secrets_environment }}-{{ item.value.secret_id }}
+      - "--region={{ resolve_secrets_region }}"
+      - --query=SecretString
+      - --output=text
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  register: resolve_secrets_aws_values
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: resolve_secrets_cloud == 'aws'
+
 - name: Resolve AWS application secrets
   ansible.builtin.set_fact:
     resolve_secrets_result: >-
       {{ resolve_secrets_result | combine({
-           item.value.runtime_env: lookup(
-             'amazon.aws.secretsmanager_secret',
-             resolve_secrets_name_prefix ~ '-' ~ resolve_secrets_environment
-             ~ '-' ~ item.value.secret_id,
-             region=resolve_secrets_region
-           )
+           item.item.value.runtime_env: item.stdout
          }) }}
-  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop: "{{ resolve_secrets_aws_values.results | default([]) }}"
   no_log: true
   when: resolve_secrets_cloud == 'aws'

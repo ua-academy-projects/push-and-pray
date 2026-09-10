@@ -27,3 +27,11 @@
     - name: Check the SSH connection on the final port
       ansible.builtin.ping:
       changed_when: false
+
+- name: Apply the host baseline to the bastion
+  hosts: bastion
+  become: true
+  gather_facts: true
+  force_handlers: true
+  roles:
+    - role: oilscope.platform.host_baseline

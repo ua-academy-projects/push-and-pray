@@ -16,6 +16,8 @@ The role declares and retrieves `POSTGRES_PASSWORD` before starting UI.
 ## Variables
 
 - `ui_postgres_password`: resolved from the role declaration unless passed explicitly.
+- `ui_postgres_user`: defaults to the dedicated `oil_tracker_ui` database
+  login.
 - `ui_health_retries` and `ui_health_delay`: Docker health-check polling
   controls, defaulting to 30 attempts every 2 seconds.
 

@@ -113,7 +113,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         if not HAS_YAML:
             raise AnsibleParserError("the oilscope inventory plugin requires PyYAML")
 
+        project_config_path = self._resolve_config_path(path)
         config = self._load_project_config(path)
+        self.inventory.set_variable("all", "project_config_path", project_config_path)
         settings_by_cloud = self._build_settings(config)
 
         for cloud, settings in settings_by_cloud.items():
@@ -207,14 +209,16 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     if candidate["role"] == bastion_role
                     and candidate["location"] == vm["location"]
                 ]
+                bootstrap_user = (
+                    "ubuntu" if cloud == "aws" else next(iter(config["ssh_users"]))
+                )
                 context = {
                     "oilscope_cloud": cloud,
                     "oilscope_location": vm["location"],
                     "oilscope_region": location["region"],
                     "oilscope_bastion_host": bastions[0] if bastions else "",
-                    "oilscope_bootstrap_user": "ubuntu"
-                    if cloud == "aws"
-                    else next(iter(config["ssh_users"])),
+                    "oilscope_bootstrap_user": bootstrap_user,
+                    "ansible_user": bootstrap_user,
                     "ansible_port": int(vm["ssh_port"])
                     if vm["role"] == bastion_role
                     else int(self.get_option("workload_ssh_port")),
@@ -294,9 +298,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
     def _aws_settings(self, config, vms, common):
         names = self._resource_names(config, vms)
-        is_bastion = f"tags.role | default('') == '{common['bastion_role']}'"
-        public = "public_ip_address | default('')"
-        private = "private_ip_address"
+        is_bastion = f"aws_ec2_tags.role | default('') == '{common['bastion_role']}'"
+        public = "aws_public_ip_address | default('')"
+        private = "aws_private_ip_address"
 
         return {
             "plugin": DELEGATES["aws"],
@@ -308,15 +312,21 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "tag:environment": common["environment"],
             },
             "hostnames": ["tag:Name"],
-            "keyed_groups": [{"key": "tags.role", "prefix": "", "separator": ""}],
+            "hostvars_prefix": "aws_",
+            "keyed_groups": [
+                {"key": "aws_ec2_tags.role", "prefix": "", "separator": ""}
+            ],
             "groups": {
-                "workloads": f"tags.role is defined and tags.role != '{common['bastion_role']}'"
+                "workloads": (
+                    f"aws_ec2_tags.role is defined "
+                    f"and aws_ec2_tags.role != '{common['bastion_role']}'"
+                )
             },
             "compose": {
                 "internal_ip": private,
                 "public_ip": public,
                 "ansible_host": f"{public} if {is_bastion} else {private}",
-                "oilscope_role": "tags.role | default('')",
+                "oilscope_role": "aws_ec2_tags.role | default('')",
                 "oilscope_cloud": "'aws'",
             },
         }

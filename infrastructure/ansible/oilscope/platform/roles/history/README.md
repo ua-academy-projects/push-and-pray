@@ -15,6 +15,8 @@ The role declares and retrieves `POSTGRES_PASSWORD` before starting History.
 ## Variables
 
 - `history_postgres_password`: resolved from the role declaration unless passed explicitly.
+- `history_postgres_user`: defaults to the dedicated `oil_tracker_history`
+  database login.
 
 ## Example
 

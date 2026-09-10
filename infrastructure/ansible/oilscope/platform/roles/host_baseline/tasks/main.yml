@@ -38,3 +38,17 @@
   loop: "{{ host_baseline_directories }}"
   loop_control:
     label: "{{ item.path }}"
+
+- name: Validate the inventory cloud for native monitoring
+  ansible.builtin.assert:
+    that:
+      - oilscope_cloud is defined
+      - oilscope_cloud in ['aws', 'gcp']
+    fail_msg: >-
+      host_baseline requires oilscope_cloud from the
+      oilscope.platform.oilscope inventory plugin.
+  when: oilscope_cloud is defined
+
+- name: Install and configure the native monitoring agent
+  ansible.builtin.include_tasks: "monitoring/{{ oilscope_cloud }}.yml"
+  when: oilscope_cloud | default('') in ['aws', 'gcp']

@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Inspect installed packages for the Google Cloud Ops Agent
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Download the Google Cloud Ops Agent repository installer
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ host_baseline_ops_agent_install_script_url }}"
+    dest: "{{ host_baseline_ops_agent_install_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: "'google-cloud-ops-agent' not in ansible_facts.packages"
+
+- name: Install the Google Cloud Ops Agent
+  become: true
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ host_baseline_ops_agent_install_script_path }}"
+      - --also-install
+  changed_when: true
+  when: "'google-cloud-ops-agent' not in ansible_facts.packages"
+
+- name: Configure host metrics and system logs
+  become: true
+  ansible.builtin.template:
+    src: google-cloud-ops-agent.yaml.j2
+    dest: /etc/google-cloud-ops-agent/config.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Google Cloud Ops Agent
+
+- name: Apply pending Google Cloud Ops Agent configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the Google Cloud Ops Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: google-cloud-ops-agent
+    enabled: true
+    state: started

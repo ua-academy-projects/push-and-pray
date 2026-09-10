@@ -1,7 +1,9 @@
 provider "google" {
-  project = local.config.clouds.gcp.project_id
-  region  = local.config.locations[local.config.default_location].gcp.region
-  zone    = local.config.locations[local.config.default_location].gcp.zone
+  project               = local.config.clouds.gcp.project_id
+  region                = local.config.locations[local.config.default_location].gcp.region
+  zone                  = local.config.locations[local.config.default_location].gcp.zone
+  billing_project       = local.config.clouds.gcp.project_id
+  user_project_override = true
 }
 
 provider "aws" {

@@ -13,6 +13,13 @@ module "gcp_vm" {
   network_tags_by_location = module.gcp_network.network_tags
 }
 
+module "gcp_monitoring" {
+  source = "./modules/gcp/monitoring"
+
+  config = local.config
+  vms    = module.gcp_vm.vms
+}
+
 module "aws_network" {
   source = "./modules/aws/network"
 
@@ -26,6 +33,13 @@ module "aws_vm" {
   management_subnet_ids          = module.aws_network.management_subnet_ids
   workload_subnet_ids            = module.aws_network.workload_subnet_ids
   security_group_ids_by_location = module.aws_network.security_group_ids
+}
+
+module "aws_monitoring" {
+  source = "./modules/aws/monitoring"
+
+  config = local.config
+  vms    = module.aws_vm.vms
 }
 
 moved {

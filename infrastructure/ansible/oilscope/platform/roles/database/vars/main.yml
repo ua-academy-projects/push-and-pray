@@ -12,3 +12,11 @@ database_runtime_environment: >-
       'DATABASE_HOST_PORT': database_host_port | string
     })
   }}
+
+database_application_credentials:
+  - user: "{{ database_history_postgres_user }}"
+    password: "{{ database_history_postgres_password }}"
+  - user: "{{ database_fetcher_postgres_user }}"
+    password: "{{ database_fetcher_postgres_password }}"
+  - user: "{{ database_ui_postgres_user }}"
+    password: "{{ database_ui_postgres_password }}"

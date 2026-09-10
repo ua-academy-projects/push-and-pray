@@ -2,8 +2,10 @@ output "vms" {
   description = "Created GCP VMs keyed by logical VM name."
   value = {
     for name, vm in google_compute_instance.workload : name => {
+      id                    = vm.instance_id
       name                  = vm.name
       role                  = local.vms[name].role
+      location              = local.vms[name].location
       internal_ip           = vm.network_interface[0].network_ip
       public_ip             = try(google_compute_address.public[name].address, null)
       network_tags          = vm.tags

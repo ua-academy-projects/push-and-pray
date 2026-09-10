@@ -16,16 +16,15 @@ VM entries in project configuration contain neither secret mappings nor values.
 
 The Ansible `secret_versions` role creates provider-specific secret containers
 and uploads their values. It reads only the declarations for roles used by the
-configured workloads, adds registry credentials only when registry
-authentication is configured, and deduplicates containers within each GCP
-project or AWS region. Terraform does not manage application secrets.
+configured workloads and deduplicates containers within each GCP project or
+AWS region. Terraform does not manage application secrets.
 
 At deployment time each application role passes its declaration to
 `oilscope.platform.resolve_secrets`. The resolver selects the provider from the
 target host's effective cloud, supplied by dynamic inventory:
 
 - GCP values use `google.cloud.gcp_secret_manager` and the configured project.
-- AWS values use `amazon.aws.secretsmanager_secret` and the workload region.
+- AWS values use the AWS CLI and the workload region.
 
 These lookups run on the Ansible controller, so the controller's GCP/AWS
 credentials need permission to read the required containers. Retrieved values
@@ -47,6 +46,15 @@ DB_PASSWORD_FETCHER
 DB_PASSWORD_HISTORY
 DB_PASSWORD_UI
 OILPRICEAPI_KEY
+```
+
+Private GHCR authentication is separate from application-secret provisioning.
+The normal workload deployment reads these values from the Ansible controller
+environment, logs in each target using a transient Docker configuration under
+`/run`, and removes that configuration after the play:
+
+```text
+GHCR_USERNAME
 GHCR_TOKEN
 ```
 

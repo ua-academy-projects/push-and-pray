@@ -10,13 +10,23 @@
     name: oilscope.platform.resolve_secrets
   vars:
     resolve_secrets_mappings: "{{ database_secret_requirements }}"
-  when: database_postgres_password | length == 0
+  when: >-
+    database_postgres_password | length == 0 or
+    database_history_postgres_password | length == 0 or
+    database_fetcher_postgres_password | length == 0 or
+    database_ui_postgres_password | length == 0
 
 - name: Assign database runtime credentials
   ansible.builtin.set_fact:
     database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+    database_history_postgres_password: >-
+      {{ resolve_secrets_result.HISTORY_POSTGRES_PASSWORD }}
+    database_fetcher_postgres_password: >-
+      {{ resolve_secrets_result.FETCHER_POSTGRES_PASSWORD }}
+    database_ui_postgres_password: >-
+      {{ resolve_secrets_result.UI_POSTGRES_PASSWORD }}
   no_log: true
-  when: database_postgres_password | length == 0
+  when: resolve_secrets_result is defined
 
 - name: Check the Compose definition
   ansible.builtin.stat:
@@ -112,4 +122,74 @@
   environment: "{{ database_runtime_environment }}"
   register: database_migrations
   changed_when: "'Applying ' in database_migrations.stdout"
+  no_log: true
+
+- name: Check application database credentials
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --interactive
+      - "{{ database_container.stdout | trim }}"
+      - sh
+      - -ceu
+      - >-
+        IFS= read -r PGPASSWORD; export PGPASSWORD;
+        exec psql --host=127.0.0.1 --port=5432
+        --username="$1" --dbname="$2" --no-psqlrc
+        --tuples-only --command="SELECT 1"
+      - sh
+      - "{{ item.user }}"
+      - "{{ database_postgres_name }}"
+    stdin: "{{ item.password }}"
+    stdin_add_newline: true
+  loop: "{{ database_application_credentials }}"
+  register: database_application_login
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Create or rotate application database credentials
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - --interactive
+      - "{{ database_container.stdout | trim }}"
+      - psql
+      - "--username={{ database_postgres_user }}"
+      - "--dbname={{ database_postgres_name }}"
+      - --no-psqlrc
+      - --set=ON_ERROR_STOP=1
+    stdin: |
+      DO $application_role$
+      DECLARE
+        application_role TEXT := '{{ item.item.user }}';
+        application_password TEXT := convert_from(
+          decode('{{ item.item.password | b64encode }}', 'base64'),
+          'UTF8'
+        );
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_roles WHERE rolname = application_role
+        ) THEN
+          EXECUTE format('CREATE ROLE %I LOGIN', application_role);
+        END IF;
+
+        EXECUTE format(
+          'ALTER ROLE %I WITH LOGIN PASSWORD %L',
+          application_role,
+          application_password
+        );
+        EXECUTE format(
+          'GRANT %I TO %I',
+          '{{ database_postgres_user }}',
+          application_role
+        );
+      END
+      $application_role$;
+    stdin_add_newline: true
+  loop: "{{ database_application_login.results }}"
+  when: item.rc != 0
+  changed_when: true
   no_log: true

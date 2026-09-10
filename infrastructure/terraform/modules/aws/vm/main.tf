@@ -7,6 +7,12 @@ resource "aws_key_pair" "bootstrap" {
   tags       = merge(var.config.common_labels, { environment = var.config.environment, Name = "${local.resource_prefix}-bootstrap" })
 }
 
+resource "terraform_data" "bootstrap_key" {
+  for_each = local.vms
+
+  input = aws_key_pair.bootstrap[each.value.location].public_key
+}
+
 data "aws_iam_policy_document" "assume_role" {
   for_each = local.vms
 
@@ -44,6 +50,65 @@ resource "aws_iam_instance_profile" "workload" {
   tags = local.labels_by_vm[each.key]
 }
 
+resource "aws_cloudwatch_log_group" "system" {
+  for_each = local.vms
+
+  region = var.config.locations[each.value.location].aws.region
+  name   = "/${local.resource_prefix}-${each.key}/system"
+  tags   = local.labels_by_vm[each.key]
+}
+
+data "aws_iam_policy_document" "cloudwatch_agent" {
+  count = length(local.vms) > 0 ? 1 : 0
+
+  statement {
+    sid       = "PublishHostMetrics"
+    effect    = "Allow"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["CWAgent"]
+    }
+  }
+
+  statement {
+    sid       = "DescribeSystemLogStreams"
+    actions   = ["logs:DescribeLogStreams"]
+    resources = [for log_group in values(aws_cloudwatch_log_group.system) : trimsuffix(log_group.arn, ":*")]
+  }
+
+  statement {
+    sid = "PublishSystemLogEvents"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      for log_group in values(aws_cloudwatch_log_group.system) :
+      "${trimsuffix(log_group.arn, ":*")}:*"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "cloudwatch_agent" {
+  count = length(local.vms) > 0 ? 1 : 0
+
+  name        = "${local.resource_prefix}-cloudwatch-agent"
+  description = "Allow OilScope VMs to publish host metrics and system logs to CloudWatch"
+  policy      = data.aws_iam_policy_document.cloudwatch_agent[0].json
+  tags        = merge(var.config.common_labels, { environment = var.config.environment })
+}
+
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
+  for_each = local.vms
+
+  role       = aws_iam_role.workload[each.key].name
+  policy_arn = aws_iam_policy.cloudwatch_agent[0].arn
+}
+
 #trivy:ignore:AVD-AWS-0028[associate_public_ip_address=true]
 resource "aws_instance" "workload" {
   for_each = local.vms
@@ -62,6 +127,7 @@ resource "aws_instance" "workload" {
   root_block_device {
     delete_on_termination = true
     encrypted             = true
+    volume_size           = try(each.value.disk_size, null)
     volume_type           = var.config.provider_mappings.disk_types[each.value.disk_type].aws
     tags                  = local.labels_by_vm[each.key]
   }
@@ -79,8 +145,12 @@ resource "aws_instance" "workload" {
   )
 
   lifecycle {
+    replace_triggered_by = [
+      terraform_data.bootstrap_key[each.key],
+    ]
+
     ignore_changes = [
-      key_name,
+      associate_public_ip_address,
       user_data,
       user_data_replace_on_change,
     ]
@@ -90,6 +160,31 @@ resource "aws_instance" "workload" {
       error_message = "Only workloads with role ui or bastion may receive a public IP."
     }
   }
+}
+
+resource "aws_ebs_volume" "data" {
+  for_each = local.data_disks
+
+  region            = var.config.locations[each.value.location].aws.region
+  availability_zone = var.config.locations[each.value.location].aws.availability_zone
+  size              = each.value.disk_size
+  type              = var.config.provider_mappings.disk_types[each.value.disk_type].aws
+  encrypted         = true
+  tags = merge(
+    local.labels_by_vm[each.value.vm_name],
+    {
+      Name = "${local.resource_prefix}-${each.key}"
+    },
+  )
+}
+
+resource "aws_volume_attachment" "data" {
+  for_each = local.data_disks
+
+  region      = var.config.locations[each.value.location].aws.region
+  device_name = format("/dev/sd%c", each.value.disk_index + 101)
+  volume_id   = aws_ebs_volume.data[each.key].id
+  instance_id = aws_instance.workload[each.value.vm_name].id
 }
 
 resource "aws_eip" "public" {

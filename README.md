@@ -395,6 +395,10 @@ uv run ruff check .
 
 ## Security notes
 
+Native AWS CloudWatch and GCP Cloud Monitoring setup, including notification
+confirmation and optional budgets, is documented in
+[`docs/native-monitoring.md`](docs/native-monitoring.md).
+
 - Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`. Run
   `pre-commit install` after cloning so this is enforced locally, not just by review.
 - Replace all example passwords before deployment.

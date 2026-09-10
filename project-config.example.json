@@ -11,7 +11,8 @@
   "default_location": "europe",
   "vm_defaults": {
     "image": "ubuntu-24.04",
-    "disk_type": "balanced"
+    "disk_type": "standard",
+    "data_disk_size_gb": 10
   },
   "clouds": {
     "gcp": {
@@ -139,6 +140,14 @@
     "username": "example-operator",
     "image_tag": "0123456789abcdef0123456789abcdef01234567"
   },
+  "monitoring": {
+    "alert_email": "example-operator@example.com",
+    "monthly_budget": {
+      "amount": 25,
+      "currency": "USD",
+      "gcp_billing_account_id": "000000-000000-000000"
+    }
+  },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/28",
@@ -179,6 +188,9 @@
     "ui": {
       "role": "ui",
       "cloud": "aws",
+      "disks": 2,
+      "disk_type": "balanced",
+      "disk_size": 20,
       "size": "micro",
       "location": "europe",
       "internal_ip": "10.0.0.5",

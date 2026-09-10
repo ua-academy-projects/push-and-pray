@@ -1,3 +1,23 @@
 # SPDX-License-Identifier: MIT-0
 ---
 # handlers file for host_baseline
+- name: Apply CloudWatch agent configuration
+  become: true
+  ansible.builtin.command:
+    argv:
+      - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+      - -a
+      - fetch-config
+      - -m
+      - ec2
+      - -s
+      - -c
+      - file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+  changed_when: true
+  listen: Restart CloudWatch agent
+
+- name: Restart Google Cloud Ops Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: google-cloud-ops-agent
+    state: restarted

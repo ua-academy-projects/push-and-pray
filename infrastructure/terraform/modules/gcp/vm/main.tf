@@ -6,6 +6,22 @@ resource "google_service_account" "workload" {
   description  = "Runtime identity for the ${local.resource_prefix}-${each.key} workload VM"
 }
 
+resource "google_project_iam_member" "monitoring_metric_writer" {
+  for_each = local.vms
+
+  project = var.config.clouds.gcp.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.workload[each.key].email}"
+}
+
+resource "google_project_iam_member" "logging_log_writer" {
+  for_each = local.vms
+
+  project = var.config.clouds.gcp.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.workload[each.key].email}"
+}
+
 resource "google_compute_address" "public" {
   for_each = { for name, vm in local.vms : name => vm if vm.assign_public_ip }
 
@@ -30,6 +46,7 @@ resource "google_compute_instance" "workload" {
 
     initialize_params {
       image  = var.config.provider_mappings.images[each.value.image].gcp.image
+      size   = try(each.value.disk_size, null)
       type   = var.config.provider_mappings.disk_types[each.value.disk_type].gcp
       labels = local.labels_by_vm[each.key]
     }
@@ -73,4 +90,23 @@ resource "google_compute_instance" "workload" {
       "${username}:${trimspace(public_key)}"
     ])
   }
+}
+
+resource "google_compute_disk" "data" {
+  for_each = local.data_disks
+
+  name   = "${local.resource_prefix}-${each.key}"
+  type   = var.config.provider_mappings.disk_types[each.value.disk_type].gcp
+  zone   = var.config.locations[each.value.location].gcp.zone
+  size   = each.value.disk_size
+  labels = local.labels_by_vm[each.value.vm_name]
+}
+
+resource "google_compute_attached_disk" "data" {
+  for_each = local.data_disks
+
+  disk        = google_compute_disk.data[each.key].id
+  instance    = google_compute_instance.workload[each.value.vm_name].id
+  zone        = var.config.locations[each.value.location].gcp.zone
+  device_name = each.key
 }

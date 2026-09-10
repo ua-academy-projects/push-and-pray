@@ -30,8 +30,8 @@ server (and therefore its health check) ever starts.
 - `fetcher_compose_project_name`: Compose project name; defaults to
   `petroscope`.
 - `fetcher_service`: Compose service name; defaults to `fetcher`.
-- `fetcher_postgres_user` and `fetcher_postgres_name`: both default to
-  `oil_tracker`.
+- `fetcher_postgres_user`: defaults to the dedicated `oil_tracker_fetcher`
+  login. `fetcher_postgres_name` defaults to `oil_tracker`.
 - `fetcher_database_host`: defaults to `postgres`; override to the database
   VM's address when Fetcher and the database run on separate hosts.
 - `fetcher_bind_address`: defaults to `0.0.0.0`.

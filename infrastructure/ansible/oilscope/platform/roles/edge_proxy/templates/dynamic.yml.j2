@@ -1,12 +1,22 @@
+{% set ui_vm = compose_project_config.vms.values() | selectattr('role', 'equalto', 'ui') | first %}
+{% set public_endpoint = ui_vm.public_endpoint | default({}) %}
 http:
   routers:
     ui:
-      rule: "Host(`{{ compose_project_config.vms.ui.public_endpoint.hostname }}`)"
+{% if public_endpoint %}
+      rule: "Host(`{{ public_endpoint.hostname }}`)"
+{% else %}
+      rule: "PathPrefix(`/`)"
+{% endif %}
       entryPoints:
         - websecure
       service: ui
+{% if public_endpoint %}
       tls:
         certResolver: letsencrypt
+{% else %}
+      tls: {}
+{% endif %}
 
   services:
     ui:

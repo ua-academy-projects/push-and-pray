@@ -9,6 +9,12 @@ database_postgres_image: ""
 database_postgres_password: ""
 database_postgres_user: oil_tracker
 database_postgres_name: oil_tracker
+database_history_postgres_password: ""
+database_history_postgres_user: oil_tracker_history
+database_fetcher_postgres_password: ""
+database_fetcher_postgres_user: oil_tracker_fetcher
+database_ui_postgres_password: ""
+database_ui_postgres_user: oil_tracker_ui
 database_bind_address: 0.0.0.0
 database_host_port: 5432
 database_health_retries: 30

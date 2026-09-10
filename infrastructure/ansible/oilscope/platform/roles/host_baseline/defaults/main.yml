@@ -9,6 +9,16 @@ host_baseline_packages:
   - curl
   - jq
 
+host_baseline_cloudwatch_agent_package_path: >-
+  /var/cache/apt/archives/amazon-cloudwatch-agent.deb
+host_baseline_cloudwatch_agent_architecture: >-
+  {{ 'arm64' if ansible_architecture in ['aarch64', 'arm64'] else 'amd64' }}
+host_baseline_cloudwatch_agent_url: >-
+  https://amazoncloudwatch-agent-{{ oilscope_region }}.s3.{{ oilscope_region }}.amazonaws.com/ubuntu/{{ host_baseline_cloudwatch_agent_architecture }}/latest/amazon-cloudwatch-agent.deb
+host_baseline_ops_agent_install_script_path: /usr/local/src/add-google-cloud-ops-agent-repo.sh
+host_baseline_ops_agent_install_script_url: >-
+  https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+
 host_baseline_directories:
   - path: /opt/oilscope
     owner: root

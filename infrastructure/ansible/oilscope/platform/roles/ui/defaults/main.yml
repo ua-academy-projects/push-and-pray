@@ -5,6 +5,7 @@ ui_compose_file: "{{ ui_compose_project_dir }}/compose.yaml"
 ui_compose_project_name: petroscope
 
 ui_postgres_password: ""
+ui_postgres_user: oil_tracker_ui
 ui_health_retries: 30
 ui_health_delay: 2
 ui_docker_config_dir: /run/oilscope/docker-auth
