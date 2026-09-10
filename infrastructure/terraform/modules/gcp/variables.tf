@@ -10,8 +10,3 @@ variable "enable_bastion_ssh_bootstrap" {
   default     = false
 }
 
-variable "secret_version_managers" {
-  description = "IAM members allowed to add new versions to every secret. Adding a version does not grant reading one."
-  type        = list(string)
-  default     = []
-}

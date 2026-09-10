@@ -10,16 +10,3 @@ variable "enable_bastion_ssh_bootstrap" {
   default     = false
 }
 
-variable "secret_version_manager_arns" {
-  description = "IAM principal ARNs allowed to add new versions to every secret. Adding a version does not grant reading one."
-  type        = list(string)
-  default     = []
-
-  validation {
-    condition = alltrue([
-      for principal in var.secret_version_manager_arns :
-      can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(root|user/.+|role/.+)$", principal))
-    ])
-    error_message = "Each entry must be an IAM principal ARN, for example arn:aws:iam::123456789012:user/name."
-  }
-}

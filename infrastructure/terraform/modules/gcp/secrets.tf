@@ -12,8 +12,10 @@ locals {
     ]
   ])
 
+  # Identities allowed to write a new version but never read one. They come from
+  # this cloud's profile, because each provider names a principal its own way.
   secret_version_writers = {
-    for pair in setproduct(sort(local.all_secret_ids), var.secret_version_managers) :
+    for pair in setproduct(sort(local.all_secret_ids), try(local.profile.secret_version_managers, [])) :
     "${pair[0]}/${pair[1]}" => {
       secret_id = pair[0]
       member    = pair[1]

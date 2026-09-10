@@ -47,7 +47,8 @@
       },
       "images": {
         "ubuntu-lts": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64"
-      }
+      },
+      "secret_version_managers": ["serviceAccount:example-ci@example-project-12345.iam.gserviceaccount.com"]
     },
     "aws": {
       "region": "eu-central-1",
@@ -70,7 +71,8 @@
       },
       "images": {
         "ubuntu-lts": "ami-0123456789abcdef0"
-      }
+      },
+      "secret_version_managers": ["arn:aws:iam::123456789012:role/example-ci"]
     }
   },
   "vms": {

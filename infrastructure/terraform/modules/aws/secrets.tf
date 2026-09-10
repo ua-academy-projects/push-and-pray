@@ -1,4 +1,6 @@
 locals {
+  secret_version_managers = try(local.profile.secret_version_managers, [])
+
   all_secret_ids = distinct(flatten([
     for workload in values(local.workload_vms) : values(workload.secret_mappings)
   ]))
@@ -39,10 +41,12 @@ resource "aws_iam_role_policy" "secret_access" {
 }
 
 # The counterpart of roles/secretmanager.secretVersionAdder: PutSecretValue
-# without GetSecretValue, so a version can be written but never read back.
+# without GetSecretValue, so a version can be written but never read back. The
+# principals come from this cloud's profile, because each provider names one its
+# own way.
 resource "aws_secretsmanager_secret_policy" "version_adders" {
   for_each = (
-    length(var.secret_version_manager_arns) > 0
+    length(local.secret_version_managers) > 0
     ? aws_secretsmanager_secret.this
     : {}
   )
@@ -53,7 +57,7 @@ resource "aws_secretsmanager_secret_policy" "version_adders" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { AWS = var.secret_version_manager_arns }
+      Principal = { AWS = local.secret_version_managers }
       Action    = ["secretsmanager:PutSecretValue"]
       Resource  = "*"
     }]

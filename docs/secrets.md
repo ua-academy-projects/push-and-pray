@@ -24,7 +24,7 @@ The key is the environment variable the application expects; the value is the
 Secret Manager container ID. Both halves are non-secret, which is why the whole
 mapping can live in a file the repository reads.
 
-`infrastructure/terraform/secrets.tf` flattens those maps into the set of
+`infrastructure/terraform/modules/<cloud>/secrets.tf` flattens those maps into the set of
 containers to create, and into the list of (workload, secret) pairs to grant.
 Giving a workload a new secret is a one-line change to that JSON — the
 container, the grant and the environment-variable name all follow from it.
@@ -101,14 +101,24 @@ Generate database passwords with `openssl rand -hex 32`. `-hex` rather than
 `-base64`, because base64 contains `+` and `/`, which have to be percent-encoded
 inside a `postgres://` URL and break it if they are not.
 
-Adding versions requires `roles/secretmanager.secretVersionAdder`. That grant is
-made by Terraform from the `secret_version_managers` variable:
+Adding versions requires `roles/secretmanager.secretVersionAdder`. Terraform
+grants it from `secret_version_managers` in the cloud's own profile, because each
+provider names a principal its own way:
 
-```hcl
-secret_version_managers = [
-  "user:name@example.com",
-]
+```json
+"clouds": {
+  "gcp": {
+    "secret_version_managers": ["user:name@example.com"]
+  },
+  "aws": {
+    "secret_version_managers": ["arn:aws:iam::123456789012:role/ci"]
+  }
+}
 ```
+
+It lives in the configuration rather than in a command-line variable for two
+reasons: the identities are not secret, and a flag that is forgotten on the next
+`apply` would silently remove the grant.
 
 `secretVersionAdder` is deliberately not `secretAccessor`. It allows adding a new
 version and nothing else — a person listed here can rotate a credential without

@@ -116,6 +116,16 @@
               "not": {
                 "required": ["network_cidr"]
               }
+            },
+            {
+              "$comment": "GCP names a principal as type:identifier.",
+              "properties": {
+                "secret_version_managers": {
+                  "items": {
+                    "pattern": "^(user|group|serviceAccount|principal|principalSet):.+$"
+                  }
+                }
+              }
             }
           ]
         },
@@ -132,6 +142,16 @@
             },
             {
               "required": ["network_cidr"]
+            },
+            {
+              "$comment": "AWS names a principal by ARN.",
+              "properties": {
+                "secret_version_managers": {
+                  "items": {
+                    "pattern": "^arn:aws[a-z-]*:iam::[0-9]{12}:(root|user/.+|role/.+)$"
+                  }
+                }
+              }
             }
           ]
         }
@@ -227,6 +247,15 @@
         "images": {
           "$comment": "Abstract image label to this provider's image reference. An AWS AMI ID is region-scoped, so it belongs to this profile and not to a shared list.",
           "$ref": "#/$defs/label_map"
+        },
+        "secret_version_managers": {
+          "$comment": "Identities allowed to add a new version to every secret this cloud holds. Adding a version never grants reading one. The field is named the same on both providers because the difference is only in how each names a principal, and each cloud's branch under clouds checks its own format.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },

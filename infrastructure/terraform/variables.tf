@@ -14,23 +14,3 @@ variable "enable_bastion_ssh_bootstrap" {
   type        = bool
   default     = false
 }
-
-variable "secret_version_managers" {
-  description = "IAM members allowed to add new versions to every secret. Adding a version does not grant reading one."
-  type        = list(string)
-  default     = []
-
-  validation {
-    condition = alltrue([
-      for member in var.secret_version_managers :
-      can(regex("^(user|group|serviceAccount|principal|principalSet):.+$", member))
-    ])
-    error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
-  }
-}
-
-variable "secret_version_manager_arns" {
-  description = "AWS IAM principal ARNs allowed to add new versions to every secret. The AWS counterpart of secret_version_managers, kept separate because the two clouds name principals differently."
-  type        = list(string)
-  default     = []
-}
