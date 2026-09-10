@@ -1,4 +1,24 @@
 ---
+- name: Create a temporary environment file for managed database migrations
+  ansible.builtin.tempfile:
+    state: file
+    prefix: oilscope-managed-migration-
+  register: managed_database_migration_env_file
+  when: managed_database_migration_enabled | bool
+
+- name: Write managed database migration environment
+  ansible.builtin.copy:
+    dest: "{{ managed_database_migration_env_file.path }}"
+    mode: "0600"
+    content: |
+      PGHOST={{ managed_database_migration_connection.host }}
+      PGPORT={{ managed_database_migration_connection.port | string }}
+      PGUSER={{ managed_database_migration_connection.username }}
+      PGDATABASE={{ managed_database_migration_connection.database_name }}
+      PGPASSWORD={{ managed_database_migration_password }}
+  when: managed_database_migration_enabled | bool
+  no_log: true
+
 - name: Apply migrations to the managed PostgreSQL database
   ansible.builtin.command:
     argv:
@@ -7,17 +27,28 @@
       - --rm
       - --network
       - host
-      - --env
-      - "PGHOST={{ managed_database_migration_connection.host }}"
-      - --env
-      - "PGPORT={{ managed_database_migration_connection.port | string }}"
-      - --env
-      - "PGUSER={{ managed_database_migration_connection.username }}"
-      - --env
-      - "PGDATABASE={{ managed_database_migration_connection.database_name }}"
-      - --env
-      - "PGPASSWORD={{ managed_database_migration_password }}"
+      - --env-file
+      - "{{ managed_database_migration_env_file.path }}"
       - "{{ managed_database_migration_image }}"
       - petroscope-migrate
   when: managed_database_migration_enabled | bool
+  environment:
+    DOCKER_CONFIG: "{{ managed_database_migration_docker_config_dir }}"
+  register: managed_database_migration_result
+  failed_when: false
+
+- name: Remove the managed database migration environment file
+  ansible.builtin.file:
+    path: "{{ managed_database_migration_env_file.path }}"
+    state: absent
+  when: managed_database_migration_enabled | bool
   no_log: true
+
+- name: Report a managed database migration failure
+  ansible.builtin.fail:
+    msg: >-
+      Managed database migration failed: {{ managed_database_migration_result.stderr
+      | default(managed_database_migration_result.stdout, true) }}
+  when:
+    - managed_database_migration_enabled | bool
+    - managed_database_migration_result.rc != 0
