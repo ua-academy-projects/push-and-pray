@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "default_cloud",
+    "manage_db",
     "defaults",
     "clouds",
     "environment",
@@ -20,6 +21,8 @@
   ],
   "properties": {
     "default_cloud": { "$ref": "#/$defs/cloud_name" },
+    "manage_db": { "type": "boolean" },
+    "database": { "$ref": "#/$defs/database" },
     "defaults": {
       "type": "object",
       "additionalProperties": false,
@@ -51,7 +54,8 @@
                 "project_id": {
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
-                }
+                },
+                "network": { "$ref": "#/$defs/network_override" }
               }
             }
           ]
@@ -64,6 +68,7 @@
               "properties": {
                 "bastion_nat": { "type": "boolean" },
                 "free_tier_guardrails": { "type": "boolean" }
+                ,"network": { "$ref": "#/$defs/network_override" }
               }
             }
           ]
@@ -118,7 +123,20 @@
           "minItems": 1,
           "maxItems": 2,
           "uniqueItems": true
-        }
+        },
+        "database_subnet_cidrs": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "database_availability_zones": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "database_private_service_cidr": { "type": "string", "minLength": 1 }
       }
     },
     "service_ports": {
@@ -160,7 +178,89 @@
       "additionalProperties": { "$ref": "#/$defs/vm" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "manage_db": { "const": true } },
+        "required": ["manage_db"]
+      },
+      "then": { "required": ["database"] },
+      "else": { "not": { "required": ["database"] } }
+    }
+  ],
   "$defs": {
+    "network_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vpc_cidr": { "type": "string", "minLength": 1 },
+        "management_subnet_cidr": { "type": "string", "minLength": 1 },
+        "workload_subnet_cidr": { "type": "string", "minLength": 1 },
+        "public_subnet_cidr": { "type": "string", "minLength": 1 },
+        "database_subnet_cidrs": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "database_availability_zones": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "database_private_service_cidr": { "type": "string", "minLength": 1 }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cloud", "engine", "engine_version", "database_name", "username",
+        "port", "generation", "backup_on_delete", "backups_enabled",
+        "deletion_protection", "aws", "gcp"
+      ],
+      "properties": {
+        "cloud": { "$ref": "#/$defs/cloud_name" },
+        "engine": { "const": "postgres" },
+        "engine_version": { "type": "string", "minLength": 1 },
+        "database_name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+        "username": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+        "port": { "$ref": "#/$defs/port" },
+        "generation": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "backup_on_delete": { "type": "boolean" },
+        "backups_enabled": { "type": "boolean" },
+        "deletion_protection": { "type": "boolean" },
+        "restore": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "aws_snapshot_identifier": { "type": "string", "minLength": 1 },
+            "gcp_backup_run_id": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["instance_class", "allocated_storage_gb", "multi_az"],
+          "properties": {
+            "instance_class": { "type": "string", "minLength": 1 },
+            "allocated_storage_gb": { "type": "integer", "minimum": 20 },
+            "multi_az": { "type": "boolean" }
+          }
+        },
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tier", "disk_size_gb", "availability_type"],
+          "properties": {
+            "tier": { "type": "string", "minLength": 1 },
+            "disk_size_gb": { "type": "integer", "minimum": 10 },
+            "availability_type": { "type": "string", "enum": ["ZONAL", "REGIONAL"] }
+          }
+        }
+      }
+    },
     "observability": {
       "type": "object",
       "additionalProperties": false,
@@ -213,6 +313,7 @@
         "images": { "$ref": "#/$defs/string_catalog" },
         "bastion_nat": { "type": "boolean" },
         "free_tier_guardrails": { "type": "boolean" }
+        ,"network": { "$ref": "#/$defs/network_override" }
       }
     },
     "port": {

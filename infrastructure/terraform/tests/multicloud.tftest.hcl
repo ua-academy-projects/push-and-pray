@@ -48,3 +48,41 @@ run "unknown_profile_is_rejected" {
     output.vms,
   ]
 }
+
+run "aws_managed_database_profile" {
+  command = plan
+
+  variables {
+    project_config_path = "../../configs/project-config.aws.json"
+    database_password   = "test-only-password"
+  }
+
+  assert {
+    condition = (
+      length(module.aws.vms) == 4 &&
+      length(module.gcp.vms) == 0 &&
+      module.aws.managed_database.enabled &&
+      module.aws.managed_database.cloud == "aws"
+    )
+    error_message = "The AWS profile must create four VMs and a private RDS database."
+  }
+}
+
+run "gcp_managed_database_profile" {
+  command = plan
+
+  variables {
+    project_config_path = "../../configs/project-config.gcp.json"
+    database_password   = "test-only-password"
+  }
+
+  assert {
+    condition = (
+      length(module.gcp.vms) == 4 &&
+      length(module.aws.vms) == 0 &&
+      module.gcp.managed_database.enabled &&
+      module.gcp.managed_database.cloud == "gcp"
+    )
+    error_message = "The GCP profile must create four VMs and a private Cloud SQL database."
+  }
+}

@@ -35,3 +35,10 @@ output "workload_secret_access" {
     name => sort(distinct(values(workload.secret_mappings)))
   }
 }
+
+output "managed_database" {
+  value = module.config.managed_database_enabled ? merge(module.database[0].connection, {
+    enabled = true
+    cloud   = "aws"
+  }) : null
+}

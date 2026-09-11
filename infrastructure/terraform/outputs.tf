@@ -96,3 +96,18 @@ output "workload_secret_access" {
   description = "Secret IDs each workload identity may read; never values."
   value       = merge(module.gcp.workload_secret_access, module.aws.workload_secret_access)
 }
+
+output "managed_database" {
+  description = "Provider-neutral managed PostgreSQL connection metadata. Password is never exported."
+  value = try(
+    coalesce(module.aws.managed_database, module.gcp.managed_database),
+    {
+      enabled = false
+      cloud   = null
+      host    = null
+      port    = null
+      name    = null
+      user    = null
+    },
+  )
+}

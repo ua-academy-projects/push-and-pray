@@ -8,3 +8,10 @@ variable "enable_bastion_ssh_bootstrap" {
   type        = bool
   default     = false
 }
+
+variable "database_password" {
+  type      = string
+  sensitive = true
+  default   = null
+  nullable  = true
+}

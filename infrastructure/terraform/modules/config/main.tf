@@ -3,6 +3,13 @@ locals {
   cloud        = lower(var.cloud)
   cloud_config = lookup(local.config.clouds, local.cloud, {})
   defaults     = local.config.defaults
+  network      = merge(local.config.network, lookup(local.cloud_config, "network", {}))
+
+  manage_db = lookup(local.config, "manage_db", false)
+  database  = lookup(local.config, "database", null)
+  database_cloud = local.manage_db ? lower(
+    lookup(local.database, "cloud", local.config.default_cloud)
+  ) : null
 
   resource_prefix = "${local.config.name_prefix}-${local.config.environment}"
   common_metadata = merge(
@@ -17,7 +24,10 @@ locals {
 
   selected_vms = {
     for name, vm in local.config.vms : name => vm
-    if lower(lookup(vm, "cloud", local.config.default_cloud)) == local.cloud
+    if(
+      lower(lookup(vm, "cloud", local.config.default_cloud)) == local.cloud &&
+      !(local.manage_db && vm.role == "database")
+    )
   }
 
   all_clouds_valid = alltrue([

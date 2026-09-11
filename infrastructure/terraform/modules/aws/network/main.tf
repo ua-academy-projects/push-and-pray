@@ -28,3 +28,13 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = false
   tags                    = merge(var.tags, { Name = "${var.resource_prefix}-public" })
 }
+
+resource "aws_subnet" "database" {
+  for_each = var.database_subnets
+
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.zone
+  map_public_ip_on_launch = false
+  tags                    = merge(var.tags, { Name = "${var.resource_prefix}-database-${each.key}" })
+}

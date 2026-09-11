@@ -12,6 +12,23 @@ output "cloud" {
   value = local.cloud
 }
 
+output "network" {
+  description = "Cloud-specific network configuration merged over the shared defaults."
+  value       = local.network
+}
+
+output "manage_db" {
+  value = local.manage_db
+}
+
+output "database" {
+  value = local.database
+}
+
+output "managed_database_enabled" {
+  value = local.manage_db && local.database_cloud == local.cloud
+}
+
 output "selected_count" {
   value = length(local.selected_vms)
 }

@@ -23,12 +23,18 @@ module "network" {
   ) ? 1 : 0
 
   resource_prefix        = module.config.resource_prefix
-  vpc_cidr               = module.config.config.network.vpc_cidr
-  management_subnet_cidr = module.config.config.network.management_subnet_cidr
-  workload_subnet_cidr   = module.config.config.network.workload_subnet_cidr
-  public_subnet_cidr     = module.config.config.network.public_subnet_cidr
+  vpc_cidr               = module.config.network.vpc_cidr
+  management_subnet_cidr = module.config.network.management_subnet_cidr
+  workload_subnet_cidr   = module.config.network.workload_subnet_cidr
+  public_subnet_cidr     = module.config.network.public_subnet_cidr
   availability_zone      = module.config.location.zone
-  tags                   = module.config.common_metadata
+  database_subnets = module.config.managed_database_enabled ? {
+    for index, cidr in module.config.network.database_subnet_cidrs : tostring(index) => {
+      cidr = cidr
+      zone = module.config.network.database_availability_zones[index]
+    }
+  } : {}
+  tags = module.config.common_metadata
 
   depends_on = [terraform_data.configuration]
 }
@@ -42,17 +48,44 @@ module "security" {
 
   resource_prefix       = module.config.resource_prefix
   vpc_id                = module.network[0].vpc_id
-  workload_subnet_cidr  = module.config.config.network.workload_subnet_cidr
+  workload_subnet_cidr  = module.config.network.workload_subnet_cidr
   enable_bastion        = module.config.bastion != null
   enable_bastion_nat    = module.config.bastion != null && module.config.bastion_nat
   bastion_ssh_port      = try(module.config.bastion.ssh_port, 22)
   bastion_allowed_cidrs = try(module.config.bastion.allowed_cidrs, [])
-  ui_public_ports       = module.config.config.network.ui_public_ports
+  ui_public_ports       = module.config.network.ui_public_ports
   history_api_port      = module.config.config.service_ports.history_api
   postgresql_port       = module.config.config.service_ports.postgresql
   tags                  = module.config.common_metadata
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+}
+
+module "database" {
+  source = "./database"
+  count  = module.config.managed_database_enabled && module.config.configuration_valid ? 1 : 0
+
+  resource_prefix      = module.config.resource_prefix
+  generation           = module.config.database.generation
+  engine_version       = module.config.database.engine_version
+  database_name        = module.config.database.database_name
+  username             = module.config.database.username
+  password             = var.database_password
+  port                 = module.config.database.port
+  instance_class       = module.config.database.aws.instance_class
+  allocated_storage_gb = module.config.database.aws.allocated_storage_gb
+  multi_az             = module.config.database.aws.multi_az
+  backup_on_delete     = module.config.database.backup_on_delete
+  backups_enabled      = module.config.database.backups_enabled
+  deletion_protection  = module.config.database.deletion_protection
+  snapshot_identifier  = try(module.config.database.restore.aws_snapshot_identifier, null)
+  subnet_ids           = module.network[0].database_subnet_ids
+  vpc_id               = module.network[0].vpc_id
+  workload_security_group_ids = {
+    for role in ["history", "fetcher", "ui"] :
+    role => module.security[0].security_group_ids[role]
+  }
+  tags = module.config.common_metadata
 }
 
 module "vm" {

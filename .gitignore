@@ -17,6 +17,7 @@ infrastructure/docker/deployment
 **/.terraform/
 *.tfstate
 *.tfstate.*
+infrastructure/terraform/.state/
 terraform.tfvars
 infrastructure/terraform/terraform.tfvars
 infrastructure/terraform/legacy
@@ -31,6 +32,8 @@ crash.*.log
 *.json
 !infrastructure/terraform/*.json
 !infrastructure/terraform/tests/fixtures/*.json
+!configs/
+!configs/project-config.*.json
 # Credentials and private keys
 *.pem
 *.key

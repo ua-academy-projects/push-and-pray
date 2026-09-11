@@ -21,7 +21,24 @@ if [[ -f "${DEPLOY_ENV_FILE}" ]]; then
   set +a
 fi
 
-CONFIG_INPUT="${1:-${OILSCOPE_PROJECT_CONFIG:-${REPO_ROOT}/project-config.json}}"
+PROFILE="${1:-${OILSCOPE_DEPLOY_PROFILE:-}}"
+case "${PROFILE}" in
+  aws|gcp|mixed)
+    CONFIG_INPUT="${REPO_ROOT}/configs/project-config.${PROFILE}.json"
+    ;;
+  "")
+    CONFIG_INPUT="${OILSCOPE_PROJECT_CONFIG:-${REPO_ROOT}/project-config.json}"
+    PROFILE="custom"
+    ;;
+  *.json|*/*.json)
+    CONFIG_INPUT="${PROFILE}"
+    PROFILE="custom"
+    ;;
+  *)
+    printf "ERROR: Unknown deployment profile '%s'. Use aws, gcp, mixed, or a JSON config path.\n" "${PROFILE}" >&2
+    exit 1
+    ;;
+esac
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -44,6 +61,9 @@ CONFIG_DIR="$(cd "$(dirname "${CONFIG_INPUT}")" && pwd -P)"
 readonly CONFIG_DIR
 CONFIG="${CONFIG_DIR}/$(basename "${CONFIG_INPUT}")"
 readonly CONFIG
+readonly PROFILE
+readonly TF_STATE_DIR="${TF_DIR}/.state"
+readonly TF_STATE_PATH="${TF_STATE_DIR}/${PROFILE}.tfstate"
 
 for command_name in jq terraform curl dig nc python3; do
   require_command "${command_name}"
@@ -82,8 +102,13 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as config_file:
     config = json.load(config_file)
 
+networks = {}
+for cloud in {vm.get("cloud", config["default_cloud"]).lower() for vm in config["vms"].values()}:
+    networks[cloud] = config["network"] | config["clouds"].get(cloud, {}).get("network", {})
+
 for name, vm in config["vms"].items():
     cloud = vm.get("cloud", config["default_cloud"]).lower()
+    network = networks[cloud]
     if vm["role"] == "bastion":
         subnet_key = "management_subnet_cidr"
     elif cloud == "aws" and vm["assign_public_ip"]:
@@ -92,12 +117,45 @@ for name, vm in config["vms"].items():
         subnet_key = "workload_subnet_cidr"
 
     address = ipaddress.ip_address(vm["internal_ip"])
-    subnet = ipaddress.ip_network(config["network"][subnet_key])
+    subnet = ipaddress.ip_network(network[subnet_key])
     if address not in subnet:
         raise SystemExit(
             f"VM {name} uses {cloud} and must have an internal_ip inside "
             f"{subnet_key} ({subnet}), got {address}"
         )
+
+for cloud, network in networks.items():
+    ranges = {
+        key: ipaddress.ip_network(value)
+        for key, value in network.items()
+        if key.endswith("_cidr")
+    }
+    ranges.update({
+        f"database_subnet_cidrs[{index}]": ipaddress.ip_network(value)
+        for index, value in enumerate(network.get("database_subnet_cidrs", []))
+    })
+    items = list(ranges.items())
+    for index, (left_name, left) in enumerate(items):
+        for right_name, right in items[index + 1:]:
+            if left_name == "vpc_cidr" or right_name == "vpc_cidr":
+                continue
+            if left.overlaps(right):
+                raise SystemExit(
+                    f"Cloud {cloud} network ranges overlap: {left_name}={left} and "
+                    f"{right_name}={right}"
+                )
+
+if len(networks) > 1:
+    cloud_items = list(networks.items())
+    for index, (left_cloud, left_network) in enumerate(cloud_items):
+        left_vpc = ipaddress.ip_network(left_network["vpc_cidr"])
+        for right_cloud, right_network in cloud_items[index + 1:]:
+            right_vpc = ipaddress.ip_network(right_network["vpc_cidr"])
+            if left_vpc.overlaps(right_vpc):
+                raise SystemExit(
+                    f"Mixed-cloud VPC CIDRs overlap: {left_cloud}={left_vpc}, "
+                    f"{right_cloud}={right_vpc}"
+                )
 PY
 
 USED_CLOUDS="$(jq -r '
@@ -106,22 +164,27 @@ USED_CLOUDS="$(jq -r '
   | unique[]
 ' "${CONFIG}")"
 
-WORKLOAD_CLOUD_COUNT="$(jq -r '
-  . as $config
-  | [.vms[] | select(.role != "bastion")
-      | (.cloud // $config.default_cloud | ascii_downcase)]
-  | unique | length
-' "${CONFIG}")"
+MANAGE_DB="$(jq -r '.manage_db' "${CONFIG}")"
+required_roles=(history fetcher ui)
+if [[ "${MANAGE_DB}" == false ]]; then
+  required_roles=(database "${required_roles[@]}")
+fi
 
-[[ "${WORKLOAD_CLOUD_COUNT}" -eq 1 ]] || fail \
-  "Application workloads cannot be split between AWS and GCP: no VPN, peering, or cross-cloud routes exist."
-
-for required_role in database history fetcher ui; do
+for required_role in "${required_roles[@]}"; do
   ROLE_COUNT="$(jq -r --arg role "${required_role}" \
     '[.vms[] | select(.role == $role)] | length' "${CONFIG}")"
   [[ "${ROLE_COUNT}" -eq 1 ]] || \
     fail "Project config must define exactly one VM with role ${required_role}."
 done
+
+if [[ "${MANAGE_DB}" == true ]]; then
+  DATABASE_VM_COUNT="$(jq '[.vms[] | select(.role == "database")] | length' "${CONFIG}")"
+  [[ "${DATABASE_VM_COUNT}" -eq 0 ]] || fail \
+    "manage_db=true must not define a VM with role database."
+else
+  jq -e 'has("database") | not' "${CONFIG}" >/dev/null || fail \
+    "manage_db=false must not define the managed database object."
+fi
 
 while IFS= read -r cloud; do
   [[ -n "${cloud}" ]] || continue
@@ -170,6 +233,11 @@ done < <(jq -r '
   | gsub("[^A-Z0-9]"; "_")
 ' "${CONFIG}")
 [[ -z "${MISSING_SECRETS}" ]] || fail "Missing secret environment variables: ${MISSING_SECRETS}"
+
+if [[ "${MANAGE_DB}" == true ]]; then
+  [[ -n "${POSTGRES_PASSWORD:-}" ]] || fail "POSTGRES_PASSWORD is required for managed PostgreSQL."
+  export TF_VAR_database_password="${POSTGRES_PASSWORD}"
+fi
 
 export OILSCOPE_PROJECT_CONFIG="${CONFIG}"
 if [[ -z "${OILSCOPE_SSH_USER:-}" ]]; then
@@ -272,7 +340,9 @@ COLLECTION_ARCHIVE="$(find "${COLLECTION_BUILD_DIR}" -maxdepth 1 -type f -name '
 "${ANSIBLE_GALAXY}" collection install "${COLLECTION_ARCHIVE}" --force
 
 step "Initializing Terraform"
-terraform -chdir="${TF_DIR}" init
+mkdir -p "${TF_STATE_DIR}"
+terraform -chdir="${TF_DIR}" init -reconfigure \
+  -backend-config="path=${TF_STATE_PATH}"
 
 step "Creating cloud infrastructure with temporary SSH bootstrap access"
 terraform -chdir="${TF_DIR}" apply \

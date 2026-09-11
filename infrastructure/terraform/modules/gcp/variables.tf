@@ -14,3 +14,10 @@ variable "secret_version_managers" {
   type        = list(string)
   default     = []
 }
+
+variable "database_password" {
+  type      = string
+  sensitive = true
+  default   = null
+  nullable  = true
+}

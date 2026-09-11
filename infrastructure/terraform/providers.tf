@@ -6,6 +6,11 @@ locals {
   ])
   gcp_enabled = contains(local.used_clouds, "gcp")
   aws_enabled = contains(local.used_clouds, "aws")
+  manage_db   = try(local.root_config.manage_db, false)
+  database_vm_count = length([
+    for vm in values(local.root_config.vms) : vm
+    if vm.role == "database"
+  ])
 }
 
 provider "google" {

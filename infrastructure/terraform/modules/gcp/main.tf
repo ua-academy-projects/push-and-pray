@@ -24,6 +24,8 @@ resource "google_project_service" "required" {
       "compute.googleapis.com",
       "iam.googleapis.com",
       "secretmanager.googleapis.com",
+      "servicenetworking.googleapis.com",
+      "sqladmin.googleapis.com",
   ]) : toset([])
 
   service = each.value
@@ -41,10 +43,10 @@ module "network" {
 
   resource_prefix = module.config.resource_prefix
 
-  management_subnet_cidr = module.config.config.network.management_subnet_cidr
-  workload_subnet_cidr   = module.config.config.network.workload_subnet_cidr
+  management_subnet_cidr = module.config.network.management_subnet_cidr
+  workload_subnet_cidr   = module.config.network.workload_subnet_cidr
   ui_public_ports = [
-    for port in module.config.config.network.ui_public_ports : tostring(port)
+    for port in module.config.network.ui_public_ports : tostring(port)
   ]
 
   enable_bastion               = module.config.bastion != null
@@ -55,6 +57,32 @@ module "network" {
   postgresql_port              = module.config.config.service_ports.postgresql
 
   depends_on = [google_project_service.required, terraform_data.configuration]
+}
+
+module "database" {
+  source = "./database"
+  count  = module.config.managed_database_enabled && module.config.configuration_valid ? 1 : 0
+
+  project_id           = module.config.cloud_config.project_id
+  resource_prefix      = module.config.resource_prefix
+  region               = module.config.location.region
+  generation           = module.config.database.generation
+  engine_version       = module.config.database.engine_version
+  database_name        = module.config.database.database_name
+  username             = module.config.database.username
+  password             = var.database_password
+  tier                 = module.config.database.gcp.tier
+  disk_size_gb         = module.config.database.gcp.disk_size_gb
+  availability_type    = module.config.database.gcp.availability_type
+  private_service_cidr = module.config.network.database_private_service_cidr
+  network_id           = module.network[0].network_id
+  backup_on_delete     = module.config.database.backup_on_delete
+  backups_enabled      = module.config.database.backups_enabled
+  deletion_protection  = module.config.database.deletion_protection
+  backup_run_id        = try(module.config.database.restore.gcp_backup_run_id, null)
+  labels               = module.config.common_metadata
+
+  depends_on = [google_project_service.required]
 }
 
 # trivy:ignore:AVD-GCP-0031 Public IPs are restricted to UI and bastion by module validation.

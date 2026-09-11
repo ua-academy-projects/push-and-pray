@@ -1,6 +1,6 @@
 {
   "default_cloud": "gcp",
-  "manage_db": false,
+  "manage_db": true,
   "defaults": {
     "location_profile": "primary",
     "machine_profile": "micro",
@@ -62,9 +62,9 @@
     "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
   },
   "registry": {
-    "repository": "ghcr.io/example-org/example-project",
+    "repository": "ghcr.io/ua-academy-projects/push-and-pray",
     "username": "example-operator",
-    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+    "image_sha": "7075d4610949ab6852c90e2ac63a50d2ec4c3a41"
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
@@ -74,7 +74,16 @@
     "ui_public_ports": [
       80,
       443
-    ]
+    ],
+    "database_subnet_cidrs": [
+      "10.0.3.0/28",
+      "10.0.4.0/28"
+    ],
+    "database_availability_zones": [
+      "eu-west-1a",
+      "eu-west-1b"
+    ],
+    "database_private_service_cidr": "10.10.0.0/24"
   },
   "service_ports": {
     "history_api": 8001,
@@ -91,7 +100,7 @@
     },
     "fetcher": {
       "POSTGRES_PASSWORD": "example-db-password",
-      "OILPRICEAPI_KEY": "example-api-key",
+      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b",
       "GHCR_TOKEN": "example-ghcr-token"
     },
     "ui": {
@@ -115,17 +124,6 @@
         "192.0.2.10/32"
       ]
     },
-    "infra": {
-      "role": "database",
-      "internal_ip": "10.0.1.4",
-      "boot_disk": {
-        "size_gb": 10
-      },
-      "assign_public_ip": false,
-      "network_tags": [
-        "infra"
-      ]
-    },
     "history": {
       "role": "history",
       "machine_profile": "small",
@@ -136,8 +134,7 @@
       "assign_public_ip": false,
       "network_tags": [
         "history"
-      ],
-      "cloud": "aws"
+      ]
     },
     "fetcher": {
       "role": "fetcher",
@@ -161,9 +158,32 @@
         "ui"
       ],
       "public_endpoint": {
-        "hostname": "oilscope.example.com",
+        "hostname": "shiphappens.pp.ua",
         "acme_email": "example-operator@example.com"
       }
+    }
+  },
+  "database": {
+    "cloud": "gcp",
+    "engine": "postgres",
+    "engine_version": "POSTGRES_16",
+    "database_name": "oil_tracker",
+    "username": "oil_tracker",
+    "port": 5432,
+    "generation": "2026-09",
+    "backup_on_delete": false,
+    "backups_enabled": false,
+    "deletion_protection": false,
+    "restore": null,
+    "aws": {
+      "instance_class": "db.t4g.micro",
+      "allocated_storage_gb": 20,
+      "multi_az": false
+    },
+    "gcp": {
+      "tier": "db-f1-micro",
+      "disk_size_gb": 10,
+      "availability_type": "ZONAL"
     }
   }
 }

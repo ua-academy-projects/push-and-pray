@@ -35,3 +35,11 @@ variable "secret_version_managers" {
     error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
   }
 }
+
+variable "database_password" {
+  description = "Managed PostgreSQL password supplied at deploy time. Never commit it to project configuration."
+  type        = string
+  sensitive   = true
+  default     = null
+  nullable    = true
+}
