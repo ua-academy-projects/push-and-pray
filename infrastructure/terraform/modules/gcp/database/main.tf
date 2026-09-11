@@ -20,7 +20,7 @@ resource "google_service_networking_connection" "private_services" {
 
 resource "google_compute_network_peering_routes_config" "private_services" {
   peering              = google_service_networking_connection.private_services.peering
-  network              = var.network_id
+  network              = basename(var.network_id)
   import_custom_routes = true
   export_custom_routes = true
 }
@@ -34,6 +34,7 @@ resource "google_sql_database_instance" "this" {
   deletion_protection = var.deletion_protection
 
   settings {
+    edition           = "ENTERPRISE"
     tier              = var.tier
     availability_type = var.availability_type
     disk_size         = var.disk_size_gb
