@@ -17,7 +17,9 @@
       vars:
         bastion_nat_enabled: >-
           {{ bootstrap_project_config.clouds.aws.bastion_nat | default(true) }}
-        bastion_nat_workload_cidr: "{{ bootstrap_project_config.network.workload_subnet_cidr }}"
+        bastion_nat_workload_cidr: >-
+          {{ bootstrap_project_config.clouds.aws.network.workload_subnet_cidr
+             | default(bootstrap_project_config.network.workload_subnet_cidr, true) }}
 
     - role: oilscope.platform.bastion
   post_tasks:
