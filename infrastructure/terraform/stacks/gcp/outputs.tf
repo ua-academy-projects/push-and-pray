@@ -1,0 +1,10 @@
+output "vms" { value = module.gcp.vms }
+output "managed_database" { value = coalesce(module.gcp.managed_database, { enabled = false, cloud = null, host = null, port = null, name = null, user = null }) }
+output "workload_external_ips" {
+  value = { for name, vm in module.gcp.vms : name => vm.public_ip if vm.role != "bastion" }
+}
+output "workload_internal_ips" {
+  value = { for name, vm in module.gcp.vms : name => vm.internal_ip if vm.role != "bastion" }
+}
+output "secret_ids" { value = module.gcp.secret_ids }
+output "workload_secret_access" { value = module.gcp.workload_secret_access }

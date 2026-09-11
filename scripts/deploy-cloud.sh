@@ -64,6 +64,15 @@ readonly CONFIG
 readonly PROFILE
 readonly TF_STATE_DIR="${TF_DIR}/.state"
 readonly TF_STATE_PATH="${TF_STATE_DIR}/${PROFILE}.tfstate"
+case "${PROFILE}" in
+  aws|gcp)
+    TF_RUN_DIR="${TF_DIR}/stacks/${PROFILE}"
+    ;;
+  *)
+    TF_RUN_DIR="${TF_DIR}"
+    ;;
+esac
+readonly TF_RUN_DIR
 
 for command_name in jq terraform curl dig nc python3; do
   require_command "${command_name}"
@@ -320,7 +329,7 @@ BOOTSTRAP_ENABLED=false
 cleanup() {
   if [[ "${BOOTSTRAP_ENABLED}" == true ]]; then
     printf '\n==> Closing temporary bastion SSH port 22 after an interrupted deployment\n' >&2
-    terraform -chdir="${TF_DIR}" apply \
+    terraform -chdir="${TF_RUN_DIR}" apply \
       -input=false \
       -auto-approve \
       -var="project_config_path=${CONFIG}" \
@@ -341,21 +350,21 @@ COLLECTION_ARCHIVE="$(find "${COLLECTION_BUILD_DIR}" -maxdepth 1 -type f -name '
 
 step "Initializing Terraform"
 mkdir -p "${TF_STATE_DIR}"
-terraform -chdir="${TF_DIR}" init -reconfigure \
+terraform -chdir="${TF_RUN_DIR}" init -reconfigure \
   -backend-config="path=${TF_STATE_PATH}"
 
 step "Creating cloud infrastructure with temporary SSH bootstrap access"
-terraform -chdir="${TF_DIR}" apply \
+terraform -chdir="${TF_RUN_DIR}" apply \
   "${TF_APPLY_ARGS[@]}" \
   -var="enable_bastion_ssh_bootstrap=true"
 BOOTSTRAP_ENABLED=true
 
 DATABASE_VARS_FILE="${COLLECTION_BUILD_DIR}/database-connection.json"
-terraform -chdir="${TF_DIR}" output -json managed_database | \
+terraform -chdir="${TF_RUN_DIR}" output -json managed_database | \
   jq '{managed_database: .}' > "${DATABASE_VARS_FILE}"
 chmod 0600 "${DATABASE_VARS_FILE}"
 
-UI_IP="$(terraform -chdir="${TF_DIR}" output -json workload_external_ips | jq -r '.ui // empty')"
+UI_IP="$(terraform -chdir="${TF_RUN_DIR}" output -json workload_external_ips | jq -r '.ui // empty')"
 [[ "${UI_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   fail "Terraform did not return a public IPv4 address for the ui VM."
 
@@ -397,7 +406,7 @@ done
 [[ "${DNS_READY}" == true ]] || fail "${DOMAIN} did not resolve to ${UI_IP} within 10 minutes."
 
 step "Waiting for bastion SSH bootstrap ports"
-BASTION_OUTPUT="$(terraform -chdir="${TF_DIR}" output -json vms | jq -r \
+BASTION_OUTPUT="$(terraform -chdir="${TF_RUN_DIR}" output -json vms | jq -r \
   --slurpfile config "${CONFIG}" '
   to_entries[] as $entry
   | select($entry.value.role == "bastion")
@@ -446,7 +455,7 @@ while IFS=$'\t' read -r bastion_cloud connect_port; do
 done <<< "${BASTION_CONNECTIONS}"
 
 step "Removing temporary SSH bootstrap access"
-terraform -chdir="${TF_DIR}" apply \
+terraform -chdir="${TF_RUN_DIR}" apply \
   "${TF_APPLY_ARGS[@]}" \
   -var="enable_bastion_ssh_bootstrap=false"
 BOOTSTRAP_ENABLED=false
