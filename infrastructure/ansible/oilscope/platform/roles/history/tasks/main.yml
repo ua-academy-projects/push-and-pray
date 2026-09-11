@@ -1,5 +1,31 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Apply database migrations (managed)
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ history_compose_project_name }}"
+      - --file
+      - "{{ history_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - migrate
+  args:
+    chdir: "{{ history_compose_project_dir }}"
+  environment:
+    DOCKER_CONFIG: "{{ history_docker_config_dir }}"
+    POSTGRES_PASSWORD: "{{ history_postgres_password }}"
+    DATABASE_HOST: "{{ managed_db_host }}"
+    DATABASE_SSLMODE: require
+    MIGRATION_SKIP: "004_create_pgmq_queue.sql"
+  register: history_migrations
+  changed_when: "'Applying ' in history_migrations.stdout"
+  no_log: true
+  when: managed_db_enabled | bool
+
 - name: Deploy only History
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
@@ -70,3 +96,18 @@
       (history_health.json | default({})).get(
         'pgmq_consumer', ''
       ) == 'ready'
+  when: not (managed_db_enabled | bool)
+
+- name: Wait for History to become reachable (managed, queue deferred)
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8001/health
+    status_code: [200, 503]
+    return_content: true
+    use_proxy: false
+  register: history_health_managed
+  retries: "{{ history_health_retries }}"
+  delay: "{{ history_health_delay }}"
+  until:
+    - >-
+      (history_health_managed.json | default({})).get('database', '') == 'connected'
+  when: managed_db_enabled | bool

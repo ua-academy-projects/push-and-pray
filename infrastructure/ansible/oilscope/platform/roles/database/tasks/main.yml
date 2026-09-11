@@ -99,4 +99,5 @@
   register: database_migrations
   changed_when: "'Applying ' in database_migrations.stdout"
   no_log: true
+  when: not (managed_db_enabled | bool)
   

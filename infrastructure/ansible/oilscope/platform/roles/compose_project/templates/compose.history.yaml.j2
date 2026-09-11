@@ -38,3 +38,19 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+{% if managed_db_enabled | bool %}
+  migrate:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: "no"
+    command: ["petroscope-migrate"]
+    environment:
+      PGHOST: ${DATABASE_HOST:?DATABASE_HOST is required}
+      PGSSLMODE: ${DATABASE_SSLMODE:-require}
+      MIGRATION_SKIP: ${MIGRATION_SKIP:-}
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-oil_tracker}
+      PGDATABASE: ${POSTGRES_DB:-oil_tracker}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+{% endif %}

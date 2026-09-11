@@ -15,7 +15,7 @@ oilscope_ssh_base_args: >-
 ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"
 
 managed_db_enabled: >-
-  {{ (lookup('ansible.builtin.file', project_ config_path) | from_json)
-                                .managed_db_enabled: | default(false) }}
+  {{ (lookup('ansible.builtin.file', project_config_path) | from_json)
+                                .managed_db.enabled | default(false) }}
 
 managed_db_host: "{{ managed_db_host | default('') }}"

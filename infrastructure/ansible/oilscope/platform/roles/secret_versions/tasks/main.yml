@@ -85,6 +85,23 @@
     loop_var: secret_versions_entry
     label: "{{ secret_versions_entry.0 }}"
 
+- name: Identify the Terraform-owned DB password container (managed mode)
+  ansible.builtin.set_fact:
+    secret_versions_db_password_ids: >-
+      {{ secret_versions_config.vms | dict2items
+         | selectattr('value.secret_mappings.POSTGRES_PASSWORD', 'defined')
+         | map(attribute='value.secret_mappings.POSTGRES_PASSWORD')
+         | unique | list }}
+  when: (secret_versions_config.managed_db.enabled | default(false)) | bool
+
+- name: Drop the Terraform-owned DB password container from the catalog (managed mode)
+  ansible.builtin.set_fact:
+    secret_versions_catalog: >-
+      {{ secret_versions_catalog
+         | rejectattr('secret_id', 'in', secret_versions_db_password_ids)
+         | list }}
+  when: (secret_versions_config.managed_db.enabled | default(false)) | bool
+
 - name: Keep only the requested containers
   ansible.builtin.set_fact:
     secret_versions_catalog: >-

@@ -2,6 +2,7 @@ locals {
   selected_vms = {
     for name, vm in var.config.vms : name => vm
     if coalesce(try(vm.cloud, null), var.config.cloud) == "aws"
+    && !(vm.role == "database" && try(var.config.managed_db.enabled, false))
   }
 
   has_selected_vms = length(local.selected_vms) > 0

@@ -1,7 +1,7 @@
 locals {
   all_workload_vms = {
     for name, vm in local.config.vms : name => vm
-    if vm.role != "bastion"
+    if vm.role != "bastion" && contains(keys(merge(module.gcp_vm.names, module.aws_vm.names)), name)
   }
 }
 

@@ -1,6 +1,8 @@
 resource "aws_secretsmanager_secret" "this" {
     for_each = toset(local.all_aws_secret_ids)
     name     = "${local.resource_prefix}-${each.value}"
+
+    recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_policy" "version_adder" {
