@@ -2,8 +2,10 @@
 
 Deployment credentials live in Google Secret Manager or AWS SSM Parameter
 Store, depending on the workload cloud. Terraform creates provider-side access
-controls and decides who may read each secret; it never sees, stores or
-transports a value.
+controls and decides who may read each secret. The managed PostgreSQL bootstrap
+password is the explicit exception: provider APIs require it during instance
+creation, so Terraform receives it as a sensitive variable and stores it in
+state. Use encrypted remote state with restricted IAM access.
 
 ## Where the catalog comes from
 
@@ -39,11 +41,12 @@ only be granted a secret assigned to its role.
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretVersionAdder` binding per configured version manager |
 | never creates | `google_secret_manager_secret_version` — the payload |
 
-The last row is the whole point. A secret value passed into Terraform ends up in
+The last row applies to application secret versions. A secret value passed into Terraform ends up in
 three places you cannot fully control: the configuration file, the plan file, and
 the state file. State lives in a bucket, plans get attached to pull requests, and
-neither is a place for a credential. So versions are added out of band and
-Terraform is told nothing about them.
+neither is a place for a credential. Application versions are therefore added
+out of band. Managed PostgreSQL is the documented exception and uses the value
+identified by `database.password_secret_id`.
 
 `google_secret_manager_secret_iam_member` is used rather than
 `..._iam_binding`. The `_binding` form is authoritative for the whole role on

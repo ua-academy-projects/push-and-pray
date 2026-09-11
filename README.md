@@ -15,7 +15,7 @@ Deployment can target GCP or AWS from one JSON contract. See the
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through PGMQ, a PostgreSQL extension-backed queue.
+- Asynchronous, durable delivery through a portable PostgreSQL table queue.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
@@ -56,9 +56,9 @@ Deployment can target GCP or AWS from one JSON contract. See the
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
+| Messaging      | PostgreSQL queue with `FOR UPDATE SKIP LOCKED` |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| UI sessions    | PostgreSQL JSONB                              |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
@@ -70,21 +70,21 @@ components.
 | Component       | Responsibility                                                                                    | Owns                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | Go Fetcher      | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events      | External API integration and collection schedule |
-| History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
+| History Service | Consumes queue events, validates batches, persists observations, and exposes read endpoints       | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
-| PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
-| PostgreSQL      | Stores observations and hashed UI sessions; expires sessions through pg_cron                      | Durable market data and session state            |
+| PostgreSQL queue | Provides durable delivery without provider-specific extensions                                  | Queue visibility, retries, and message archiving |
+| PostgreSQL      | Stores observations, queue messages, and hashed UI sessions                                       | Durable market data and session state            |
 
 ### Data flow
 
 1. The Go Fetcher selects the current scheduled UTC slot.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
-3. The Fetcher publishes a versioned event to the PGMQ queue
+3. The Fetcher publishes a versioned event to the PostgreSQL queue
    `price_observations` in PostgreSQL.
 4. The Fetcher records each event key in `published_queue_events` in the same database
    transaction, preventing duplicate publication of the same event.
-5. History reads messages using PGMQ visibility timeouts so concurrent workers cannot
+5. History claims messages with `FOR UPDATE SKIP LOCKED` and a visibility timeout so concurrent workers cannot
    process the same visible message at the same time.
 6. History validates and commits observations to PostgreSQL before archiving the message.
 7. Failed processing leaves the message available for retry after the visibility timeout.
@@ -93,7 +93,7 @@ components.
 10. The browser receives only persisted data through the UI Service.
 11. UI preferences are stored in PostgreSQL.
 
-PGMQ provides durable queue storage inside PostgreSQL. Messages are archived only after
+The portable queue provides durable storage inside PostgreSQL. Messages are archived only after
 successful observation persistence. If processing fails before the archive operation, the
 visibility timeout makes the message available again. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
@@ -129,8 +129,8 @@ scientific data source.
 │       ├── config/                 Vagrant configuration template
 │       └── provisioning/           Idempotent guest provisioning scripts
 ├── services/
-│   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
-│   ├── history/                    Python History API and PGMQ consumer
+│   ├── fetcher/                    Go scheduler, provider, and queue publisher
+│   ├── history/                    Python History API and queue consumer
 │   └── ui/
 │       ├── backend/                Python UI gateway and PostgreSQL sessions
 │       └── frontend/               React and TypeScript application
@@ -143,9 +143,8 @@ scientific data source.
 ## Vagrant deployment
 
 Legacy Vagrant provisioning files remain in the repository, but they are not part of the
-currently supported PGMQ deployment path. The current application architecture is
-validated through Docker and cloud-oriented deployments using PostgreSQL with the PGMQ
-extension.
+currently supported cloud deployment path. The current application architecture is
+validated through Docker and cloud-oriented deployments using portable PostgreSQL SQL.
 
 ## Docker deployment details
 
@@ -196,8 +195,7 @@ or pass the token as a Docker build argument.
 
 ## Local development
 
-Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with
-hstore, pgcrypto, pg_cron, and PGMQ.
+Local development requires Python 3.12+, uv, Go 1.24+, Node.js and PostgreSQL 16+.
 
 Install Python dependencies and build the frontend:
 
@@ -264,7 +262,7 @@ run Python tools through `uv run`.
 
 | Method | Path                      | Purpose                           |
 | ------ | ------------------------- | --------------------------------- |
-| `GET`  | `/health`                 | PostgreSQL and PGMQ status        |
+| `GET`  | `/health`                 | PostgreSQL and queue status       |
 | `POST` | `/v1/observations/batch`  | Direct idempotent batch ingestion |
 | `GET`  | `/v1/observations`        | Filtered and paginated history    |
 | `GET`  | `/v1/observations/latest` | Latest observation per instrument |
@@ -299,14 +297,11 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
-The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
-expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
-value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
-strings retain the existing API representation. The digest is calculated inside PostgreSQL
-by pgcrypto for every lookup and write. Atomic UPSERTs refresh the expiration on reads and
-updates, while expired rows are replaced with defaults immediately. The pg_cron background
-worker deletes expired rows every minute; its named job and the hstore, pgcrypto, and pg_cron
-extensions are created idempotently by migration `003_create_ui_sessions.sql`.
+The `ui_sessions` table stores validated preferences in JSONB, a 30-day expiration
+timestamp, and only the SHA-256 digest of the browser session ID. Python calculates the
+digest before every lookup and write. Atomic UPSERTs refresh expiration, while each read or
+update removes expired rows in the same transaction. Migration
+`003_create_ui_sessions.sql` requires no provider-specific PostgreSQL extensions.
 
 ## Configuration
 

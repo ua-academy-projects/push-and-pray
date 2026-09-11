@@ -17,7 +17,7 @@ the supported GHCR deployment configuration.
 | Variable | Description |
 | --- | --- |
 | `APP_IMAGE_TAG` | Immutable Git commit SHA installed from the external JSON by the Ansible role. Do not use `latest`. |
-| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include PGMQ, `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
+| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL image reference, preferably pinned by digest. It must include the SQL migrations and `petroscope-migrate`; no PostgreSQL extensions are required. |
 | `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
 | `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
 

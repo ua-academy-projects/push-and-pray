@@ -1,114 +1,121 @@
 # Розгортання OilScope у GCP та AWS
 
-## Один конфіг
+## Три профілі, один контракт
 
-Terraform і Ansible читають один project-config.json. Поле default_cloud
-визначає хмару всіх VM без власного override. Щоб перенести одну VM, додайте
-до неї поле cloud зі значенням aws або gcp.
+Terraform і Ansible читають один JSON-контракт. Готові профілі:
 
-VM містять тільки абстрактні machine_profile, image_profile та boot_disk.profile.
-Реальні region, zone, machine type, disk type й image/AMI знаходяться у
-словниках clouds.gcp і clouds.aws. Спільний модуль modules/config фільтрує VM,
-застосовує defaults та виконує lookup для обраної хмари. Provider modules
-отримують уже нормалізовані VM. Root module не виконує конвертацію.
+- `configs/project-config.aws.json`;
+- `configs/project-config.gcp.json`;
+- `configs/project-config.mixed.json`.
 
-## Межа mixed-cloud
+`default_cloud` визначає хмару VM без власного `cloud`. Абстрактні
+`machine_profile`, `image_profile` і `boot_disk.profile` перетворюються на
+provider values у спільному `modules/config`.
 
-Кожна хмара отримує власну мережу. VPN, peering і cross-cloud routes не
-створюються. Private workload керується через bastion у тій самій хмарі.
-Якщо в хмарі є private workload, але немає її bastion, Terraform може створити
-VM, однак Ansible SSH до неї не матиме маршруту.
+## Команди
 
-## Підготовка
+Після заміни example project ID, AMI, SSH key, email і secret IDs запускайте:
 
-Без AWS досвіду спочатку вручну створіть і видаліть у Console тестові VPC,
-subnet, security group та EC2 instance. Не зберігайте AWS access keys, private
-SSH keys або secret values у JSON.
+    ./scripts/deploy-cloud.sh aws
+    ./scripts/deploy-cloud.sh gcp
+    ./scripts/deploy-cloud.sh mixed
 
-    cp project-config.example.json project-config.local.json
-    chmod 600 project-config.local.json
+Явний шлях також підтримується:
 
-Заповніть provider catalogs. AWS AMI залежить від region, тому замініть example
-AMI на чинний ID у вибраному region. Для перемикання всього deployment змініть
-тільки default_cloud.
+    ./scripts/deploy-cloud.sh ./project-config.json
+
+AWS і GCP мають ізольовані Terraform roots у
+`infrastructure/terraform/stacks`. Mixed використовує головний root. Local
+state зберігається окремо в
+`infrastructure/terraform/.state/<profile>.tfstate`. Для production замініть
+local backend на окремі remote backend keys.
+
+## Managed або self-managed PostgreSQL
+
+`manage_db=false` залишає VM з `role=database` і контейнерним PostgreSQL.
+`manage_db=true` прибирає database VM та створює RDS або Cloud SQL відповідно
+до `database.cloud`.
+
+Ansible отримує provider-neutral output `managed_database`, перевіряє TCP
+доступ з workload VM і запускає міграції з History VM. `DATABASE_HOST`, port,
+name, user та sslmode більше не залежать від inventory group `database`.
+
+Початкові dev-профілі мають:
+
+    "backups_enabled": false,
+    "backup_on_delete": false,
+    "deletion_protection": false
+
+Для RDS це означає `backup_retention_period=0`, `skip_final_snapshot=true` і
+`delete_automated_backups=true`. Для Cloud SQL вимкнені regular/PITR та final
+backup. Видалення такої БД може спричинити повну втрату даних.
+
+## Приватна мережа БД
+
+RDS використовує DB subnet group з двома private subnets у різних Availability
+Zones, `publicly_accessible=false` і security group без `0.0.0.0/0` ingress.
+Застосунки підключаються до DNS endpoint.
+
+Cloud SQL використовує окремий Private Services Access range,
+`google_service_networking_connection` та `ipv4_enabled=false`. Це service
+producer range, а не звичайна VM subnet.
+
+Mixed profile має різні AWS/GCP VPC CIDR. Terraform створює AWS Virtual Private
+Gateway, Customer Gateway, Site-to-Site VPN, GCP Classic VPN tunnel і тільки
+private routes. Cloud SQL peering імпортує та експортує custom routes.
+
+Поточний mixed VPN має один IPsec tunnel і не є HA. Для production додайте
+другий tunnel та dynamic routing через Cloud Router/BGP або GCP HA VPN.
+
+## Щомісячний restore та ім'я
+
+Managed instance називається:
+
+    <name_prefix>-<environment>-postgres-<generation>
+
+Для нового restore змініть `generation`, наприклад `2026-09` на `2026-10`, і
+задайте одне з полів:
+
+- `restore.aws_snapshot_identifier`;
+- `restore.gcp_backup_run_id`.
+
+Без restore source нове ім'я створить порожню БД. Пароль у secret backend має
+відповідати паролю snapshot/backup. Перевірте plan, створіть нову БД, перевірте
+міграції та HTTPS і лише потім видаляйте стару.
+
+Не використовуйте `timestamp()` або random suffix для `generation`: це
+спричинить небажану заміну на наступному plan.
+
+## Dynamic blocks
+
+Cloud SQL module використовує dynamic blocks для backup configuration, final
+backup configuration та optional restore context. Повторювані subnets, routes
+і security rules створюються через `for_each`.
+
+## Secrets
+
+Secret IDs зберігаються в JSON, значення — в GCP Secret Manager або AWS SSM
+Parameter Store. `database.password_secret_id` визначає спільний password
+container для managed DB та workloads. Deployment environment variable
+утворюється з цього ID у верхньому регістрі, наприклад
+`example-db-password` → `EXAMPLE_DB_PASSWORD`. Provider змушений зберегти
+password managed instance як sensitive state value, тому state повинен бути
+зашифрований і доступний лише deployment principals.
 
 ## Статична перевірка
 
     uvx check-jsonschema \
       --schemafile infrastructure/terraform/project-config.schema.json \
-      project-config.local.json
+      project-config.example.json configs/*.json
     terraform -chdir=infrastructure/terraform fmt -check -recursive
-    terraform -chdir=infrastructure/terraform init -backend=false
     terraform -chdir=infrastructure/terraform validate
     terraform -chdir=infrastructure/terraform test
+    terraform -chdir=infrastructure/terraform/stacks/aws test
+    terraform -chdir=infrastructure/terraform/stacks/gcp test
 
-Ці команди не доводять доступність credentials, quota, AMI або реальний
-deployment.
+Перед live apply окремо перевірте `aws sts get-caller-identity` та
+`gcloud auth application-default print-access-token`. `fmt`, `validate` і mock
+tests не доводять quota, реальну VPN connectivity, SSH, migrations або HTTPS.
 
-## Terraform state
-
-Terraform backend не можна перемикати variable або lookup. У root збережено
-існуючий GCS backend. Не застосовуйте різні environments до одного state.
-AWS-only production backend або migration state є окремою операцією, а не
-частиною default_cloud.
-
-## Plan і bootstrap
-
-Перед plan перевірте identity командами aws sts get-caller-identity та
-gcloud auth application-default print-access-token.
-
-    terraform -chdir=infrastructure/terraform plan \
-      -var=project_config_path="$(pwd)/project-config.local.json"
-
-Новий bastion спочатку слухає port 22. Перший apply виконайте з
-enable_bastion_ssh_bootstrap=true. Після виконання bastion role повторіть apply
-без цього flag, щоб видалити temporary firewall/security-group rule.
-
-## Повне розгортання однією командою
-
-Скопіюйте приклад у `project-config.json`, заповніть реальні cloud IDs, AMI,
-SSH key, registry, `acme_email` та секрети. Скрипт читає `default_cloud` і
-`vms.*.cloud`, створює інфраструктуру, налаштовує Cloudflare DNS для
-`shiphappens.pp.ua`, запускає Ansible та перевіряє валідний HTTPS:
-
-    ./scripts/deploy-cloud.sh project-config.json
-
-Для повністю неінтерактивного Terraform apply задайте
-`OILSCOPE_AUTO_APPROVE=1`. Cloudflare API token передається через
-`CLOUDFLARE_API_TOKEN`; значення секретів — через змінні середовища, назви яких
-утворюються з secret ID у верхньому регістрі із заміною розділових символів на
-`_`. Python-залежності Ansible скрипт встановлює в ізольоване середовище
-`.oilscope-deploy/venv`.
-
-Скрипт навмисно відхиляє розміщення application workloads у різних хмарах:
-поточний Terraform не створює VPN, peering або cross-cloud routes, а Database,
-History, Fetcher і UI використовують приватні IP для взаємодії.
-
-## Ansible
-
-    pip install -r infrastructure/ansible/requirements.txt
-    ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
-    export OILSCOPE_PROJECT_CONFIG="$(pwd)/project-config.local.json"
-    ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
-
-Inventory plugin запускає тільки потрібні delegates: google.cloud.gcp_compute
-та/або amazon.aws.aws_ec2. Discovery використовує application, environment і
-cloud labels/tags. SSH key задається OILSCOPE_SSH_KEY або окремо
-OILSCOPE_GCP_SSH_KEY та OILSCOPE_AWS_SSH_KEY.
-
-## Secrets
-
-GCP використовує Secret Manager, AWS — SSM Parameter Store Standard
-SecureString. Secret payload не передається Terraform. Upload role створює
-окрему target для кожної пари cloud/secret_id. Resolve role вибирає backend
-через host variable oilscope_cloud.
-
-## Вартість і доказ результату
-
-free_tier_guardrails не гарантує нульовий рахунок. Перевіряйте account age,
-credits, aggregate VM hours, public IPv4, region і Billing dashboard. П'ять
-постійних VM зазвичай не вміщуються у безкоштовну квоту одного VM-month.
-
-Live apply і destroy запускаються тільки після перевірки точного account,
-project, region та state. fmt, validate й mock tests не є доказом
-end-to-end deployment.
+RDS, Cloud SQL, public IPv4 і VPN є платними ресурсами. `free_tier_guardrails`
+не гарантує нульовий рахунок.
