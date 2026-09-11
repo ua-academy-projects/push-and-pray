@@ -9,6 +9,17 @@ host_baseline_packages:
   - curl
   - jq
 
+# Packages only one provider's hosts need, keyed by cloud so adding a provider
+# adds an entry and not a conditional. AWS signs every Secrets Manager request,
+# so its hosts need a client able to do that with the instance role; GCP accepts
+# a bearer token from the metadata server and needs nothing extra.
+host_baseline_packages_by_cloud:
+  gcp: []
+  aws:
+    - awscli
+
+host_baseline_cloud: "{{ oilscope_cloud | default('') }}"
+
 host_baseline_directories:
   - path: /opt/oilscope
     owner: root

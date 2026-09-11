@@ -6,22 +6,37 @@
 # The role derives which vms entry is "this host" from inventory_hostname,
 # by stripping the config's own "<name_prefix>-<environment>-" prefix (the
 # same convention Terraform uses to name every instance). The second play
-# below targets a host literally named "oilscope-dev-bastion" to exercise
-# that derivation, so the config passed in must use name_prefix "oilscope"
-# and environment "dev", and must have a "bastion" vms entry with no
-# secret_mappings — every project configuration does per the schema.
+# below targets a host literally named "oilscope-dev-bastion", so the config
+# passed in must use name_prefix "oilscope" and environment "dev".
+#
+# That host is deliberately one vms does not list at all: a bastion is core
+# infrastructure derived from the top-level bastion block, never a workload
+# entry. The role must answer with an empty mapping rather than fail, which is
+# what this play checks.
 - name: Test the resolve_secrets role (missing configuration)
   hosts: localhost
   connection: local
   gather_facts: false
   tasks:
-    - name: Include the role without a configuration file
-      ansible.builtin.include_role:
-        name: resolve_secrets
-      vars:
-        resolve_secrets_config_path: /nonexistent/project-config.json
-      register: resolve_secrets_no_config
-      ignore_errors: true
+    # ignore_errors on include_role does not reach the tasks the role includes,
+    # so the expected failure has to be caught with a rescue. Catching it also
+    # turns the check into a real assertion: the play fails if the role somehow
+    # succeeds without a configuration file.
+    - name: Expect the role to refuse a configuration that does not exist
+      block:
+        - name: Include the role without a configuration file
+          ansible.builtin.include_role:
+            name: resolve_secrets
+          vars:
+            resolve_secrets_config_path: /nonexistent/project-config.json
+
+        - name: Fail because the role accepted a missing configuration
+          ansible.builtin.fail:
+            msg: the role must refuse a configuration path that does not exist
+      rescue:
+        - name: Report the expected refusal
+          ansible.builtin.debug:
+            msg: the role refused the missing configuration, as it should
 
 - name: Test the resolve_secrets role (host with no secret mappings)
   hosts: oilscope-dev-bastion
@@ -33,3 +48,35 @@
         name: resolve_secrets
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - name: Expect an empty result rather than a failure
+      ansible.builtin.assert:
+        that:
+          - resolve_secrets_result is defined
+          - resolve_secrets_result == {}
+        quiet: true
+
+- name: Test the resolve_secrets role (cloud it cannot read from)
+  hosts: oilscope-dev-infra
+  connection: local
+  gather_facts: false
+  tasks:
+    # infra does have secret_mappings, so the cloud check is reached. A cloud
+    # with no fetch-<cloud>.yml must be refused by name, with a message that
+    # says which clouds are supported.
+    - name: Expect the role to refuse an unsupported cloud
+      block:
+        - name: Include the role for a host on an unsupported cloud
+          ansible.builtin.include_role:
+            name: resolve_secrets
+          vars:
+            resolve_secrets_config_path: "{{ project_config_path }}"
+            resolve_secrets_cloud: azure
+
+        - name: Fail because the role accepted an unsupported cloud
+          ansible.builtin.fail:
+            msg: the role must refuse a cloud it has no fetch tasks for
+      rescue:
+        - name: Report the expected refusal
+          ansible.builtin.debug:
+            msg: the role refused the unsupported cloud, as it should

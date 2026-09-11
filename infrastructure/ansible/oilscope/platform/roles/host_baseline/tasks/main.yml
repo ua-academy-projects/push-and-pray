@@ -4,7 +4,9 @@
 - name: Install baseline packages
   become: true
   ansible.builtin.apt:
-    name: "{{ host_baseline_packages }}"
+    name: >-
+      {{ host_baseline_packages
+         + host_baseline_packages_by_cloud[host_baseline_cloud] | default([]) }}
     state: present
     cache_valid_time: 3600
     install_recommends: false
