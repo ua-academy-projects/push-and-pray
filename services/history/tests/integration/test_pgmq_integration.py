@@ -34,27 +34,8 @@ def database_engine():
 
         connection.execute(text("DELETE FROM published_queue_events"))
 
-        connection.execute(
-            text(
-                """
-                SELECT pgmq.purge_queue(
-                    :queue_name
-                )
-                """
-            ),
-            {
-                "queue_name": QUEUE,
-            },
-        )
-
-        connection.execute(
-            text(
-                """
-                TRUNCATE TABLE
-                    pgmq.a_price_observations
-                """
-            )
-        )
+        connection.execute(text("TRUNCATE TABLE observation_queue"))
+        connection.execute(text("TRUNCATE TABLE observation_queue_archive"))
 
     yield engine
 
@@ -94,14 +75,12 @@ def send_message(engine, payload: dict) -> int:
         message_id = connection.execute(
             text(
                 """
-                SELECT pgmq.send(
-                    queue_name => :queue_name,
-                    msg => CAST(:payload AS jsonb)
-                )
+                INSERT INTO observation_queue (message)
+                VALUES (CAST(:payload AS jsonb))
+                RETURNING msg_id
                 """
             ),
             {
-                "queue_name": QUEUE,
                 "payload": json.dumps(payload),
             },
         ).scalar_one()
@@ -118,16 +97,28 @@ def read_message(
             connection.execute(
                 text(
                     """
-                    SELECT *
-                    FROM pgmq.read(
-                        queue_name => :queue_name,
-                        vt => :visibility_timeout,
-                        qty => 1
+                    WITH candidate AS (
+                        SELECT msg_id
+                        FROM observation_queue
+                        WHERE visible_at <= CURRENT_TIMESTAMP
+                        ORDER BY msg_id
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
                     )
+                    UPDATE observation_queue AS queue
+                    SET
+                        read_count = queue.read_count + 1,
+                        visible_at = CURRENT_TIMESTAMP
+                            + make_interval(secs => :visibility_timeout)
+                    FROM candidate
+                    WHERE queue.msg_id = candidate.msg_id
+                    RETURNING
+                        queue.msg_id,
+                        queue.read_count AS read_ct,
+                        queue.message
                     """
                 ),
                 {
-                    "queue_name": QUEUE,
                     "visibility_timeout": visibility_timeout,
                 },
             )
@@ -144,52 +135,46 @@ def archive_message(
         archived = connection.execute(
             text(
                 """
-                SELECT pgmq.archive(
-                    queue_name => :queue_name,
-                    msg_id => :message_id
+                WITH archived AS (
+                    DELETE FROM observation_queue
+                    WHERE msg_id = :message_id
+                    RETURNING msg_id, message, read_count, enqueued_at
                 )
+                INSERT INTO observation_queue_archive (
+                    msg_id, message, read_count, enqueued_at
+                )
+                SELECT msg_id, message, read_count, enqueued_at
+                FROM archived
+                RETURNING msg_id
                 """
             ),
             {
-                "queue_name": QUEUE,
                 "message_id": message_id,
             },
         ).scalar_one()
 
-    assert archived is True
+    assert archived == message_id
 
 
-def test_pgmq_extension_and_queue_exist(
+def test_portable_queue_tables_exist(
     database_engine,
 ) -> None:
     with database_engine.connect() as connection:
-        extension = connection.execute(
+        queue_tables = connection.execute(
             text(
                 """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM pg_extension
-                    WHERE extname = 'pgmq'
-                )
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                      'observation_queue',
+                      'observation_queue_archive'
+                  )
                 """
             )
         ).scalar_one()
 
-        queue_count = connection.execute(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM pgmq.list_queues()
-                WHERE queue_name = :queue_name
-                """
-            ),
-            {
-                "queue_name": QUEUE,
-            },
-        ).scalar_one()
-
-    assert extension is True
-    assert queue_count == 1
+    assert queue_tables == 2
 
 
 def test_two_consumers_cannot_read_same_message(
@@ -322,7 +307,7 @@ def test_history_persists_observations_exactly_once(
             text(
                 """
                 SELECT COUNT(*)
-                FROM pgmq.q_price_observations
+                FROM observation_queue
                 WHERE msg_id = :message_id
                 """
             ),
@@ -355,7 +340,7 @@ def test_history_persists_observations_exactly_once(
             text(
                 """
                 SELECT COUNT(*)
-                FROM pgmq.a_price_observations
+                FROM observation_queue_archive
                 WHERE message->>'event_key'
                     = :event_key
                 """

@@ -37,13 +37,10 @@ func TestPublisherDeduplicatesEventKey(t *testing.T) {
 		t.Fatalf("clear event ledger: %v", err)
 	}
 
-	var purged int64
-
-	if err := database.QueryRowContext(
+	if _, err := database.ExecContext(
 		ctx,
-		"SELECT pgmq.purge_queue($1)",
-		"price_observations",
-	).Scan(&purged); err != nil {
+		"TRUNCATE TABLE observation_queue",
+	); err != nil {
 		t.Fatalf("purge queue: %v", err)
 	}
 
@@ -101,7 +98,7 @@ func TestPublisherDeduplicatesEventKey(t *testing.T) {
 
 	if err := database.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) FROM pgmq.q_price_observations",
+		"SELECT COUNT(*) FROM observation_queue",
 	).Scan(&queuedMessages); err != nil {
 		t.Fatalf("count queue messages: %v", err)
 	}

@@ -46,7 +46,7 @@ class PGMQConsumer:
 
     async def _run(self) -> None:
         logger.info(
-            "PGMQ consumer started",
+            "PostgreSQL queue consumer started",
             extra={
                 "queue": self.settings.pgmq_queue,
             },
@@ -63,7 +63,7 @@ class PGMQConsumer:
                 raise
 
             except Exception:
-                logger.exception("PGMQ consumer failed; retrying")
+                logger.exception("PostgreSQL queue consumer failed; retrying")
 
                 await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)
 
@@ -72,12 +72,25 @@ class PGMQConsumer:
             result = session.execute(
                 text(
                     """
-                    SELECT *
-                    FROM pgmq.read(
-                        queue_name => :queue_name,
-                        vt => :visibility_timeout,
-                        qty => 1
+                    WITH candidate AS (
+                        SELECT msg_id
+                        FROM observation_queue
+                        WHERE visible_at <= CURRENT_TIMESTAMP
+                        ORDER BY msg_id
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
                     )
+                    UPDATE observation_queue AS queue
+                    SET
+                        read_count = queue.read_count + 1,
+                        visible_at = CURRENT_TIMESTAMP
+                            + make_interval(secs => :visibility_timeout)
+                    FROM candidate
+                    WHERE queue.msg_id = candidate.msg_id
+                    RETURNING
+                        queue.msg_id,
+                        queue.read_count AS read_ct,
+                        queue.message
                     """
                 ),
                 {
@@ -115,7 +128,7 @@ class PGMQConsumer:
 
         except ValidationError as exc:
             logger.error(
-                "permanently invalid PGMQ message",
+                "permanently invalid queue message",
                 extra={
                     "msg_id": msg_id,
                     "error": str(exc),
@@ -135,7 +148,7 @@ class PGMQConsumer:
 
         except Exception:
             logger.exception(
-                "failed to persist PGMQ message",
+                "failed to persist queue message",
                 extra={
                     "msg_id": msg_id,
                     "read_count": read_count,
@@ -144,7 +157,7 @@ class PGMQConsumer:
 
             if read_count >= self.settings.pgmq_max_attempts:
                 logger.error(
-                    "PGMQ message exceeded retry limit",
+                    "queue message exceeded retry limit",
                     extra={
                         "msg_id": msg_id,
                         "read_count": read_count,
@@ -158,7 +171,7 @@ class PGMQConsumer:
         self._archive_message(msg_id)
 
         logger.info(
-            "PGMQ message persisted",
+            "queue message persisted",
             extra={
                 "msg_id": msg_id,
                 "read_count": read_count,
@@ -176,19 +189,29 @@ class PGMQConsumer:
             archived = session.execute(
                 text(
                     """
-                    SELECT pgmq.archive(
-                        queue_name => :queue_name,
-                        msg_id => :msg_id
+                    WITH archived AS (
+                        DELETE FROM observation_queue
+                        WHERE msg_id = :msg_id
+                        RETURNING msg_id, message, read_count, enqueued_at
                     )
+                    INSERT INTO observation_queue_archive (
+                        msg_id,
+                        message,
+                        read_count,
+                        enqueued_at
+                    )
+                    SELECT msg_id, message, read_count, enqueued_at
+                    FROM archived
+                    ON CONFLICT (msg_id) DO NOTHING
+                    RETURNING msg_id
                     """
                 ),
                 {
-                    "queue_name": self.settings.pgmq_queue,
                     "msg_id": msg_id,
                 },
-            ).scalar_one()
+            ).scalar_one_or_none()
 
             session.commit()
 
-            if not archived:
-                raise RuntimeError(f"failed to archive PGMQ message {msg_id}")
+            if archived is None:
+                raise RuntimeError(f"failed to archive queue message {msg_id}")

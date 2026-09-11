@@ -66,10 +66,8 @@
     - >-
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
-      (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
+      (history_health.json | default({})).get('queue_backend', '') == 'postgres'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_consumer', ''
+        'queue_consumer', ''
       ) == 'ready'

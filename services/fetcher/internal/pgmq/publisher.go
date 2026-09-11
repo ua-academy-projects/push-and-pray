@@ -122,28 +122,19 @@ func (publisher Publisher) publishOnce(
 	err = tx.QueryRowContext(
 		ctx,
 		`
-		SELECT *
-		FROM pgmq.send(
-			queue_name => $1,
-			msg => $2::jsonb
-		)
+		INSERT INTO observation_queue (message)
+		VALUES ($1::jsonb)
+		RETURNING msg_id
 		`,
-		publisher.QueueName,
 		body,
 	).Scan(&messageID)
 
 	if err != nil {
-		return fmt.Errorf(
-			"publish PGMQ message: %w",
-			err,
-		)
+		return fmt.Errorf("publish PostgreSQL queue message: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf(
-			"commit PGMQ publish: %w",
-			err,
-		)
+		return fmt.Errorf("commit PostgreSQL queue publish: %w", err)
 	}
 
 	return nil

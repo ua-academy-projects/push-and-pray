@@ -89,8 +89,8 @@ services:
           data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
           assert data["status"] == "ok";
           assert data["database"] == "connected";
-          assert data["pgmq_extension"] == "installed";
-          assert data["pgmq_consumer"] == "ready"
+          assert data["queue_backend"] == "postgres";
+          assert data["queue_consumer"] == "ready"
       interval: 10s
       timeout: 5s
       retries: 20

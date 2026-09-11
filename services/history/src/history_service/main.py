@@ -67,13 +67,14 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    extension_installed = db.execute(
+    queue_ready = db.execute(
         text(
             """
             SELECT EXISTS (
                 SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'observation_queue'
             )
             """
         )
@@ -82,8 +83,8 @@ def health(
     return {
         "status": "ok",
         "database": "connected",
-        "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
+        "queue_backend": ("postgres" if queue_ready else "missing"),
+        "queue_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
     }
 
 
