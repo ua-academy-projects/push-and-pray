@@ -4,7 +4,11 @@
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    POSTGRES_USER: "{{ history_postgres_user }}"
+    POSTGRES_DB: "{{ history_postgres_name }}"
+    DATABASE_HOST: "{{ history_database_host }}"
+    DATABASE_PORT: "{{ history_database_port | string }}"
+    DATABASE_SSLMODE: "{{ history_database_sslmode }}"
   no_log: true
   block:
     - name: Pull the History image

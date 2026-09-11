@@ -350,6 +350,11 @@ terraform -chdir="${TF_DIR}" apply \
   -var="enable_bastion_ssh_bootstrap=true"
 BOOTSTRAP_ENABLED=true
 
+DATABASE_VARS_FILE="${COLLECTION_BUILD_DIR}/database-connection.json"
+terraform -chdir="${TF_DIR}" output -json managed_database | \
+  jq '{managed_database: .}' > "${DATABASE_VARS_FILE}"
+chmod 0600 "${DATABASE_VARS_FILE}"
+
 UI_IP="$(terraform -chdir="${TF_DIR}" output -json workload_external_ips | jq -r '.ui // empty')"
 [[ "${UI_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   fail "Terraform did not return a public IPv4 address for the ui VM."
@@ -456,7 +461,8 @@ step "Uploading application secrets"
 step "Deploying database, history, fetcher, UI, and HTTPS proxy"
 "${ANSIBLE_PLAYBOOK}" oilscope.platform.deploy_workloads \
   -i "${INVENTORY}" \
-  -e "project_config_path=${CONFIG}"
+  -e "project_config_path=${CONFIG}" \
+  -e "@${DATABASE_VARS_FILE}"
 
 step "Waiting for a trusted HTTPS response"
 HTTPS_READY=false

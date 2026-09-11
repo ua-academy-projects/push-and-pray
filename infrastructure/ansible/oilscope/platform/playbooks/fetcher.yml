@@ -20,6 +20,10 @@
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
 
+    - role: oilscope.platform.database_connection
+      vars:
+        database_connection_config_path: "{{ project_config_path }}"
+
     - role: oilscope.platform.registry_auth
       vars:
         registry_auth_registry: >-
@@ -33,6 +37,10 @@
     - role: oilscope.platform.fetcher
       vars:
         fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
+          {{ oilscope_database_connection.host }}
+        fetcher_database_port: "{{ oilscope_database_connection.port }}"
+        fetcher_postgres_user: "{{ oilscope_database_connection.user }}"
+        fetcher_postgres_name: "{{ oilscope_database_connection.name }}"
+        fetcher_database_sslmode: "{{ oilscope_database_connection.sslmode }}"
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

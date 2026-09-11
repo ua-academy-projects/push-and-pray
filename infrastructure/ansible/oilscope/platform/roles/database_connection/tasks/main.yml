@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Load database selection
+  ansible.builtin.include_vars:
+    file: "{{ database_connection_config_path }}"
+    name: database_connection_project
+
+- name: Validate managed database connection metadata
+  ansible.builtin.assert:
+    that:
+      - managed_database.enabled | default(false) | bool
+      - managed_database.host | default('') | length > 0
+      - managed_database.port | int > 0
+      - managed_database.name | default('') | length > 0
+      - managed_database.user | default('') | length > 0
+    fail_msg: >-
+      manage_db=true requires the normalized managed_database Terraform output.
+  when: database_connection_project.manage_db | bool
+
+- name: Use managed PostgreSQL connection
+  ansible.builtin.set_fact:
+    oilscope_database_connection:
+      managed: true
+      cloud: "{{ managed_database.cloud }}"
+      host: "{{ managed_database.host }}"
+      port: "{{ managed_database.port | int }}"
+      name: "{{ managed_database.name }}"
+      user: "{{ managed_database.user }}"
+      sslmode: require
+  when: database_connection_project.manage_db | bool
+
+- name: Validate self-managed database inventory
+  ansible.builtin.assert:
+    that:
+      - groups.database is defined
+      - groups.database | length == 1
+    fail_msg: manage_db=false requires exactly one inventory host in the database group.
+  when: not (database_connection_project.manage_db | bool)
+
+- name: Use self-managed PostgreSQL connection
+  ansible.builtin.set_fact:
+    oilscope_database_connection:
+      managed: false
+      cloud: "{{ hostvars[groups['database'][0]].oilscope_cloud }}"
+      host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+      port: "{{ database_connection_project.service_ports.postgresql | int }}"
+      name: oil_tracker
+      user: oil_tracker
+      sslmode: disable
+  when: not (database_connection_project.manage_db | bool)
+
+- name: Wait for private PostgreSQL connectivity
+  ansible.builtin.wait_for:
+    host: "{{ oilscope_database_connection.host }}"
+    port: "{{ oilscope_database_connection.port }}"
+    connect_timeout: 5
+    timeout: 60

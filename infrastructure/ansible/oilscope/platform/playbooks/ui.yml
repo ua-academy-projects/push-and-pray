@@ -20,6 +20,10 @@
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
 
+    - role: oilscope.platform.database_connection
+      vars:
+        database_connection_config_path: "{{ project_config_path }}"
+
     - role: oilscope.platform.registry_auth
       vars:
         registry_auth_registry: >-
@@ -43,3 +47,8 @@
     - role: oilscope.platform.ui
       vars:
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_database_host: "{{ oilscope_database_connection.host }}"
+        ui_database_port: "{{ oilscope_database_connection.port }}"
+        ui_postgres_user: "{{ oilscope_database_connection.user }}"
+        ui_postgres_name: "{{ oilscope_database_connection.name }}"
+        ui_database_sslmode: "{{ oilscope_database_connection.sslmode }}"

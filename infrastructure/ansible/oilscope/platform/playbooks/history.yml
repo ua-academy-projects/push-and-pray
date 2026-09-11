@@ -20,6 +20,10 @@
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
 
+    - role: oilscope.platform.database_connection
+      vars:
+        database_connection_config_path: "{{ project_config_path }}"
+
     - role: oilscope.platform.registry_auth
       vars:
         registry_auth_registry: >-
@@ -30,6 +34,27 @@
         registry_auth_token: >-
           {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
+    - role: oilscope.platform.database_migrations
+      when: oilscope_database_connection.managed | bool
+      vars:
+        database_migrations_image: >-
+          {{
+            compose_project_config.registry.repository
+            ~ '/database:'
+            ~ compose_project_config.registry.image_sha
+          }}
+        database_migrations_host: "{{ oilscope_database_connection.host }}"
+        database_migrations_port: "{{ oilscope_database_connection.port }}"
+        database_migrations_name: "{{ oilscope_database_connection.name }}"
+        database_migrations_user: "{{ oilscope_database_connection.user }}"
+        database_migrations_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_migrations_sslmode: "{{ oilscope_database_connection.sslmode }}"
+
     - role: oilscope.platform.history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        history_database_host: "{{ oilscope_database_connection.host }}"
+        history_database_port: "{{ oilscope_database_connection.port }}"
+        history_postgres_user: "{{ oilscope_database_connection.user }}"
+        history_postgres_name: "{{ oilscope_database_connection.name }}"
+        history_database_sslmode: "{{ oilscope_database_connection.sslmode }}"

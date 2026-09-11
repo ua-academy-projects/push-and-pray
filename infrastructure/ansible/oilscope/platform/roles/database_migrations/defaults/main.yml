@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_migrations_image: ""
+database_migrations_host: ""
+database_migrations_port: 5432
+database_migrations_name: oil_tracker
+database_migrations_user: oil_tracker
+database_migrations_password: ""
+database_migrations_sslmode: require
+database_migrations_docker_config_dir: /run/oilscope/docker-auth

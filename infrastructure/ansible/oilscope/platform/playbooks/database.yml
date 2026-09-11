@@ -7,21 +7,32 @@
   force_handlers: true
   any_errors_fatal: true
 
+  pre_tasks:
+    - name: Load database deployment mode
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: database_project_config
+
   roles:
     - role: oilscope.platform.host_baseline
+      when: not (database_project_config.manage_db | bool)
 
     - role: oilscope.platform.docker_engine
+      when: not (database_project_config.manage_db | bool)
 
     - role: oilscope.platform.compose_project
+      when: not (database_project_config.manage_db | bool)
       vars:
         compose_project_config_path: "{{ project_config_path }}"
         compose_project_workload: "{{ oilscope_role }}"
 
     - role: oilscope.platform.resolve_secrets
+      when: not (database_project_config.manage_db | bool)
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
 
     - role: oilscope.platform.registry_auth
+      when: not (database_project_config.manage_db | bool)
       vars:
         registry_auth_registry: >-
           {{ compose_project_config.registry.repository
@@ -32,6 +43,7 @@
           {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
     - role: oilscope.platform.database
+      when: not (database_project_config.manage_db | bool)
       vars:
         database_postgres_image: >-
           {{

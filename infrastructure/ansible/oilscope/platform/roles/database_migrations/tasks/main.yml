@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Pull the database migration image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - pull
+      - "{{ database_migrations_image }}"
+  environment:
+    DOCKER_CONFIG: "{{ database_migrations_docker_config_dir }}"
+  register: database_migrations_pull
+  changed_when: >-
+    'Downloaded newer image' in database_migrations_pull.stdout or
+    'Pull complete' in database_migrations_pull.stdout
+
+- name: Apply migrations to managed PostgreSQL
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --name
+      - oilscope-database-migrations
+      - --env
+      - PGHOST
+      - --env
+      - PGPORT
+      - --env
+      - PGUSER
+      - --env
+      - PGDATABASE
+      - --env
+      - PGPASSWORD
+      - --env
+      - PGSSLMODE
+      - "{{ database_migrations_image }}"
+      - petroscope-migrate
+  environment:
+    DOCKER_CONFIG: "{{ database_migrations_docker_config_dir }}"
+    PGHOST: "{{ database_migrations_host }}"
+    PGPORT: "{{ database_migrations_port | string }}"
+    PGUSER: "{{ database_migrations_user }}"
+    PGDATABASE: "{{ database_migrations_name }}"
+    PGPASSWORD: "{{ database_migrations_password }}"
+    PGSSLMODE: "{{ database_migrations_sslmode }}"
+  register: managed_database_migrations
+  changed_when: "'Applying ' in managed_database_migrations.stdout"
+  no_log: true
