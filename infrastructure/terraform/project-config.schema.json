@@ -23,6 +23,14 @@
     "default_cloud": { "$ref": "#/$defs/cloud_name" },
     "manage_db": { "type": "boolean" },
     "database": { "$ref": "#/$defs/database" },
+    "mixed_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
     "defaults": {
       "type": "object",
       "additionalProperties": false,

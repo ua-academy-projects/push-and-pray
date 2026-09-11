@@ -12,6 +12,11 @@ resource "terraform_data" "config_contract" {
       condition     = !local.manage_db || (var.database_password != null && try(length(var.database_password) > 0, false))
       error_message = "database_password is required when manage_db=true."
     }
+
+    precondition {
+      condition     = !local.mixed_cloud || local.mixed_network_enabled
+      error_message = "A configuration that uses AWS and GCP must enable mixed_network."
+    }
   }
 }
 

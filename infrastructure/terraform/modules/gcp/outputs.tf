@@ -42,3 +42,11 @@ output "managed_database" {
     cloud   = "gcp"
   }) : null
 }
+
+output "network" {
+  value = try({
+    network_id = module.network[0].network_id
+    vpc_cidr   = module.config.network.vpc_cidr
+    region     = module.config.location.region
+  }, null)
+}

@@ -1,6 +1,9 @@
 {
   "default_cloud": "gcp",
   "manage_db": false,
+  "mixed_network": {
+    "enabled": true
+  },
   "defaults": {
     "location_profile": "primary",
     "machine_profile": "micro",

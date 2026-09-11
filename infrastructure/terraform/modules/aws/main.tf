@@ -85,6 +85,11 @@ module "database" {
     for role in ["history", "fetcher", "ui"] :
     role => module.security[0].security_group_ids[role]
   }
+  remote_workload_cidrs = toset(
+    try(module.config.config.mixed_network.enabled, false) ? [
+      module.config.config.clouds.gcp.network.vpc_cidr
+    ] : []
+  )
   tags = module.config.common_metadata
 }
 

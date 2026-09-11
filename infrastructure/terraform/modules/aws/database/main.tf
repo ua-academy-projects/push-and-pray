@@ -33,6 +33,17 @@ resource "aws_vpc_security_group_ingress_rule" "workloads" {
   description                  = "PostgreSQL from ${each.key} workloads"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "remote_workloads" {
+  for_each = var.remote_workload_cidrs
+
+  security_group_id = aws_security_group.this.id
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = var.port
+  to_port           = var.port
+  description       = "PostgreSQL from private cross-cloud workloads"
+}
+
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.this.id
   cidr_ipv4         = "0.0.0.0/0"

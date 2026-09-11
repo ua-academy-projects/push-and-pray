@@ -86,3 +86,23 @@ run "gcp_managed_database_profile" {
     error_message = "The GCP profile must create four VMs and a private Cloud SQL database."
   }
 }
+
+run "mixed_private_vpn_profile" {
+  command = plan
+
+  variables {
+    project_config_path = "../../configs/project-config.mixed.json"
+    database_password   = "test-only-password"
+  }
+
+  assert {
+    condition = (
+      length(module.aws.vms) == 3 &&
+      length(module.gcp.vms) == 2 &&
+      length(aws_vpn_connection.mixed) == 1 &&
+      length(google_compute_vpn_tunnel.aws) == 1 &&
+      module.gcp.managed_database.cloud == "gcp"
+    )
+    error_message = "The mixed profile must create both cloud groups, a private VPN, and Cloud SQL."
+  }
+}

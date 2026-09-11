@@ -18,6 +18,13 @@ resource "google_service_networking_connection" "private_services" {
   reserved_peering_ranges = [google_compute_global_address.private_services.name]
 }
 
+resource "google_compute_network_peering_routes_config" "private_services" {
+  peering              = google_service_networking_connection.private_services.peering
+  network              = var.network_id
+  import_custom_routes = true
+  export_custom_routes = true
+}
+
 resource "google_sql_database_instance" "this" {
   name             = local.instance_name
   project          = var.project_id

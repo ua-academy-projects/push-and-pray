@@ -18,6 +18,10 @@ variable "deletion_protection" { type = bool }
 variable "subnet_ids" { type = list(string) }
 variable "vpc_id" { type = string }
 variable "workload_security_group_ids" { type = map(string) }
+variable "remote_workload_cidrs" {
+  type    = set(string)
+  default = []
+}
 variable "snapshot_identifier" {
   type     = string
   default  = null

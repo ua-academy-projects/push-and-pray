@@ -42,3 +42,11 @@ output "managed_database" {
     cloud   = "aws"
   }) : null
 }
+
+output "network" {
+  value = try({
+    vpc_id          = module.network[0].vpc_id
+    route_table_ids = module.routing[0].route_table_ids
+    vpc_cidr        = module.config.network.vpc_cidr
+  }, null)
+}
