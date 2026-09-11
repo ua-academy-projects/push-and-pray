@@ -1,0 +1,12 @@
+variable "resource_prefix" { type = string }
+variable "vpc_id" { type = string }
+variable "workload_subnet_cidr" { type = string }
+variable "bastion_ssh_port" { type = number }
+variable "enable_bastion" { type = bool }
+variable "enable_bastion_nat" { type = bool }
+variable "bastion_allowed_cidrs" { type = list(string) }
+variable "enable_bastion_ssh_bootstrap" { type = bool }
+variable "ui_public_ports" { type = list(number) }
+variable "history_api_port" { type = number }
+variable "postgresql_port" { type = number }
+variable "tags" { type = map(string) }

@@ -389,7 +389,23 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         run: |
           command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
-          cloud-init schema --config-file infrastructure/terraform/modules/vm/templates/cloud-config.yaml.tftpl
+          rendered_cloud_init="$(mktemp)"
+          terraform_console_dir="$(mktemp -d)"
+          trap 'rm -f "${rendered_cloud_init}"; rmdir "${terraform_console_dir}"' EXIT
+
+          cloud_init_expression='jsonencode(templatefile("${{ github.workspace }}/'
+          cloud_init_expression+='infrastructure/terraform/modules/aws/vm/templates/cloud-init.yaml.tftpl", '
+          cloud_init_expression+='{ ssh_users = jsondecode(file("${{ github.workspace }}/'
+          cloud_init_expression+='project-config.example.json")).ssh_users }))'
+
+          printf '%s\n' \
+            "${cloud_init_expression}" \
+            | terraform -chdir="${terraform_console_dir}" console \
+            | jq -r . \
+            | jq -r . \
+            > "${rendered_cloud_init}"
+
+          cloud-init schema --config-file "${rendered_cloud_init}"
 
   ansible:
     name: Ansible Lint

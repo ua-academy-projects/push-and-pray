@@ -1,5 +1,6 @@
 .env
 .venv/
+.oilscope-deploy/
 __pycache__/
 *.py[cod]
 .pytest_cache/

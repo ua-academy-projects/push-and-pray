@@ -14,12 +14,9 @@
 - name: Require a registry username
   ansible.builtin.fail:
     msg: registry_auth_username must contain the GitHub account that owns the token.
-  when: registry_auth_username | trim | length == 0
-
-- name: Require a registry token
-  ansible.builtin.fail:
-    msg: GHCR_TOKEN is missing or empty for this workload.
-  when: not registry_auth_token_available
+  when:
+    - registry_auth_token_available
+    - registry_auth_username | trim | length == 0
 
 - name: Create the transient Docker configuration directory
   become: true
@@ -29,6 +26,7 @@
     owner: root
     group: root
     mode: "0700"
+  when: registry_auth_token_available
 
 - name: Authenticate to the private container registry
   block:
@@ -60,3 +58,4 @@
     - name: Report the registry authentication failure
       ansible.builtin.fail:
         msg: Authentication to the private container registry failed.
+  when: registry_auth_token_available

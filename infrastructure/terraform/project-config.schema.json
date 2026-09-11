@@ -15,6 +15,7 @@
     "registry",
     "network",
     "service_ports",
+    "secrets_by_role",
     "vms"
   ],
   "properties": {
@@ -78,6 +79,7 @@
       "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
     },
     "common_labels": { "$ref": "#/$defs/labels" },
+    "observability": { "$ref": "#/$defs/observability" },
     "ssh_users": { "$ref": "#/$defs/ssh_users" },
     "registry": {
       "type": "object",
@@ -128,6 +130,17 @@
         "postgresql": { "$ref": "#/$defs/port" }
       }
     },
+    "secrets_by_role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database", "history", "fetcher", "ui"],
+      "properties": {
+        "database": { "$ref": "#/$defs/secret_mappings" },
+        "history": { "$ref": "#/$defs/secret_mappings" },
+        "fetcher": { "$ref": "#/$defs/secret_mappings" },
+        "ui": { "$ref": "#/$defs/secret_mappings" }
+      }
+    },
     "vms": {
       "type": "object",
       "minProperties": 2,
@@ -148,6 +161,18 @@
     }
   },
   "$defs": {
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "alert_email", "monthly_budget_usd", "synthetic_url"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "alert_email": { "type": "string", "format": "email" },
+        "monthly_budget_usd": { "type": "number", "exclusiveMinimum": 0 },
+        "synthetic_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "log_retention_days": { "type": "integer", "enum": [1, 3, 5, 7, 14, 30, 60, 90] }
+      }
+    },
     "cloud_name": {
       "type": "string",
       "enum": ["aws", "gcp"]
@@ -243,8 +268,7 @@
         "internal_ip",
         "boot_disk",
         "assign_public_ip",
-        "network_tags",
-        "secret_mappings"
+        "network_tags"
       ],
       "properties": {
         "role": {
@@ -259,7 +283,6 @@
         "assign_public_ip": { "type": "boolean" },
         "network_tags": { "$ref": "#/$defs/vm_network_tags" },
         "labels": { "$ref": "#/$defs/labels" },
-        "secret_mappings": { "$ref": "#/$defs/secret_mappings" },
         "ssh_port": { "$ref": "#/$defs/port" },
         "allowed_cidrs": {
           "type": "array",
@@ -302,8 +325,7 @@
             "required": ["ssh_port", "allowed_cidrs"],
             "properties": {
               "assign_public_ip": { "const": true },
-              "network_tags": { "contains": { "const": "bastion" } },
-              "secret_mappings": { "maxProperties": 0 }
+              "network_tags": { "contains": { "const": "bastion" } }
             }
           },
           "else": {
@@ -321,7 +343,6 @@
             "required": ["role"]
           },
           "then": {
-            "required": ["public_endpoint"],
             "properties": {
               "network_tags": { "contains": { "const": "ui" } }
             }

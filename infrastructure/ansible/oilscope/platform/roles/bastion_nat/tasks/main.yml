@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate NAT configuration
+  ansible.builtin.assert:
+    that:
+      - bastion_nat_workload_cidr | length > 0
+      - ansible_default_ipv4.interface | default('') | length > 0
+    fail_msg: NAT requires a workload CIDR and a detected default network interface.
+  when: bastion_nat_enabled | bool
+
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+  when: bastion_nat_enabled | bool
+
+- name: Enable IPv4 forwarding persistently
+  ansible.builtin.copy:
+    dest: "{{ bastion_nat_sysctl_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      net.ipv4.ip_forward=1
+  when: bastion_nat_enabled | bool
+
+- name: Read the current IPv4 forwarding state
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -n
+      - net.ipv4.ip_forward
+  register: bastion_nat_forwarding
+  changed_when: false
+  when: bastion_nat_enabled | bool
+
+- name: Enable IPv4 forwarding at runtime
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -w
+      - net.ipv4.ip_forward=1
+  changed_when: true
+  when:
+    - bastion_nat_enabled | bool
+    - bastion_nat_forwarding.stdout | default('0') | trim != '1'
+
+- name: Create the nftables configuration directory
+  ansible.builtin.file:
+    path: "{{ bastion_nat_rules_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: bastion_nat_enabled | bool
+
+- name: Install NAT rules
+  ansible.builtin.template:
+    src: oilscope-nat.nft.j2
+    dest: "{{ bastion_nat_rules_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart OilScope NAT
+  when: bastion_nat_enabled | bool
+
+- name: Install the NAT systemd service
+  ansible.builtin.template:
+    src: oilscope-nat.service.j2
+    dest: "{{ bastion_nat_service_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart OilScope NAT
+  when: bastion_nat_enabled | bool
+
+- name: Enable and start OilScope NAT
+  ansible.builtin.systemd_service:
+    name: oilscope-nat.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: bastion_nat_enabled | bool
+
+- name: Disable OilScope NAT when it is not requested
+  ansible.builtin.systemd_service:
+    name: oilscope-nat.service
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+  when: not bastion_nat_enabled | bool
+
+- name: Remove OilScope NAT configuration when it is not requested
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ bastion_nat_rules_path }}"
+    - "{{ bastion_nat_service_path }}"
+    - "{{ bastion_nat_sysctl_path }}"
+  when: not bastion_nat_enabled | bool

@@ -1,0 +1,14 @@
+[Unit]
+Description=OilScope bastion NAT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStartPre=-/usr/sbin/nft delete table ip oilscope_nat
+ExecStart=/usr/sbin/nft -f {{ bastion_nat_rules_path }}
+ExecStop=-/usr/sbin/nft delete table ip oilscope_nat
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

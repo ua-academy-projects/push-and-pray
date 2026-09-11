@@ -1,6 +1,6 @@
 locals {
   config       = jsondecode(file(var.project_config_path))
-  cloud        = "aws"
+  cloud        = lower(var.cloud)
   cloud_config = lookup(local.config.clouds, local.cloud, {})
   defaults     = local.config.defaults
 
@@ -34,6 +34,11 @@ locals {
       machine_profile = lookup(vm, "machine_profile", local.defaults.machine_profile)
       image_profile   = lookup(vm, "image_profile", local.defaults.image_profile)
       disk_profile    = lookup(vm.boot_disk, "profile", local.defaults.disk_profile)
+      secret_mappings = vm.role == "bastion" ? {} : lookup(
+        local.config.secrets_by_role,
+        vm.role,
+        {},
+      )
       machine_type = lookup(
         lookup(local.cloud_config, "machine_types", {}),
         lookup(vm, "machine_profile", local.defaults.machine_profile),

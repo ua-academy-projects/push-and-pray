@@ -1,7 +1,8 @@
 module "config" {
-  source = "./config"
+  source = "../config"
 
   project_config_path = var.project_config_path
+  cloud               = "gcp"
 }
 
 resource "terraform_data" "configuration" {
@@ -68,15 +69,12 @@ module "vm" {
   subnetwork_id = each.value.role == "bastion" ? module.network[0].management_subnet_id : module.network[0].workload_subnet_id
   role          = each.value.role
 
-  registry_repository = module.config.config.registry.repository
-  image_sha           = module.config.config.registry.image_sha
-  ssh_users           = module.config.config.ssh_users
-  network_tags        = each.value.network_tags_effective
+  ssh_users    = module.config.config.ssh_users
+  network_tags = each.value.network_tags_effective
 
   machine_type      = each.value.machine_type
   image             = each.value.image
   internal_ip       = each.value.internal_ip
-  ssh_port          = each.value.ssh_port
   boot_disk_size_gb = each.value.boot_disk.size_gb
   boot_disk_type    = each.value.disk_type
   assign_public_ip  = each.value.assign_public_ip

@@ -1,21 +1,19 @@
 # Secrets
 
-Deployment credentials live in Google Secret Manager. Terraform creates the
-containers and decides who may read them; it never sees, stores or transports a
-value.
+Deployment credentials live in Google Secret Manager or AWS SSM Parameter
+Store, depending on the workload cloud. Terraform creates provider-side access
+controls and decides who may read each secret; it never sees, stores or
+transports a value.
 
 ## Where the catalog comes from
 
-There is no hand-written list of secrets. Every container is derived from
-`secret_mappings` in the project configuration JSON:
+The non-secret mapping from application environment variables to provider
+secret IDs lives in `secrets_by_role` in the project configuration JSON:
 
 ```json
-"vms": {
+"secrets_by_role": {
   "history": {
-    "role": "history",
-    "secret_mappings": {
-      "DB_PASSWORD_HISTORY": "oilscope-dev-db-password-history"
-    }
+    "POSTGRES_PASSWORD": "oilscope-dev-db-password-history"
   }
 }
 ```
@@ -24,13 +22,13 @@ The key is the environment variable the application expects; the value is the
 Secret Manager container ID. Both halves are non-secret, which is why the whole
 mapping can live in a file the repository reads.
 
-`infrastructure/terraform/secrets.tf` flattens those maps into the set of
-containers to create, and into the list of (workload, secret) pairs to grant.
-Giving a workload a new secret is a one-line change to that JSON — the
-container, the grant and the environment-variable name all follow from it.
+The AWS and GCP config modules attach the mapping for a VM's role and flatten
+the resolved VM maps into provider-specific secret IDs and access pairs. Giving
+a role a new secret is a one-line change to that JSON — the provider object,
+grant and environment-variable name all follow from it.
 
 The same derivation is what makes the access rule enforceable: a workload can
-only be granted a secret that is written next to its own name.
+only be granted a secret assigned to its role.
 
 ## What Terraform does, and what it deliberately does not
 
@@ -93,8 +91,8 @@ Note `printf` rather than `echo`: `echo` appends a newline, which becomes part o
 the stored value and then fails an exact comparison somewhere far away from here.
 
 Which environment variable the *application* reads is not a convention to
-remember: it is the key side of `secret_mappings`. It is scoped to one VM
-though, so it is not the variable you export when uploading — see
+remember: it is the key side of `secrets_by_role`. It is scoped to one workload
+role, so it is not necessarily the variable you export when uploading — see
 [Uploading every value at once](#uploading-every-value-at-once).
 
 Generate database passwords with `openssl rand -hex 32`. `-hex` rather than
@@ -146,20 +144,19 @@ role prints which variable feeds which container before it writes anything.
 
 ### Why the variable is not the one the application sees
 
-The unit of upload is the container, so the variable name is derived from the
-container ID with the project prefix dropped — not from the key side of
-`secret_mappings`:
+The unit of upload is the provider secret ID, so the controller environment
+variable is derived from the complete ID by uppercasing it and replacing every
+non-alphanumeric character with `_`; it is not derived from the key side of
+`secrets_by_role`:
 
 ```
-oilscope-dev-db-password-fetcher   ->  DB_PASSWORD_FETCHER
-oilscope-dev-oilpriceapi-key       ->  OILPRICEAPI_KEY
+oilscope-dev-db-password-fetcher   ->  OILSCOPE_DEV_DB_PASSWORD_FETCHER
+oilscope-dev-oilpriceapi-key       ->  OILSCOPE_DEV_OILPRICEAPI_KEY
 ```
 
-That key is scoped to one VM: `DB_PASSWORD` means the fetcher's password on
-`fetcher` and the history service's password on `history`, and one shell cannot
-hold both under one name. Where dropping the prefix would make two containers
-collide, every container keeps the fully qualified name
-(`OILSCOPE_DEV_DB_PASSWORD_FETCHER`) instead.
+The application-facing key is scoped to a role: `POSTGRES_PASSWORD` can point
+to different provider secret IDs for `fetcher` and `history`, while the upload
+environment keeps the IDs unambiguous.
 
 ### What it guarantees
 

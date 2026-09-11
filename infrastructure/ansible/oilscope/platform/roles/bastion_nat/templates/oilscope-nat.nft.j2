@@ -1,0 +1,6 @@
+table ip oilscope_nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {{ bastion_nat_workload_cidr }} oifname "{{ ansible_default_ipv4.interface }}" masquerade
+  }
+}

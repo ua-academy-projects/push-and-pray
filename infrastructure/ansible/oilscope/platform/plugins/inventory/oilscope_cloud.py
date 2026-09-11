@@ -46,6 +46,12 @@ options:
     description: SSH port used by workload hosts.
     type: int
     default: 22
+  bastion_connect_port:
+    description: Temporary SSH port used to bootstrap a new bastion.
+    type: int
+    required: false
+    env:
+      - name: OILSCOPE_BASTION_CONNECT_PORT
   auth_kind:
     description: Authentication mode forwarded to gcp_compute.
     type: str
@@ -187,6 +193,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             project_id = self._require(gcp, "project_id", "clouds.gcp")
             zone = self._require(location, "zone", f"clouds.gcp.locations.{location_profile}")
             bastion_port = self._bastion_port(config, "gcp")
+            bastion_connect_port = self.get_option("bastion_connect_port") or bastion_port
             role = "labels.role | default('')"
             has_public = "networkInterfaces[0].accessConfigs | default([])"
             public = "networkInterfaces[0].accessConfigs[0].natIP"
@@ -215,7 +222,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     "public_ip": f"{public} if {has_public} else ''",
                     "ansible_host": f"{public} if {role} == 'bastion' else {private}",
                     "ansible_port": (
-                        f"{bastion_port} if {role} == 'bastion' else {workload_port}"
+                        f"{bastion_connect_port} if {role} == 'bastion' else {workload_port}"
                     ),
                     "oilscope_bastion_ssh_port": plain(bastion_port),
                     "oilscope_role": role,
@@ -229,6 +236,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             location = aws.get("locations", {}).get(location_profile, {})
             region = self._require(location, "region", f"clouds.aws.locations.{location_profile}")
             bastion_port = self._bastion_port(config, "aws")
+            bastion_connect_port = self.get_option("bastion_connect_port") or bastion_port
             role = "tags.role | default('')"
 
             result["aws"] = {
@@ -254,7 +262,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                         f"public_ip_address if {role} == 'bastion' else private_ip_address"
                     ),
                     "ansible_port": (
-                        f"{bastion_port} if {role} == 'bastion' else {workload_port}"
+                        f"{bastion_connect_port} if {role} == 'bastion' else {workload_port}"
                     ),
                     "oilscope_bastion_ssh_port": plain(bastion_port),
                     "oilscope_role": role,

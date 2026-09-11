@@ -13,6 +13,8 @@
            'secret_id': item.value,
            'vm_name': secret_versions_vm.key
          }] }}
-  loop: "{{ secret_versions_vm.value.secret_mappings | default({}) | dict2items }}"
+  loop: >-
+    {{ secret_versions_config.secrets_by_role.get(
+         secret_versions_vm.value.role, {}) | dict2items }}
   loop_control:
     label: "{{ item.value }}"

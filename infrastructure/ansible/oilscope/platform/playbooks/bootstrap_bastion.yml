@@ -3,8 +3,22 @@
 - name: Configure the bastion
   hosts: bastion
   become: true
-  gather_facts: false
+  gather_facts: true
+  pre_tasks:
+    - name: Load the project configuration
+      ansible.builtin.include_vars:
+        file: >-
+          {{ project_config_path
+             | default(lookup('ansible.builtin.env', 'OILSCOPE_PROJECT_CONFIG'), true) }}
+        name: bootstrap_project_config
   roles:
+    - role: oilscope.platform.bastion_nat
+      when: oilscope_cloud == 'aws'
+      vars:
+        bastion_nat_enabled: >-
+          {{ bootstrap_project_config.clouds.aws.bastion_nat | default(true) }}
+        bastion_nat_workload_cidr: "{{ bootstrap_project_config.network.workload_subnet_cidr }}"
+
     - role: oilscope.platform.bastion
   post_tasks:
     - name: Wait for the final bastion SSH port from the controller

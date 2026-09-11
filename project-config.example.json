@@ -61,79 +61,105 @@
     "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
   },
   "registry": {
-    "repository": "ghcr.io/example-org/example-project",
+    "repository": "ghcr.io/ua-academy-projects/push-and-pray",
     "username": "example-operator",
-    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+    "image_sha": "7075d4610949ab6852c90e2ac63a50d2ec4c3a41"
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/28",
     "workload_subnet_cidr": "10.0.1.0/26",
     "public_subnet_cidr": "10.0.2.0/28",
-    "ui_public_ports": [80, 443]
+    "ui_public_ports": [
+      80,
+      443
+    ]
   },
   "service_ports": {
     "history_api": 8001,
     "postgresql": 5432
   },
+  "secrets_by_role": {
+    "database": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "GHCR_TOKEN": "example-ghcr-token"
+    },
+    "history": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "GHCR_TOKEN": "example-ghcr-token"
+    },
+    "fetcher": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b",
+      "GHCR_TOKEN": "example-ghcr-token"
+    },
+    "ui": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "GHCR_TOKEN": "example-ghcr-token"
+    }
+  },
   "vms": {
     "bastion": {
       "role": "bastion",
       "internal_ip": "10.0.0.4",
-      "boot_disk": { "size_gb": 10 },
+      "boot_disk": {
+        "size_gb": 10
+      },
       "assign_public_ip": true,
-      "network_tags": ["bastion"],
-      "secret_mappings": {},
+      "network_tags": [
+        "bastion"
+      ],
       "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
+      "allowed_cidrs": [
+        "192.0.2.10/32"
+      ]
     },
     "infra": {
       "role": "database",
       "internal_ip": "10.0.1.4",
-      "boot_disk": { "size_gb": 10 },
+      "boot_disk": {
+        "size_gb": 10
+      },
       "assign_public_ip": false,
-      "network_tags": ["infra"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "network_tags": [
+        "infra"
+      ]
     },
     "history": {
       "role": "history",
       "machine_profile": "small",
       "internal_ip": "10.0.1.5",
-      "boot_disk": { "size_gb": 10 },
+      "boot_disk": {
+        "size_gb": 10
+      },
       "assign_public_ip": false,
-      "network_tags": ["history"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "network_tags": [
+        "history"
+      ]
     },
     "fetcher": {
       "role": "fetcher",
       "internal_ip": "10.0.1.6",
-      "boot_disk": { "size_gb": 10 },
+      "boot_disk": {
+        "size_gb": 10
+      },
       "assign_public_ip": false,
-      "network_tags": ["fetcher"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      "network_tags": [
+        "fetcher"
+      ]
     },
     "ui": {
       "role": "ui",
       "internal_ip": "10.0.1.7",
-      "boot_disk": { "size_gb": 10 },
-      "assign_public_ip": true,
-      "network_tags": ["ui"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
+      "boot_disk": {
+        "size_gb": 10
       },
+      "assign_public_ip": true,
+      "network_tags": [
+        "ui"
+      ],
       "public_endpoint": {
-        "hostname": "oilscope.example.com",
+        "hostname": "shiphappens.pp.ua",
         "acme_email": "example-operator@example.com"
       }
     }

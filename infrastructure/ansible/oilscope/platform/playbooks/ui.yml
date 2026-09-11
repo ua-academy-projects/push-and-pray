@@ -31,12 +31,14 @@
           {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
     - role: oilscope.platform.compose_project
+      when: compose_project_config.vms.ui.public_endpoint is defined
       vars:
         compose_project_config_path: "{{ project_config_path }}"
         compose_project_dir: /opt/oilscope/proxy
         compose_project_workload: proxy
 
     - role: oilscope.platform.edge_proxy
+      when: compose_project_config.vms.ui.public_endpoint is defined
 
     - role: oilscope.platform.ui
       vars:

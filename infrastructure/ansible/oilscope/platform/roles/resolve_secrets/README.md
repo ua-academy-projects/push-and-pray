@@ -1,8 +1,8 @@
 # Resolve secrets role
 
-Resolves only the secret_mappings assigned to the current VM. The neutral
-inventory variables oilscope_cloud and oilscope_vm_key select the provider and
-the exact vms entry; role names and string parsing are not used as identity.
+Resolves only the `secrets_by_role` mapping assigned to the current VM role.
+The neutral inventory variables `oilscope_cloud` and `oilscope_vm_key` select
+the provider and exact VM; its role selects the secret mapping.
 
 GCP reads Secret Manager with the attached service account and metadata token.
 AWS reads SSM SecureString parameters with the attached EC2 IAM role. Secret

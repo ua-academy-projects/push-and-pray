@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+bastion_nat_enabled: false
+bastion_nat_workload_cidr: ""
+bastion_nat_rules_path: /etc/nftables.d/oilscope-nat.nft
+bastion_nat_service_path: /etc/systemd/system/oilscope-nat.service
+bastion_nat_sysctl_path: /etc/sysctl.d/99-oilscope-nat.conf

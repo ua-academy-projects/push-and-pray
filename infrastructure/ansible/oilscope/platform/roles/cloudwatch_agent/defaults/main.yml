@@ -1,0 +1,7 @@
+---
+cloudwatch_agent_region: eu-west-1
+cloudwatch_agent_namespace: CWAgent
+cloudwatch_agent_log_group: /oilscope-dev/application
+cloudwatch_agent_package_url: >-
+  https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+cloudwatch_agent_config_path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json

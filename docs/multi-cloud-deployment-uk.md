@@ -8,10 +8,9 @@ Terraform і Ansible читають один project-config.json. Поле defau
 
 VM містять тільки абстрактні machine_profile, image_profile та boot_disk.profile.
 Реальні region, zone, machine type, disk type й image/AMI знаходяться у
-словниках clouds.gcp і clouds.aws. Вкладені модулі modules/gcp/config і
-modules/aws/config фільтрують VM, застосовують defaults та виконують lookup для
-своєї хмари. Усі network, VM та config-підмодулі розташовані всередині
-modules/gcp або modules/aws. Root module не виконує конвертацію.
+словниках clouds.gcp і clouds.aws. Спільний модуль modules/config фільтрує VM,
+застосовує defaults та виконує lookup для обраної хмари. Provider modules
+отримують уже нормалізовані VM. Root module не виконує конвертацію.
 
 ## Межа mixed-cloud
 
@@ -64,6 +63,26 @@ gcloud auth application-default print-access-token.
 Новий bastion спочатку слухає port 22. Перший apply виконайте з
 enable_bastion_ssh_bootstrap=true. Після виконання bastion role повторіть apply
 без цього flag, щоб видалити temporary firewall/security-group rule.
+
+## Повне розгортання однією командою
+
+Скопіюйте приклад у `project-config.json`, заповніть реальні cloud IDs, AMI,
+SSH key, registry, `acme_email` та секрети. Скрипт читає `default_cloud` і
+`vms.*.cloud`, створює інфраструктуру, налаштовує Cloudflare DNS для
+`shiphappens.pp.ua`, запускає Ansible та перевіряє валідний HTTPS:
+
+    ./scripts/deploy-cloud.sh project-config.json
+
+Для повністю неінтерактивного Terraform apply задайте
+`OILSCOPE_AUTO_APPROVE=1`. Cloudflare API token передається через
+`CLOUDFLARE_API_TOKEN`; значення секретів — через змінні середовища, назви яких
+утворюються з secret ID у верхньому регістрі із заміною розділових символів на
+`_`. Python-залежності Ansible скрипт встановлює в ізольоване середовище
+`.oilscope-deploy/venv`.
+
+Скрипт навмисно відхиляє розміщення application workloads у різних хмарах:
+поточний Terraform не створює VPN, peering або cross-cloud routes, а Database,
+History, Fetcher і UI використовують приватні IP для взаємодії.
 
 ## Ansible
 

@@ -1,16 +1,77 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Install the AWS CLI used with the instance role
-  ansible.builtin.package:
-    name: awscli
+- name: Validate the architecture for AWS CLI v2
+  ansible.builtin.assert:
+    that: ansible_facts['architecture'] in ['x86_64', 'aarch64']
+    fail_msg: AWS CLI v2 supports only x86_64 and aarch64 in this role.
+  when: resolve_secrets_mappings | length > 0
+
+- name: Install the AWS CLI archive dependency
+  ansible.builtin.apt:
+    name: unzip
     state: present
+    cache_valid_time: 3600
+    install_recommends: false
+  become: true
+  when: resolve_secrets_mappings | length > 0
+
+- name: Check for AWS CLI v2
+  ansible.builtin.stat:
+    path: "{{ resolve_secrets_aws_cli_path }}"
+  register: resolve_secrets_aws_cli
+  when: resolve_secrets_mappings | length > 0
+
+- name: Create the AWS CLI extraction directory
+  ansible.builtin.file:
+    path: "{{ resolve_secrets_aws_cli_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  when:
+    - resolve_secrets_mappings | length > 0
+    - not resolve_secrets_aws_cli.stat.exists
+
+- name: Download AWS CLI v2
+  ansible.builtin.get_url:
+    url: >-
+      https://awscli.amazonaws.com/awscli-exe-linux-{{
+        'x86_64' if ansible_facts['architecture'] == 'x86_64' else 'aarch64'
+      }}.zip
+    dest: "{{ resolve_secrets_aws_cli_archive }}"
+    mode: "0600"
+  become: true
+  when:
+    - resolve_secrets_mappings | length > 0
+    - not resolve_secrets_aws_cli.stat.exists
+
+- name: Extract AWS CLI v2
+  ansible.builtin.unarchive:
+    src: "{{ resolve_secrets_aws_cli_archive }}"
+    dest: "{{ resolve_secrets_aws_cli_install_dir }}"
+    remote_src: true
+  become: true
+  when:
+    - resolve_secrets_mappings | length > 0
+    - not resolve_secrets_aws_cli.stat.exists
+
+- name: Install AWS CLI v2
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_aws_cli_install_dir }}/aws/install"
+      - --install-dir
+      - /usr/local/aws-cli
+      - --bin-dir
+      - /usr/local/bin
+    creates: "{{ resolve_secrets_aws_cli_path }}"
   become: true
   when: resolve_secrets_mappings | length > 0
 
 - name: Read each mapped AWS secret through the instance role
   ansible.builtin.command:
     argv:
-      - aws
+      - "{{ resolve_secrets_aws_cli_path }}"
       - ssm
       - get-parameter
       - --region

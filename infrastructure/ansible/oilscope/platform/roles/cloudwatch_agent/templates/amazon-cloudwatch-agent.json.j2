@@ -1,0 +1,39 @@
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "region": "{{ cloudwatch_agent_region }}",
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "namespace": "{{ cloudwatch_agent_namespace }}",
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}"
+    },
+    "metrics_collected": {
+      "mem": {
+        "measurement": ["mem_used_percent"],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": ["used_percent"],
+        "metrics_collection_interval": 60,
+        "resources": ["/"],
+        "drop_device": true
+      }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/lib/docker/containers/*/*.log",
+            "log_group_name": "{{ cloudwatch_agent_log_group }}",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          }
+        ]
+      }
+    }
+  }
+}

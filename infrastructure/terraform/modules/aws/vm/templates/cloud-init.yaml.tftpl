@@ -1,0 +1,14 @@
+#cloud-config
+${yamlencode({
+  ssh_pwauth = false
+  users = concat(["default"], [
+    for username, public_key in ssh_users : {
+      name                = username
+      groups              = ["sudo"]
+      shell               = "/bin/bash"
+      lock_passwd         = true
+      sudo                = ["ALL=(ALL) NOPASSWD:ALL"]
+      ssh_authorized_keys = [trimspace(public_key)]
+    }
+  ])
+})}

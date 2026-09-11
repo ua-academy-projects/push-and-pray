@@ -79,6 +79,25 @@
     "history_api": 8001,
     "postgresql": 5432
   },
+  "secrets_by_role": {
+    "database": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "GHCR_TOKEN": "example-ghcr-token"
+    },
+    "history": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "GHCR_TOKEN": "example-ghcr-token"
+    },
+    "fetcher": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "OILPRICEAPI_KEY": "example-api-key",
+      "GHCR_TOKEN": "example-ghcr-token"
+    },
+    "ui": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "GHCR_TOKEN": "example-ghcr-token"
+    }
+  },
   "vms": {
     "bastion": {
       "role": "bastion",
@@ -90,7 +109,6 @@
       "network_tags": [
         "bastion"
       ],
-      "secret_mappings": {},
       "ssh_port": 8787,
       "allowed_cidrs": [
         "192.0.2.10/32"
@@ -105,11 +123,7 @@
       "assign_public_ip": false,
       "network_tags": [
         "infra"
-      ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      ]
     },
     "history": {
       "role": "history",
@@ -122,10 +136,6 @@
       "network_tags": [
         "history"
       ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      },
       "cloud": "aws"
     },
     "fetcher": {
@@ -137,12 +147,7 @@
       "assign_public_ip": false,
       "network_tags": [
         "fetcher"
-      ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
+      ]
     },
     "ui": {
       "role": "ui",
@@ -154,10 +159,6 @@
       "network_tags": [
         "ui"
       ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      },
       "public_endpoint": {
         "hostname": "oilscope.example.com",
         "acme_email": "example-operator@example.com"

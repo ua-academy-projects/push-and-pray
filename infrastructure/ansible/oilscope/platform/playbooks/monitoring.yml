@@ -1,0 +1,8 @@
+---
+- name: Configure CloudWatch metrics and application logs
+  hosts: aws
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.cloudwatch_agent

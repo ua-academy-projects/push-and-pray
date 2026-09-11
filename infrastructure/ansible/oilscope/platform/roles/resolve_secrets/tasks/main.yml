@@ -21,8 +21,8 @@
 - name: Select this host's secret mappings
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
-      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
-         | default({}) }}
+      {{ resolve_secrets_config.secrets_by_role.get(
+           resolve_secrets_config.vms[resolve_secrets_vm_key].role, {}) }}
 
 - name: Run the provider-specific secret resolver
   ansible.builtin.include_tasks: "{{ resolve_secrets_cloud_provider }}.yml"
