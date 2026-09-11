@@ -19,6 +19,7 @@ module "security_groups" {
   source = "./security_groups"
 
   config           = var.config
+  selected_vms     = local.selected_vms
   has_selected_vms = local.has_selected_vms
   vpc_id           = module.network.vpc_id
 }
@@ -26,19 +27,22 @@ module "security_groups" {
 module "iam" {
   source = "./iam"
 
-  config = var.config
+  config       = var.config
+  selected_vms = local.selected_vms
 }
 
 module "addresses" {
   source = "./addresses"
 
-  config = var.config
+  config       = var.config
+  selected_vms = local.selected_vms
 }
 
 module "vm" {
   source = "./vm"
 
-  config = var.config
+  config       = var.config
+  selected_vms = local.selected_vms
 
   management_subnet_id   = module.network.management_subnet_id
   workload_subnet_id     = module.network.workload_subnet_id
@@ -52,6 +56,7 @@ module "secrets" {
   source = "./secrets"
 
   config                      = var.config
+  selected_vms                = local.selected_vms
   iam_role_names              = module.iam.iam_role_names
   aws_secret_version_managers = var.aws_secret_version_managers
 }
@@ -60,6 +65,7 @@ module "monitoring" {
   source = "./monitoring"
 
   config           = var.config
+  selected_vms     = local.selected_vms
   has_selected_vms = local.has_selected_vms
   instance_ids     = module.vm.ids
 }

@@ -19,6 +19,7 @@ module "firewall" {
   has_selected_vms = local.has_selected_vms
 
   config       = var.config
+  selected_vms = local.selected_vms
   network_id   = module.network.network_id
   network_tags = module.network.network_tags
 }
@@ -26,19 +27,22 @@ module "firewall" {
 module "iam" {
   source = "./iam"
 
-  config = var.config
+  config       = var.config
+  selected_vms = local.selected_vms
 }
 
 module "addresses" {
   source = "./addresses"
 
-  config = var.config
+  config       = var.config
+  selected_vms = local.selected_vms
 }
 
 module "vm" {
   source = "./vm"
 
-  config = var.config
+  config       = var.config
+  selected_vms = local.selected_vms
 
   management_subnet_id   = module.network.management_subnet_id
   workload_subnet_id     = module.network.workload_subnet_id
@@ -50,6 +54,7 @@ module "secrets" {
   source = "./secrets"
 
   config                  = var.config
+  selected_vms            = local.selected_vms
   service_account_emails  = module.iam.service_account_emails
   secret_version_managers = var.secret_version_managers
 }
@@ -58,6 +63,7 @@ module "monitoring" {
   source = "./monitoring"
 
   config = var.config
+  selected_vms = local.selected_vms
   has_selected_vms = local.has_selected_vms
   instance_ids = module.vm.ids
 }

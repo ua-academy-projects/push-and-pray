@@ -1,7 +1,7 @@
 locals {
   gcp_workload_vms = {
-    for name, vm in var.config.vms : name => vm
-    if vm.role != "bastion" && coalesce(try(vm.cloud, null), var.config.cloud) == "gcp"
+    for name, vm in var.selected_vms : name => vm
+    if vm.role != "bastion"
   }
 
   common_labels = merge(
