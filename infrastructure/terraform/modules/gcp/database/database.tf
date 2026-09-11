@@ -21,6 +21,8 @@ resource "google_sql_database_instance" "main" {
       point_in_time_recovery_enabled = lookup(local.settings, "backup_retention_days", 7) > 0
       start_time                     = "02:00"
 
+      transaction_log_retention_days = min(max(lookup(local.settings, "backup_retention_days", 7), 1), 7)
+
       backup_retention_settings {
         retained_backups = max(lookup(local.settings, "backup_retention_days", 7), 1)
         retention_unit   = "COUNT"

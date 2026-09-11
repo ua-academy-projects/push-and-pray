@@ -1,13 +1,10 @@
 locals {
   gauge = { aligner = "ALIGN_MEAN", reducer = "REDUCE_MAX", group_by = ["resource.label.instance_id"] }
-  delta = { aligner = "ALIGN_DELTA", reducer = "REDUCE_SUM", group_by = [] }
 
   charts = [
     merge(local.gauge, { title = "CPU utilisation", metric = "compute.googleapis.com/instance/cpu/utilization", extra = "" }),
     merge(local.gauge, { title = "Memory used, %", metric = "agent.googleapis.com/memory/percent_used", extra = " AND metric.labels.state=\"used\"" }),
     merge(local.gauge, { title = "Disk used, %", metric = "agent.googleapis.com/disk/percent_used", extra = local.used_disk }),
-    merge(local.gauge, { title = "Uptime", metric = "compute.googleapis.com/instance/uptime", extra = "" }),
-    merge(local.delta, { title = "Network received", metric = "compute.googleapis.com/instance/network/received_bytes_count", extra = "" }),
   ]
 
   tiles = [
