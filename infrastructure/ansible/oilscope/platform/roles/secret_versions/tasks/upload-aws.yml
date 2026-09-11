@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Select the containers held on AWS
+  ansible.builtin.set_fact:
+    secret_versions_batch: >-
+      {{ secret_versions_catalog | selectattr('clouds', 'contains', 'aws') | list }}
+
+- name: Resolve the target region
+  ansible.builtin.set_fact:
+    secret_versions_target_region: >-
+      {{ secret_versions_region
+         | default(secret_versions_config.clouds.aws.region | default(''), true) }}
+
+- name: Fail when the region is unknown
+  ansible.builtin.assert:
+    that: secret_versions_target_region | length > 0
+    fail_msg: >-
+      no AWS region to upload to; set secret_versions_region or
+      clouds.aws.region in the configuration
+    quiet: true
+
+- name: Look for the containers on AWS
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws_cli }}"
+      - secretsmanager
+      - describe-secret
+      - --secret-id
+      - "{{ item.secret_id }}"
+      - --region
+      - "{{ secret_versions_target_region }}"
+      - --query
+      - ARN
+      - --output
+      - text
+  loop: "{{ secret_versions_batch }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_describe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# The same discipline as on GCP: the payload travels on stdin, never as an
+# argument. The CLI reads file:///dev/stdin for the value, so it cannot show in
+# ps output or a shell history; no_log keeps it out of Ansible's own output.
+- name: Put a new version into every container on AWS
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws_cli }}"
+      - secretsmanager
+      - put-secret-value
+      - --secret-id
+      - "{{ item.secret_id }}"
+      - --region
+      - "{{ secret_versions_target_region }}"
+      - --secret-string
+      - file:///dev/stdin
+      - --query
+      - VersionId
+      - --output
+      - text
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_batch }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_added
+  changed_when: true
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Report the new versions on AWS
+  ansible.builtin.debug:
+    msg: >-
+      aws: {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      (version {{ item.stdout | trim }})
+  loop: "{{ secret_versions_added.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.secret_id }}"
+  when: not ansible_check_mode

@@ -80,14 +80,25 @@ None of the three outputs exposes a value.
 
 ## Storing a value
 
-Values are written with `gcloud`, from a pipe, never from a command-line
-argument — arguments are visible in `ps` output and land in shell history:
+Values are written with the cloud's own CLI, from a pipe, never from a
+command-line argument — arguments are visible in `ps` output and land in shell
+history:
 
 ```bash
+# GCP
 printf '%s' "${DB_PASSWORD_HISTORY}" \
   | gcloud secrets versions add oilscope-dev-db-password-history \
       --project="${GOOGLE_PROJECT}" --data-file=-
+
+# AWS - the same value, if a reader of that container runs there
+printf '%s' "${DB_PASSWORD_HISTORY}" \
+  | aws secretsmanager put-secret-value --secret-id oilscope-dev-db-password-history \
+      --region "${AWS_REGION}" --secret-string file:///dev/stdin
 ```
+
+A container exists on every cloud its readers are placed on. The
+`secret_versions` role works that out from the configuration and writes the same
+value to each copy, so by hand you would do the same.
 
 Note `printf` rather than `echo`: `echo` appends a newline, which becomes part of
 the stored value and then fails an exact comparison somewhere far away from here.
@@ -176,7 +187,7 @@ collide, every container keeps the fully qualified name
 | | |
 | --- | --- |
 | reads values from | the environment of the process, and nowhere else |
-| passes the payload to gcloud | on stdin, through `--data-file=-` |
+| passes the payload to the CLI | on stdin — `--data-file=-` for gcloud, `file:///dev/stdin` for aws |
 | writes to disk | nothing |
 | prints | container IDs and variable names, never a value |
 

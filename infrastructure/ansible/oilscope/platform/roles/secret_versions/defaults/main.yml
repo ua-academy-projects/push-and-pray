@@ -3,11 +3,22 @@
 # Project configuration JSON - the same file the Terraform configuration reads.
 secret_versions_config_file: ""
 
-# Target GCP project. Falls back to $GOOGLE_PROJECT, then to project_id in the
-# configuration.
-secret_versions_project_id: ""
-
 # Upload a subset. Entries match a container ID or a variable name.
 secret_versions_only: []
 
+# One task file per cloud, selected by name rather than by a conditional, so
+# adding a provider adds a file and not a branch. A container is uploaded to
+# every cloud that holds it - the clouds its readers are placed on.
+secret_versions_supported_clouds:
+  - gcp
+  - aws
+
+# --- GCP ------------------------------------------------------------------
+# Falls back to $GOOGLE_PROJECT, then to clouds.gcp.project_id.
+secret_versions_project_id: ""
 secret_versions_gcloud: gcloud
+
+# --- AWS ------------------------------------------------------------------
+# Falls back to clouds.aws.region.
+secret_versions_region: ""
+secret_versions_aws_cli: aws

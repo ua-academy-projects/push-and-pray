@@ -1,16 +1,66 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Validate the secret_versions role
+# Run with -e project_config_path=<path to a project configuration JSON>, e.g.
+# the repository's project-config.example.json.
+#
+# Both plays expect the role to refuse: there is no configuration in the first,
+# and no secret values in the environment in the second. ignore_errors on
+# include_role does not reach the tasks the role includes, so each expected
+# refusal is caught with a rescue - which also makes the play fail if the role
+# ever accepts what it should refuse.
+#
+# The upload itself is not exercised here, because it needs the values in the
+# controller's environment and a cloud to write to. README.md shows how to run
+# the full flow against stub commands instead of real clouds.
+- name: Test the secret_versions role (missing configuration)
   hosts: localhost
+  connection: local
   gather_facts: false
   tasks:
-    - name: Include the role without a configuration file
-      ansible.builtin.include_role:
-        name: secret_versions
-      register: secret_versions_no_config
-      ignore_errors: true
+    - name: Expect the role to refuse a configuration that does not exist
+      block:
+        - name: Include the role without a configuration file
+          ansible.builtin.include_role:
+            name: secret_versions
+          vars:
+            secret_versions_config_file: /nonexistent/project-config.json
 
-    - name: Verify a missing configuration is rejected
-      ansible.builtin.assert:
-        that:
-          - secret_versions_no_config is failed
+        - name: Fail because the role accepted a missing configuration
+          ansible.builtin.fail:
+            msg: the role must refuse a configuration path that does not exist
+      rescue:
+        - name: Report the expected refusal
+          ansible.builtin.debug:
+            msg: the role refused the missing configuration, as it should
+
+- name: Test the secret_versions role (values absent from the environment)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Expect the role to refuse before uploading anything
+      block:
+        - name: Include the role with no secret values exported
+          ansible.builtin.include_role:
+            name: secret_versions
+          vars:
+            secret_versions_config_file: "{{ project_config_path }}"
+            # Never reach a real cloud even if the refusal somehow fails.
+            secret_versions_gcloud: /bin/false
+            secret_versions_aws_cli: /bin/false
+
+        - name: Fail because the role uploaded with values missing
+          ansible.builtin.fail:
+            msg: the role must refuse when a source variable is absent
+      rescue:
+        - name: Expect the refusal to name the missing variables
+          ansible.builtin.assert:
+            that: "'missing or empty' in ansible_failed_result.msg"
+            fail_msg: >-
+              the role failed for another reason than absent values:
+              {{ ansible_failed_result.msg }}
+            quiet: true
+
+        - name: Report the expected refusal
+          ansible.builtin.debug:
+            msg: "the role refused: {{ ansible_failed_result.msg }}"
