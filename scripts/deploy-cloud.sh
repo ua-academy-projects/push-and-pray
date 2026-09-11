@@ -326,13 +326,15 @@ readonly ANSIBLE_GALAXY="${DEPLOY_VENV}/bin/ansible-galaxy"
 readonly ANSIBLE_INVENTORY="${DEPLOY_VENV}/bin/ansible-inventory"
 readonly ANSIBLE_PLAYBOOK="${DEPLOY_VENV}/bin/ansible-playbook"
 
-if locale -a 2>/dev/null | grep -Eiq '^en_US\.UTF-?8$'; then
+AVAILABLE_LOCALES="$(locale -a 2>/dev/null || true)"
+if grep -Eiq '^en_US\.UTF-?8$' <<< "${AVAILABLE_LOCALES}"; then
   export LANG=en_US.UTF-8
   export LC_ALL=en_US.UTF-8
-elif locale -a 2>/dev/null | grep -Eiq '^C\.UTF-?8$'; then
+elif grep -Eiq '^C\.UTF-?8$' <<< "${AVAILABLE_LOCALES}"; then
   export LANG=C.UTF-8
   export LC_ALL=C.UTF-8
 fi
+unset AVAILABLE_LOCALES
 
 step "Installing required Ansible collections"
 "${ANSIBLE_GALAXY}" collection install -r "${ANSIBLE_DIR}/requirements.yml"
