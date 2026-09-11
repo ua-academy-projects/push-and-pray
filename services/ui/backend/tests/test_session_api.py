@@ -1,14 +1,11 @@
 import asyncio
-import json
+import hashlib
 import os
 from datetime import timedelta
-from time import monotonic
 
 import httpx
 import psycopg
 import pytest
-from psycopg.types import TypeInfo
-from psycopg.types.hstore import register_hstore
 
 from ui_service.main import SESSION_TTL_SECONDS, app
 from ui_service.session_store import PostgreSQLSessionStore
@@ -32,7 +29,11 @@ def reset_sessions() -> None:
         cursor.execute("TRUNCATE ui_sessions")
 
 
-def test_hstore_extensions_and_postgresql_hashing_are_active() -> None:
+def session_hash(session_id: str) -> bytes:
+    return hashlib.sha256(session_id.encode()).digest()
+
+
+def test_jsonb_sessions_and_application_hashing_are_active() -> None:
     reset_sessions()
     store = PostgreSQLSessionStore(database_url(), SESSION_TTL_SECONDS)
     session_id = "a" * 43
@@ -40,18 +41,7 @@ def test_hstore_extensions_and_postgresql_hashing_are_active() -> None:
     asyncio.run(store.update(session_id, preferences))
 
     with psycopg.connect(database_url()) as connection:
-        hstore_info = TypeInfo.fetch(connection, "hstore")
-        assert hstore_info is not None
-        register_hstore(hstore_info, connection)
         cursor = connection.cursor()
-        cursor.execute(
-            """
-            SELECT array_agg(extname ORDER BY extname)
-            FROM pg_extension
-            WHERE extname IN ('hstore', 'pg_cron', 'pgcrypto')
-            """
-        )
-        assert cursor.fetchone()[0] == ["hstore", "pg_cron", "pgcrypto"]
         cursor.execute(
             """
             SELECT udt_name, is_nullable
@@ -61,31 +51,17 @@ def test_hstore_extensions_and_postgresql_hashing_are_active() -> None:
               AND column_name = 'preferences'
             """
         )
-        assert cursor.fetchone() == ("hstore", "NO")
+        assert cursor.fetchone() == ("jsonb", "NO")
         cursor.execute(
-            """
-            SELECT schedule, active, command
-            FROM cron.job
-            WHERE jobname = 'delete-expired-ui-sessions'
-              AND database = current_database()
-            """
-        )
-        schedule, active, command = cursor.fetchone()
-        assert schedule == "* * * * *"
-        assert active is True
-        assert "DELETE FROM public.ui_sessions" in command
-        hstore_cursor = connection.cursor(binary=True)
-        hstore_cursor.execute(
             """
             SELECT preferences, octet_length(session_hash)
             FROM ui_sessions
-            WHERE session_hash = digest(%s, 'sha256')
+            WHERE session_hash = %s
             """,
-            (session_id,),
+            (session_hash(session_id),),
         )
-        stored_preferences, hash_length = hstore_cursor.fetchone()
-        restored_preferences = {key: json.loads(value) for key, value in stored_preferences.items()}
-        assert restored_preferences == preferences.model_dump(mode="json")
+        stored_preferences, hash_length = cursor.fetchone()
+        assert stored_preferences == preferences.model_dump(mode="json")
         assert hash_length == 32
         assert asyncio.run(store.is_ready()) is True
 
@@ -127,10 +103,10 @@ def test_session_persistence_and_sliding_expiration() -> None:
                     """
                     UPDATE ui_sessions
                     SET expires_at = CURRENT_TIMESTAMP + interval '1 hour'
-                    WHERE session_hash = digest(%s, 'sha256')
+                    WHERE session_hash = %s
                     RETURNING expires_at
                     """,
-                    (session_id,),
+                    (session_hash(session_id),),
                 )
                 previous_expiration = cursor.fetchone()[0]
 
@@ -142,9 +118,9 @@ def test_session_persistence_and_sliding_expiration() -> None:
                     """
                     SELECT count(*), min(expires_at), CURRENT_TIMESTAMP
                     FROM ui_sessions
-                    WHERE session_hash = digest(%s, 'sha256')
+                    WHERE session_hash = %s
                     """,
-                    (session_id,),
+                    (session_hash(session_id),),
                 )
                 count, refreshed_expiration, database_now = cursor.fetchone()
             assert count == 1
@@ -154,7 +130,7 @@ def test_session_persistence_and_sliding_expiration() -> None:
     asyncio.run(exercise_session())
 
 
-def test_expired_sessions_are_invalid_and_cleaned_by_pg_cron() -> None:
+def test_expired_sessions_are_invalid_and_cleaned_on_access() -> None:
     async def exercise_expiration() -> None:
         reset_sessions()
         app.state.session_store = PostgreSQLSessionStore(database_url(), SESSION_TTL_SECONDS)
@@ -169,19 +145,11 @@ def test_expired_sessions_are_invalid_and_cleaned_by_pg_cron() -> None:
         with psycopg.connect(database_url()) as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT cron.alter_job(jobid, schedule := '1 second')
-                FROM cron.job
-                WHERE jobname = 'delete-expired-ui-sessions'
-                  AND database = current_database()
-                """
-            )
-            cursor.execute(
-                """
                 UPDATE ui_sessions
                 SET expires_at = CURRENT_TIMESTAMP - interval '1 minute'
-                WHERE session_hash IN (digest(%s, 'sha256'), digest(%s, 'sha256'))
+                WHERE session_hash IN (%s, %s)
                 """,
-                (expired_session_id, cleanup_session_id),
+                (session_hash(expired_session_id), session_hash(cleanup_session_id)),
             )
 
         transport = httpx.ASGITransport(app=app)
@@ -191,33 +159,11 @@ def test_expired_sessions_are_invalid_and_cleaned_by_pg_cron() -> None:
         assert response.status_code == 200
         assert response.json()["range"] == "30"
 
-        try:
-            deadline = monotonic() + 10
-            while monotonic() < deadline:
-                with psycopg.connect(database_url()) as connection, connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        SELECT EXISTS (
-                            SELECT 1 FROM ui_sessions
-                            WHERE session_hash = digest(%s, 'sha256')
-                        )
-                        """,
-                        (cleanup_session_id,),
-                    )
-                    if cursor.fetchone()[0] is False:
-                        break
-                await asyncio.sleep(0.5)
-            else:
-                pytest.fail("pg_cron did not delete the expired session within 10 seconds")
-        finally:
-            with psycopg.connect(database_url()) as connection, connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT cron.alter_job(jobid, schedule := '* * * * *')
-                    FROM cron.job
-                    WHERE jobname = 'delete-expired-ui-sessions'
-                      AND database = current_database()
-                    """
-                )
+        with psycopg.connect(database_url()) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS (SELECT 1 FROM ui_sessions WHERE session_hash = %s)",
+                (session_hash(cleanup_session_id),),
+            )
+            assert cursor.fetchone()[0] is False
 
     asyncio.run(exercise_expiration())

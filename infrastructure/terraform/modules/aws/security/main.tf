@@ -75,6 +75,16 @@ resource "aws_vpc_security_group_ingress_rule" "history_api" {
   ip_protocol                  = "tcp"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "history_api_remote" {
+  for_each = var.remote_workload_cidrs
+
+  security_group_id = aws_security_group.role["history"].id
+  cidr_ipv4         = each.value
+  from_port         = var.history_api_port
+  to_port           = var.history_api_port
+  ip_protocol       = "tcp"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "postgresql" {
   for_each = toset(["fetcher", "history", "ui"])
 

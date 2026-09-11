@@ -244,8 +244,21 @@ done < <(jq -r '
 [[ -z "${MISSING_SECRETS}" ]] || fail "Missing secret environment variables: ${MISSING_SECRETS}"
 
 if [[ "${MANAGE_DB}" == true ]]; then
-  [[ -n "${POSTGRES_PASSWORD:-}" ]] || fail "POSTGRES_PASSWORD is required for managed PostgreSQL."
-  export TF_VAR_database_password="${POSTGRES_PASSWORD}"
+  DATABASE_SECRET_ID="$(jq -r '.database.password_secret_id' "${CONFIG}")"
+  DATABASE_SECRET_ENV="$(printf '%s' "${DATABASE_SECRET_ID}" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9' '_')"
+  DATABASE_SECRET_ENV="${DATABASE_SECRET_ENV%_}"
+  DATABASE_PASSWORD="${!DATABASE_SECRET_ENV:-}"
+  [[ -n "${DATABASE_PASSWORD}" ]] || fail \
+    "${DATABASE_SECRET_ENV} is required for managed PostgreSQL."
+  jq -e --arg secret_id "${DATABASE_SECRET_ID}" '
+    [.secrets_by_role.history.POSTGRES_PASSWORD,
+     .secrets_by_role.fetcher.POSTGRES_PASSWORD,
+     .secrets_by_role.ui.POSTGRES_PASSWORD]
+    | all(. == $secret_id)
+  ' "${CONFIG}" >/dev/null || fail \
+    "Managed PostgreSQL requires history, fetcher, and ui to use database.password_secret_id."
+  export TF_VAR_database_password="${DATABASE_PASSWORD}"
+  unset DATABASE_PASSWORD
 fi
 
 export OILSCOPE_PROJECT_CONFIG="${CONFIG}"

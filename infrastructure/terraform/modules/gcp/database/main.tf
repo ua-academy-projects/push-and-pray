@@ -48,18 +48,18 @@ resource "google_sql_database_instance" "this" {
     }
 
     dynamic "backup_configuration" {
-      for_each = var.backups_enabled ? [true] : []
+      for_each = [var.backups_enabled]
       content {
-        enabled                        = true
-        point_in_time_recovery_enabled = true
+        enabled                        = backup_configuration.value
+        point_in_time_recovery_enabled = backup_configuration.value
       }
     }
 
     dynamic "final_backup_config" {
-      for_each = var.backup_on_delete ? [true] : []
+      for_each = [var.backup_on_delete]
       content {
-        enabled        = true
-        retention_days = 30
+        enabled        = final_backup_config.value
+        retention_days = final_backup_config.value ? 30 : null
       }
     }
   }
@@ -79,12 +79,16 @@ resource "google_sql_database_instance" "this" {
 }
 
 resource "google_sql_database" "this" {
+  count = var.backup_run_id == null ? 1 : 0
+
   name     = var.database_name
   project  = var.project_id
   instance = google_sql_database_instance.this.name
 }
 
 resource "google_sql_user" "this" {
+  count = var.backup_run_id == null ? 1 : 0
+
   name     = var.username
   project  = var.project_id
   instance = google_sql_database_instance.this.name

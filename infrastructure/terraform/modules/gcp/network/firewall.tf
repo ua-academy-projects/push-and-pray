@@ -74,6 +74,21 @@ resource "google_compute_firewall" "history_api" {
   }
 }
 
+resource "google_compute_firewall" "history_api_remote" {
+  count = length(var.remote_workload_cidrs) > 0 ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-history-api-remote"
+  network = google_compute_network.main.id
+
+  source_ranges = sort(tolist(var.remote_workload_cidrs))
+  target_tags   = [local.network_tags.history]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.history_api_port)]
+  }
+}
+
 resource "google_compute_firewall" "postgresql" {
   name    = "${var.resource_prefix}-allow-postgresql"
   network = google_compute_network.main.id

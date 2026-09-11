@@ -56,7 +56,12 @@ module "security" {
   ui_public_ports       = module.config.network.ui_public_ports
   history_api_port      = module.config.config.service_ports.history_api
   postgresql_port       = module.config.config.service_ports.postgresql
-  tags                  = module.config.common_metadata
+  remote_workload_cidrs = toset(
+    try(module.config.config.mixed_network.enabled, false) ? try([
+      module.config.config.clouds.gcp.network.vpc_cidr
+    ], []) : []
+  )
+  tags = module.config.common_metadata
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 }
@@ -86,9 +91,9 @@ module "database" {
     role => module.security[0].security_group_ids[role]
   }
   remote_workload_cidrs = toset(
-    try(module.config.config.mixed_network.enabled, false) ? [
+    try(module.config.config.mixed_network.enabled, false) ? try([
       module.config.config.clouds.gcp.network.vpc_cidr
-    ] : []
+    ], []) : []
   )
   tags = module.config.common_metadata
 }

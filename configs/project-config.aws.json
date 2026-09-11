@@ -169,6 +169,7 @@
     "engine_version": "16.4",
     "database_name": "oil_tracker",
     "username": "oil_tracker",
+    "password_secret_id": "example-db-password",
     "port": 5432,
     "generation": "2026-09",
     "backup_on_delete": false,

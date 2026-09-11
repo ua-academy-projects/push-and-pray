@@ -13,14 +13,6 @@ services:
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
       PGDATA: /var/lib/postgresql/18/docker
       TZ: UTC
-    command:
-      - postgres
-      - -c
-      - shared_preload_libraries=pg_cron
-      - -c
-      - cron.database_name=${POSTGRES_DB:-oil_tracker}
-      - -c
-      - cron.use_background_workers=on
     ports:
       - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:${DATABASE_HOST_PORT:-5432}:5432"
     volumes:

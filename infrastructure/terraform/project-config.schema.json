@@ -224,7 +224,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "cloud", "engine", "engine_version", "database_name", "username",
+        "cloud", "engine", "engine_version", "database_name", "username", "password_secret_id",
         "port", "generation", "backup_on_delete", "backups_enabled",
         "deletion_protection", "aws", "gcp"
       ],
@@ -234,6 +234,7 @@
         "engine_version": { "type": "string", "minLength": 1 },
         "database_name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
         "username": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+        "password_secret_id": { "type": "string", "pattern": "^[A-Za-z0-9_.\/-]+$" },
         "port": { "$ref": "#/$defs/port" },
         "generation": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "backup_on_delete": { "type": "boolean" },

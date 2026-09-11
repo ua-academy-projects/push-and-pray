@@ -55,6 +55,11 @@ module "network" {
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
   history_api_port             = module.config.config.service_ports.history_api
   postgresql_port              = module.config.config.service_ports.postgresql
+  remote_workload_cidrs = toset(
+    try(module.config.config.mixed_network.enabled, false) ? try([
+      module.config.config.clouds.aws.network.vpc_cidr
+    ], []) : []
+  )
 
   depends_on = [google_project_service.required, terraform_data.configuration]
 }

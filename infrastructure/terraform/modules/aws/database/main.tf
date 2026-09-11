@@ -53,16 +53,16 @@ resource "aws_vpc_security_group_egress_rule" "all" {
 resource "aws_db_instance" "this" {
   identifier = local.identifier
 
-  engine         = "postgres"
-  engine_version = var.engine_version
+  engine         = var.snapshot_identifier == null ? "postgres" : null
+  engine_version = var.snapshot_identifier == null ? var.engine_version : null
   instance_class = var.instance_class
 
   allocated_storage      = var.allocated_storage_gb
   storage_type           = "gp3"
   storage_encrypted      = true
-  db_name                = var.database_name
-  username               = var.username
-  password               = var.password
+  db_name                = var.snapshot_identifier == null ? var.database_name : null
+  username               = var.snapshot_identifier == null ? var.username : null
+  password               = var.snapshot_identifier == null ? var.password : null
   port                   = var.port
   multi_az               = var.multi_az
   publicly_accessible    = false

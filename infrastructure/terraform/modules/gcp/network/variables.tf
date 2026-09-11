@@ -89,6 +89,11 @@ variable "postgresql_port" {
     error_message = "postgresql_port must be between 1 and 65535."
   }
 }
+
+variable "remote_workload_cidrs" {
+  type    = set(string)
+  default = []
+}
 variable "ui_public_ports" {
   description = "Public TCP ports exposed on the UI VM"
   type        = list(string)

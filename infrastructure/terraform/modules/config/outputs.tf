@@ -74,6 +74,7 @@ output "profiles_valid" {
 output "configuration_valid" {
   value = (
     local.all_clouds_valid &&
+    local.database_valid &&
     length(local.resolved_vms) == length(local.provisionable_vms) &&
     (length(local.selected_vms) == 0 || (
       local.location.region != null &&

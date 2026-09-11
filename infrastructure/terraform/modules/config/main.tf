@@ -38,6 +38,23 @@ locals {
     )
   ])
 
+  database_vm_count = length([
+    for vm in values(local.config.vms) : vm
+    if vm.role == "database"
+  ])
+  used_clouds = toset([
+    for vm in values(local.config.vms) :
+    lower(lookup(vm, "cloud", local.config.default_cloud))
+  ])
+  database_valid = local.manage_db ? (
+    local.database != null &&
+    contains(["aws", "gcp"], local.database_cloud) &&
+    contains(local.used_clouds, local.database_cloud) &&
+    local.database_vm_count == 0
+    ) : (
+    local.database == null && local.database_vm_count == 1
+  )
+
   resolved_vms = {
     for name, vm in local.selected_vms : name => merge(vm, {
       cloud           = local.cloud
