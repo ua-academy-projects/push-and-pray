@@ -486,6 +486,12 @@ step "Deploying database, history, fetcher, UI, and HTTPS proxy"
   -e "project_config_path=${CONFIG}" \
   -e "@${DATABASE_VARS_FILE}"
 
+if jq -e '.observability.enabled == true' "${CONFIG}" >/dev/null 2>&1; then
+  step "Configuring AWS and GCP monitoring agents"
+  "${ANSIBLE_PLAYBOOK}" oilscope.platform.monitoring \
+    -i "${INVENTORY}"
+fi
+
 step "Waiting for a trusted HTTPS response"
 HTTPS_READY=false
 for _ in $(seq 1 60); do

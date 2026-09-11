@@ -3,6 +3,11 @@ output "name" {
   value       = google_compute_instance.workload.name
 }
 
+output "instance_id" {
+  description = "Numeric Compute Engine instance ID used by Cloud Monitoring."
+  value       = google_compute_instance.workload.instance_id
+}
+
 output "internal_ip" {
   description = "Internal IP address of the workload VM."
   value       = google_compute_instance.workload.network_interface[0].network_ip

@@ -1,0 +1,17 @@
+logging:
+  receivers:
+    oilscope_application:
+      type: systemd_journald
+      include_units:
+        - docker.service
+        - oilscope-deploy.service
+  service:
+    pipelines:
+      oilscope_application:
+        receivers:
+          - oilscope_application
+metrics:
+  receivers:
+    hostmetrics:
+      type: hostmetrics
+      collection_interval: 60s

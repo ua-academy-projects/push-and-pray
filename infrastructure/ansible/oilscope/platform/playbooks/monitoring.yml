@@ -6,3 +6,11 @@
   any_errors_fatal: true
   roles:
     - role: oilscope.platform.cloudwatch_agent
+
+- name: Configure Google Cloud metrics and application logs
+  hosts: gcp
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.google_ops_agent

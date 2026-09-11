@@ -23,6 +23,8 @@ resource "google_project_service" "required" {
     ) ? toset([
       "compute.googleapis.com",
       "iam.googleapis.com",
+      "logging.googleapis.com",
+      "monitoring.googleapis.com",
       "secretmanager.googleapis.com",
       "servicenetworking.googleapis.com",
       "sqladmin.googleapis.com",
@@ -116,6 +118,22 @@ module "vm" {
   depends_on = [google_project_service.required, terraform_data.configuration]
 }
 
+resource "google_project_iam_member" "ops_agent_log_writer" {
+  for_each = module.vm
+
+  project = module.config.cloud_config.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${each.value.service_account_email}"
+}
+
+resource "google_project_iam_member" "ops_agent_metric_writer" {
+  for_each = module.vm
+
+  project = module.config.cloud_config.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${each.value.service_account_email}"
+}
+
 resource "google_secret_manager_secret" "this" {
   for_each = toset(
     module.config.configuration_valid ? module.config.all_secret_ids : []
@@ -158,4 +176,26 @@ resource "google_secret_manager_secret_iam_member" "version_adder" {
   secret_id = google_secret_manager_secret.this[each.value.secret_id].secret_id
   role      = "roles/secretmanager.secretVersionAdder"
   member    = each.value.member
+}
+
+module "observability" {
+  source = "./observability"
+  count = (
+    module.config.selected_count > 0 &&
+    module.config.configuration_valid &&
+    try(module.config.config.observability.enabled, false)
+  ) ? 1 : 0
+
+  project_id      = module.config.cloud_config.project_id
+  resource_prefix = module.config.resource_prefix
+  alert_email     = module.config.config.observability.alert_email
+  synthetic_url   = module.config.config.observability.synthetic_url
+  instances = {
+    for name, vm in module.vm : name => {
+      instance_id = vm.instance_id
+      zone        = module.config.location.zone
+    }
+  }
+
+  depends_on = [google_project_service.required]
 }

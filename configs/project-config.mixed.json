@@ -12,7 +12,7 @@
   },
   "clouds": {
     "gcp": {
-      "project_id": "example-project-12345",
+      "project_id": "shiphappens-dev",
       "locations": {
         "primary": {
           "region": "europe-west1",
@@ -64,7 +64,7 @@
         "ssd": "io2"
       },
       "images": {
-        "ubuntu": "ami-0123456789abcdef0"
+        "ubuntu": "ami-0526a6499f6470118"
       },
       "bastion_nat": true,
       "free_tier_guardrails": true,
@@ -91,12 +91,19 @@
     "project": "example-oil-price-tracker",
     "team": "example-team"
   },
+  "observability": {
+    "enabled": true,
+    "alert_email": "o.m.zakip@gmail.com",
+    "monthly_budget_usd": 20,
+    "synthetic_url": "https://shiphappens.pp.ua",
+    "log_retention_days": 14
+  },
   "ssh_users": {
-    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+    "ubuntu": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOuHUOVp9DXJqpuqtPrw012XyiKWhMpJmZ5ZU8Fadmmd dadayaalex@gmail.com"
   },
   "registry": {
     "repository": "ghcr.io/ua-academy-projects/push-and-pray",
-    "username": "example-operator",
+    "username": "coder-from-ua",
     "image_sha": "7075d4610949ab6852c90e2ac63a50d2ec4c3a41"
   },
   "network": {
@@ -115,21 +122,21 @@
   },
   "secrets_by_role": {
     "database": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "db-password",
+      "GHCR_TOKEN": "ghcr-token"
     },
     "history": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "db-password",
+      "GHCR_TOKEN": "ghcr-token"
     },
     "fetcher": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "db-password",
+      "OILPRICEAPI_KEY": "oilpriceapi-key",
+      "GHCR_TOKEN": "ghcr-token"
     },
     "ui": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "db-password",
+      "GHCR_TOKEN": "ghcr-token"
     }
   },
   "vms": {
@@ -185,7 +192,7 @@
       ],
       "public_endpoint": {
         "hostname": "shiphappens.pp.ua",
-        "acme_email": "example-operator@example.com"
+        "acme_email": "o.m.zakip@gmail.com"
       }
     },
     "aws-bastion": {
@@ -211,7 +218,7 @@
     "engine_version": "POSTGRES_16",
     "database_name": "oil_tracker",
     "username": "oil_tracker",
-    "password_secret_id": "example-db-password",
+    "password_secret_id": "db-password",
     "port": 5432,
     "generation": "2026-09",
     "backup_on_delete": false,
