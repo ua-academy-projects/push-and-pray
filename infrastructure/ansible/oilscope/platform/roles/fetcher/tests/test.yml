@@ -4,34 +4,67 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    # block/rescue, not register+ignore_errors: ignore_errors on an
+    # include_role line only governs the include statement itself, not a
+    # failure raised by a task inside the included role - verified, it does
+    # not stop the play there. rescue is what actually catches that. Plain
+    # rescue alone can't tell "the role's own guard fired" apart from "the
+    # sentinel fail below fired because the guard didn't" -
+    # ansible_failed_task.name, only set inside rescue, closes that gap.
     - name: Missing database password should be rejected
       block:
         - name: Include the role without a database password
           ansible.builtin.include_role:
-            name: fetcher
+            name: oilscope.platform.fetcher
           vars:
             fetcher_postgres_password: ""
             fetcher_oilpriceapi_key: test-only
+
         - name: Fail if the role did not reject the missing password
           ansible.builtin.fail:
             msg: fetcher unexpectedly accepted an empty fetcher_postgres_password.
       rescue:
-        - name: Confirm the missing password was rejected
+        # Match on the role's own guard task name, not the sentinel's: any
+        # other failure here - the sentinel firing (role accepted the empty
+        # password), or something unrelated further downstream (e.g. a
+        # docker compose task failing for its own reasons) - is not proof
+        # fetcher_postgres_password validation works, so it must re-raise,
+        # not print a false "Correctly rejected".
+        - name: Confirm the missing password was rejected by the role's own guard
           ansible.builtin.debug:
             msg: Correctly rejected an empty fetcher_postgres_password.
+          when: ansible_failed_task.name == 'Require a database password'
+
+        - name: Re-raise - the failure did not come from the role's own guard
+          ansible.builtin.fail:
+            msg: >-
+              fetcher did not fail via its own 'Require a database password'
+              guard (it failed at '{{ ansible_failed_task.name }}' instead) -
+              this does not prove fetcher_postgres_password validation works.
+          when: ansible_failed_task.name != 'Require a database password'
 
     - name: Missing provider API key should be rejected
       block:
         - name: Include the role without a provider API key
           ansible.builtin.include_role:
-            name: fetcher
+            name: oilscope.platform.fetcher
           vars:
             fetcher_postgres_password: test-only
             fetcher_oilpriceapi_key: ""
+
         - name: Fail if the role did not reject the missing API key
           ansible.builtin.fail:
             msg: fetcher unexpectedly accepted an empty fetcher_oilpriceapi_key.
       rescue:
-        - name: Confirm the missing API key was rejected
+        - name: Confirm the missing API key was rejected by the role's own guard
           ansible.builtin.debug:
             msg: Correctly rejected an empty fetcher_oilpriceapi_key.
+          when: ansible_failed_task.name == 'Require a provider API key'
+
+        - name: Re-raise - the failure did not come from the role's own guard
+          ansible.builtin.fail:
+            msg: >-
+              fetcher did not fail via its own 'Require a provider API key'
+              guard (it failed at '{{ ansible_failed_task.name }}' instead) -
+              this does not prove fetcher_oilpriceapi_key validation works.
+          when: ansible_failed_task.name != 'Require a provider API key'

@@ -19,6 +19,7 @@
         - history
         - fetcher
         - ui
+        - proxy
       loop_control:
         loop_var: compose_project_workload
 
@@ -42,3 +43,4 @@
         - history
         - fetcher
         - ui
+        - proxy

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    monitoring_agent_config: >-
+      {{ lookup('ansible.builtin.file', monitoring_agent_config_path) | from_json }}
+
+- name: Require a known cloud
+  ansible.builtin.fail:
+    msg: >-
+      oilscope_cloud '{{ oilscope_cloud | default('') }}' is not gcp or
+      aws
+  when: (oilscope_cloud | default('')) not in ['gcp', 'aws']
+
+- name: Determine whether this VM has an agent configuration
+  ansible.builtin.set_fact:
+    monitoring_agent_configured: >-
+      {{ oilscope_vm_key in monitoring_agent_config.value.agent_configurations }}
+
+- name: Install and configure the agent on AWS
+  ansible.builtin.include_tasks: aws.yml
+  when:
+    - monitoring_agent_configured
+    - oilscope_cloud == 'aws'
+
+- name: Install and configure agent on GCP
+  ansible.builtin.include_tasks: gcp.yml
+  when:
+    - monitoring_agent_configured
+    - oilscope_cloud == 'gcp'

@@ -1,0 +1,166 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Included from main.yml only when oilscope_cloud == 'aws' and this VM has an
+# entry in monitoring_agent_config.value.agent_configurations. Installs the
+# CloudWatch Agent, verifies its GPG signature before trusting it, writes
+# this VM's rendered config to a staging path, and applies it through
+# amazon-cloudwatch-agent-ctl. The systemd unit only ever reads the .toml
+# that ctl's own config-translator produces from that staged file - a plain
+# `copy` + `systemctl restart` would silently keep running the old config,
+# since nothing would have regenerated the .toml.
+
+- name: Map the host architecture to the agent's package architecture
+  ansible.builtin.set_fact:
+    monitoring_agent_aws_arch: >-
+      {{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}
+  when: ansible_facts['architecture'] in ['x86_64', 'aarch64']
+
+- name: Require a supported architecture
+  ansible.builtin.fail:
+    msg: >-
+      unsupported architecture '{{ ansible_facts['architecture'] }}' - the
+      CloudWatch Agent is only packaged for x86_64 (amd64) and aarch64
+      (arm64).
+  when: monitoring_agent_aws_arch is not defined
+
+- name: Create the monitoring working directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ monitoring_agent_work_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Download the CloudWatch Agent package
+  become: true
+  ansible.builtin.get_url:
+    url: >-
+      {{ monitoring_agent_aws_package_base_url }}/{{ monitoring_agent_aws_arch }}/latest/amazon-cloudwatch-agent.deb
+    dest: "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.deb"
+    mode: "0644"
+
+- name: Download the package signature
+  become: true
+  ansible.builtin.get_url:
+    url: >-
+      {{ monitoring_agent_aws_package_base_url }}/{{ monitoring_agent_aws_arch }}/latest/amazon-cloudwatch-agent.deb.sig
+    dest: "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.deb.sig"
+    mode: "0644"
+
+- name: Download the CloudWatch Agent public GPG key
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ monitoring_agent_aws_gpg_key_url }}"
+    dest: "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.gpg"
+    mode: "0644"
+
+# gpgv, not `gpg --verify`: modern GnuPG (2.4+) defaults to routing all
+# keyring access through keyboxd, which silently ignores
+# `--no-default-keyring --keyring <file>` - verified directly (the fingerprint
+# check below failed and gpg reported "Specified keyrings are ignored due to
+# option 'use-keyboxd'" when this role was first written with `gpg --verify`).
+# gpgv is the minimal, stateless verifier apt itself relies on for repository
+# signatures; it takes an explicit keyring file and never touches keyboxd,
+# the trustdb, or any user's home directory.
+- name: Ensure gpgv is installed
+  become: true
+  ansible.builtin.apt:
+    name: gpgv
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+
+# Pure format conversion (armored -> binary keybox), not a keyring-management
+# operation - unaffected by keyboxd, confirmed directly alongside the gpgv
+# verification below.
+- name: Convert the public key into a keyring gpgv can read
+  become: true
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --output
+      - "{{ monitoring_agent_work_dir }}/keyring.gpg"
+      - "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.gpg"
+  changed_when: false
+
+# --import-options show-only prints the key's own metadata without writing
+# it to any keyring/keybox - inspection only, same reasoning as gpgv above.
+- name: Read the downloaded key's fingerprint
+  become: true
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --with-colons
+      - --import-options
+      - show-only
+      - --import
+      - "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.gpg"
+  register: monitoring_agent_aws_key_fingerprint
+  changed_when: false
+
+# The signature check below only proves the .deb matches whatever key we
+# converted into a keyring - it says nothing about whether that key is the
+# real AWS one unless the fingerprint is checked against the value AWS
+# publishes out-of-band. Skipping this would let a compromised download of
+# the .gpg key file itself defeat the signature check entirely.
+- name: Refuse an unexpected key fingerprint
+  ansible.builtin.fail:
+    msg: >-
+      the downloaded CloudWatch Agent public key's fingerprint does not
+      contain the value published by AWS
+      ({{ monitoring_agent_aws_gpg_fingerprint }}); refusing to trust it.
+  when: >-
+    monitoring_agent_aws_gpg_fingerprint not in
+    (monitoring_agent_aws_key_fingerprint.stdout | replace(' ', ''))
+
+- name: Verify the package signature
+  become: true
+  ansible.builtin.command:
+    argv:
+      - gpgv
+      - --keyring
+      - "{{ monitoring_agent_work_dir }}/keyring.gpg"
+      - "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.deb.sig"
+      - "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.deb"
+  changed_when: false
+
+- name: Install the CloudWatch Agent package
+  become: true
+  ansible.builtin.apt:
+    deb: "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.deb"
+
+- name: Write this VM's CloudWatch Agent configuration
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.json"
+    content: "{{ monitoring_agent_config.value.agent_configurations[oilscope_vm_key] }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart CloudWatch Agent
+
+# The handler applies the staged config through amazon-cloudwatch-agent-ctl
+# and (re)starts the service - flush now (docker_engine's apt-cache handler
+# uses the same trick) so the health check below sees this run's result
+# instead of whatever runs at the very end of the whole play.
+- name: Apply a pending CloudWatch Agent configuration change
+  ansible.builtin.meta: flush_handlers
+
+# A freshly attached CloudWatchAgentServerPolicy can take a few seconds to
+# propagate - same reasoning as the retry loop in resolve_secrets/tasks/aws.yml.
+- name: Wait for the CloudWatch Agent to report running and configured
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ monitoring_agent_aws_ctl }}"
+      - -a
+      - status
+  register: monitoring_agent_aws_status
+  changed_when: false
+  retries: 5
+  delay: 5
+  until: >-
+    (monitoring_agent_aws_status.stdout | from_json).status == 'running' and
+    (monitoring_agent_aws_status.stdout | from_json).configstatus == 'configured'

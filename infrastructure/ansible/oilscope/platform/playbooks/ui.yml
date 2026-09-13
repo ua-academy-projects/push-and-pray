@@ -12,6 +12,12 @@
   roles:
     - role: oilscope.platform.host_baseline
 
+    # See database.yml for why this is unconditional and what a missing
+    # agent_configurations entry means for this VM.
+    - role: oilscope.platform.monitoring_agent
+      vars:
+        monitoring_agent_config_path: "{{ monitoring_agent_config_path }}"
+
     - role: oilscope.platform.docker_engine
 
     - role: oilscope.platform.compose_project

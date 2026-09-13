@@ -43,6 +43,63 @@
     mode: "0600"
   when: not edge_proxy_acme_stat.stat.exists
 
+# The next three tasks only apply when
+# compose_project_config.monitoring.logs_enabled is true (defaulting to
+# false, since `monitoring` itself is optional in the schema - an existing
+# project configuration written before this feature existed must keep
+# working unchanged). compose.proxy.yaml.j2 (rendered by the earlier
+# compose_project role invocation, same play) only adds the --accesslog.*
+# flags and the bind-mount volume under that same condition, so without this
+# directory existing first, a container recreate with logging freshly
+# enabled would otherwise have Docker create the bind-mount path as
+# root:root anyway (fine here) but with no rotation in place.
+- name: Ensure logrotate is installed
+  become: true
+  ansible.builtin.apt:
+    name: logrotate
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+  when: compose_project_config.monitoring.logs_enabled | default(false)
+
+- name: Create the Traefik access log directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ edge_proxy_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: compose_project_config.monitoring.logs_enabled | default(false)
+
+# copytruncate, not a postrotate reload signal: Traefik's own log-reopen
+# behavior on a rotate-away-and-recreate isn't a documented contract here,
+# so truncating the still-open file in place avoids depending on it.
+- name: Install the Traefik access log rotation policy
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ edge_proxy_log_rotate_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ edge_proxy_log_file }} {
+        {{ edge_proxy_log_rotate_frequency }}
+        rotate {{ edge_proxy_log_rotate_count }}
+        compress
+        delaycompress
+        missingok
+        notifempty
+        copytruncate
+      }
+  when: compose_project_config.monitoring.logs_enabled | default(false)
+
+- name: Remove the access log rotation policy when logging is disabled
+  become: true
+  ansible.builtin.file:
+    path: "{{ edge_proxy_log_rotate_path }}"
+    state: absent
+  when: not compose_project_config.monitoring.logs_enabled | default(false)
 
 - name: Pull the Traefik image
   ansible.builtin.command:

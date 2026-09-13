@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Exercises the guard logic in tasks/main.yml against the two static
+# fixtures in tests/fixtures/, which are shaped like the real output of
+# `terraform output -json aws_monitoring` / `gcp_monitoring` (the "value"
+# wrapper, the plural "agent_configurations" key, one VM key - "ui" - with a
+# pre-encoded config string). tasks/aws.yml and tasks/gcp.yml both install
+# real packages and start real services, so their happy-path cases below
+# only run against a Debian-family control machine (see each case's own
+# `when`) - on any other platform they're skipped, and only the
+# cloud-agnostic guard logic in tasks/main.yml is actually exercised.
+#
+# oilscope_cloud/oilscope_vm_key come from tests/inventory, one fake host
+# per case, rather than from inline `vars:` here - see that file's own
+# comment for why.
+
+- name: An unsupported cloud should be rejected
+  hosts: monitoring-agent-test-unsupported-cloud
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include the role and confirm it rejects the unsupported cloud
+      block:
+        - name: Include the role with an unsupported cloud
+          ansible.builtin.include_role:
+            name: monitoring_agent
+          vars:
+            monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
+
+        - name: Fail if the role did not reject the unsupported cloud
+          ansible.builtin.fail:
+            msg: monitoring_agent unexpectedly accepted oilscope_cloud=azure.
+      rescue:
+        - name: Confirm the unsupported cloud was rejected
+          ansible.builtin.debug:
+            msg: Correctly rejected oilscope_cloud=azure.
+
+# tasks/aws.yml does real work now (downloads and installs a package, writes
+# root-owned files, starts a systemd service) - only safe to run for real
+# against a Debian-family target, never against this test playbook's own
+# control machine when that's macOS/another distro.
+- name: A configured AWS VM should reach the dispatch without failing
+  hosts: monitoring-agent-test-aws-configured
+  connection: local
+  gather_facts: true
+  tasks:
+    - name: Include the role for a configured AWS VM
+      ansible.builtin.include_role:
+        name: monitoring_agent
+      vars:
+        monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Confirm the configured AWS VM was recognized
+      ansible.builtin.assert:
+        that:
+          - monitoring_agent_configured | bool
+        fail_msg: >-
+          monitoring_agent_configured should be true for a VM key present in
+          the fixture's agent_configurations.
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Skip the AWS happy-path case on a non-Debian control machine
+      ansible.builtin.debug:
+        msg: >-
+          Skipped: tasks/aws.yml installs a real package and is only
+          exercised here against a Debian-family target (run this suite
+          against a real Ubuntu host/CI runner to cover it).
+      when: ansible_facts['os_family'] != 'Debian'
+
+# Same reasoning as the AWS case above - tasks/gcp.yml also does real work
+# now (installs a package via a root-run script, writes a root-owned config
+# file, restarts a systemd service).
+- name: A configured GCP VM should reach the dispatch without failing
+  hosts: monitoring-agent-test-gcp-configured
+  connection: local
+  gather_facts: true
+  tasks:
+    - name: Include the role for a configured GCP VM
+      ansible.builtin.include_role:
+        name: monitoring_agent
+      vars:
+        monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/gcp_monitoring.json"
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Confirm the configured GCP VM was recognized
+      ansible.builtin.assert:
+        that:
+          - monitoring_agent_configured | bool
+        fail_msg: >-
+          monitoring_agent_configured should be true for a VM key present in
+          the fixture's agent_configurations.
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Skip the GCP happy-path case on a non-Debian control machine
+      ansible.builtin.debug:
+        msg: >-
+          Skipped: tasks/gcp.yml installs a real package and is only
+          exercised here against a Debian-family target (run this suite
+          against a real Ubuntu host/CI runner to cover it).
+      when: ansible_facts['os_family'] != 'Debian'
+
+- name: An unconfigured VM key should be a clean no-op, not a failure
+  hosts: monitoring-agent-test-aws-unconfigured
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include the role for a VM key absent from the fixture
+      ansible.builtin.include_role:
+        name: monitoring_agent
+      vars:
+        monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
+
+    - name: Confirm the unconfigured VM key was recognized as not configured
+      ansible.builtin.assert:
+        that:
+          - not (monitoring_agent_configured | bool)
+        fail_msg: >-
+          monitoring_agent_configured should be false for a VM key absent
+          from the fixture's agent_configurations.

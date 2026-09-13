@@ -1,4 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
 edge_proxy_dir: /opt/oilscope/proxy
 edge_proxy_compose_file: "{{ edge_proxy_dir }}/compose.yaml"
 edge_proxy_compose_project_name: oilscope-proxy
 edge_proxy_network_name: oilscope-edge
+
+# Traefik access log, gated by compose_project_config.monitoring.logs_enabled
+# (set by the compose_project role earlier in the same play - see
+# ui.yml). The Traefik image has no USER directive (runs as root), so this
+# host directory is root-owned to match what the container actually writes
+# as. Local retention is independent of monitoring.log_retention_days
+# (that's cloud-side retention) - cloud retention does not bound this file.
+edge_proxy_log_dir: /var/log/oilscope
+edge_proxy_log_file: "{{ edge_proxy_log_dir }}/traefik-access.log"
+edge_proxy_log_rotate_path: /etc/logrotate.d/oilscope-traefik
+edge_proxy_log_rotate_count: 7
+edge_proxy_log_rotate_frequency: daily

@@ -1,5 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Require a database password
+  ansible.builtin.fail:
+    msg: fetcher_postgres_password is empty - the Fetcher database connection needs it.
+  when: fetcher_postgres_password | length == 0
+
+- name: Require a provider API key
+  ansible.builtin.fail:
+    msg: fetcher_oilpriceapi_key is empty - the Fetcher service needs it to poll pricing data.
+  when: fetcher_oilpriceapi_key | length == 0
+
 - name: Pull the Fetcher image
   ansible.builtin.command:
     argv:

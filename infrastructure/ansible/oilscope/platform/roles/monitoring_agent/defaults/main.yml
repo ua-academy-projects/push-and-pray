@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Path to the JSON file produced by `terraform output -json aws_monitoring`
+# or `terraform output -json gcp_monitoring` (whichever matches this run's
+# single cloud - see preflight.yml, which refuses a mixed-cloud inventory).
+# Empty by default so a missing value fails with a clear "no such file"
+# error from the lookup in tasks/main.yml, rather than silently reading
+# nothing - same reasoning as resolve_secrets_config_path.
+monitoring_agent_config_path: ""
+
+# Shared by both clouds' task files - a VM only ever runs one cloud's agent,
+# never both, so there's no collision risk in reusing one path.
+monitoring_agent_work_dir: /opt/oilscope/monitoring
+
+# AWS: CloudWatch Agent. AWS does not publish version-pinned download URLs
+# (only "latest" per architecture), so pinning like docker_engine does for
+# Docker isn't available here; dpkg's own version check keeps re-runs
+# idempotent instead.
+monitoring_agent_aws_package_base_url: https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu
+monitoring_agent_aws_gpg_key_url: https://amazoncloudwatch-agent.s3.amazonaws.com/assets/amazon-cloudwatch-agent.gpg
+# Published at
+# https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/verify-CloudWatch-Agent-Package-Signature.html
+# - re-verify if this ever needs to change; a mismatch here must block
+# installation, not just warn.
+monitoring_agent_aws_gpg_fingerprint: "937616F3450B7D806CBD9725D58167303B789C72"
+monitoring_agent_aws_ctl: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+
+# GCP: Ops Agent. Installed through Google's own installer script (it owns
+# the apt repo/key setup itself) rather than reimplemented by hand here -
+# unlike AWS's CloudWatch Agent, Google doesn't document the underlying
+# repo/key URLs as a stable public contract, only this script. Pinned to a
+# major version, matching the script's own documented pinning example
+# (`--version=1.*.*`); re-runs only install once (see tasks/gcp.yml) so
+# bumping this does not auto-upgrade an already-installed agent.
+monitoring_agent_gcp_install_script_url: https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+monitoring_agent_gcp_version: "2.*.*"
+monitoring_agent_gcp_config_path: /etc/google-cloud-ops-agent/config.yaml
+monitoring_agent_gcp_service: google-cloud-ops-agent.service

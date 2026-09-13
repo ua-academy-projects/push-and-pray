@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# In real use, oilscope_cloud and oilscope_vm_key come from the dynamic
+# inventory plugin (oilscope_gcp / oilscope_aws). This static test inventory
+# has no plugin behind it, so they're set directly as host vars here instead
+# - same reasoning, and same pattern, as resolve_secrets/tests/inventory.
+# Setting them via inline `vars:` on include_role in tests/test.yml instead
+# would trip ansible-lint's var-naming[no-role-prefix] rule, since neither
+# name is prefixed with monitoring_agent_ - they're shared across the whole
+# collection, not specific to this role.
+localhost ansible_connection=local
+monitoring-agent-test-unsupported-cloud ansible_connection=local oilscope_cloud=azure oilscope_vm_key=ui
+monitoring-agent-test-aws-configured ansible_connection=local oilscope_cloud=aws oilscope_vm_key=ui
+monitoring-agent-test-gcp-configured ansible_connection=local oilscope_cloud=gcp oilscope_vm_key=ui
+monitoring-agent-test-aws-unconfigured ansible_connection=local oilscope_cloud=aws oilscope_vm_key=database

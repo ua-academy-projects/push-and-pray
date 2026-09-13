@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Included from main.yml only when oilscope_cloud == 'gcp' and this VM has an
+# entry in monitoring_agent_config.value.agent_configurations. Installs the
+# Ops Agent through Google's own installer script (it owns the apt repo/key
+# setup itself - see the rationale in defaults/main.yml), writes this VM's
+# rendered config directly to the agent's own config path, and restarts the
+# service. Unlike AWS's CloudWatch Agent, the Ops Agent reads config.yaml
+# directly - there is no separate translate/validate step to drive through a
+# ctl-style command, so a plain restart after writing the file is correct
+# here (see https://docs.cloud.google.com/logging/docs/agent/ops-agent/installation).
+
+- name: Create the monitoring working directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ monitoring_agent_work_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Gather installed package facts
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Download the Ops Agent installer script
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ monitoring_agent_gcp_install_script_url }}"
+    dest: "{{ monitoring_agent_work_dir }}/add-google-cloud-ops-agent-repo.sh"
+    mode: "0750"
+  when: "'google-cloud-ops-agent' not in ansible_facts.packages"
+
+# The script is Google's own supported way to add the Ops Agent apt repo/key
+# and install the package - re-implementing that by hand (like docker_engine
+# does for Docker's own repo) isn't practical here since Google doesn't
+# publish the underlying repo/key URLs as a stable contract, only this
+# script. Only run once: re-running it is heavier than a plain package
+# check, and gating on the package's presence keeps this idempotent without
+# needing to parse the script's own output for a changed/unchanged signal.
+- name: Install the Ops Agent via the official installer script
+  become: true
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ monitoring_agent_work_dir }}/add-google-cloud-ops-agent-repo.sh"
+      - --also-install
+      - "--version={{ monitoring_agent_gcp_version }}"
+  when: "'google-cloud-ops-agent' not in ansible_facts.packages"
+  changed_when: true
+
+- name: Create the Ops Agent configuration directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ monitoring_agent_gcp_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write this VM's Ops Agent configuration
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ monitoring_agent_gcp_config_path }}"
+    content: "{{ monitoring_agent_config.value.agent_configurations[oilscope_vm_key] }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Ops Agent
+
+# flush now (same reasoning as tasks/aws.yml) so the health check below sees
+# this run's restart, not whatever runs at the very end of the whole play.
+- name: Apply a pending Ops Agent configuration change
+  ansible.builtin.meta: flush_handlers
+
+# `systemctl is-active` itself exits non-zero whenever the unit isn't
+# active - verified directly that combining that natural failure with
+# `until`/`retries` and no `failed_when` override still correctly fails the
+# task once retries are exhausted (same shape as resolve_secrets' own
+# `until: rc == 0` loop). An earlier version of this task added
+# `failed_when: false` to keep retrying past that non-zero rc, which turned
+# out to silently suppress the *final* failure too, once retries ran out -
+# confirmed directly: the task reported "ok" even though the service never
+# became active. Leaving failed_when at its default is what makes this a
+# real health check.
+#
+# A freshly granted roles/monitoring.metricWriter or roles/logging.logWriter
+# can take a few seconds to propagate - same reasoning as the retry loop in
+# resolve_secrets/tasks/aws.yml and tasks/aws.yml's own status wait.
+- name: Wait for the Ops Agent service to report active
+  become: true
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ monitoring_agent_gcp_service }}"
+  register: monitoring_agent_gcp_status
+  changed_when: false
+  retries: 5
+  delay: 5
+  until: monitoring_agent_gcp_status.stdout == 'active'

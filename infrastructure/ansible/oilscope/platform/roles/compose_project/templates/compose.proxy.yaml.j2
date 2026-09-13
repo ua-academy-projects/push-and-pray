@@ -16,11 +16,24 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--ping=true"
       - "--log.level=INFO"
+{% if compose_project_config.monitoring.logs_enabled | default(false) %}
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.filepath=/var/log/oilscope/traefik-access.log"
+      - "--accesslog.fields.defaultmode=drop"
+      - "--accesslog.fields.names.StartUTC=keep"
+      - "--accesslog.fields.names.DownstreamStatus=keep"
+      - "--accesslog.fields.names.Duration=keep"
+      - "--accesslog.fields.headers.defaultmode=drop"
+{% endif %}
     ports:
       - "443:443"
     volumes:
       - "{{ compose_project_dir }}/dynamic:/etc/traefik/dynamic:ro"
       - "{{ compose_project_dir }}/acme.json:/letsencrypt/acme.json"
+{% if compose_project_config.monitoring.logs_enabled | default(false) %}
+      - "/var/log/oilscope:/var/log/oilscope"
+{% endif %}
     networks:
       - oilscope-edge
     healthcheck:

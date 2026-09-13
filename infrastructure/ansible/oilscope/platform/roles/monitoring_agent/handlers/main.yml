@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# fetch-config both regenerates amazon-cloudwatch-agent.toml from the staged
+# JSON (-c file:...) and, with -s, (re)starts the systemd service - the unit
+# itself only ever reads the .toml, so a plain `systemctl restart` here would
+# just restart the agent against whatever .toml already existed.
+- name: Restart CloudWatch Agent
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ monitoring_agent_aws_ctl }}"
+      - -a
+      - fetch-config
+      - -m
+      - ec2
+      - -s
+      - -c
+      - "file:{{ monitoring_agent_work_dir }}/amazon-cloudwatch-agent.json"
+  changed_when: true
+
+# Unlike CloudWatch Agent, the Ops Agent reads config.yaml directly - a plain
+# restart is the documented, complete way to apply a change (see
+# https://docs.cloud.google.com/logging/docs/agent/ops-agent/installation).
+# The glob restarts the umbrella unit plus its sub-agents (fluent-bit,
+# opentelemetry-collector); passed via argv, not a shell, so systemd itself
+# resolves the pattern rather than the shell expanding it against local
+# files.
+- name: Restart Ops Agent
+  become: true
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - restart
+      - google-cloud-ops-agent*
+  changed_when: true
