@@ -77,3 +77,9 @@ The playbook publishes host metrics to the `OilScope` CloudWatch namespace,
 sends system logs from every AWS instance, and sends Docker JSON logs from
 workload instances. It does not restart the application containers. See the
 [`aws_cloudwatch_agent` role](roles/aws_cloudwatch_agent/README.md) for details.
+
+The UI deployment enables JSON Traefik access logs. Terraform derives request
+and HTTP 5xx metrics from those records and creates the provider-specific VM and
+HTTPS availability alerts and dashboard. See
+[the cloud monitoring guide](../../../../docs/monitoring.md) for the ownership
+model and required manual notification destinations.

@@ -9,6 +9,9 @@ only its own application services:
 - `ui`: UI only.
 
 The UI VM also receives the separate `proxy` definition for Traefik.
+The proxy emits JSON access logs without query parameters. A dedicated health
+router omits `/health` probes from access logging so monitoring can count
+external requests without counting its own availability checks.
 
 ## Requirements
 

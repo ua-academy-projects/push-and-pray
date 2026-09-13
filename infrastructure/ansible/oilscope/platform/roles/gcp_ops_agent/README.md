@@ -4,6 +4,8 @@ Installs the Google Cloud Ops Agent on existing GCP VMs. The built-in agent
 configuration exports host metrics such as CPU, memory, filesystem, disk, and
 network usage. On workload hosts, this role also collects Docker's JSON log
 files and sends them to Cloud Logging as the `docker_json` log.
+Terraform uses the collected Traefik access records for request and HTTP 5xx
+logs-based metrics.
 
 The role does not restart application containers. It restarts only the Ops
 Agent when its configuration changes.

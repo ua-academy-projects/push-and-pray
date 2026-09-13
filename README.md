@@ -22,6 +22,9 @@ have already been persisted in PostgreSQL.
 - Terraform deployments on AWS and GCP with Ansible-managed workloads and
   cloud-provider observability.
 
+See [Cloud monitoring](docs/monitoring.md) for the Terraform-managed alerts,
+log metrics, HTTPS checks, and manual notification prerequisites.
+
 ## Screenshots
 
 ### Application overview
