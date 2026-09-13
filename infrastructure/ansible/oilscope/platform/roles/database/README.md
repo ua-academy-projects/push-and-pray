@@ -60,6 +60,11 @@ Compose reconciles the existing PostgreSQL container and the bundled migrations
 use idempotent SQL operations. The migration container is removed after every
 successful run.
 
+In managed mode, the role invokes `psql` directly for the portable migrations
+listed in `database_managed_migration_files`. This keeps managed deployments
+compatible with older pinned database images whose `petroscope-migrate`
+entrypoint still attempts the PostgreSQL-extension migrations.
+
 ## License
 
 GPL-2.0-or-later

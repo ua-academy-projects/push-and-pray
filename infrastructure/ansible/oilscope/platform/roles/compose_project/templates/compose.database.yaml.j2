@@ -1,6 +1,7 @@
 name: petroscope
 
 services:
+{% if compose_project_config.database_mode == 'postgres_extensions' %}
   postgres:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_tag }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
@@ -34,6 +35,7 @@ services:
       retries: 20
       start_period: 15s
     stop_grace_period: 30s
+{% endif %}
 
   migrate:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_tag }}"
@@ -42,14 +44,20 @@ services:
     restart: "no"
     command: ["petroscope-migrate"]
     environment:
-      PGHOST: postgres
-      PGPORT: 5432
+      DATABASE_MODE: {{ compose_project_config.database_mode }}
+      PGHOST: ${DATABASE_HOST:-postgres}
+      PGPORT: ${DATABASE_PORT:-5432}
       PGUSER: ${POSTGRES_USER:-oil_tracker}
       PGDATABASE: ${POSTGRES_DB:-oil_tracker}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGSSLMODE: ${DATABASE_SSLMODE:-disable}
+{% if compose_project_config.database_mode == 'postgres_extensions' %}
     depends_on:
       postgres:
         condition: service_healthy
+{% endif %}
 
+{% if compose_project_config.database_mode == 'postgres_extensions' %}
 volumes:
   postgres_data:
+{% endif %}

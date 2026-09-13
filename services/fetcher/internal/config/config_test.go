@@ -31,6 +31,7 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 		"DATABASE_URL",
 		"postgres://oil_tracker:test@localhost:5432/oil_tracker?sslmode=disable",
 	)
+	t.Setenv("DATABASE_MODE", "postgres_extensions")
 
 	configuration, err := Load()
 	if err != nil {
@@ -60,6 +61,21 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 
 	if configuration.DatabaseURL == "" {
 		t.Fatal("DATABASE_URL should not be empty")
+	}
+}
+
+func TestLoadManagedConfigurationUsesRabbitMQ(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("DATABASE_MODE", "managed")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("RABBITMQ_URL", "amqp://oil_tracker:test@localhost:5672/oil_tracker")
+
+	configuration, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if configuration.DatabaseMode != "managed" || configuration.RabbitMQURL == "" {
+		t.Fatalf("unexpected managed configuration: %+v", configuration)
 	}
 }
 

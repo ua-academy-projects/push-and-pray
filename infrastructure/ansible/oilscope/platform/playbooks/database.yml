@@ -21,6 +21,24 @@
 
     - role: oilscope.platform.database
       vars:
+        database_mode: "{{ compose_project_config.database_mode }}"
+        database_host: >-
+          {{ managed_database.host
+             if compose_project_config.database_mode == 'managed' else 'postgres' }}
+        database_port: >-
+          {{ managed_database.port
+             if compose_project_config.database_mode == 'managed' else 5432 }}
+        database_sslmode: >-
+          {{ managed_database.sslmode
+             if compose_project_config.database_mode == 'managed' else 'disable' }}
+        database_managed_instance_name: >-
+          {{ managed_database.instance_name
+             if compose_project_config.database_mode == 'managed' else '' }}
+        database_managed_admin_secret_arn: >-
+          {{ managed_database.admin_secret_arn
+             if compose_project_config.database_mode == 'managed' else '' }}
+        database_postgres_user: "{{ compose_project_config.database.admin_user }}"
+        database_postgres_name: "{{ compose_project_config.database.name }}"
         database_postgres_image: >-
           {{
             compose_project_config.registry.repository

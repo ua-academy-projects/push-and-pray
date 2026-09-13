@@ -74,3 +74,19 @@ resource "aws_route_table_association" "workload" {
   subnet_id      = aws_subnet.workload[each.key].id
   route_table_id = aws_route_table.workload[each.key].id
 }
+
+resource "aws_route_table" "database" {
+  count = local.managed_database_enabled ? 1 : 0
+
+  region = local.locations[var.config.default_location].region
+  vpc_id = aws_vpc.main[var.config.default_location].id
+  tags   = merge(local.labels, { Name = "${local.resource_prefix}-database" })
+}
+
+resource "aws_route_table_association" "database" {
+  for_each = aws_subnet.database
+
+  region         = local.locations[var.config.default_location].region
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.database[0].id
+}

@@ -17,3 +17,22 @@ output "security_group_ids" {
     }
   }
 }
+
+output "default_vpc_id" {
+  description = "VPC ID in the default location, used by the single managed database."
+  value       = try(aws_vpc.main[var.config.default_location].id, null)
+}
+
+output "database_subnet_ids" {
+  description = "Private subnet IDs for the managed RDS database."
+  value       = [for subnet in aws_subnet.database : subnet.id]
+}
+
+output "managed_database_client_security_group_ids" {
+  description = "Security groups permitted to connect to managed PostgreSQL."
+  value = local.managed_database_enabled ? {
+    for key, instance in local.role_instances : instance.role => aws_security_group.role[key].id
+    if contains(["database", "history"], instance.role)
+    && instance.location == var.config.default_location
+  } : {}
+}

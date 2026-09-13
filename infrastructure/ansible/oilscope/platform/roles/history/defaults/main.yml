@@ -6,6 +6,12 @@ history_compose_project_name: petroscope
 
 history_postgres_password: ""
 history_postgres_user: oil_tracker_history
+history_database_mode: postgres_extensions
+history_database_host: postgres
+history_database_port: 5432
+history_database_sslmode: disable
+history_rabbitmq_user: oil_tracker
+history_rabbitmq_password: ""
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth

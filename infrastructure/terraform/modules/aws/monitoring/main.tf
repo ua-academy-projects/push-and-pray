@@ -90,11 +90,16 @@ resource "aws_cloudwatch_metric_alarm" "filesystem" {
   tags = merge(var.config.common_labels, { environment = var.config.environment })
 }
 
-resource "aws_cloudwatch_dashboard" "health" {
+moved {
+  from = aws_cloudwatch_dashboard.health
+  to   = aws_cloudwatch_dashboard.infrastructure
+}
+
+resource "aws_cloudwatch_dashboard" "infrastructure" {
   count = local.monitoring_enabled ? 1 : 0
 
   region         = var.config.locations[var.config.default_location].aws.region
-  dashboard_name = "${var.config.name_prefix}-${var.config.environment}-health"
+  dashboard_name = "${var.config.name_prefix}-${var.config.environment}-infrastructure"
   dashboard_body = jsonencode({
     widgets = [
       {
@@ -104,7 +109,7 @@ resource "aws_cloudwatch_dashboard" "health" {
         width  = 24
         height = 6
         properties = {
-          title  = "Instance health"
+          title  = "Instance Health"
           view   = "timeSeries"
           stat   = "Maximum"
           period = 60
@@ -123,25 +128,14 @@ resource "aws_cloudwatch_dashboard" "health" {
           ]
         }
       },
-    ]
-  })
-}
-
-resource "aws_cloudwatch_dashboard" "cpu" {
-  count = local.monitoring_enabled ? 1 : 0
-
-  region         = var.config.locations[var.config.default_location].aws.region
-  dashboard_name = "${var.config.name_prefix}-${var.config.environment}-cpu"
-  dashboard_body = jsonencode({
-    widgets = [
       {
         type   = "metric"
         x      = 0
-        y      = 0
+        y      = 6
         width  = 24
         height = 6
         properties = {
-          title  = "CPU utilization"
+          title  = "CPU"
           view   = "timeSeries"
           stat   = "Average"
           period = 300
@@ -169,25 +163,14 @@ resource "aws_cloudwatch_dashboard" "cpu" {
           ]
         }
       },
-    ]
-  })
-}
-
-resource "aws_cloudwatch_dashboard" "filesystem" {
-  count = local.monitoring_enabled ? 1 : 0
-
-  region         = var.config.locations[var.config.default_location].aws.region
-  dashboard_name = "${var.config.name_prefix}-${var.config.environment}-filesystem"
-  dashboard_body = jsonencode({
-    widgets = [
       {
         type   = "metric"
         x      = 0
-        y      = 0
+        y      = 12
         width  = 24
         height = 6
         properties = {
-          title  = "Root filesystem utilization"
+          title  = "Filesystem"
           view   = "timeSeries"
           stat   = "Average"
           period = 60

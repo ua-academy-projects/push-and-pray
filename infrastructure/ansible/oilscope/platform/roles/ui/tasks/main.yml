@@ -5,25 +5,85 @@
     file: secrets.yml
     name: ui_secret_requirements
 
+- name: Select UI secret requirements for the database mode
+  ansible.builtin.set_fact:
+    ui_required_secrets: >-
+      {{ {'ui_postgres_password': ui_secret_requirements.ui_postgres_password}
+         if ui_database_mode == 'postgres_extensions'
+         else {'ui_redis_password': ui_secret_requirements.ui_redis_password} }}
+
 - name: Resolve ui secrets
   ansible.builtin.include_role:
     name: oilscope.platform.resolve_secrets
   vars:
-    resolve_secrets_mappings: "{{ ui_secret_requirements }}"
-  when: ui_postgres_password | length == 0
+    resolve_secrets_mappings: "{{ ui_required_secrets }}"
+  when: >-
+    (ui_database_mode == 'postgres_extensions' and ui_postgres_password | length == 0) or
+    (ui_database_mode == 'managed' and ui_redis_password | length == 0)
 
 - name: Assign ui runtime credentials
   ansible.builtin.set_fact:
     ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
   no_log: true
-  when: ui_postgres_password | length == 0
+  when:
+    - ui_database_mode == 'postgres_extensions'
+    - ui_postgres_password | length == 0
+
+- name: Assign ui Redis credential
+  ansible.builtin.set_fact:
+    ui_redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD }}"
+  no_log: true
+  when:
+    - ui_database_mode == 'managed'
+    - ui_redis_password | length == 0
+
+- name: Stop Redis when PostgreSQL extensions mode is selected
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - rm
+      - --force
+      - "{{ ui_compose_project_name }}-redis-1"
+  register: ui_remove_redis
+  changed_when: ui_remove_redis.rc == 0
+  failed_when: false
+  when: ui_database_mode == 'postgres_extensions'
+
+- name: Start Redis in managed mode
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ ui_compose_project_name }}"
+      - --file
+      - "{{ ui_compose_file }}"
+      - up
+      - --detach
+      - redis
+  args:
+    chdir: "{{ ui_compose_project_dir }}"
+  environment:
+    REDIS_PASSWORD: "{{ ui_redis_password }}"
+  register: ui_redis_up
+  changed_when: >-
+    'Created' in ui_redis_up.stderr or
+    'Started' in ui_redis_up.stderr or
+    'Recreated' in ui_redis_up.stderr
+  no_log: true
+  when: ui_database_mode == 'managed'
 
 - name: Deploy only UI
   environment:
     DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
     POSTGRES_USER: "{{ ui_postgres_user }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    DATABASE_MODE: "{{ ui_database_mode }}"
+    DATABASE_HOST: "{{ ui_database_host }}"
+    DATABASE_PORT: "{{ ui_database_port }}"
+    DATABASE_SSLMODE: "{{ ui_database_sslmode }}"
+    REDIS_PASSWORD: "{{ ui_redis_password }}"
     HISTORY_SERVICE_URL: >-
       http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
   no_log: true

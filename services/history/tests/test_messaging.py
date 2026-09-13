@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -229,3 +230,34 @@ def test_consumer_is_not_ready_when_queue_poll_fails(
         asyncio.run(consumer._run())
 
     assert consumer.ready is False
+
+
+class FakeRabbitMessage:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+        self.message_id = "test-message"
+        self.acked = False
+        self.rejected = False
+        self.nacked = False
+
+    async def ack(self) -> None:
+        self.acked = True
+
+    async def reject(self, requeue: bool = False) -> None:
+        del requeue
+        self.rejected = True
+
+    async def nack(self, requeue: bool = True) -> None:
+        del requeue
+        self.nacked = True
+
+
+def test_rabbit_consumer_acknowledges_only_after_persistence(monkeypatch) -> None:
+    message = FakeRabbitMessage(json.dumps(valid_event()).encode())
+    monkeypatch.setattr(messaging, "_persist_event", lambda _: (1, 0))
+
+    asyncio.run(messaging.RabbitConsumer(Settings(database_mode="managed"))._handle(message))
+
+    assert message.acked is True
+    assert message.rejected is False
+    assert message.nacked is False

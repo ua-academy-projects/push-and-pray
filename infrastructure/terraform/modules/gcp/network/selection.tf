@@ -1,8 +1,10 @@
 locals {
-  workload_locations = toset([
+  managed_database_enabled = var.config.database_mode == "managed" && var.config.default_cloud == "gcp"
+
+  workload_locations = setunion(toset([
     for vm in values(var.config.vms) : vm.location
     if try(vm.cloud, var.config.default_cloud) == "gcp" && vm.role != "bastion"
-  ])
+  ]), local.managed_database_enabled ? toset([var.config.default_location]) : toset([]))
 
   vms = {
     for name, vm in var.config.vms : name => vm

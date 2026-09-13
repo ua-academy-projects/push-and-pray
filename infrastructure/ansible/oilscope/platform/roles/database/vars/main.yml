@@ -5,18 +5,32 @@ database_runtime_environment: >-
     database_compose_environment
     | combine({
       'DOCKER_CONFIG': database_docker_config_dir,
+      'DATABASE_MODE': database_mode,
       'POSTGRES_PASSWORD': database_postgres_password,
       'POSTGRES_USER': database_postgres_user,
       'POSTGRES_DB': database_postgres_name,
+      'DATABASE_HOST': database_host,
+      'DATABASE_PORT': database_port | string,
+      'DATABASE_SSLMODE': database_sslmode,
       'DATABASE_BIND_ADDRESS': database_bind_address | string,
       'DATABASE_HOST_PORT': database_host_port | string
     })
   }}
 
-database_application_credentials:
-  - user: "{{ database_history_postgres_user }}"
-    password: "{{ database_history_postgres_password }}"
-  - user: "{{ database_fetcher_postgres_user }}"
-    password: "{{ database_fetcher_postgres_password }}"
-  - user: "{{ database_ui_postgres_user }}"
-    password: "{{ database_ui_postgres_password }}"
+database_application_credentials: >-
+  {{
+    [{
+      'user': database_history_postgres_user,
+      'password': database_history_postgres_password
+    }]
+    + ([
+        {
+          'user': database_fetcher_postgres_user,
+          'password': database_fetcher_postgres_password
+        },
+        {
+          'user': database_ui_postgres_user,
+          'password': database_ui_postgres_password
+        }
+      ] if database_mode == 'postgres_extensions' else [])
+  }}

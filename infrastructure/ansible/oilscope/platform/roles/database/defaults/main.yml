@@ -17,6 +17,16 @@ database_ui_postgres_password: ""
 database_ui_postgres_user: oil_tracker_ui
 database_bind_address: 0.0.0.0
 database_host_port: 5432
+database_mode: postgres_extensions
+database_host: postgres
+database_port: 5432
+database_sslmode: disable
+database_managed_instance_name: ""
+database_managed_admin_secret_arn: ""
+database_managed_migration_files:
+  - 001_create_price_observations.sql
+  - 002_add_source_observed_at.sql
+  - 005_create_published_queue_events.sql
 database_health_retries: 30
 database_health_delay: 2
 database_docker_config_dir: /run/oilscope/docker-auth

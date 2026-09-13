@@ -1,6 +1,29 @@
 name: petroscope
 
 services:
+{% if compose_project_config.database_mode == 'managed' %}
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.3.4-management}
+    restart: unless-stopped
+    hostname: oil-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-oil_tracker}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: oil_tracker
+      TZ: UTC
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:5672:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+{% endif %}
+
   history:
     image: "{{ compose_project_config.registry.repository }}/history:{{ compose_project_config.registry.image_tag }}"
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
@@ -8,13 +31,21 @@ services:
     restart: unless-stopped
     init: true
     environment:
+      DATABASE_MODE: {{ compose_project_config.database_mode }}
       # yamllint disable rule:line-length
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+{% if compose_project_config.database_mode == 'postgres_extensions' %}
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
       PGMQ_POLL_INTERVAL_SECONDS: ${PGMQ_POLL_INTERVAL_SECONDS:-1}
       PGMQ_MAX_ATTEMPTS: ${PGMQ_MAX_ATTEMPTS:-5}
+{% else %}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-oil_tracker}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@rabbitmq:5672/oil_tracker
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-oil.price.events}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-history.price-observations}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-prices.observed}
+{% endif %}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: UTC
     ports:
@@ -29,8 +60,7 @@ services:
           data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
           assert data["status"] == "ok";
           assert data["database"] == "connected";
-          assert data["pgmq_extension"] == "installed";
-          assert data["pgmq_consumer"] == "ready"
+          assert data["{{ 'pgmq_consumer' if compose_project_config.database_mode == 'postgres_extensions' else 'rabbitmq' }}"] in ["ready", "connected"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -38,3 +68,11 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+{% if compose_project_config.database_mode == 'managed' %}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq_data:
+{% endif %}

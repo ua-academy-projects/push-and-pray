@@ -7,6 +7,8 @@
   "required": [
     "default_cloud",
     "default_location",
+    "database_mode",
+    "database",
     "vm_defaults",
     "clouds",
     "locations",
@@ -27,6 +29,14 @@
     "default_location": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "database_mode": {
+      "type": "string",
+      "enum": ["postgres_extensions", "managed"],
+      "description": "Selects self-managed PostgreSQL extensions or one managed PostgreSQL service in default_cloud."
+    },
+    "database": {
+      "$ref": "#/$defs/database"
     },
     "vm_defaults": {
       "$ref": "#/$defs/vm_defaults"
@@ -116,6 +126,8 @@
         "vpc_cidr",
         "management_subnet_cidr",
         "workload_subnet_cidr",
+        "database_subnet_cidrs",
+        "database_private_service_prefix_length",
         "enable_bastion_ssh_bootstrap",
         "ui_public_ports"
       ],
@@ -131,6 +143,20 @@
         "workload_subnet_cidr": {
           "type": "string",
           "minLength": 1
+        },
+        "database_subnet_cidrs": {
+          "type": "array",
+          "description": "Two private CIDRs used for AWS RDS subnets in distinct availability zones.",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "database_private_service_prefix_length": {
+          "type": "integer",
+          "description": "Prefix length reserved for GCP Private Services Access.",
+          "minimum": 16,
+          "maximum": 24
         },
         "enable_bastion_ssh_bootstrap": {
           "type": "boolean"
@@ -230,7 +256,7 @@
     "provider_mappings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["instance_types", "disk_types", "images"],
+      "required": ["instance_types", "disk_types", "images", "database_sizes"],
       "properties": {
         "instance_types": {
           "type": "object",
@@ -261,6 +287,48 @@
           "additionalProperties": {
             "$ref": "#/$defs/provider_image"
           }
+        },
+        "database_sizes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/provider_database_size"
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "admin_user", "port", "postgres_version", "size", "storage_gb"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "admin_user": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "port": { "type": "integer", "const": 5432 },
+        "postgres_version": { "type": "string", "pattern": "^[0-9]+$" },
+        "size": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+        "storage_gb": { "type": "integer", "minimum": 10 }
+      }
+    },
+    "provider_database_size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp", "aws"],
+      "properties": {
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tier"],
+          "properties": { "tier": { "type": "string", "minLength": 1 } }
+        },
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["instance_class"],
+          "properties": { "instance_class": { "type": "string", "minLength": 1 } }
         }
       }
     },

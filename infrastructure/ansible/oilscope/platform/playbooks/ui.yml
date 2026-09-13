@@ -27,3 +27,15 @@
     - role: oilscope.platform.edge_proxy
 
     - role: oilscope.platform.ui
+      vars:
+        ui_database_mode: "{{ compose_project_config.database_mode }}"
+        ui_database_host: >-
+          {{ managed_database.host
+             if compose_project_config.database_mode == 'managed'
+             else hostvars[groups['database'][0]].internal_ip }}
+        ui_database_port: >-
+          {{ managed_database.port
+             if compose_project_config.database_mode == 'managed' else 5432 }}
+        ui_database_sslmode: >-
+          {{ managed_database.sslmode
+             if compose_project_config.database_mode == 'managed' else 'disable' }}

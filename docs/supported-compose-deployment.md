@@ -10,10 +10,10 @@ The `compose_project` role renders exactly one workload definition to
 
 | VM role | Installed services |
 | --- | --- |
-| `database` | PostgreSQL and the one-shot migration service |
-| `history` | History API and PGMQ consumer |
+| `database` | Self-managed PostgreSQL or managed-DB migrations, selected by `database_mode` |
+| `history` | History API with PGMQ, or RabbitMQ plus its consumer in managed mode |
 | `fetcher` | Scheduled Fetcher |
-| `ui` | UI service; Traefik is installed separately under `/opt/oilscope/proxy` |
+| `ui` | UI with PostgreSQL sessions, or Redis sessions in managed mode; Traefik is separate |
 
 Image references are rendered from `registry.repository` and
 `registry.image_tag` in the external project configuration JSON. Runtime
@@ -24,6 +24,9 @@ The database owner remains `oil_tracker`. Ansible provisions dedicated
 `oil_tracker_history`, `oil_tracker_fetcher`, and `oil_tracker_ui` login roles
 from their corresponding password secrets and passes the matching login to each
 workload.
+
+See [PostgreSQL infrastructure modes](database-modes.md) for the switch,
+provider selection, private networking, and Terraform-to-Ansible handoff.
 
 When the UI VM has a `public_endpoint`, Traefik obtains its certificate through
 ACME and routes by hostname. Without that optional setting, Traefik uses its
@@ -96,12 +99,15 @@ deployed; History must be healthy before UI is deployed.
 | --- | --- | --- |
 | `POSTGRES_DB` | `oil_tracker` | Database name |
 | `POSTGRES_USER` | `oil_tracker` | Database user |
+| `DATABASE_MODE` | `postgres_extensions` | Select PostgreSQL extensions or managed services |
 | `DATABASE_PORT` | `5432` | PostgreSQL port |
 | `DATABASE_SSLMODE` | `disable` | PostgreSQL TLS mode on the private network |
 | `PGMQ_QUEUE` | `price_observations` | Queue name |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60` | History queue visibility timeout |
 | `PGMQ_POLL_INTERVAL_SECONDS` | `1` | History polling interval |
 | `PGMQ_MAX_ATTEMPTS` | `5` | Maximum message delivery attempts |
+| `RABBITMQ_URL` | none | Managed-mode event broker URL |
+| `REDIS_URL` | none | Managed-mode UI session store URL |
 | `DATA_PROVIDER` | `oilpriceapi` | Fetcher provider |
 | `FETCH_CRON_HOURS` | `0,6,12,18` | Fetch schedule hours |
 | `FETCH_TIMEZONE` | `UTC` | Fetch schedule timezone |

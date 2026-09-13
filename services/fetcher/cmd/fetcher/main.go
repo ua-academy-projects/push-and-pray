@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"oil-price-tracker/fetcher/internal/broker"
 	"oil-price-tracker/fetcher/internal/config"
 	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
@@ -42,25 +43,31 @@ func main() {
 		}
 	}
 
-	database, err := sql.Open("pgx", configuration.DatabaseURL)
-	if err != nil {
-		slog.Error("open PostgreSQL connection", "error", err)
-		os.Exit(1)
+	var publisher service.Publisher
+	delivery := "rabbitmq"
+	queue := configuration.RabbitQueue
+	if configuration.DatabaseMode == "postgres_extensions" {
+		database, openErr := sql.Open("pgx", configuration.DatabaseURL)
+		if openErr != nil {
+			slog.Error("open PostgreSQL connection", "error", openErr)
+			os.Exit(1)
+		}
+		defer database.Close()
+		if pingErr := database.Ping(); pingErr != nil {
+			slog.Error("connect to PostgreSQL", "error", pingErr)
+			os.Exit(1)
+		}
+		publisher = pgmq.Publisher{DB: database, QueueName: configuration.QueueName}
+		delivery = "pgmq"
+		queue = configuration.QueueName
+	} else {
+		publisher = broker.Publisher{
+			URL: configuration.RabbitMQURL, Exchange: configuration.RabbitExchange,
+			Queue: configuration.RabbitQueue, RoutingKey: configuration.RabbitRoute,
+		}
 	}
-	defer database.Close()
 
-	if err := database.Ping(); err != nil {
-		slog.Error("connect to PostgreSQL", "error", err)
-		os.Exit(1)
-	}
-
-	collector := service.New(
-		priceProvider,
-		pgmq.Publisher{
-			DB:        database,
-			QueueName: configuration.QueueName,
-		},
-	)
+	collector := service.New(priceProvider, publisher)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -143,8 +150,8 @@ func main() {
 				"status":   "ok",
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
-				"queue":    configuration.QueueName,
+				"delivery": delivery,
+				"queue":    queue,
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,
 					"timezone": configuration.Timezone.String(),
@@ -218,7 +225,7 @@ func main() {
 			"provider",
 			configuration.DataProvider,
 			"queue",
-			configuration.QueueName,
+			queue,
 		)
 
 		if err := server.ListenAndServe(); err != nil &&

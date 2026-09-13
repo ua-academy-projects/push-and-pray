@@ -5,6 +5,7 @@
 import hashlib
 import json
 import os
+import subprocess
 import tempfile
 
 from ansible.errors import AnsibleError, AnsibleParserError
@@ -57,6 +58,17 @@ options:
       - Port used by non-bastion VMs.
     type: int
     default: 22
+  terraform_directory:
+    description:
+      - Directory containing the Terraform state and managed_database output.
+      - Relative paths are resolved from the inventory source file.
+    type: str
+    default: ../../terraform
+  terraform_binary:
+    description:
+      - Terraform executable used to read non-secret output metadata.
+    type: str
+    default: terraform
   bastion_role:
     description:
       - Value of C(role) identifying the bastion.
@@ -116,6 +128,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         project_config_path = self._resolve_config_path(path)
         config = self._load_project_config(path)
         self.inventory.set_variable("all", "project_config_path", project_config_path)
+        database_mode = self._require_string(config.get("database_mode"), "database_mode")
+        self.inventory.set_variable("all", "database_mode", database_mode)
+        if database_mode == "managed":
+            self.inventory.set_variable(
+                "all", "managed_database", self._load_managed_database(path)
+            )
         settings_by_cloud = self._build_settings(config)
 
         for cloud, settings in settings_by_cloud.items():
@@ -129,6 +147,38 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     display.vvv(f"could not remove {generated}: {cleanup_error}")
 
         self._set_host_context(config)
+
+    def _load_managed_database(self, inventory_path):
+        configured = plain(self.get_option("terraform_directory"))
+        directory = (
+            configured
+            if os.path.isabs(configured)
+            else os.path.join(os.path.dirname(os.path.abspath(inventory_path)), configured)
+        )
+        command = [
+            plain(self.get_option("terraform_binary")),
+            f"-chdir={os.path.normpath(directory)}",
+            "output",
+            "-json",
+            "managed_database",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            metadata = json.loads(result.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            raise AnsibleParserError(
+                "managed mode requires the Terraform managed_database output; "
+                f"run terraform apply before inventory discovery: {error}"
+            ) from error
+        if not isinstance(metadata, dict) or not metadata.get("host"):
+            raise AnsibleParserError("Terraform managed_database output is missing its host")
+        return metadata
 
     def _resolve_config_path(self, path):
         configured = plain(self.get_option("project_config_path"))

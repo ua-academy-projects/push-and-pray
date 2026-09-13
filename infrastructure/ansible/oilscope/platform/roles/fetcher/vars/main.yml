@@ -5,12 +5,25 @@ fetcher_runtime_environment: >-
     fetcher_compose_environment
     | combine({
       'DOCKER_CONFIG': fetcher_docker_config_dir,
-      'POSTGRES_PASSWORD': fetcher_postgres_password,
-      'POSTGRES_USER': fetcher_postgres_user,
-      'POSTGRES_DB': fetcher_postgres_name,
-      'DATABASE_HOST': fetcher_database_host,
+      'DATABASE_MODE': fetcher_database_mode,
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string
     })
+    | combine(
+        {
+          'POSTGRES_PASSWORD': fetcher_postgres_password,
+          'POSTGRES_USER': fetcher_postgres_user,
+          'POSTGRES_DB': fetcher_postgres_name,
+          'DATABASE_HOST': fetcher_database_host,
+          'DATABASE_PORT': fetcher_database_port | string,
+          'DATABASE_SSLMODE': fetcher_database_sslmode
+        }
+        if fetcher_database_mode == 'postgres_extensions'
+        else {
+          'RABBITMQ_HOST': fetcher_rabbitmq_host,
+          'RABBITMQ_USER': fetcher_rabbitmq_user,
+          'RABBITMQ_PASSWORD': fetcher_rabbitmq_password
+        }
+      )
   }}

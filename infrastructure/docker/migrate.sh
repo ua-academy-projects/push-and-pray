@@ -6,6 +6,7 @@ set -eu
 : "${PGUSER:?PGUSER is required}"
 : "${PGDATABASE:?PGDATABASE is required}"
 : "${PGPASSWORD:?PGPASSWORD is required}"
+: "${DATABASE_MODE:=postgres_extensions}"
 
 attempt=1
 max_attempts=30
@@ -26,6 +27,13 @@ do
 done
 
 for migration in /opt/petroscope/migrations/*.sql; do
+    case "${DATABASE_MODE}:$(basename "${migration}")" in
+        managed:003_create_ui_sessions.sql|managed:004_create_pgmq_queue.sql)
+            echo "Skipping $(basename "${migration}") in managed mode"
+            continue
+            ;;
+    esac
+
     echo "Applying $(basename "${migration}")"
 
     psql \

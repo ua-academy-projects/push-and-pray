@@ -32,3 +32,38 @@ resource "aws_subnet" "workload" {
 
   tags = merge(local.labels, { Name = "${local.resource_prefix}-workload${local.location_suffixes[each.key]}" })
 }
+
+data "aws_availability_zones" "database" {
+  for_each = local.managed_database_enabled ? {
+    (var.config.default_location) = local.locations[var.config.default_location]
+  } : {}
+
+  region = each.value.region
+  state  = "available"
+}
+
+resource "aws_subnet" "database" {
+  for_each = local.managed_database_enabled ? {
+    for index, cidr in var.config.network.database_subnet_cidrs : tostring(index) => {
+      cidr  = cidr
+      index = index
+    }
+  } : {}
+
+  region                  = local.locations[var.config.default_location].region
+  vpc_id                  = aws_vpc.main[var.config.default_location].id
+  cidr_block              = each.value.cidr
+  availability_zone       = data.aws_availability_zones.database[var.config.default_location].names[each.value.index]
+  map_public_ip_on_launch = false
+
+  tags = merge(local.labels, {
+    Name = "${local.resource_prefix}-database-${each.value.index + 1}"
+  })
+
+  lifecycle {
+    precondition {
+      condition     = length(data.aws_availability_zones.database[var.config.default_location].names) >= 2
+      error_message = "Managed RDS requires at least two available zones in the default AWS region."
+    }
+  }
+}

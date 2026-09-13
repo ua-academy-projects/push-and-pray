@@ -94,17 +94,22 @@ resource "google_monitoring_alert_policy" "filesystem" {
   notification_channels = google_monitoring_notification_channel.email[*].name
 }
 
-resource "google_monitoring_dashboard" "health" {
+moved {
+  from = google_monitoring_dashboard.health
+  to   = google_monitoring_dashboard.infrastructure
+}
+
+resource "google_monitoring_dashboard" "infrastructure" {
   count = local.monitoring_enabled ? 1 : 0
 
   project = var.config.clouds.gcp.project_id
   dashboard_json = jsonencode({
-    displayName = "${var.config.name_prefix}-${var.config.environment}-health"
+    displayName = "${var.config.name_prefix}-${var.config.environment}-infrastructure"
     gridLayout = {
       columns = "2"
       widgets = [
         {
-          title = "Instance uptime"
+          title = "VM health"
           xyChart = {
             dataSets = [
               for name, vm in var.vms : {
@@ -127,20 +132,6 @@ resource "google_monitoring_dashboard" "health" {
             }
           }
         },
-      ]
-    }
-  })
-}
-
-resource "google_monitoring_dashboard" "cpu" {
-  count = local.monitoring_enabled ? 1 : 0
-
-  project = var.config.clouds.gcp.project_id
-  dashboard_json = jsonencode({
-    displayName = "${var.config.name_prefix}-${var.config.environment}-cpu"
-    gridLayout = {
-      columns = "2"
-      widgets = [
         {
           title = "CPU utilization"
           xyChart = {
@@ -172,20 +163,6 @@ resource "google_monitoring_dashboard" "cpu" {
             }
           }
         },
-      ]
-    }
-  })
-}
-
-resource "google_monitoring_dashboard" "filesystem" {
-  count = local.monitoring_enabled ? 1 : 0
-
-  project = var.config.clouds.gcp.project_id
-  dashboard_json = jsonencode({
-    displayName = "${var.config.name_prefix}-${var.config.environment}-filesystem"
-    gridLayout = {
-      columns = "2"
-      widgets = [
         {
           title = "Filesystem utilization"
           xyChart = {

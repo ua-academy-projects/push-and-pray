@@ -61,7 +61,7 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
 resource "aws_vpc_security_group_ingress_rule" "database_postgresql" {
   for_each = {
     for key, instance in local.role_instances : key => instance
-    if contains(["history", "fetcher", "ui"], instance.role) && contains(
+    if var.config.database_mode == "postgres_extensions" && contains(["history", "fetcher", "ui"], instance.role) && contains(
       keys(local.role_instances),
       instance.location == var.config.default_location ? "database" : "${instance.location}/database"
     )
@@ -72,6 +72,23 @@ resource "aws_vpc_security_group_ingress_rule" "database_postgresql" {
   referenced_security_group_id = aws_security_group.role[each.key].id
   from_port                    = 5432
   to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "history_rabbitmq" {
+  for_each = {
+    for key, instance in local.role_instances : key => instance
+    if local.managed_database_enabled && instance.role == "fetcher" && contains(
+      keys(local.role_instances),
+      instance.location == var.config.default_location ? "history" : "${instance.location}/history"
+    )
+  }
+
+  region                       = local.locations[each.value.location].region
+  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "history" : "${each.value.location}/history"].id
+  referenced_security_group_id = aws_security_group.role[each.key].id
+  from_port                    = 5672
+  to_port                      = 5672
   ip_protocol                  = "tcp"
 }
 

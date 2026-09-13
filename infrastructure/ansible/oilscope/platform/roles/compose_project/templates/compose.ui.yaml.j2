@@ -1,6 +1,31 @@
 name: petroscope
 
 services:
+{% if compose_project_config.database_mode == 'managed' %}
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.8-bookworm}
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+{% endif %}
+
   ui:
     image: "{{ compose_project_config.registry.repository }}/ui:{{ compose_project_config.registry.image_tag }}"
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
@@ -8,10 +33,15 @@ services:
     restart: unless-stopped
     init: true
     environment:
+      DATABASE_MODE: {{ compose_project_config.database_mode }}
       HISTORY_SERVICE_URL: ${HISTORY_SERVICE_URL:?HISTORY_SERVICE_URL is required}
+{% if compose_project_config.database_mode == 'postgres_extensions' %}
       # yamllint disable rule:line-length
       DATABASE_URL: postgresql://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+{% else %}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+{% endif %}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
       SESSION_COOKIE_SECURE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -31,6 +61,15 @@ services:
       - no-new-privileges:true
     networks:
       - oilscope-edge
+{% if compose_project_config.database_mode == 'managed' %}
+    depends_on:
+      redis:
+        condition: service_healthy
+{% endif %}
 networks:
   oilscope-edge:
     external: true
+{% if compose_project_config.database_mode == 'managed' %}
+volumes:
+  redis_data:
+{% endif %}

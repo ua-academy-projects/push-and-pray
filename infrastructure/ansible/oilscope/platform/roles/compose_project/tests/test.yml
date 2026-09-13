@@ -36,6 +36,9 @@
         HISTORY_SERVICE_URL: http://127.0.0.1:8001
         OILPRICEAPI_KEY: test-only
         POSTGRES_PASSWORD: test-only
+        RABBITMQ_PASSWORD: test-only
+        RABBITMQ_HOST: 127.0.0.1
+        REDIS_PASSWORD: test-only
       changed_when: false
       loop:
         - database

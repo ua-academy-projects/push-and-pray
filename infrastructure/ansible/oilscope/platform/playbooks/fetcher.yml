@@ -20,5 +20,15 @@
 
     - role: oilscope.platform.fetcher
       vars:
+        fetcher_database_mode: "{{ compose_project_config.database_mode }}"
         fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
+          {{ managed_database.host
+             if compose_project_config.database_mode == 'managed'
+             else hostvars[groups['database'][0]].internal_ip }}
+        fetcher_database_port: >-
+          {{ managed_database.port
+             if compose_project_config.database_mode == 'managed' else 5432 }}
+        fetcher_database_sslmode: >-
+          {{ managed_database.sslmode
+             if compose_project_config.database_mode == 'managed' else 'disable' }}
+        fetcher_rabbitmq_host: "{{ hostvars[groups['history'][0]].internal_ip }}"

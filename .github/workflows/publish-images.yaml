@@ -3,6 +3,7 @@ name: Publish application images
 on:
   push:
     branches:
+      - andrii-i
       - develop
       - main
     tags:

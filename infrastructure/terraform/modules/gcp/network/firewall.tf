@@ -51,6 +51,45 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
+resource "google_compute_firewall" "database_postgresql" {
+  for_each = {
+    for location, roles in local.roles_by_location : location => roles
+    if var.config.database_mode == "postgres_extensions" && contains(roles, "database")
+  }
+
+  name    = "${local.resource_prefix}-allow-database-postgresql${local.location_suffixes[each.key]}"
+  network = google_compute_network.main[each.key].id
+
+  source_tags = [
+    for role in ["history", "fetcher", "ui"] : local.network_tags[each.key][role]
+    if contains(each.value, role)
+  ]
+  target_tags = [local.network_tags[each.key].database]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["5432"]
+  }
+}
+
+resource "google_compute_firewall" "history_http" {
+  for_each = {
+    for location, roles in local.roles_by_location : location => roles
+    if contains(roles, "history") && contains(roles, "ui")
+  }
+
+  name    = "${local.resource_prefix}-allow-history-http${local.location_suffixes[each.key]}"
+  network = google_compute_network.main[each.key].id
+
+  source_tags = [local.network_tags[each.key].ui]
+  target_tags = [local.network_tags[each.key].history]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["8001"]
+  }
+}
+
 resource "google_compute_firewall" "ui_web" {
   for_each = {
     for location, roles in local.roles_by_location : location => roles if contains(roles, "ui")
@@ -65,5 +104,23 @@ resource "google_compute_firewall" "ui_web" {
   allow {
     protocol = "tcp"
     ports    = [for port in var.config.network.ui_public_ports : tostring(port)]
+  }
+}
+
+resource "google_compute_firewall" "history_rabbitmq" {
+  for_each = {
+    for location, roles in local.roles_by_location : location => roles
+    if local.managed_database_enabled && contains(roles, "history") && contains(roles, "fetcher")
+  }
+
+  name    = "${local.resource_prefix}-allow-history-rabbitmq${local.location_suffixes[each.key]}"
+  network = google_compute_network.main[each.key].id
+
+  source_tags = [local.network_tags[each.key].fetcher]
+  target_tags = [local.network_tags[each.key].history]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["5672"]
   }
 }

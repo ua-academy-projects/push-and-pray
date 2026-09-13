@@ -12,7 +12,7 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through PGMQ, a PostgreSQL extension-backed queue.
+- Selectable PostgreSQL-extensions or managed PostgreSQL + RabbitMQ + Redis architecture.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
@@ -53,9 +53,9 @@ have already been persisted in PostgreSQL.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
+| Messaging      | PGMQ or RabbitMQ                              |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| UI sessions    | PostgreSQL extensions or Redis                |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
@@ -94,6 +94,9 @@ PGMQ provides durable queue storage inside PostgreSQL. Messages are archived onl
 successful observation persistence. If processing fails before the archive operation, the
 visibility timeout makes the message available again. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
+
+Cloud deployments can instead select private RDS or Cloud SQL with RabbitMQ
+and Redis. See [PostgreSQL infrastructure modes](docs/database-modes.md).
 
 ## Tracked instruments
 

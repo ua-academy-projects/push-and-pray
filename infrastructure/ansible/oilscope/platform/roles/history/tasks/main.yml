@@ -5,12 +5,23 @@
     file: secrets.yml
     name: history_secret_requirements
 
+- name: Select History secret requirements for the database mode
+  ansible.builtin.set_fact:
+    history_required_secrets: >-
+      {{ {'history_postgres_password': history_secret_requirements.history_postgres_password}
+         | combine(
+             {'history_rabbitmq_password': history_secret_requirements.history_rabbitmq_password}
+             if history_database_mode == 'managed' else {}
+           ) }}
+
 - name: Resolve history secrets
   ansible.builtin.include_role:
     name: oilscope.platform.resolve_secrets
   vars:
-    resolve_secrets_mappings: "{{ history_secret_requirements }}"
-  when: history_postgres_password | length == 0
+    resolve_secrets_mappings: "{{ history_required_secrets }}"
+  when: >-
+    history_postgres_password | length == 0 or
+    (history_database_mode == 'managed' and history_rabbitmq_password | length == 0)
 
 - name: Assign history runtime credentials
   ansible.builtin.set_fact:
@@ -18,12 +29,70 @@
   no_log: true
   when: history_postgres_password | length == 0
 
+- name: Assign the resolved History RabbitMQ credential
+  ansible.builtin.set_fact:
+    history_rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+  no_log: true
+  when:
+    - history_database_mode == 'managed'
+    - history_rabbitmq_password | length == 0
+
+- name: Stop RabbitMQ when PostgreSQL extensions mode is selected
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - rm
+      - --force
+      - "{{ history_compose_project_name }}-rabbitmq-1"
+  register: history_remove_rabbitmq
+  changed_when: history_remove_rabbitmq.rc == 0
+  failed_when: false
+  when: history_database_mode == 'postgres_extensions'
+
+- name: Start RabbitMQ in managed mode
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ history_compose_project_name }}"
+      - --file
+      - "{{ history_compose_file }}"
+      - up
+      - --detach
+      - rabbitmq
+  args:
+    chdir: "{{ history_compose_project_dir }}"
+  environment:
+    DOCKER_CONFIG: "{{ history_docker_config_dir }}"
+    POSTGRES_PASSWORD: "{{ history_postgres_password }}"
+    POSTGRES_USER: "{{ history_postgres_user }}"
+    DATABASE_MODE: "{{ history_database_mode }}"
+    DATABASE_HOST: "{{ history_database_host }}"
+    DATABASE_PORT: "{{ history_database_port }}"
+    DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+    RABBITMQ_USER: "{{ history_rabbitmq_user }}"
+    RABBITMQ_PASSWORD: "{{ history_rabbitmq_password }}"
+  register: history_rabbitmq_up
+  changed_when: >-
+    'Created' in history_rabbitmq_up.stderr or
+    'Started' in history_rabbitmq_up.stderr or
+    'Recreated' in history_rabbitmq_up.stderr
+  no_log: true
+  when: history_database_mode == 'managed'
+
 - name: Deploy only History
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
     POSTGRES_USER: "{{ history_postgres_user }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    DATABASE_MODE: "{{ history_database_mode }}"
+    DATABASE_HOST: "{{ history_database_host }}"
+    DATABASE_PORT: "{{ history_database_port }}"
+    DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+    RABBITMQ_USER: "{{ history_rabbitmq_user }}"
+    RABBITMQ_PASSWORD: "{{ history_rabbitmq_password }}"
   no_log: true
   block:
     - name: Pull the History image
@@ -81,10 +150,12 @@
     - >-
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
+      history_database_mode != 'postgres_extensions' or
       (history_health.json | default({})).get(
         'pgmq_extension', ''
       ) == 'installed'
     - >-
-      (history_health.json | default({})).get(
-        'pgmq_consumer', ''
-      ) == 'ready'
+      (history_database_mode == 'postgres_extensions' and
+       (history_health.json | default({})).get('pgmq_consumer', '') == 'ready') or
+      (history_database_mode == 'managed' and
+       (history_health.json | default({})).get('rabbitmq', '') == 'connected')

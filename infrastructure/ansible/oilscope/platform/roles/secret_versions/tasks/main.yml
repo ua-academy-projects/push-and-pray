@@ -48,13 +48,31 @@
     secret_versions_targets_with_requirements: >-
       {{ secret_versions_targets_with_requirements + [
            item | combine({
-             'secrets': secret_versions_requirements_by_role[item.role] | dict2items
+             'secrets': secret_versions_selected_requirements
            })
          ] }}
   loop: "{{ secret_versions_targets }}"
   loop_control:
     label: >-
       {{ item.cloud }}/{{ item.location }}/{{ item.role }}
+  vars:
+    secret_versions_runtime_envs: >-
+      {{ ['POSTGRES_PASSWORD', 'HISTORY_POSTGRES_PASSWORD',
+          'FETCHER_POSTGRES_PASSWORD', 'UI_POSTGRES_PASSWORD', 'OILPRICEAPI_KEY']
+         if secret_versions_config.database_mode == 'postgres_extensions'
+         else ['POSTGRES_PASSWORD', 'HISTORY_POSTGRES_PASSWORD',
+               'RABBITMQ_PASSWORD', 'REDIS_PASSWORD', 'OILPRICEAPI_KEY'] }}
+    secret_versions_mode_requirements: >-
+      {{ secret_versions_requirements_by_role[item.role]
+         | dict2items
+         | selectattr('value.runtime_env', 'in', secret_versions_runtime_envs)
+         | list }}
+    secret_versions_selected_requirements: >-
+      {{ secret_versions_mode_requirements
+         | rejectattr('value.source_env', 'equalto', 'DB_PASSWORD_ADMIN')
+         | list
+         if secret_versions_config.database_mode == 'managed' and item.cloud == 'aws'
+         else secret_versions_mode_requirements }}
 
 - name: Build the provider upload catalog
   ansible.builtin.set_fact:

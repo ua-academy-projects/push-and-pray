@@ -5,33 +5,114 @@
     file: secrets.yml
     name: database_secret_requirements
 
+- name: Select database secret requirements for the database mode
+  ansible.builtin.set_fact:
+    database_required_secrets: >-
+      {{ database_secret_requirements
+         if database_mode == 'postgres_extensions'
+         else database_secret_requirements
+              | dict2items
+              | rejectattr('key', 'in',
+                           ['database_fetcher_postgres_password',
+                            'database_ui_postgres_password']
+                           + (['database_postgres_password']
+                              if oilscope_cloud == 'aws' else []))
+              | items2dict }}
+
 - name: Resolve database secrets
   ansible.builtin.include_role:
     name: oilscope.platform.resolve_secrets
   vars:
-    resolve_secrets_mappings: "{{ database_secret_requirements }}"
+    resolve_secrets_mappings: "{{ database_required_secrets }}"
   when: >-
-    database_postgres_password | length == 0 or
+    (database_postgres_password | length == 0 and
+     (database_mode == 'postgres_extensions' or oilscope_cloud == 'gcp')) or
     database_history_postgres_password | length == 0 or
-    database_fetcher_postgres_password | length == 0 or
-    database_ui_postgres_password | length == 0
+    (database_mode == 'postgres_extensions' and
+     (database_fetcher_postgres_password | length == 0 or
+      database_ui_postgres_password | length == 0))
 
 - name: Assign database runtime credentials
   ansible.builtin.set_fact:
-    database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+    database_postgres_password: >-
+      {{ resolve_secrets_result.POSTGRES_PASSWORD
+         | default(database_postgres_password) }}
     database_history_postgres_password: >-
       {{ resolve_secrets_result.HISTORY_POSTGRES_PASSWORD }}
     database_fetcher_postgres_password: >-
-      {{ resolve_secrets_result.FETCHER_POSTGRES_PASSWORD }}
+      {{ resolve_secrets_result.FETCHER_POSTGRES_PASSWORD
+         | default(database_fetcher_postgres_password) }}
     database_ui_postgres_password: >-
-      {{ resolve_secrets_result.UI_POSTGRES_PASSWORD }}
+      {{ resolve_secrets_result.UI_POSTGRES_PASSWORD
+         | default(database_ui_postgres_password) }}
   no_log: true
   when: resolve_secrets_result is defined
+
+- name: Read the AWS-managed RDS administrator secret
+  ansible.builtin.command:
+    argv:
+      - aws
+      - secretsmanager
+      - get-secret-value
+      - "--secret-id={{ database_managed_admin_secret_arn }}"
+      - "--region={{ oilscope_region }}"
+      - --query=SecretString
+      - --output=text
+  register: database_aws_admin_secret
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when:
+    - database_mode == 'managed'
+    - oilscope_cloud == 'aws'
+
+- name: Assign the AWS-managed RDS administrator password
+  ansible.builtin.set_fact:
+    database_postgres_password: >-
+      {{ (database_aws_admin_secret.stdout | from_json).password }}
+  no_log: true
+  when:
+    - database_mode == 'managed'
+    - oilscope_cloud == 'aws'
+
+- name: Set the Cloud SQL administrator password from Secret Manager
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - sql
+      - users
+      - set-password
+      - "{{ database_postgres_user }}"
+      - "--instance={{ database_managed_instance_name }}"
+      - "--project={{ oilscope_project_id }}"
+      - "--password={{ database_postgres_password }}"
+      - --quiet
+  changed_when: true
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when:
+    - database_mode == 'managed'
+    - oilscope_cloud == 'gcp'
 
 - name: Check the Compose definition
   ansible.builtin.stat:
     path: "{{ database_compose_file }}"
   register: database_compose_definition
+
+- name: Stop the self-managed PostgreSQL container in managed mode
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - rm
+      - --force
+      - "{{ database_compose_project_name }}-{{ database_postgres_service }}-1"
+  register: database_remove_self_managed
+  changed_when: database_remove_self_managed.rc == 0
+  failed_when: false
+  when: database_mode == 'managed'
 
 - name: Pull the exact PostgreSQL image
   ansible.builtin.command:
@@ -69,6 +150,7 @@
     'Started' in database_compose_up.stderr or
     'Recreated' in database_compose_up.stderr
   no_log: true
+  when: database_mode == 'postgres_extensions'
 
 - name: Get the PostgreSQL container ID
   ansible.builtin.command:
@@ -89,6 +171,7 @@
   changed_when: false
   failed_when: database_container.stdout | trim | length == 0
   no_log: true
+  when: database_mode == 'postgres_extensions'
 
 - name: Wait for PostgreSQL to become healthy
   ansible.builtin.command:
@@ -103,8 +186,9 @@
   retries: "{{ database_health_retries }}"
   delay: "{{ database_health_delay }}"
   until: database_health.stdout | trim == 'healthy'
+  when: database_mode == 'postgres_extensions'
 
-- name: Apply database migrations
+- name: Apply self-managed database migrations
   ansible.builtin.command:
     argv:
       - docker
@@ -123,6 +207,40 @@
   register: database_migrations
   changed_when: "'Applying ' in database_migrations.stdout"
   no_log: true
+  when: database_mode == 'postgres_extensions'
+
+- name: Apply managed database migrations
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - --pull
+      - never
+      - --entrypoint
+      - psql
+      - "{{ database_migration_service }}"
+      - "--host={{ database_host }}"
+      - "--port={{ database_port }}"
+      - "--username={{ database_postgres_user }}"
+      - "--dbname={{ database_postgres_name }}"
+      - --no-psqlrc
+      - --set=ON_ERROR_STOP=1
+      - "--file=/opt/petroscope/migrations/{{ item }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  loop: "{{ database_managed_migration_files }}"
+  register: database_managed_migrations
+  changed_when: true
+  no_log: true
+  when: database_mode == 'managed'
 
 - name: Check application database credentials
   ansible.builtin.command:
@@ -141,6 +259,7 @@
       - sh
       - "{{ item.user }}"
       - "{{ database_postgres_name }}"
+  args:
     stdin: "{{ item.password }}"
     stdin_add_newline: true
   loop: "{{ database_application_credentials }}"
@@ -148,6 +267,7 @@
   changed_when: false
   failed_when: false
   no_log: true
+  when: database_mode == 'postgres_extensions'
 
 - name: Create or rotate application database credentials
   ansible.builtin.command:
@@ -161,6 +281,7 @@
       - "--dbname={{ database_postgres_name }}"
       - --no-psqlrc
       - --set=ON_ERROR_STOP=1
+  args:
     stdin: |
       DO $application_role$
       DECLARE
@@ -190,6 +311,96 @@
       $application_role$;
     stdin_add_newline: true
   loop: "{{ database_application_login.results }}"
-  when: item.rc != 0
   changed_when: true
   no_log: true
+  when: database_mode == 'postgres_extensions' and item.rc != 0
+
+- name: Check managed application database credentials
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - --pull
+      - never
+      - --env
+      - PGPASSWORD
+      - --entrypoint
+      - psql
+      - migrate
+      - "--host={{ database_host }}"
+      - "--port={{ database_port }}"
+      - "--username={{ item.user }}"
+      - "--dbname={{ database_postgres_name }}"
+      - --no-psqlrc
+      - --tuples-only
+      - --command=SELECT 1
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: >-
+    {{ database_runtime_environment | combine({'PGPASSWORD': item.password}) }}
+  loop: "{{ database_application_credentials }}"
+  register: database_managed_application_login
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: database_mode == 'managed'
+
+- name: Create or rotate managed application database credentials
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - --pull
+      - never
+      - --entrypoint
+      - psql
+      - migrate
+      - "--host={{ database_host }}"
+      - "--port={{ database_port }}"
+      - "--username={{ database_postgres_user }}"
+      - "--dbname={{ database_postgres_name }}"
+      - --no-psqlrc
+      - --set=ON_ERROR_STOP=1
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+    stdin: |
+      DO $application_role$
+      DECLARE
+        application_role TEXT := '{{ item.item.user }}';
+        application_password TEXT := convert_from(
+          decode('{{ item.item.password | b64encode }}', 'base64'), 'UTF8'
+        );
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = application_role) THEN
+          EXECUTE format('CREATE ROLE %I LOGIN', application_role);
+        END IF;
+        EXECUTE format(
+          'ALTER ROLE %I WITH LOGIN PASSWORD %L',
+          application_role,
+          application_password
+        );
+        EXECUTE format('GRANT %I TO %I', '{{ database_postgres_user }}', application_role);
+      END
+      $application_role$;
+    stdin_add_newline: true
+  environment: "{{ database_runtime_environment }}"
+  loop: "{{ database_managed_application_login.results | default([]) }}"
+  changed_when: true
+  no_log: true
+  when:
+    - database_mode == 'managed'
+    - item.rc != 0

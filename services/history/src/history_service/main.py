@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
+from .messaging import PGMQConsumer, RabbitConsumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,7 +36,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+message_consumer = (
+    PGMQConsumer(settings)
+    if settings.database_mode == "postgres_extensions"
+    else RabbitConsumer(settings)
+)
 
 
 @asynccontextmanager
@@ -45,12 +49,12 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
-    await pgmq_consumer.start()
+    await message_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await message_consumer.stop()
 
 
 app = FastAPI(
@@ -67,24 +71,21 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    extension_installed = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
-            )
-            """
-        )
-    ).scalar_one()
-
-    return {
+    result = {
         "status": "ok",
         "database": "connected",
-        "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
     }
+    if settings.database_mode == "postgres_extensions":
+        extension_installed = db.execute(
+            text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgmq')")
+        ).scalar_one()
+        result.update(
+            pgmq_extension="installed" if extension_installed else "missing",
+            pgmq_consumer="ready" if message_consumer.is_ready else "not_ready",
+        )
+    else:
+        result["rabbitmq"] = "connected" if message_consumer.is_ready else "reconnecting"
+    return result
 
 
 @app.post(
