@@ -1,9 +1,17 @@
 locals {
-  enabled = var.monitoring.enabled && var.monitoring.cpu.enabled && length(var.vms) > 0
-  vms     = local.enabled ? var.vms : {}
+  cpu_enabled       = var.monitoring.enabled && var.monitoring.cpu.enabled && length(var.vms) > 0
+  lifecycle_enabled = var.monitoring.enabled && var.monitoring.lifecycle.enabled && length(var.monitoring.lifecycle.notify_states) > 0 && length(var.vms) > 0
+  enabled           = local.cpu_enabled || local.lifecycle_enabled
+  cpu_vms           = local.cpu_enabled ? var.vms : {}
+  lifecycle_vms     = local.lifecycle_enabled ? var.vms : {}
 
   cpu_filter = join(" OR ", [
     for vm in values(var.vms) : "resource.labels.instance_id=\"${vm.instance_id}\""
+  ])
+
+  lifecycle_event_filters = compact([
+    contains(var.monitoring.lifecycle.notify_states, "stopped") ? "(log_id(\"cloudaudit.googleapis.com/activity\") AND protoPayload.methodName=(\"beta.compute.instances.stop\" OR \"v1.compute.instances.stop\") AND operation.first=true)" : "",
+    contains(var.monitoring.lifecycle.notify_states, "terminated") ? "(log_id(\"cloudaudit.googleapis.com/system_event\") AND protoPayload.methodName=(\"compute.instances.hostError\" OR \"compute.instances.guestTerminate\" OR \"compute.instances.terminateOnHostMaintenance\"))" : "",
   ])
 }
 
@@ -18,7 +26,7 @@ resource "google_monitoring_notification_channel" "email" {
 }
 
 resource "google_monitoring_dashboard" "cpu" {
-  count = local.enabled ? 1 : 0
+  count = local.cpu_enabled ? 1 : 0
 
   dashboard_json = jsonencode({
     displayName = "${var.resource_prefix} CPU"
@@ -54,7 +62,7 @@ resource "google_monitoring_dashboard" "cpu" {
 }
 
 resource "google_monitoring_alert_policy" "cpu" {
-  for_each = local.vms
+  for_each = local.cpu_vms
 
   display_name = "${each.value.name} high CPU"
   combiner     = "OR"
@@ -72,6 +80,29 @@ resource "google_monitoring_alert_policy" "cpu" {
         alignment_period   = "60s"
         per_series_aligner = "ALIGN_MEAN"
       }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email[0].name]
+}
+
+resource "google_monitoring_alert_policy" "lifecycle" {
+  for_each = local.lifecycle_vms
+
+  display_name = "${each.value.name} lifecycle event"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "VM entered a configured lifecycle state"
+
+    condition_matched_log {
+      filter = "resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${each.value.instance_id}\" AND (${join(" OR ", local.lifecycle_event_filters)})"
+    }
+  }
+
+  alert_strategy {
+    notification_rate_limit {
+      period = "300s"
     }
   }
 

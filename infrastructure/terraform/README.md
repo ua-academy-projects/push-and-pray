@@ -13,7 +13,7 @@ Children receive structured inputs and never reopen the JSON file.
 | `aws_security_groups` | AWS role security groups and ingress/egress policy |
 | `aws_vm` | AWS VM filtering/mappings, AMIs, EC2, identities and Elastic IPs |
 | `gcp_monitoring` | GCP CPU dashboard, per-VM alerts and email notification channel |
-| `aws_monitoring` | AWS CPU dashboard, per-VM alarms and SNS email notifications |
+| `aws_monitoring` | AWS CPU/health dashboard, per-VM alarms and SNS email notifications |
 
 VM modules are called once and iterate internally. Networks receive structured
 network configuration; policy modules receive a shared policy object. Root
@@ -23,8 +23,34 @@ relationship checks remain global. Provider mapping, disk, zone and subnet-size
 validation belongs to provider modules.
 
 Monitoring is optional and defaults to disabled when `monitoring` is absent.
-When enabled, each provider monitors only its Terraform-managed VMs. AWS SNS
-email subscriptions remain pending until the recipient confirms the AWS email.
+Set `monitoring.enabled` and `monitoring.cpu.enabled` to `true` to create a CPU
+dashboard and one alert per Terraform-managed VM in each cloud that has VMs.
+`monitoring.cpu.threshold_percent` defaults to `80` in Terraform when omitted
+with the whole monitoring block, and `monitoring.cpu.duration_minutes` defaults
+to `5`. Set `monitoring.notification_email` to the destination address. GCP
+creates a Cloud Monitoring email channel, dashboard, and alert policies; AWS
+creates an SNS topic/email subscription, CloudWatch dashboard, and alarms.
+Confirm the subscription or verify the notification address if prompted by the
+provider before expecting email delivery.
+
+To change the CPU alert later, edit `threshold_percent` (for example, from `80`
+to `20`) or `duration_minutes` in `project-config.json`, then review and apply a
+new Terraform plan. Stable VM-keyed policies and alarms update in place; the
+monitoring modules and dashboards are not recreated solely for that change.
+
+Provider-neutral `vm_health` currently creates AWS `StatusCheckFailed` alarms
+for Terraform-managed EC2 instances. Missing status-check data remains missing,
+so these alarms detect EC2 impairment but not intentional stops. GCP has no
+equivalent agentless metric: Google excludes terminated resources from metric-
+absence evaluation and advises against using `instance/uptime` for availability.
+Reliable GCP stopped-state detection requires a separate lifecycle-state design.
+
+Provider-neutral `lifecycle` is separate from CPU and impairment monitoring.
+GCP creates per-VM log-matched policies for explicit stop API calls and the
+`hostError`, `guestTerminate`, and `terminateOnHostMaintenance` system events;
+reset, start, and delete events are excluded. AWS uses one EventBridge EC2
+state-change rule filtered to Terraform-managed instance IDs and the configured
+`stopped`/`terminated` states, with the existing SNS topic as its target.
 
 Terraform owns secret containers and IAM grants. It derives IDs from
 `application.secret_mappings`, keyed by application role. Only Ansible uses

@@ -97,6 +97,13 @@ locals {
       threshold_percent = try(local.config.monitoring.cpu.threshold_percent, 80)
       duration_minutes  = try(local.config.monitoring.cpu.duration_minutes, 5)
     }
+    vm_health = {
+      enabled = try(local.config.monitoring.vm_health.enabled, false)
+    }
+    lifecycle = {
+      enabled       = try(local.config.monitoring.lifecycle.enabled, false)
+      notify_states = try(local.config.monitoring.lifecycle.notify_states, [])
+    }
   }
 
   common_labels = merge(

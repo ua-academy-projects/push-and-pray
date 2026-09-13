@@ -7,8 +7,6 @@ __pycache__/
 .DS_Store
 htmlcov/
 .coverage
-.vagrant/
-infrastructure/vagrant/config/vagrant.env
 node_modules/
 infrastructure/docker/deployment
 
@@ -20,16 +18,17 @@ terraform.tfvars
 infrastructure/terraform/terraform.tfvars
 infrastructure/terraform/legacy
 infrastructure/legacy_terraform
-infrastructure/docker/deployment
 *.tfvars
 *.tfvars.json
 *.tfplan
 **/tfplan
 crash.log
 crash.*.log
-*.json
-!infrastructure/terraform/*.json
+project-config.json
+project-config.*.json
+!infrastructure/terraform/project-config.schema.json
 # Credentials and private keys
+*-key.json
 *.pem
 *.key
 !project-config.example.json

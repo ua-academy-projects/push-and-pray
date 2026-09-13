@@ -86,6 +86,16 @@
       "enabled": true,
       "threshold_percent": 80,
       "duration_minutes": 5
+    },
+    "vm_health": {
+      "enabled": true
+    },
+    "lifecycle": {
+      "enabled": true,
+      "notify_states": [
+        "stopped",
+        "terminated"
+      ]
     }
   },
   "vms": {

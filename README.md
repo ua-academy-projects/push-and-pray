@@ -18,7 +18,6 @@ have already been persisted in PostgreSQL.
   smoothing, and moving-average controls.
 - PostgreSQL-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
-- Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Passwordless project-specific SSH access and journald-based container logging.
 
 ## Screenshots
@@ -57,7 +56,6 @@ have already been persisted in PostgreSQL.
 | Persistence    | PostgreSQL 18                                 |
 | UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
 | Packaging      | Docker Engine and Docker Compose              |
-| Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
 
@@ -120,11 +118,10 @@ scientific data source.
 ├── database/
 │   └── migrations/                 PostgreSQL migrations
 ├── infrastructure/
-│   ├── docker/                     Dockerfiles and per-VM Compose files
-│   └── vagrant/
-│       ├── commands/               Host-side deployment commands
-│       ├── config/                 Vagrant configuration template
-│       └── provisioning/           Idempotent guest provisioning scripts
+│   ├── ansible/                    Multi-cloud deployment automation
+│   ├── docker/                     Dockerfiles and local Compose configuration
+│   ├── ssh/                        SSH configuration example
+│   └── terraform/                  GCP and AWS infrastructure
 ├── services/
 │   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
 │   ├── history/                    Python History API and PGMQ consumer
@@ -133,16 +130,8 @@ scientific data source.
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
-├── uv.lock                         Locked Python dependencies
-└── Vagrantfile                     Four-VM QEMU definition
+└── uv.lock                         Locked Python dependencies
 ```
-
-## Vagrant deployment
-
-Legacy Vagrant provisioning files remain in the repository, but they are not part of the
-currently supported PGMQ deployment path. The current application architecture is
-validated through Docker and cloud-oriented deployments using PostgreSQL with the PGMQ
-extension.
 
 ## Docker deployment details
 
@@ -151,22 +140,6 @@ the `oilscope.platform.compose_project` Ansible role. See
 [the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
 required parent-process environment, the one-command startup, independent VM roles,
 shutdown, and smoke test.
-
-The older role-specific files below remain for the Vagrant development topology:
-
-| Compose file            | Project               | Services   |
-| ----------------------- | --------------------- | ---------- |
-| `compose.database.yaml` | `petroscope-database` | `postgres` |
-| `compose.history.yaml`  | `petroscope-history`  | `history`  |
-| `compose.fetcher.yaml`  | `petroscope-fetcher`  | `fetcher`  |
-| `compose.ui.yaml`       | `petroscope-ui`       | `ui`       |
-
-Containers on the same VM use their Compose network and service names. Communication
-between VMs uses the configured bridged LAN addresses. PostgreSQL uses a named Docker volume. All containers use `restart: unless-stopped` and the journald
-logging driver.
-
-Journald is limited by provisioning to 200 MB and seven days per VM. Grafana and Loki are
-not part of this project.
 
 ### Published application images
 
@@ -394,7 +367,7 @@ uv run ruff check .
 
 ## Security notes
 
-- Never commit `.env` or `infrastructure/vagrant/config/vagrant.env`. Run
+- Never commit `.env` or local deployment configuration containing credentials. Run
   `pre-commit install` after cloning so this is enforced locally, not just by review.
 - Replace all example passwords before deployment.
 - Reserve the VM addresses and restrict sensitive LAN ports at the router or firewall when

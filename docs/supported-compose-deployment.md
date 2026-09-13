@@ -8,9 +8,7 @@ outside Compose through the parent process environment.
 
 The canonical configuration is the `compose_project` role template at
 `infrastructure/ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2`.
-The role installs it as `/opt/oilscope/app/compose.yaml`. The older role-specific
-Compose files are retained for the Vagrant development environment; they are not
-the supported GHCR deployment configuration.
+The role installs it as `/opt/oilscope/app/compose.yaml`.
 
 ## Required settings
 

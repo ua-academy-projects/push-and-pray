@@ -13,6 +13,13 @@ variable "monitoring" {
       threshold_percent = number
       duration_minutes  = number
     })
+    vm_health = optional(object({
+      enabled = bool
+    }), { enabled = false })
+    lifecycle = optional(object({
+      enabled       = bool
+      notify_states = set(string)
+    }), { enabled = false, notify_states = [] })
   })
 }
 

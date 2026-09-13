@@ -208,7 +208,7 @@
       }
     },
     "monitoring": {
-      "description": "Optional provider-neutral CPU monitoring configuration.",
+      "description": "Optional provider-neutral monitoring configuration.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -245,6 +245,45 @@
             "duration_minutes": {
               "type": "integer",
               "minimum": 1
+            }
+          }
+        },
+        "vm_health": {
+          "description": "Optional provider-native VM impairment monitoring. Support varies by cloud.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "lifecycle": {
+          "description": "Optional lifecycle-state notifications translated by each cloud provider.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "notify_states"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "notify_states": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "stopped",
+                  "terminated"
+                ]
+              },
+              "minItems": 1,
+              "uniqueItems": true
             }
           }
         }

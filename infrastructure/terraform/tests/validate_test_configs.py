@@ -47,6 +47,9 @@ def main() -> None:
     candidate = deepcopy(base)
     candidate["vms"]["history"]["assign_public_ip"] = True
     invalid.append(("public private-role VM", candidate))
+    candidate = deepcopy(base)
+    candidate["monitoring"]["lifecycle"]["notify_states"] = ["running"]
+    invalid.append(("unsupported lifecycle notification state", candidate))
     for name, candidate in invalid:
         if validator.is_valid(candidate):
             raise AssertionError(f"Schema accepted {name}")

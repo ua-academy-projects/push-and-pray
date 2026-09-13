@@ -1,7 +1,6 @@
 .env
 .git
 .gitignore
-.vagrant
 .venv
 **/.venv
 **/__pycache__
@@ -10,5 +9,4 @@
 .pytest_cache
 .ruff_cache
 .DS_Store
-infrastructure/vagrant/config/vagrant.env
 docs

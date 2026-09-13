@@ -10,6 +10,9 @@ locals {
     local.monitoring.enabled && local.monitoring.cpu.enabled && length(local.gcp_placements) > 0
     ? ["monitoring.googleapis.com"]
     : [],
+    local.monitoring.enabled && local.monitoring.lifecycle.enabled && length(local.gcp_placements) > 0
+    ? ["logging.googleapis.com", "monitoring.googleapis.com"]
+    : [],
   )
 }
 
