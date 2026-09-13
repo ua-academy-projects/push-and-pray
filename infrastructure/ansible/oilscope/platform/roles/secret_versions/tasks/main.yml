@@ -8,6 +8,9 @@
     secret_versions_targets_with_requirements: []
     secret_versions_catalog: {}
     secret_versions_catalog_list: []
+    secret_versions_absent: []
+    secret_versions_existing_keys: []
+    secret_versions_generated_values: {}
 
 - name: Collect workload cloud targets
   ansible.builtin.set_fact:
@@ -128,23 +131,6 @@
     secret_versions_aws_catalog: >-
       {{ secret_versions_catalog_list | selectattr('cloud', 'eq', 'aws') | list }}
 
-- name: Find missing source values
-  ansible.builtin.set_fact:
-    secret_versions_absent: >-
-      {{ secret_versions_absent | default([])
-         + ([item.source_env]
-            if lookup('ansible.builtin.env', item.source_env) | length == 0
-            else []) }}
-  loop: "{{ secret_versions_catalog_list }}"
-  no_log: true
-
-- name: Refuse an incomplete upload
-  ansible.builtin.fail:
-    msg: >-
-      Required secret source variables are missing or empty:
-      {{ secret_versions_absent | unique | join(', ') }}
-  when: secret_versions_absent | default([]) | length > 0
-
 - name: Look for GCP secret containers
   ansible.builtin.command:
     argv:
@@ -161,22 +147,6 @@
     - secret_versions_gcp_containers.rc != 0
     - "'NOT_FOUND:' not in secret_versions_gcp_containers.stderr"
   check_mode: false
-
-- name: Create missing GCP secret containers
-  ansible.builtin.command:
-    argv:
-      - "{{ secret_versions_gcloud }}"
-      - secrets
-      - create
-      - "{{ item.item.secret_id }}"
-      - "--project={{ item.item.project }}"
-      - "--replication-policy=automatic"
-  loop: "{{ secret_versions_gcp_containers.results }}"
-  changed_when: true
-  when:
-    - item.rc != 0
-    - "'NOT_FOUND:' in item.stderr"
-    - not ansible_check_mode
 
 - name: Look for AWS secret containers
   ansible.builtin.command:
@@ -195,6 +165,79 @@
     - secret_versions_aws_containers.rc != 0
     - "'(ResourceNotFoundException)' not in secret_versions_aws_containers.stderr"
   check_mode: false
+
+- name: Record existing provider secrets
+  ansible.builtin.set_fact:
+    secret_versions_existing_keys: >-
+      {{ secret_versions_existing_keys + [secret_versions_result_key] }}
+  vars:
+    secret_versions_result_key: >-
+      {{ item.item.cloud ~ '/'
+         ~ (item.item.project if item.item.cloud == 'gcp' else item.item.region)
+         ~ '/' ~ item.item.secret_id }}
+  loop: >-
+    {{ (secret_versions_gcp_containers.results | default([]))
+       + (secret_versions_aws_containers.results | default([])) }}
+  loop_control:
+    label: "{{ secret_versions_result_key }}"
+  when: item.rc == 0
+
+- name: Generate missing internal service credentials
+  ansible.builtin.set_fact:
+    secret_versions_generated_values: >-
+      {{ secret_versions_generated_values
+         | combine({item.source_env: lookup('ansible.builtin.pipe',
+                                            'openssl rand -hex 32')}) }}
+  vars:
+    secret_versions_item_key: >-
+      {{ item.cloud ~ '/'
+         ~ (item.project if item.cloud == 'gcp' else item.region)
+         ~ '/' ~ item.secret_id }}
+  loop: "{{ secret_versions_catalog_list }}"
+  when:
+    - lookup('ansible.builtin.env', item.source_env) | length == 0
+    - secret_versions_item_key not in secret_versions_existing_keys
+    - item.source_env in secret_versions_generated_source_envs
+  no_log: true
+
+- name: Find missing source values for unprovisioned external secrets
+  ansible.builtin.set_fact:
+    secret_versions_absent: >-
+      {{ secret_versions_absent | default([]) + [item.source_env] }}
+  vars:
+    secret_versions_item_key: >-
+      {{ item.cloud ~ '/'
+         ~ (item.project if item.cloud == 'gcp' else item.region)
+         ~ '/' ~ item.secret_id }}
+  loop: "{{ secret_versions_catalog_list }}"
+  when:
+    - lookup('ansible.builtin.env', item.source_env) | length == 0
+    - secret_versions_item_key not in secret_versions_existing_keys
+    - item.source_env not in secret_versions_generated_values
+  no_log: true
+
+- name: Refuse an incomplete upload
+  ansible.builtin.fail:
+    msg: >-
+      Required secret source variables are missing or empty:
+      {{ secret_versions_absent | default([]) | unique | join(', ') }}
+  when: secret_versions_absent | default([]) | length > 0
+
+- name: Create missing GCP secret containers
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_gcloud }}"
+      - secrets
+      - create
+      - "{{ item.item.secret_id }}"
+      - "--project={{ item.item.project }}"
+      - "--replication-policy=automatic"
+  loop: "{{ secret_versions_gcp_containers.results }}"
+  changed_when: true
+  when:
+    - item.rc != 0
+    - "'NOT_FOUND:' in item.stderr"
+    - not ansible_check_mode
 
 - name: Create missing AWS secret containers
   ansible.builtin.command:
@@ -221,12 +264,19 @@
       - "{{ item.secret_id }}"
       - "--project={{ item.project }}"
       - "--data-file=-"
-    stdin: "{{ lookup('ansible.builtin.env', item.source_env) }}"
+    stdin: >-
+      {{ lookup('ansible.builtin.env', item.source_env)
+         if lookup('ansible.builtin.env', item.source_env) | length > 0
+         else secret_versions_generated_values[item.source_env] }}
     stdin_add_newline: false
   loop: "{{ secret_versions_gcp_catalog }}"
   changed_when: true
   no_log: true
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - >-
+      lookup('ansible.builtin.env', item.source_env) | length > 0 or
+      item.source_env in secret_versions_generated_values
 
 - name: Add AWS secret versions
   ansible.builtin.command:
@@ -237,9 +287,16 @@
       - "--secret-id={{ item.secret_id }}"
       - "--region={{ item.region }}"
       - "--secret-string=file:///dev/stdin"
-    stdin: "{{ lookup('ansible.builtin.env', item.source_env) }}"
+    stdin: >-
+      {{ lookup('ansible.builtin.env', item.source_env)
+         if lookup('ansible.builtin.env', item.source_env) | length > 0
+         else secret_versions_generated_values[item.source_env] }}
     stdin_add_newline: false
   loop: "{{ secret_versions_aws_catalog }}"
   changed_when: true
   no_log: true
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - >-
+      lookup('ansible.builtin.env', item.source_env) | length > 0 or
+      item.source_env in secret_versions_generated_values

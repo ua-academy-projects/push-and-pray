@@ -2,5 +2,8 @@
 ---
 secret_versions_config_file: "{{ project_config_path }}"
 secret_versions_only: []
+secret_versions_generated_source_envs:
+  - RABBITMQ_PASSWORD
+  - REDIS_PASSWORD
 secret_versions_gcloud: gcloud
 secret_versions_aws: aws

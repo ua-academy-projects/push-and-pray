@@ -14,3 +14,8 @@ Each declaration separates the application runtime variable, logical
 `source_env`. `secret_versions_only` accepts the runtime variable, source
 environment variable, logical ID, or physical name. Values are passed through
 standard input and value-bearing tasks use `no_log`.
+
+When an operator value is absent, an existing provider secret is preserved.
+For a missing RabbitMQ or Redis secret, the role generates a 256-bit hexadecimal
+credential and uploads it once. Other secrets still require their declared
+operator environment variable when they have not been provisioned yet.

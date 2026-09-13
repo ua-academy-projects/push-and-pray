@@ -44,6 +44,12 @@ GCP project or AWS region with `gcloud` or the AWS CLI. Both clients must be
 authenticated for the clouds present in the configuration. Those operator
 credentials need permission to describe and create containers and add versions.
 
+Existing provider secrets are preserved when their `source_env` is absent.
+RabbitMQ and Redis credentials are internal service secrets, so the role
+generates a 256-bit hexadecimal value when either secret is not yet provisioned.
+Supplying `RABBITMQ_PASSWORD` or `REDIS_PASSWORD` still performs an explicit
+rotation.
+
 Provisioning the current roles uses these operator variables:
 
 ```text
