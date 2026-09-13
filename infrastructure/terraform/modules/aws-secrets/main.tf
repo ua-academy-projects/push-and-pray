@@ -1,9 +1,10 @@
 resource "aws_secretsmanager_secret" "this" {
   for_each = local.secrets
 
-  region = each.value.region
-  name   = each.value.secret_id
-  tags   = local.context.labels
+  region                  = each.value.region
+  name                    = each.value.secret_id
+  recovery_window_in_days = var.config.environment == "dev" ? 0 : 30
+  tags                    = local.context.labels
 }
 
 resource "aws_iam_role" "vm" {
