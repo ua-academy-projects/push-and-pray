@@ -1,4 +1,4 @@
-package pgmq
+package queue
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 )
 
 func TestPublisherDeduplicatesEventKey(t *testing.T) {
-	databaseURL := os.Getenv("PGMQ_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("QUEUE_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("PGMQ_TEST_DATABASE_URL is not configured")
+		t.Skip("QUEUE_TEST_DATABASE_URL is not configured")
 	}
 
 	database, err := sql.Open("pgx", databaseURL)
@@ -37,13 +37,10 @@ func TestPublisherDeduplicatesEventKey(t *testing.T) {
 		t.Fatalf("clear event ledger: %v", err)
 	}
 
-	var purged int64
-
-	if err := database.QueryRowContext(
+	if _, err := database.ExecContext(
 		ctx,
-		"SELECT pgmq.purge_queue($1)",
-		"price_observations",
-	).Scan(&purged); err != nil {
+		"DELETE FROM observation_queue",
+	); err != nil {
 		t.Fatalf("purge queue: %v", err)
 	}
 
@@ -85,8 +82,7 @@ func TestPublisherDeduplicatesEventKey(t *testing.T) {
 	}
 
 	publisher := Publisher{
-		DB:        database,
-		QueueName: "price_observations",
+		DB: database,
 	}
 
 	if err := publisher.Publish(ctx, observations); err != nil {
@@ -101,7 +97,7 @@ func TestPublisherDeduplicatesEventKey(t *testing.T) {
 
 	if err := database.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) FROM pgmq.q_price_observations",
+		"SELECT COUNT(*) FROM observation_queue",
 	).Scan(&queuedMessages); err != nil {
 		t.Fatalf("count queue messages: %v", err)
 	}

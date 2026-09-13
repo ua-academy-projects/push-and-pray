@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
+from .messaging import QueueConsumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,7 +36,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+queue_consumer = QueueConsumer(settings)
 
 
 @asynccontextmanager
@@ -45,12 +45,12 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
-    await pgmq_consumer.start()
+    await queue_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await queue_consumer.stop()
 
 
 app = FastAPI(
@@ -67,23 +67,15 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    extension_installed = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
-            )
-            """
-        )
+    queue_ready = db.execute(
+        text("SELECT to_regclass('public.observation_queue') IS NOT NULL")
     ).scalar_one()
 
     return {
         "status": "ok",
         "database": "connected",
-        "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
+        "queue": ("ready" if queue_ready else "missing"),
+        "queue_consumer": ("ready" if queue_consumer.is_ready else "not_ready"),
     }
 
 

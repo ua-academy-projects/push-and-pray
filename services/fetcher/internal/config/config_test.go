@@ -53,7 +53,7 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 
 	if configuration.QueueName != "price_observations" {
 		t.Fatalf(
-			"unexpected PGMQ queue: %s",
+			"unexpected queue name: %s",
 			configuration.QueueName,
 		)
 	}

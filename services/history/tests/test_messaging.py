@@ -42,7 +42,7 @@ def test_consumer_archives_only_after_persistence(
     )
 
     monkeypatch.setattr(
-        messaging.PGMQConsumer,
+        messaging.QueueConsumer,
         "_archive_message",
         lambda self, msg_id: archived.append(msg_id),
     )
@@ -60,7 +60,7 @@ def test_consumer_archives_only_after_persistence(
         lambda: FakeSession(),
     )
 
-    consumer = messaging.PGMQConsumer(Settings())
+    consumer = messaging.QueueConsumer(Settings())
 
     consumer._handle_message(
         msg_id=123,
@@ -77,7 +77,7 @@ def test_consumer_archives_invalid_schema(
     archived: list[int] = []
 
     monkeypatch.setattr(
-        messaging.PGMQConsumer,
+        messaging.QueueConsumer,
         "_archive_message",
         lambda self, msg_id: archived.append(msg_id),
     )
@@ -85,7 +85,7 @@ def test_consumer_archives_invalid_schema(
     payload = valid_event()
     payload["schema_version"] = 99
 
-    consumer = messaging.PGMQConsumer(Settings())
+    consumer = messaging.QueueConsumer(Settings())
 
     consumer._handle_message(
         msg_id=456,
@@ -111,7 +111,7 @@ def test_consumer_does_not_archive_transient_failure(
     )
 
     monkeypatch.setattr(
-        messaging.PGMQConsumer,
+        messaging.QueueConsumer,
         "_archive_message",
         lambda self, msg_id: archived.append(msg_id),
     )
@@ -129,7 +129,7 @@ def test_consumer_does_not_archive_transient_failure(
         lambda: FakeSession(),
     )
 
-    consumer = messaging.PGMQConsumer(Settings(pgmq_max_attempts=5))
+    consumer = messaging.QueueConsumer(Settings(queue_max_attempts=5))
 
     consumer._handle_message(
         msg_id=789,
@@ -155,7 +155,7 @@ def test_consumer_archives_after_retry_limit(
     )
 
     monkeypatch.setattr(
-        messaging.PGMQConsumer,
+        messaging.QueueConsumer,
         "_archive_message",
         lambda self, msg_id: archived.append(msg_id),
     )
@@ -173,7 +173,7 @@ def test_consumer_archives_after_retry_limit(
         lambda: FakeSession(),
     )
 
-    consumer = messaging.PGMQConsumer(Settings(pgmq_max_attempts=5))
+    consumer = messaging.QueueConsumer(Settings(queue_max_attempts=5))
 
     consumer._handle_message(
         msg_id=999,

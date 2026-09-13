@@ -17,7 +17,7 @@ the supported GHCR deployment configuration.
 | Variable | Description |
 | --- | --- |
 | `APP_IMAGE_TAG` | Immutable Git commit SHA installed from the external JSON by the Ansible role. Do not use `latest`. |
-| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include PGMQ, `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
+| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
 | `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
 | `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
 
@@ -44,10 +44,10 @@ the token in Compose, this repository, or a shell argument.
 | `FETCHER_LISTEN_ADDRESS` | `0.0.0.0:8002` | Fetcher listen endpoint inside its container |
 | `UI_BIND_ADDRESS` | `0.0.0.0` | UI host bind address |
 | `UI_HTTP_PORT` | `80` | Published UI HTTP port |
-| `PGMQ_QUEUE` | `price_observations` | PostgreSQL queue name |
-| `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60` | History queue visibility timeout |
-| `PGMQ_POLL_INTERVAL_SECONDS` | `1` | History queue polling interval |
-| `PGMQ_MAX_ATTEMPTS` | `5` | History maximum delivery attempts |
+| `QUEUE_NAME` | `price_observations` | PostgreSQL queue name |
+| `QUEUE_VISIBILITY_TIMEOUT_SECONDS` | `60` | History queue visibility timeout |
+| `QUEUE_POLL_INTERVAL_SECONDS` | `1` | History queue polling interval |
+| `QUEUE_MAX_ATTEMPTS` | `5` | History maximum delivery attempts |
 | `DATA_PROVIDER` | `oilpriceapi` | Fetcher data provider |
 | `FETCH_CRON_HOURS` | `0,6,12,18` | Fetch schedule hours |
 | `FETCH_TIMEZONE` | `UTC` | Fetch schedule timezone |

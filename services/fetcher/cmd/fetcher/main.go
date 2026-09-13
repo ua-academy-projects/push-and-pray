@@ -16,8 +16,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"oil-price-tracker/fetcher/internal/config"
-	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
+	"oil-price-tracker/fetcher/internal/queue"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
 )
@@ -56,9 +56,8 @@ func main() {
 
 	collector := service.New(
 		priceProvider,
-		pgmq.Publisher{
-			DB:        database,
-			QueueName: configuration.QueueName,
+		queue.Publisher{
+			DB: database,
 		},
 	)
 
@@ -141,7 +140,7 @@ func main() {
 				"status":   "ok",
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
+				"delivery": "postgres-queue",
 				"queue":    configuration.QueueName,
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,

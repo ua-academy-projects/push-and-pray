@@ -109,16 +109,16 @@ jobs:
     env:
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
-      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
-      PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
-      PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+      POSTGRES_IMAGE: postgres:18-bookworm
+      QUEUE_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
+      QUEUE_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
       TEST_DATABASE_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start PostgreSQL with PGMQ and pg_cron
+      - name: Start PostgreSQL with pg_cron
         run: |
           docker compose \
             -f infrastructure/docker/compose.database.yaml \
@@ -155,7 +155,7 @@ jobs:
                 -d oil_tracker < "${migration}"
           done
 
-      - name: Verify PGMQ extension and queue
+      - name: Verify queue table and pg_cron
         run: |
           docker compose \
             -f infrastructure/docker/compose.database.yaml \
@@ -164,7 +164,7 @@ jobs:
               -v ON_ERROR_STOP=1 \
               -U oil_tracker \
               -d oil_tracker \
-              -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'pgmq';"
+              -c "SELECT to_regclass('public.observation_queue') AS queue_table;"
 
           docker compose \
             -f infrastructure/docker/compose.database.yaml \
@@ -173,7 +173,7 @@ jobs:
               -v ON_ERROR_STOP=1 \
               -U oil_tracker \
               -d oil_tracker \
-              -c "SELECT * FROM pgmq.list_queues();"
+              -c "SELECT extname FROM pg_extension WHERE extname = 'pg_cron';"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -187,7 +187,7 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --frozen
 
-      - name: Run History PGMQ integration tests
+      - name: Run History queue integration tests
         run: uv run pytest services/history/tests/integration -v
 
       - name: Run UI PostgreSQL session integration tests
@@ -199,9 +199,9 @@ jobs:
           go-version-file: services/fetcher/go.mod
           cache-dependency-path: services/fetcher/go.sum
 
-      - name: Run Fetcher PGMQ integration tests
+      - name: Run Fetcher queue integration tests
         working-directory: services/fetcher
-        run: go test ./internal/pgmq -v
+        run: go test ./internal/queue -v
 
       - name: Stop PostgreSQL
         if: always()
@@ -246,7 +246,7 @@ jobs:
       APP_IMAGE_TAG: f4bd2d001dd4ad7abcf04af967dca8e8a0f6d891
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
-      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+      POSTGRES_IMAGE: postgres:18-bookworm
       POSTGRES_PASSWORD: ci-validation
       OILPRICEAPI_KEY: ci-validation
       HISTORY_LAN_IP: 127.0.0.1

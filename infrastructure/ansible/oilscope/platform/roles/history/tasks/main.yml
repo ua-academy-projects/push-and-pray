@@ -20,7 +20,6 @@
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
     DATABASE_HOST: "{{ managed_db_host }}"
     DATABASE_SSLMODE: require
-    MIGRATION_SKIP: "004_create_pgmq_queue.sql"
   register: history_migrations
   changed_when: "'Applying ' in history_migrations.stdout"
   no_log: true
@@ -89,25 +88,8 @@
     - >-
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
-      (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
+      (history_health.json | default({})).get('queue', '') == 'ready'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_consumer', ''
+        'queue_consumer', ''
       ) == 'ready'
-  when: not (managed_db_enabled | bool)
-
-- name: Wait for History to become reachable (managed, queue deferred)
-  ansible.builtin.uri:
-    url: http://127.0.0.1:8001/health
-    status_code: [200, 503]
-    return_content: true
-    use_proxy: false
-  register: history_health_managed
-  retries: "{{ history_health_retries }}"
-  delay: "{{ history_health_delay }}"
-  until:
-    - >-
-      (history_health_managed.json | default({})).get('database', '') == 'connected'
-  when: managed_db_enabled | bool

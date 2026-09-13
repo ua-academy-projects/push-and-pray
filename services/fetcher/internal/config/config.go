@@ -64,7 +64,7 @@ func Load() (Config, error) {
 		OilPriceAPIKey: apiKey,
 		DataProvider:   provider,
 		DatabaseURL:    databaseURL,
-		QueueName:      env("PGMQ_QUEUE", "price_observations"),
+		QueueName:      env("QUEUE_NAME", "price_observations"),
 		CronHours:      hours,
 		Timezone:       location,
 		FetchOnStartup: fetchOnStartup,
