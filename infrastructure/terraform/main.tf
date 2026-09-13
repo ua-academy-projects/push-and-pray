@@ -20,7 +20,10 @@ module "aws_secrets" {
 module "aws_observability" {
   source = "./modules/aws-observability"
 
-  role_names = module.aws_secrets.role_names
+  config       = local.config
+  instance_ids = module.aws_vm.instance_ids
+  role_names   = module.aws_secrets.role_names
+  volume_ids   = module.aws_vm.volume_ids
 }
 
 module "aws_vm" {
@@ -55,6 +58,7 @@ module "gcp_observability" {
   source = "./modules/gcp-observability"
 
   config                 = local.config
+  instance_ids           = module.gcp_vm.instance_ids
   service_account_emails = module.gcp_secrets.service_account_emails
 }
 
@@ -64,4 +68,13 @@ module "gcp_vm" {
   config                 = local.config
   networks               = module.gcp_network.networks
   service_account_emails = module.gcp_secrets.service_account_emails
+}
+
+module "cloudflare_dns" {
+  count  = try(local.config.dns.cloudflare.zone_id, null) == null ? 0 : 1
+  source = "./modules/cloudflare-dns"
+
+  zone_id      = local.config.dns.cloudflare.zone_id
+  hostname     = local.config.vms.ui.public_endpoint.hostname
+  ipv4_address = merge(module.gcp_vm.public_ips, module.aws_vm.public_ips)["ui"]
 }

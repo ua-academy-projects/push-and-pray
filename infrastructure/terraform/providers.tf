@@ -5,3 +5,5 @@ provider "aws" {
 provider "google" {
   project = local.config.cloud_settings.gcp.project_id
 }
+
+provider "cloudflare" {}

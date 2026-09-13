@@ -8,6 +8,11 @@ variable "service_account_emails" {
   type        = map(string)
 }
 
+variable "instance_ids" {
+  description = "Compute Engine instance IDs keyed by logical VM name."
+  type        = map(string)
+}
+
 variable "writer_roles" {
   description = "Project roles required by the Ops Agent."
   type        = set(string)

@@ -12,7 +12,6 @@ aws_cloudwatch_agent_config_path: >-
 
 aws_cloudwatch_agent_metrics_namespace: OilScope
 aws_cloudwatch_agent_metrics_interval: 60
-aws_cloudwatch_agent_log_retention_days: 30
 aws_cloudwatch_agent_system_log_group: /oilscope/system
 aws_cloudwatch_agent_docker_log_group: /oilscope/docker
 aws_cloudwatch_agent_collect_docker_logs: "{{ 'workloads' in group_names }}"

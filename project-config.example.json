@@ -26,6 +26,23 @@
     "history_api": 8001,
     "postgresql": 5432
   },
+  "monitoring": {
+    "aws": {
+      "log_retention_days": 30,
+      "notification_topic_arns": {
+        "eu-north-1": "arn:aws:sns:eu-north-1:123456789012:example-oilscope-alerts",
+        "us-east-1": "arn:aws:sns:us-east-1:123456789012:example-oilscope-availability-alerts"
+      }
+    },
+    "gcp": {
+      "notification_channel_id": "projects/example-project-12345/notificationChannels/1234567890123456789"
+    }
+  },
+  "dns": {
+    "cloudflare": {
+      "zone_id": "0123456789abcdef0123456789abcdef"
+    }
+  },
   "vms": {
     "bastion": {
       "cloud": "gcp",
