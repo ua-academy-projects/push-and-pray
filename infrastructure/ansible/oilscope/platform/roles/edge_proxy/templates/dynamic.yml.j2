@@ -1,5 +1,18 @@
 http:
   routers:
+    health:
+      rule: >-
+        Host(`{{ compose_project_config.vms.ui.public_endpoint.hostname }}`)
+        && Path(`/health`)
+      priority: 100
+      entryPoints:
+        - websecure
+      service: ui
+      tls:
+        certResolver: letsencrypt
+      observability:
+        accessLogs: false
+
     ui:
       rule: "Host(`{{ compose_project_config.vms.ui.public_endpoint.hostname }}`)"
       entryPoints:

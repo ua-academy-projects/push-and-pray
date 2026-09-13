@@ -20,6 +20,9 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--ping=true"
       - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.queryparameters.defaultmode=drop"
     ports:
       - "80:80"
       - "443:443"
