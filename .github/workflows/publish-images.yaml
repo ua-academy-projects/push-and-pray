@@ -7,6 +7,9 @@ on:
       - main
     tags:
       - "v*"
+  # Manual run from any branch: the images are tagged with that branch's
+  # head commit, so a feature branch can be deployed before it merges.
+  workflow_dispatch:
 
 permissions:
   contents: read
