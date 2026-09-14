@@ -18,9 +18,10 @@ The GCP network module reserves the explicit
 Its output carries a dependency on service networking, so the database waits
 for the connection. Choose a range that does not overlap existing subnets or
 connected networks. This range is dedicated to this database deployment;
-the firewall denies other traffic to it. Fetcher, History, and temporarily UI
-network tags may connect on Cloud SQL's fixed PostgreSQL port 5432. Remove UI
-from this allow rule when its PostgreSQL session store moves to Redis.
+the firewall denies other traffic to it. Only Fetcher and History network
+tags may connect on Cloud SQL's fixed PostgreSQL port 5432 — UI's session
+store moved to Redis, so it has no PostgreSQL connection and is not in this
+allow rule.
 
 The instance has no public IP. TLS is required with a Google-managed shared
 CA and automatic certificate rotation during maintenance. An exact-host private
@@ -34,8 +35,10 @@ Terraform creates `oil_tracker` and a built-in `oil_tracker_admin` user. A
 as JSON containing `username` and `password`. Only the secret resource ID is
 exported. The password is also present in sensitive Terraform state; restrict
 state access. Do not use this administrator for normal application traffic.
-Runtime roles, secret-access grants for the migration identity, and Ansible
-credential retrieval are a later deployment step. The module intentionally
+Ansible now creates runtime roles through `database_migrate`, using controller
+operator credentials to retrieve secrets and short-lived containers on History
+to run SQL. The operator needs secret read access; no administrator-secret IAM
+grant is added to the VM. The module intentionally
 does not grant application VMs access to the administrator secret.
 
 Backups are enabled with the JSON retention count. PITR is enabled for REGIONAL

@@ -1,0 +1,28 @@
+name: oilscope-rabbitmq
+services:
+  rabbitmq:
+    image: "{{ broker_config.rabbitmq.image }}"
+    hostname: oilscope-rabbitmq
+    restart: unless-stopped
+    mem_limit: "{{ broker_config.rabbitmq.memory_mb }}m"
+    labels:
+      oilscope.tls: "{{ rabbitmq_certificate.stat.checksum }}"
+    environment:
+      RABBITMQ_DEFAULT_USER: "{{ broker_config.rabbitmq.username }}"
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?required}
+      RABBITMQ_DEFAULT_VHOST: "{{ broker_config.rabbitmq.vhost }}"
+    ports:
+      - "{{ internal_ip }}:{{ broker_config.rabbitmq.port }}:5671"
+    volumes:
+      - data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./tls:/etc/rabbitmq/tls:ro
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+volumes:
+  data:
+    name: oilscope-rabbitmq-data

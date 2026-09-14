@@ -38,6 +38,16 @@ jobs:
         run: yamllint -c .yamllint.yml .
 
   python:
+    env:
+      RABBITMQ_URL: amqps://ci:ci@127.0.0.1:5671/oilscope
+      RABBITMQ_CA_FILE: /tmp/rabbitmq/ca.pem
+      RABBITMQ_QUEUE: price_observations
+      RABBITMQ_MAX_ATTEMPTS: '5'
+      RABBITMQ_TIMEOUT_SECONDS: '10'
+      RABBITMQ_RECONNECT_SECONDS: '5'
+      REDIS_URL: redis://redis:6379/0
+      REDIS_KEY_PREFIX: 'oilscope:session:'
+      SESSION_TTL_SECONDS: '2592000'
     name: Python
     runs-on: ubuntu-latest
 
@@ -67,6 +77,15 @@ jobs:
         run: uv run pytest
 
   go:
+    env:
+      RABBITMQ_URL: amqps://ci:ci@127.0.0.1:5671/oilscope
+      RABBITMQ_CA_FILE: /tmp/rabbitmq/ca.pem
+      RABBITMQ_EXCHANGE: prices
+      RABBITMQ_ROUTING_KEY: observations
+      RABBITMQ_QUEUE: price_observations
+      RABBITMQ_TIMEOUT_SECONDS: '10'
+      OUTBOX_POLL_SECONDS: '5'
+      OUTBOX_BATCH_SIZE: '50'
     name: Go
     runs-on: ubuntu-latest
 
@@ -102,114 +121,6 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-  integration:
-    name: PostgreSQL Integration
-    runs-on: ubuntu-latest
-
-    env:
-      DB_PASSWORD: ci-validation
-      DB_LAN_IP: 127.0.0.1
-      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
-      PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
-      PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
-      TEST_DATABASE_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Start PostgreSQL with PGMQ and pg_cron
-        run: |
-          docker compose \
-            -f infrastructure/docker/compose.database.yaml \
-            up -d --build
-
-          for attempt in {1..30}; do
-            if docker compose \
-              -f infrastructure/docker/compose.database.yaml \
-              exec -T postgres \
-              pg_isready -U oil_tracker -d oil_tracker; then
-              exit 0
-            fi
-
-            sleep 2
-          done
-
-          docker compose \
-            -f infrastructure/docker/compose.database.yaml \
-            logs postgres
-
-          exit 1
-
-      - name: Apply database migrations
-        run: |
-          for migration in database/migrations/*.sql; do
-            echo "Applying ${migration}"
-
-            docker compose \
-              -f infrastructure/docker/compose.database.yaml \
-              exec -T postgres \
-              psql \
-                -v ON_ERROR_STOP=1 \
-                -U oil_tracker \
-                -d oil_tracker < "${migration}"
-          done
-
-      - name: Verify PGMQ extension and queue
-        run: |
-          docker compose \
-            -f infrastructure/docker/compose.database.yaml \
-            exec -T postgres \
-            psql \
-              -v ON_ERROR_STOP=1 \
-              -U oil_tracker \
-              -d oil_tracker \
-              -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'pgmq';"
-
-          docker compose \
-            -f infrastructure/docker/compose.database.yaml \
-            exec -T postgres \
-            psql \
-              -v ON_ERROR_STOP=1 \
-              -U oil_tracker \
-              -d oil_tracker \
-              -c "SELECT * FROM pgmq.list_queues();"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Install Python
-        run: uv python install 3.12
-
-      - name: Install Python dependencies
-        run: uv sync --frozen
-
-      - name: Run History PGMQ integration tests
-        run: uv run pytest services/history/tests/integration -v
-
-      - name: Run UI PostgreSQL session integration tests
-        run: uv run pytest services/ui/backend/tests/test_session_api.py -v
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: services/fetcher/go.mod
-          cache-dependency-path: services/fetcher/go.sum
-
-      - name: Run Fetcher PGMQ integration tests
-        working-directory: services/fetcher
-        run: go test ./internal/pgmq -v
-
-      - name: Stop PostgreSQL
-        if: always()
-        run: |
-          docker compose \
-            -f infrastructure/docker/compose.database.yaml \
-            down -v
-
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -243,10 +154,23 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      RABBITMQ_URL: amqps://ci:ci@127.0.0.1:5671/oilscope
+      RABBITMQ_EXCHANGE: prices
+      RABBITMQ_ROUTING_KEY: observations
+      RABBITMQ_QUEUE: price_observations
+      RABBITMQ_TIMEOUT_SECONDS: '10'
+      RABBITMQ_RECONNECT_SECONDS: '5'
+      RABBITMQ_MAX_ATTEMPTS: '5'
+      OUTBOX_POLL_SECONDS: '5'
+      OUTBOX_BATCH_SIZE: '50'
+      RABBITMQ_CA_DIR: /tmp/rabbitmq
+      REDIS_URL: redis://redis:6379/0
+      REDIS_KEY_PREFIX: 'oilscope:session:'
+      SESSION_TTL_SECONDS: '2592000'
       APP_IMAGE_TAG: f4bd2d001dd4ad7abcf04af967dca8e8a0f6d891
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
-      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+      POSTGRES_IMAGE: postgres:18.6-bookworm
       POSTGRES_PASSWORD: ci-validation
       OILPRICEAPI_KEY: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
@@ -262,8 +186,7 @@ jobs:
         run: |
           status=0
 
-          for file in compose.*.yaml \
-            ../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2; do
+          for file in compose.*.yaml; do
             echo "::group::${file}"
 
             if docker compose -f "${file}" config --quiet; then
@@ -384,12 +307,6 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
-
-      - name: Validate cloud-init syntax
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          command -v cloud-init || sudo apt-get install -y --no-install-recommends cloud-init
-          cloud-init schema --config-file infrastructure/terraform/modules/gcp/vm/templates/cloud-config.yaml.tftpl
 
   ansible:
     name: Ansible Lint

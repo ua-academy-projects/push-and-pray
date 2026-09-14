@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the operator's SSH configuration
+  ansible.builtin.import_playbook: preflight.yml
+
+- name: Migrate the managed database from History
+  hosts: history
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  force_handlers: true
+  pre_tasks:
+    - name: Read hosting mode before preparing the migration host
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: database_migrate_config
+
+    - name: Skip application mode and non-primary History hosts
+      ansible.builtin.meta: end_host
+      when: >-
+        database_migrate_config.default_db != 'cloud'
+
+    - name: Gather migration host facts
+      ansible.builtin.setup:
+
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.docker_engine
+    - role: oilscope.platform.database_connection
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_registry: "{{ database_connection_config.registry.repository | regex_replace('/.*$', '') }}"
+        registry_auth_username: "{{ database_connection_config.registry.username }}"
+        registry_auth_token: "{{ resolve_secrets_result.GHCR_TOKEN }}"
+    - role: oilscope.platform.database_migrate

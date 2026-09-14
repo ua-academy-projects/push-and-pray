@@ -31,6 +31,14 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 		"DATABASE_URL",
 		"postgres://oil_tracker:test@localhost:5432/oil_tracker?sslmode=disable",
 	)
+	t.Setenv("RABBITMQ_URL", "amqps://oilscope:test@history.internal:5671/oilscope")
+	t.Setenv("RABBITMQ_CA_FILE", "/run/oilscope/rabbitmq/ca.pem")
+	t.Setenv("RABBITMQ_EXCHANGE", "prices")
+	t.Setenv("RABBITMQ_ROUTING_KEY", "observations")
+	t.Setenv("RABBITMQ_QUEUE", "price_observations")
+	t.Setenv("RABBITMQ_TIMEOUT_SECONDS", "10")
+	t.Setenv("OUTBOX_POLL_SECONDS", "5")
+	t.Setenv("OUTBOX_BATCH_SIZE", "50")
 
 	configuration, err := Load()
 	if err != nil {
@@ -53,9 +61,13 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 
 	if configuration.QueueName != "price_observations" {
 		t.Fatalf(
-			"unexpected PGMQ queue: %s",
+			"unexpected RabbitMQ queue: %s",
 			configuration.QueueName,
 		)
+	}
+
+	if configuration.RabbitURL == "" {
+		t.Fatal("RABBITMQ_URL should not be empty")
 	}
 
 	if configuration.DatabaseURL == "" {

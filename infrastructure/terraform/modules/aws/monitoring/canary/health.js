@@ -22,7 +22,7 @@ function checkHealth(url) {
           if (response.statusCode !== 200) throw new Error(`Health HTTP ${response.statusCode}`);
           let result;
           try { result = JSON.parse(body); } catch { throw new Error('Health response is not JSON'); }
-          if (result.status !== 'ok' || result.history !== 'connected' || result.sessions !== 'postgresql') {
+          if (result.status !== 'ok' || result.history !== 'connected' || result.sessions !== 'redis') {
             throw new Error('Health dependencies are not ready');
           }
           resolve();

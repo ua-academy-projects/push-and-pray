@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 - name: Deploy only UI
-  environment:
-    DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
-    POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
-    HISTORY_SERVICE_URL: >-
-      http://{{ hostvars[groups['history'][0]].internal_ip }}:{{ ui_history_port }}
+  environment: >-
+    {{ oilscope_session_environment | combine({
+         'DOCKER_CONFIG': ui_docker_config_dir,
+         'HISTORY_SERVICE_URL': 'http://' ~ hostvars[groups['history'][0]].internal_ip ~ ':' ~ (ui_history_port | string)
+       }) }}
   no_log: true
   block:
     - name: Pull the UI image

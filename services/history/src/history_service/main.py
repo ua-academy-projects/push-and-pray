@@ -5,14 +5,14 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Query, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import models  # noqa: F401
 from .config import get_settings
-from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
+from .database import get_db
+from .messaging import RabbitMQConsumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,21 +36,17 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+rabbitmq_consumer = RabbitMQConsumer(settings)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
-
-    logger.info("database schema is ready")
-
-    await pgmq_consumer.start()
+    await rabbitmq_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await rabbitmq_consumer.stop()
 
 
 app = FastAPI(
@@ -65,26 +61,11 @@ app = FastAPI(
 def health(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, str]:
-    db.execute(text("SELECT 1"))
+    db.execute(text("SELECT 1 FROM price_observations LIMIT 0"))
 
-    extension_installed = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
-            )
-            """
-        )
-    ).scalar_one()
-
-    return {
-        "status": "ok",
-        "database": "connected",
-        "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
-    }
+    if not rabbitmq_consumer.is_ready:
+        raise HTTPException(status_code=503, detail="RabbitMQ consumer is not ready")
+    return {"status": "ok", "database": "connected", "rabbitmq_consumer": "ready"}
 
 
 @app.post(

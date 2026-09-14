@@ -9,9 +9,9 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from psycopg import Error as PostgreSQLError
+from redis.exceptions import RedisError
 
-from .session_store import PostgreSQLSessionStore
+from .session_store import RedisSessionStore
 from .sessions import SessionPreferences, resolve_session_id
 
 logging.basicConfig(
@@ -21,12 +21,10 @@ logging.basicConfig(
 
 STATIC_DIR = Path(__file__).parent / "static"
 HISTORY_SERVICE_URL = os.getenv("HISTORY_SERVICE_URL", "http://localhost:8001").rstrip("/")
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://oil_tracker:change-me@localhost:5432/oil_tracker",
-)
+REDIS_URL = os.environ["REDIS_URL"]
+REDIS_KEY_PREFIX = os.environ["REDIS_KEY_PREFIX"]
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "petroscope_session")
-SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
+SESSION_TTL_SECONDS = int(os.environ["SESSION_TTL_SECONDS"])
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 
 
@@ -37,6 +35,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await app.state.client.aclose()
+        await app.state.session_store.close()
 
 
 app = FastAPI(
@@ -44,7 +43,7 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
-app.state.session_store = PostgreSQLSessionStore(DATABASE_URL, SESSION_TTL_SECONDS)
+app.state.session_store = RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS, REDIS_KEY_PREFIX)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -67,7 +66,7 @@ async def proxy_get(request: Request, path: str, params: dict | None = None) -> 
 
 
 @app.get("/health", tags=["operations"])
-async def health(request: Request) -> dict[str, str]:
+async def health(request: Request) -> dict[str, object]:
     try:
         upstream = await request.app.state.client.get("/health")
         upstream.raise_for_status()
@@ -75,14 +74,20 @@ async def health(request: Request) -> dict[str, str]:
         raise HTTPException(status_code=503, detail="History Service is unavailable") from exc
     try:
         sessions_ready = await request.app.state.session_store.is_ready()
-    except PostgreSQLError as exc:
+    except RedisError as exc:
         raise HTTPException(
             status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
+            detail="Redis session persistence is unavailable",
         ) from exc
     if not sessions_ready:
-        raise HTTPException(status_code=503, detail="PostgreSQL session persistence is not ready")
-    return {"status": "ok", "history": "connected", "sessions": "postgresql"}
+        raise HTTPException(status_code=503, detail="Redis session persistence is not ready")
+    redis_diagnostics = await request.app.state.session_store.diagnostics()
+    return {
+        "status": "ok",
+        "history": "connected",
+        "sessions": "redis",
+        "redis": redis_diagnostics,
+    }
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
@@ -106,10 +111,10 @@ async def get_session_preferences(request: Request, response: Response) -> Sessi
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
     try:
         preferences = await request.app.state.session_store.get(session_id)
-    except PostgreSQLError as exc:
+    except RedisError as exc:
         raise HTTPException(
             status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
+            detail="Redis session persistence is unavailable",
         ) from exc
     _set_session_cookie(response, session_id)
     return preferences
@@ -128,10 +133,10 @@ async def update_session_preferences(
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
     try:
         await request.app.state.session_store.update(session_id, payload)
-    except PostgreSQLError as exc:
+    except RedisError as exc:
         raise HTTPException(
             status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
+            detail="Redis session persistence is unavailable",
         ) from exc
     _set_session_cookie(response, session_id)
     return payload

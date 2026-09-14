@@ -10,9 +10,10 @@ services:
     environment:
       HISTORY_SERVICE_URL: ${HISTORY_SERVICE_URL:?HISTORY_SERVICE_URL is required}
       # yamllint disable rule:line-length
-      DATABASE_URL: postgresql://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
-      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
+      REDIS_URL: ${REDIS_URL:?required}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:?required}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:?required}
       SESSION_COOKIE_SECURE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: UTC
@@ -31,6 +32,9 @@ services:
       - no-new-privileges:true
     networks:
       - oilscope-edge
+      - oilscope-sessions
 networks:
   oilscope-edge:
+    external: true
+  oilscope-sessions:
     external: true

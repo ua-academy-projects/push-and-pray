@@ -1,0 +1,92 @@
+---
+- name: Prepare the isolated migration directory
+  ansible.builtin.file:
+    path: "{{ database_migrate_dir }}/sql"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the migration-only Compose definition
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ database_migrate_dir }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install non-secret bootstrap SQL
+  ansible.builtin.copy:
+    src: "{{ item }}.sql"
+    dest: "{{ database_migrate_dir }}/sql/{{ item }}.sql"
+    mode: "0644"
+  loop: [roles, grants, verify]
+
+- name: Bootstrap the managed database with transient credentials
+  no_log: true
+  block:
+    - name: Read the database administrator secret
+      ansible.builtin.include_tasks: read_secret.yml
+      vars:
+        database_migrate_secret_id: >-
+          {{ oilscope_database_connection.admin_secret_arn if database_connection_config.default_cloud == 'aws'
+             else oilscope_database_connection.admin_secret_id }}
+
+    - name: Assemble the migration environment
+      ansible.builtin.set_fact:
+        database_migrate_environment: >-
+          {{ oilscope_database_environment | combine({
+               'DATABASE_ADMIN_USER': oilscope_database_connection.admin_username,
+               'DATABASE_ADMIN_PASSWORD': (database_migrate_secret_value | from_json).password,
+               'DOCKER_CONFIG': registry_auth_docker_config_dir
+             }) }}
+        database_migrate_workloads: >-
+          {{ database_connection_config.vms | dict2items
+             | selectattr('value.role', 'in', ['fetcher', 'history']) | list }}
+
+    - name: Keep runtime usernames within PostgreSQL's identifier limit
+      ansible.builtin.assert:
+        that: "('oil_tracker_' ~ item.key) | length <= 63"
+        fail_msg: "The VM key is too long for its PostgreSQL runtime username."
+      loop: "{{ database_migrate_workloads }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Pull the migration image
+      ansible.builtin.command:
+        argv: [docker, compose, --project-name, "{{ database_migrate_project }}", --file, "{{ database_migrate_dir }}/compose.yaml", pull, migrate]
+      environment: "{{ database_migrate_environment }}"
+      changed_when: true
+
+    - name: Create runtime logins before migrations
+      ansible.builtin.include_tasks: runtime.yml
+      vars:
+        database_migrate_operation: roles
+      loop: "{{ database_migrate_workloads }}"
+      loop_control:
+        loop_var: database_migrate_workload
+        label: "{{ database_migrate_workload.key }}"
+
+    - name: Apply common and cloud migrations as administrator
+      ansible.builtin.command:
+        argv: [docker, compose, --project-name, "{{ database_migrate_project }}", --file, "{{ database_migrate_dir }}/compose.yaml", run, --rm, --no-deps, -T, migrate]
+      environment: "{{ database_migrate_environment }}"
+      changed_when: true
+
+    - name: Grant runtime access after tables exist
+      ansible.builtin.include_tasks: runtime.yml
+      vars:
+        database_migrate_operation: grants
+      loop: "{{ database_migrate_workloads }}"
+      loop_control:
+        loop_var: database_migrate_workload
+        label: "{{ database_migrate_workload.key }}"
+
+  always:
+    - name: Clear migration credential facts
+      ansible.builtin.set_fact:
+        database_migrate_environment: {}
+        database_migrate_secret_value: ""
+        database_migrate_aws_secret: {}
+        database_migrate_gcp_secret: {}
+      no_log: true

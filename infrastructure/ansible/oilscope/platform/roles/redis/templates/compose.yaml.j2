@@ -1,0 +1,28 @@
+name: oilscope-redis
+services:
+  redis:
+    image: "{{ redis_config.redis.image }}"
+    restart: unless-stopped
+    mem_limit: "{{ redis_config.redis.memory_mb }}m"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --appendfsync everysec --maxmemory {{ redis_config.redis.maxmemory_mb }}mb --maxmemory-policy noeviction --requirepass "$${REDIS_PASSWORD}"
+    volumes:
+      - data:/data
+    networks:
+      - sessions
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+networks:
+  sessions:
+    name: oilscope-sessions
+    internal: true
+volumes:
+  data:
+    name: oilscope-redis-data

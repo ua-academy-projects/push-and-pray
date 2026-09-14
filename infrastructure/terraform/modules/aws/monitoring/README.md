@@ -23,7 +23,7 @@ The root output `aws_monitoring` exposes resource identifiers and per-VM agent J
 | `logs.tf` | Traefik log group, retention, exact-500 and all-5xx metric filters |
 | `notifications.tf` | SNS topic and one subscription per unique email |
 | `alarms.tf` | Host, HTTP, and synthetic alarms with recovery actions |
-| `dashboard.tf` | CPU/status/network, optional guest/log/synthetic charts and alarm status |
+| `dashboard.tf` | Cross-VM CPU/status/network, optional guest/log/synthetic charts and alarm status |
 | `agent.tf` | Deployment-ready CloudWatch Agent JSON for each relevant VM |
 | `synthetics.tf` | Canary ZIP, execution identity, private artifact storage, lifecycle |
 | `canary/health.js` | Public HTTPS and dependency-response validation |
@@ -128,13 +128,25 @@ Configuration replacement must be deliberate: an agent may already collect other
 
 ## Dashboard
 
-Charts reuse the alarm signal definitions and dimensions, preventing CPU/disk charts from silently pointing at different series than their alarms. Network byte charts are added for each instance. HTTP and synthetic charts appear only when their source feature is enabled. The alarm-status widget appears only with alarms enabled.
+The module creates one operational dashboard for the AWS environment. Each
+host metric gets one comparison chart: CPU, EC2 status checks, memory, root
+disk, network received, and network sent. Every configured EC2 instance is a
+separate line labelled with its stable workload name. A deterministic palette
+keeps the same workload color across those charts. Memory and disk charts
+appear only when agent metrics are enabled.
+
+Charts reuse the alarm signal definitions and dimensions, preventing their
+CPU/disk series from silently diverging from the per-VM alarms. HTTP 500 and
+all-5xx counts share one count chart. Synthetic success percentage and duration
+stay in separate charts because they use different units. The alarm-status
+widget appears only with alarms enabled; the underlying alarms remain one
+resource per VM and signal so alert ownership stays specific.
 
 The dashboard does not include budget totals or CPU-credit charts. Budget scope is separate; CPU-credit monitoring can be added for relevant burstable types once instance-type metadata is part of the interface. It is not needed for the baseline CPU/memory/availability requirements.
 
 ## Synthetic check
 
-The optional canary tests public HTTPS every five minutes by default. It requires HTTP 200 and JSON values `status=ok`, `history=connected`, and `sessions=postgresql`. It fails on non-200/redirect responses, invalid JSON, failed dependencies, network/TLS errors, response bodies over 64 KiB, or timeout. A response body is never deliberately logged or attached as an artifact.
+The optional canary tests public HTTPS every five minutes by default. It requires HTTP 200 and JSON values `status=ok`, `history=connected`, and `sessions=redis`. It fails on non-200/redirect responses, invalid JSON, failed dependencies, network/TLS errors, response bodies over 64 KiB, or timeout. A response body is never deliberately logged or attached as an artifact.
 
 It uses the current Puppeteer runtime's `@aws/synthetics-puppeteer` step API without launching a browser. The default runtime is pinned, not automatically advanced; verify availability in your AWS region before applying. This is an API health test, not a browser journey or a private service probe.
 

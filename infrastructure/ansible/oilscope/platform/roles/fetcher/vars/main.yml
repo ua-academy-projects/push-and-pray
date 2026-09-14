@@ -6,11 +6,11 @@ fetcher_runtime_environment: >-
     | combine({
       'DOCKER_CONFIG': fetcher_docker_config_dir,
       'POSTGRES_PASSWORD': fetcher_postgres_password,
-      'POSTGRES_USER': fetcher_postgres_user,
-      'POSTGRES_DB': fetcher_postgres_name,
-      'DATABASE_HOST': fetcher_database_host,
+         'POSTGRES_PASSWORD_URL': fetcher_postgres_password | urlencode | replace('/', '%2F'),
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string
     })
+    | combine(oilscope_database_environment)
+    | combine(oilscope_broker_environment)
   }}

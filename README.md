@@ -12,11 +12,12 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through PGMQ, a PostgreSQL extension-backed queue.
+- Asynchronous, durable delivery through RabbitMQ, backed by a PostgreSQL
+  publishing outbox so a crash between commit and publish can't lose an event.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
-- PostgreSQL-backed UI preferences with a sliding 30-day TTL.
+- Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Passwordless project-specific SSH access and journald-based container logging.
@@ -53,47 +54,54 @@ have already been persisted in PostgreSQL.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
+| Messaging      | RabbitMQ, with a PostgreSQL publishing outbox |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| UI sessions    | Redis, with native TTL expiry                 |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
 
-The runtime is divided into three application services and two infrastructure
+The runtime is divided into three application services and three infrastructure
 components.
 
 | Component       | Responsibility                                                                                    | Owns                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | Go Fetcher      | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events      | External API integration and collection schedule |
-| History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
+| History Service | Consumes RabbitMQ events, validates batches, persists observations, and exposes read endpoints    | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
-| PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
-| PostgreSQL      | Stores observations and hashed UI sessions; expires sessions through pg_cron                      | Durable market data and session state            |
+| RabbitMQ        | Transports observation events from Fetcher to History over TLS, with a retry/dead-letter topology | Queue delivery, retries, and dead-lettering      |
+| PostgreSQL      | Stores observations and the durable publishing outbox                                             | Durable market data and outbox state             |
+| Redis           | Stores UI session preferences with native TTL expiry                                              | Session state                                    |
 
 ### Data flow
 
 1. The Go Fetcher selects the current scheduled UTC slot.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
-3. The Fetcher publishes a versioned event to the PGMQ queue
-   `price_observations` in PostgreSQL.
-4. The Fetcher records each event key in `published_queue_events` in the same database
-   transaction, preventing duplicate publication of the same event.
-5. History reads messages using PGMQ visibility timeouts so concurrent workers cannot
-   process the same visible message at the same time.
-6. History validates and commits observations to PostgreSQL before archiving the message.
-7. Failed processing leaves the message available for retry after the visibility timeout.
-8. Permanently invalid messages and messages exceeding the retry limit are archived.
-9. The UI Service requests saved observations from History over HTTP.
-10. The browser receives only persisted data through the UI Service.
-11. UI preferences are stored in PostgreSQL.
+3. The Fetcher inserts an event key, payload, and `status='pending'` into the
+   `published_queue_events` outbox table in one PostgreSQL transaction —
+   preventing duplicate publication of the same event before anything is sent.
+4. A retry-ticker dispatcher publishes pending outbox rows to RabbitMQ over
+   TLS (`amqps`) with publisher confirms and mandatory routing, marking a row
+   `sent` only after the broker confirms acceptance and no unroutable return
+   is observed. A failed or ambiguous publish leaves the row `pending` with an
+   exponentially backed-off `next_attempt_at` for the next retry pass.
+5. History consumes with manual acknowledgment: it validates and commits
+   observations to PostgreSQL first, and only acknowledges the message after
+   that commit succeeds.
+6. A processing failure republishes the message, with an incremented retry
+   count, to a delayed-retry queue; failures that exceed the retry limit go to
+   a durable, inspectable dead-letter queue instead of being silently dropped.
+7. The UI Service requests saved observations from History over HTTP.
+8. The browser receives only persisted data through the UI Service.
+9. UI preferences are stored in Redis under a hashed session key, with the
+   configured TTL refreshed on every read and write.
 
-PGMQ provides durable queue storage inside PostgreSQL. Messages are archived only after
-successful observation persistence. If processing fails before the archive operation, the
-visibility timeout makes the message available again. Database uniqueness on
-`(instrument_code, scheduled_for)` keeps redelivery idempotent.
+The PostgreSQL outbox and RabbitMQ's publisher confirms together give
+at-least-once delivery from Fetcher to History; database uniqueness on
+`(instrument_code, scheduled_for)` keeps redelivery idempotent on the
+consuming side.
 
 ## Tracked instruments
 
@@ -126,10 +134,10 @@ scientific data source.
 │       ├── config/                 Vagrant configuration template
 │       └── provisioning/           Idempotent guest provisioning scripts
 ├── services/
-│   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
-│   ├── history/                    Python History API and PGMQ consumer
+│   ├── fetcher/                    Go scheduler, provider, and RabbitMQ outbox publisher
+│   ├── history/                    Python History API and RabbitMQ consumer
 │   └── ui/
-│       ├── backend/                Python UI gateway and PostgreSQL sessions
+│       ├── backend/                Python UI gateway and Redis sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
@@ -140,9 +148,10 @@ scientific data source.
 ## Vagrant deployment
 
 Legacy Vagrant provisioning files remain in the repository, but they are not part of the
-currently supported PGMQ deployment path. The current application architecture is
-validated through Docker and cloud-oriented deployments using PostgreSQL with the PGMQ
-extension.
+currently supported deployment path, and their Compose files have not been updated to
+start RabbitMQ or Redis alongside the application services. The current application
+architecture is validated through Docker and cloud-oriented deployments using PostgreSQL,
+RabbitMQ, and Redis.
 
 ## Docker deployment details
 
@@ -193,8 +202,8 @@ or pass the token as a Docker build argument.
 
 ## Local development
 
-Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with
-hstore, pgcrypto, pg_cron, and PGMQ.
+Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18,
+RabbitMQ, and Redis.
 
 Install Python dependencies and build the frontend:
 
@@ -254,14 +263,14 @@ run Python tools through `uv run`.
 
 | Method | Path        | Purpose                                                  |
 | ------ | ----------- | -------------------------------------------------------- |
-| `GET`  | `/health`   | Provider, schedule, next run, and last collection status |
+| `GET`  | `/health`   | Provider, schedule, next run, last collection, RabbitMQ outbox delivery status, and pending-outbox backlog |
 | `POST` | `/v1/fetch` | Run the latest scheduled slot manually                   |
 
 ### History Service (`:8001`)
 
 | Method | Path                      | Purpose                           |
 | ------ | ------------------------- | --------------------------------- |
-| `GET`  | `/health`                 | PostgreSQL and PGMQ status        |
+| `GET`  | `/health`                 | PostgreSQL and RabbitMQ consumer status |
 | `POST` | `/v1/observations/batch`  | Direct idempotent batch ingestion |
 | `GET`  | `/v1/observations`        | Filtered and paginated history    |
 | `GET`  | `/v1/observations/latest` | Latest observation per instrument |
@@ -273,12 +282,17 @@ run Python tools through `uv run`.
 | Method | Path                       | Purpose                                           |
 | ------ | -------------------------- | ------------------------------------------------- |
 | `GET`  | `/`                        | React application                                 |
-| `GET`  | `/health`                  | History and PostgreSQL session-persistence status |
+| `GET`  | `/health`                  | History status, and Redis session-persistence/memory status |
 | `GET`  | `/api/observations`        | Read-only proxy to persisted history              |
 | `GET`  | `/api/latest`              | Read-only proxy to latest persisted values        |
 | `GET`  | `/api/instruments`         | Read-only proxy to instruments                    |
 | `GET`  | `/api/session/preferences` | Read or create UI preferences                     |
 | `PUT`  | `/api/session/preferences` | Update UI preferences                             |
+
+See [docs/monitoring.md](docs/monitoring.md) for what each `/health` field
+means operationally, what's collected automatically versus requires manual
+inspection, and how to distinguish a broker outage from a database outage
+from a delayed backlog.
 
 ## Data model
 
@@ -297,16 +311,20 @@ The original upstream price object is retained in `raw_data` as JSONB. SQL migra
 ordered within `database/migrations/common/`, followed by the selected profile
 directory, and are safe to apply repeatedly. The container migration runner uses
 `MIGRATION_PROFILE=application` when omitted; `cloud` runs common migrations and
-the currently empty cloud profile. PGMQ and local pg_cron setup are application-only.
-The planned RabbitMQ/Redis conversion will replace PGMQ and PostgreSQL session
-expiry; managed database modules therefore do not configure pg_cron. Running the
-cloud SQL profile alone does not complete managed deployment.
+the currently empty cloud profile — both profile directories are empty today.
+RabbitMQ (Fetcher-to-History messaging) and Redis (UI sessions, with native TTL
+expiry) are used in both database modes, so no migration configures PGMQ or
+pg_cron: those SQL files were retired to `database/migrations/retired/` and are
+no longer applied on a fresh deployment. Running the cloud SQL profile alone
+does not complete managed deployment.
 
 AWS RDS and [GCP Cloud SQL](infrastructure/terraform/modules/gcp/database/README.md)
 Terraform modules now expose private database connection metadata using explicit
 JSON database profiles. Cloud SQL includes private services access, private DNS,
-shared-CA TLS, and an administrator secret. Ansible connection/CA wiring and
-restricted runtime roles remain pending. See [credential handling](docs/secrets.md#managed-database-administrator-credentials)
+shared-CA TLS, and an administrator secret. Ansible now resolves connections/CA
+bundles and runs managed migrations with per-VM restricted runtime logins before
+History starts, and deploys RabbitMQ (on the History VM) and Redis (on the UI
+VM) in both database modes. See [credential handling](docs/secrets.md#managed-database-administrator-credentials)
 for the GCP Terraform-state exception. No infrastructure was deployed as part
 of implementing these modules.
 
@@ -314,14 +332,15 @@ Run migration-runner checks without PostgreSQL using
 `python3 -m unittest discover -s database/tests -v`. These stub the database commands
 and verify selection and failure handling, not SQL execution.
 
-The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
-expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
-value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
-strings retain the existing API representation. The digest is calculated inside PostgreSQL
-by pgcrypto for every lookup and write. Atomic UPSERTs refresh the expiration on reads and
-updates, while expired rows are replaced with defaults immediately. The pg_cron background
-worker deletes expired rows every minute; its named job and the hstore, pgcrypto, and pg_cron
-extensions are created idempotently by migration `003_create_ui_sessions.sql`.
+Redis stores each session's preferences as a JSON value under a key namespaced with the
+configured prefix and only the SHA-256 digest of the browser session ID, never the cookie
+value itself. A Lua script performs an atomic read-and-refresh (or default-and-create) on
+every read, and writes atomically replace the value and reset its TTL — avoiding the
+read/create race a plain `GET` followed by `SET` would have under concurrent requests. Native
+Redis expiration (`EXPIRE`/`EX`) replaces the old PostgreSQL `pg_cron` cleanup job entirely; no
+scheduled SQL job is needed. Redis persists sessions across ordinary redeploys with AOF, but
+a database-mode switch deliberately resets session state along with everything else — see
+"Coordinated cutover" below.
 
 ## Configuration
 
@@ -333,16 +352,30 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `FETCH_TIMEZONE`                  | `UTC`                   | Schedule timezone                        |
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
-| `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
-| `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
-| `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
-| `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |
-| `PGMQ_MAX_ATTEMPTS`               | `5`                     | Maximum processing attempts              |
+| `DATABASE_URL`                    | see `.env.example`      | Fetcher and History PostgreSQL connection |
+| `RABBITMQ_URL`                    | none, required          | `amqps://` broker URL for Fetcher/History |
+| `RABBITMQ_CA_FILE`                | none, required          | Path to the mounted broker TLS trust bundle |
+| `RABBITMQ_EXCHANGE`               | none, required          | Exchange the outbox publishes to          |
+| `RABBITMQ_ROUTING_KEY`            | none, required          | Routing key for published events          |
+| `RABBITMQ_QUEUE`                  | none, required          | Queue History consumes from               |
+| `RABBITMQ_TIMEOUT_SECONDS`        | none, required          | Fetcher per-publish connection timeout    |
+| `RABBITMQ_RECONNECT_SECONDS`      | none, required          | History reconnect delay after disconnect  |
+| `RABBITMQ_MAX_ATTEMPTS`           | none, required          | History retry-queue republish limit before dead-lettering |
+| `OUTBOX_POLL_SECONDS`             | none, required          | Fetcher outbox retry-ticker interval      |
+| `OUTBOX_BATCH_SIZE`               | none, required          | Fetcher outbox rows dispatched per tick   |
 | `HISTORY_SERVICE_URL`             | `http://127.0.0.1:8001` | UI-to-History base URL                   |
+| `REDIS_URL`                       | none, required          | UI's Redis session-store connection       |
+| `REDIS_KEY_PREFIX`                | none, required          | Namespace prefix for session keys         |
 | `SESSION_TTL_SECONDS`             | `2592000`               | Sliding session TTL, 30 days             |
 | `SESSION_COOKIE_SECURE`           | `false`                 | Secure-cookie flag for HTTPS deployments |
 | `LISTEN_ADDRESS`                  | `:8002`                 | Fetcher diagnostic API address           |
 | `LOG_LEVEL`                       | `INFO`                  | Python service log level                 |
+
+RabbitMQ, Redis, and (in cloud database mode) `DATABASE_URL`'s TLS parameters have no
+compiled-in defaults — the Compose templates require them explicitly rather than silently
+falling back to a previous or partial configuration. See
+[Database modes and coordinated cutover](docs/database-modes.md) for how Ansible derives
+these values per database mode and how to switch between modes safely.
 
 ## Pre-commit hooks
 

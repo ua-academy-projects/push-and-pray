@@ -1,137 +1,91 @@
 from __future__ import annotations
 
-import json
+import hashlib
 
-from psycopg import AsyncConnection, ProgrammingError
-from psycopg.types import TypeInfo
-from psycopg.types.hstore import register_hstore
-from pydantic import ValidationError
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from .sessions import SessionPreferences
 
 
-class PostgreSQLSessionStore:
-    def __init__(self, database_url: str, ttl_seconds: int) -> None:
-        self.database_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+class RedisSessionStore:
+    def __init__(self, url: str, ttl_seconds: int, key_prefix: str) -> None:
+        self.client = Redis.from_url(url, decode_responses=True, socket_timeout=5)
         self.ttl_seconds = ttl_seconds
-        self._hstore_info: TypeInfo | None = None
+        self.key_prefix = key_prefix
 
-    async def _connect(self) -> AsyncConnection:
-        connection = await AsyncConnection.connect(self.database_url, connect_timeout=5)
-        hstore_info = self._hstore_info
-        if hstore_info is None:
-            hstore_info = await TypeInfo.fetch(connection, "hstore")
-            if hstore_info is None:
-                await connection.close()
-                raise ProgrammingError("the PostgreSQL hstore extension is not installed")
-            self._hstore_info = hstore_info
-        register_hstore(hstore_info, connection)
-        return connection
-
-    @staticmethod
-    def _serialize(preferences: SessionPreferences) -> dict[str, str]:
-        return {
-            key: json.dumps(value, separators=(",", ":"))
-            for key, value in preferences.model_dump(mode="json").items()
-        }
-
-    @staticmethod
-    def _deserialize(preferences: dict[str, str | None]) -> dict[str, object]:
-        return {key: json.loads(value) for key, value in preferences.items()}
+    def _key(self, session_id: str) -> str:
+        return self.key_prefix + hashlib.sha256(session_id.encode()).hexdigest()
 
     async def is_ready(self) -> bool:
-        async with await AsyncConnection.connect(
-            self.database_url, connect_timeout=5
-        ) as connection:
-            async with connection.cursor() as cursor:
-                await cursor.execute(
-                    """
-                    SELECT
-                        to_regclass('public.ui_sessions') IS NOT NULL
-                        AND EXISTS (
-                            SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto'
-                        )
-                        AND EXISTS (
-                            SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
-                        )
-                        AND EXISTS (
-                            SELECT 1 FROM pg_extension WHERE extname = 'hstore'
-                        )
-                        AND EXISTS (
-                            SELECT 1
-                            FROM information_schema.columns
-                            WHERE table_schema = 'public'
-                              AND table_name = 'ui_sessions'
-                              AND column_name = 'preferences'
-                              AND udt_name = 'hstore'
-                              AND is_nullable = 'NO'
-                        )
-                        AND EXISTS (
-                            SELECT 1
-                            FROM cron.job
-                            WHERE jobname = 'delete-expired-ui-sessions'
-                              AND database = current_database()
-                              AND active
-                        )
-                    """
-                )
-                row = await cursor.fetchone()
-        return bool(row and row[0])
+        return bool(await self.client.ping())
+
+    async def diagnostics(self) -> dict[str, object]:
+        """Memory pressure and persistence status for operator visibility.
+
+        Never raises: a failed INFO call is reported as an error field, not
+        propagated, since readiness is already governed by is_ready()/PING.
+        """
+        try:
+            memory = await self.client.info("memory")
+            persistence = await self.client.info("persistence")
+        except RedisError as exc:
+            return {"error": str(exc)}
+        return {
+            "used_memory": memory.get("used_memory"),
+            "used_memory_human": memory.get("used_memory_human"),
+            "maxmemory": memory.get("maxmemory"),
+            "maxmemory_policy": memory.get("maxmemory_policy"),
+            "aof_enabled": bool(persistence.get("aof_enabled")),
+            "aof_last_write_status": persistence.get("aof_last_write_status"),
+            "aof_last_bgrewrite_status": persistence.get("aof_last_bgrewrite_status"),
+            "rdb_last_bgsave_status": persistence.get("rdb_last_bgsave_status"),
+        }
+
+    async def close(self) -> None:
+        await self.client.aclose()
 
     async def get(self, session_id: str) -> SessionPreferences:
-        defaults = SessionPreferences()
-        async with await self._connect() as connection:
-            async with connection.cursor(binary=True) as cursor:
-                await cursor.execute(
-                    """
-                    INSERT INTO ui_sessions AS sessions (session_hash, preferences, expires_at)
-                    VALUES (
-                        digest(%s, 'sha256'),
-                        %s,
-                        CURRENT_TIMESTAMP + make_interval(secs => %s)
-                    )
-                    ON CONFLICT (session_hash) DO UPDATE
-                    SET preferences = CASE
-                            WHEN sessions.expires_at <= CURRENT_TIMESTAMP
-                                THEN EXCLUDED.preferences
-                            ELSE sessions.preferences
-                        END,
-                        expires_at = EXCLUDED.expires_at
-                    RETURNING preferences
-                    """,
-                    (session_id, self._serialize(defaults), self.ttl_seconds),
-                )
-                row = await cursor.fetchone()
-
+        defaults = SessionPreferences().model_dump_json()
+        key = self._key(session_id)
+        raw = await self.client.eval(
+            """
+            local value = redis.call('GET', KEYS[1])
+            if not value then value = ARGV[1]; redis.call('SET', KEYS[1], value) end
+            redis.call('EXPIRE', KEYS[1], ARGV[2])
+            return value
+            """,
+            1,
+            key,
+            defaults,
+            self.ttl_seconds,
+        )
         try:
-            stored_preferences = self._deserialize(row[0]) if row else {}
-            return SessionPreferences.model_validate(stored_preferences)
-        except (TypeError, ValueError, ValidationError):
-            return await self.update(session_id, defaults)
+            return SessionPreferences.model_validate_json(raw)
+        except ValueError:
+            # Repair only the corrupt value we read; do not overwrite a concurrent PUT.
+            raw = await self.client.eval(
+                """
+                local value = redis.call('GET', KEYS[1])
+                if not value or value == ARGV[1] then
+                    value = ARGV[2]
+                    redis.call('SET', KEYS[1], value, 'EX', ARGV[3])
+                end
+                return value
+                """,
+                1,
+                key,
+                raw,
+                defaults,
+                self.ttl_seconds,
+            )
+            try:
+                return SessionPreferences.model_validate_json(raw)
+            except ValueError as exc:
+                raise RedisError("Invalid session data") from exc
 
-    async def update(
-        self,
-        session_id: str,
-        preferences: SessionPreferences,
-    ) -> SessionPreferences:
-        async with await self._connect() as connection:
-            async with connection.cursor() as cursor:
-                await cursor.execute(
-                    """
-                    INSERT INTO ui_sessions (session_hash, preferences, expires_at)
-                    VALUES (
-                        digest(%s, 'sha256'),
-                        %s,
-                        CURRENT_TIMESTAMP + make_interval(secs => %s)
-                    )
-                    ON CONFLICT (session_hash) DO UPDATE
-                    SET preferences = EXCLUDED.preferences,
-                        expires_at = EXCLUDED.expires_at
-                    """,
-                    (
-                        session_id,
-                        self._serialize(preferences),
-                        self.ttl_seconds,
-                    ),
-                )
+    async def update(self, session_id: str, preferences: SessionPreferences) -> SessionPreferences:
+        await self.client.set(
+            self._key(session_id), preferences.model_dump_json(), ex=self.ttl_seconds
+        )
         return preferences

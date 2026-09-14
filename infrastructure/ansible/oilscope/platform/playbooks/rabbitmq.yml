@@ -1,0 +1,31 @@
+---
+- name: Validate inventory
+  ansible.builtin.import_playbook: preflight.yml
+
+- name: Deploy RabbitMQ on its selected History host
+  hosts: history
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Load broker placement
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: broker_config
+    - name: Require the configured broker to be in this invocation
+      ansible.builtin.assert:
+        that: >-
+          broker_config.rabbitmq.host_vm in
+          (ansible_play_hosts_all | map('extract', hostvars, 'oilscope_vm_key') | list)
+    - name: Skip other History hosts
+      ansible.builtin.meta: end_host
+      when: oilscope_vm_key != broker_config.rabbitmq.host_vm
+    - name: Gather broker host facts
+      ansible.builtin.setup:
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.docker_engine
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+    - role: oilscope.platform.rabbitmq

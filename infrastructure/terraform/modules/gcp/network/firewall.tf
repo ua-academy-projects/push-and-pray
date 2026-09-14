@@ -89,7 +89,6 @@ resource "google_compute_firewall" "postgresql" {
   source_tags = [
     local.network_tags.fetcher,
     local.network_tags.history,
-    local.network_tags.ui,
   ]
 
   target_tags = [local.network_tags.infra]
@@ -97,5 +96,17 @@ resource "google_compute_firewall" "postgresql" {
   allow {
     protocol = "tcp"
     ports    = [tostring(var.config.service_ports.postgresql)]
+  }
+}
+
+resource "google_compute_firewall" "rabbitmq" {
+  count       = local.enabled ? 1 : 0
+  name        = "${local.resource_prefix}-rabbitmq"
+  network     = google_compute_network.main[0].id
+  source_tags = [local.network_tags.fetcher, local.network_tags.history]
+  target_tags = [local.network_tags.history]
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.config.rabbitmq.port)]
   }
 }

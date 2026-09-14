@@ -3,6 +3,12 @@
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml
 
+- name: Initialize the managed database
+  ansible.builtin.import_playbook: migrate.yml
+
+- name: Deploy RabbitMQ
+  ansible.builtin.import_playbook: rabbitmq.yml
+
 - name: Deploy History workload
   ansible.builtin.import_playbook: history.yml
 

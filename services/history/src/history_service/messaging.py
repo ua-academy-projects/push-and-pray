@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+import ssl
 
+import aio_pika
 from pydantic import ValidationError
 from sqlalchemy import text
 
@@ -15,180 +16,93 @@ from .schemas import ObservationEvent
 logger = logging.getLogger(__name__)
 
 
-class PGMQConsumer:
+class RabbitMQConsumer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.task: asyncio.Task[None] | None = None
+        self.task: asyncio.Task | None = None
         self.ready = False
 
     @property
     def is_ready(self) -> bool:
-        return bool(self.ready and self.task is not None and not self.task.done())
+        return bool(self.ready and self.task and not self.task.done())
 
     async def start(self) -> None:
-        self.ready = True
-
-        self.task = asyncio.create_task(
-            self._run(),
-            name="pgmq-history-consumer",
-        )
+        self.task = asyncio.create_task(self._run(), name="rabbitmq-history-consumer")
 
     async def stop(self) -> None:
         self.ready = False
-
-        if self.task is not None:
+        if self.task:
             self.task.cancel()
-
             try:
                 await self.task
             except asyncio.CancelledError:
                 pass
 
-    async def _run(self) -> None:
-        logger.info(
-            "PGMQ consumer started",
-            extra={
-                "queue": self.settings.pgmq_queue,
-            },
-        )
+    def _persist(self, event: ObservationEvent) -> None:
+        with SessionLocal() as session:
+            session.execute(
+                text("SELECT set_config('statement_timeout', :timeout, true)"),
+                {"timeout": str(int(self.settings.rabbitmq_timeout_seconds * 1000))},
+            )
+            insert_batch(session, event.observations)  # Commits before returning.
 
+    async def _handle(self, message, channel) -> None:
+        destination = None
+        attempts = 0
+        try:
+            attempts = int((message.headers or {}).get("attempts", 0))
+            if attempts < 0:
+                raise ValueError("invalid attempts")
+            event = ObservationEvent.model_validate_json(message.body)
+        except (ValidationError, ValueError, TypeError):
+            destination = self.settings.rabbitmq_queue + ".dead"
+        else:
+            try:
+                await asyncio.to_thread(self._persist, event)
+            except Exception:
+                logger.warning("Database insert failed; retaining message for retry")
+                destination = self.settings.rabbitmq_queue + (
+                    ".dead" if attempts + 1 >= self.settings.rabbitmq_max_attempts else ".retry"
+                )
+        if destination:
+            # Confirm the durable retry/DLQ copy before acknowledging the original.
+            await channel.default_exchange.publish(
+                aio_pika.Message(
+                    body=message.body,
+                    content_type="application/json",
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                    headers={"attempts": attempts + 1},
+                ),
+                routing_key=destination,
+                mandatory=True,
+                timeout=self.settings.rabbitmq_timeout_seconds,
+            )
+        await message.ack()
+
+    async def _run(self) -> None:
+        context = ssl.create_default_context(cafile=self.settings.rabbitmq_ca_file)
         while True:
             try:
-                processed = await asyncio.to_thread(self._process_next_message)
-
-                if not processed:
-                    await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)
-
+                connection = await aio_pika.connect(
+                    self.settings.rabbitmq_url,
+                    ssl_context=context,
+                    timeout=self.settings.rabbitmq_timeout_seconds,
+                )
+                async with connection:
+                    channel = await connection.channel(
+                        publisher_confirms=True, on_return_raises=True
+                    )
+                    await channel.set_qos(prefetch_count=1)
+                    queue = await channel.get_queue(self.settings.rabbitmq_queue, ensure=True)
+                    async with queue.iterator() as messages:
+                        self.ready = True
+                        async for message in messages:
+                            await self._handle(message, channel)
             except asyncio.CancelledError:
                 raise
-
             except Exception:
-                logger.exception("PGMQ consumer failed; retrying")
-
-                await asyncio.sleep(self.settings.pgmq_poll_interval_seconds)
-
-    def _process_next_message(self) -> bool:
-        with SessionLocal() as session:
-            result = session.execute(
-                text(
-                    """
-                    SELECT *
-                    FROM pgmq.read(
-                        queue_name => :queue_name,
-                        vt => :visibility_timeout,
-                        qty => 1
-                    )
-                    """
-                ),
-                {
-                    "queue_name": self.settings.pgmq_queue,
-                    "visibility_timeout": self.settings.pgmq_visibility_timeout_seconds,
-                },
-            )
-
-            row = result.mappings().first()
-
-            if row is None:
-                session.commit()
-                return False
-
-            message = dict(row)
-
-            session.commit()
-
-        self._handle_message(
-            msg_id=message["msg_id"],
-            read_count=message["read_ct"],
-            message=message["message"],
-        )
-
-        return True
-
-    def _handle_message(
-        self,
-        msg_id: int,
-        read_count: int,
-        message: dict[str, Any],
-    ) -> None:
-        try:
-            event = ObservationEvent.model_validate(message)
-
-        except ValidationError as exc:
-            logger.error(
-                "permanently invalid PGMQ message",
-                extra={
-                    "msg_id": msg_id,
-                    "error": str(exc),
-                },
-            )
-
-            self._archive_message(msg_id)
-
-            return
-
-        try:
-            with SessionLocal() as session:
-                inserted, duplicates = insert_batch(
-                    session,
-                    event.observations,
-                )
-
-        except Exception:
-            logger.exception(
-                "failed to persist PGMQ message",
-                extra={
-                    "msg_id": msg_id,
-                    "read_count": read_count,
-                },
-            )
-
-            if read_count >= self.settings.pgmq_max_attempts:
-                logger.error(
-                    "PGMQ message exceeded retry limit",
-                    extra={
-                        "msg_id": msg_id,
-                        "read_count": read_count,
-                    },
-                )
-
-                self._archive_message(msg_id)
-
-            return
-
-        self._archive_message(msg_id)
-
-        logger.info(
-            "PGMQ message persisted",
-            extra={
-                "msg_id": msg_id,
-                "read_count": read_count,
-                "event_key": event.event_key,
-                "inserted": inserted,
-                "duplicates": duplicates,
-            },
-        )
-
-    def _archive_message(
-        self,
-        msg_id: int,
-    ) -> None:
-        with SessionLocal() as session:
-            archived = session.execute(
-                text(
-                    """
-                    SELECT pgmq.archive(
-                        queue_name => :queue_name,
-                        msg_id => :msg_id
-                    )
-                    """
-                ),
-                {
-                    "queue_name": self.settings.pgmq_queue,
-                    "msg_id": msg_id,
-                },
-            ).scalar_one()
-
-            session.commit()
-
-            if not archived:
-                raise RuntimeError(f"failed to archive PGMQ message {msg_id}")
+                # Closing the connection requeues an unacknowledged original.
+                logger.warning("RabbitMQ consumer disconnected; reconnecting")
+            finally:
+                self.ready = False
+            await asyncio.sleep(self.settings.rabbitmq_reconnect_seconds)

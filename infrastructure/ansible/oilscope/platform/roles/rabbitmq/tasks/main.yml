@@ -1,0 +1,113 @@
+---
+- name: Install certificate utility
+  ansible.builtin.apt:
+    name: openssl
+    state: present
+
+- name: Prepare RabbitMQ directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: [/opt/oilscope/rabbitmq, /opt/oilscope/rabbitmq/tls]
+
+- name: Check server certificate lifetime
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, /opt/oilscope/rabbitmq/tls/ca.pem, -noout, -checkend, '2592000']
+  register: rabbitmq_certificate_check
+  failed_when: false
+  changed_when: false
+
+- name: Check the certificate matches the current broker address
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, /opt/oilscope/rabbitmq/tls/ca.pem, -noout, -checkip, "{{ internal_ip }}"]
+  register: rabbitmq_hostname_check
+  failed_when: false
+  changed_when: false
+
+- name: Create a private trusted server certificate
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -newkey
+      - rsa:3072
+      - -nodes
+      - -days
+      - "{{ broker_config.rabbitmq.certificate_days | string }}"
+      - -keyout
+      - /opt/oilscope/rabbitmq/tls/server.key
+      - -out
+      - /opt/oilscope/rabbitmq/tls/ca.pem
+      - -subj
+      - /CN=oilscope-rabbitmq
+      - -addext
+      - "subjectAltName=IP:{{ internal_ip }}"
+      - -addext
+      - extendedKeyUsage=serverAuth
+  when: rabbitmq_certificate_check.rc != 0 or rabbitmq_hostname_check.rc != 0
+
+- name: Restrict the RabbitMQ private key to the container user
+  ansible.builtin.file:
+    path: /opt/oilscope/rabbitmq/tls/server.key
+    owner: '999'
+    group: '999'
+    mode: '0600'
+
+- name: Make the public certificate readable by clients and RabbitMQ
+  ansible.builtin.file:
+    path: /opt/oilscope/rabbitmq/tls/ca.pem
+    mode: '0644'
+
+- name: Read certificate checksum
+  ansible.builtin.stat:
+    path: /opt/oilscope/rabbitmq/tls/ca.pem
+    checksum_algorithm: sha256
+  register: rabbitmq_certificate
+
+- name: Render RabbitMQ configuration
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/opt/oilscope/rabbitmq/{{ item.dest }}"
+    mode: '0644'
+  loop:
+    - {src: compose.yaml.j2, dest: compose.yaml}
+    - {src: rabbitmq.conf.j2, dest: rabbitmq.conf}
+    - {src: definitions.json.j2, dest: definitions.json}
+
+- name: Reconcile RabbitMQ
+  ansible.builtin.command:
+    argv: [docker, compose, --file, /opt/oilscope/rabbitmq/compose.yaml, up, --detach, --pull, always]
+  environment:
+    RABBITMQ_PASSWORD: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+  no_log: true
+  changed_when: true
+
+- name: Wait for RabbitMQ
+  ansible.builtin.command:
+    argv: [docker, compose, --file, /opt/oilscope/rabbitmq/compose.yaml, exec, -T, rabbitmq, rabbitmq-diagnostics, -q, check_running]
+  environment:
+    RABBITMQ_PASSWORD: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+  register: rabbitmq_ready
+  retries: 30
+  delay: 5
+  until: rabbitmq_ready.rc == 0
+  changed_when: false
+  no_log: true
+
+- name: Import durable queue topology
+  ansible.builtin.command:
+    argv: [docker, compose, --file, /opt/oilscope/rabbitmq/compose.yaml, exec, -T, rabbitmq, rabbitmqctl, import_definitions, /etc/rabbitmq/definitions.json]
+  environment:
+    RABBITMQ_PASSWORD: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+  changed_when: true
+  no_log: true
+
+- name: Reconcile the broker password on an existing volume
+  ansible.builtin.command:
+    argv: [docker, compose, --file, /opt/oilscope/rabbitmq/compose.yaml, exec, -T, rabbitmq, rabbitmqctl, change_password, "{{ broker_config.rabbitmq.username }}", "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"]
+  environment:
+    RABBITMQ_PASSWORD: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+  changed_when: true
+  no_log: true

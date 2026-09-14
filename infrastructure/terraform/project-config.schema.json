@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "default_cloud",
+    "default_db",
     "region",
     "environment",
     "name_prefix",
@@ -18,7 +19,9 @@
     "ssh_users",
     "registry",
     "service_ports",
-    "vms"
+    "vms",
+    "rabbitmq",
+    "redis"
   ],
   "properties": {
     "monitoring": {
@@ -156,67 +159,88 @@
     },
     "default_db": {
       "type": "string",
-      "enum": ["application", "cloud"],
+      "enum": [
+        "application",
+        "cloud"
+      ],
       "description": "Database hosting mode: application uses PostgreSQL on the database VM; cloud uses managed PostgreSQL on the selected default_cloud."
     },
-      "database_profile": {
-        "type": "string",
-        "pattern": "^[a-z][a-z0-9_-]*$",
-        "description": "Key into database_profile_map; used in cloud database mode."
+    "database_profile": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "Key into database_profile_map; used in cloud database mode."
+    },
+    "database_profile_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
       },
-      "database_profile_map": {
-        "type": "object",
-        "minProperties": 1,
-        "propertyNames": {
-          "pattern": "^[a-z][a-z0-9_-]*$"
-        },
-        "additionalProperties": {
-          "$ref": "#/$defs/database_profile"
-        }
-      },
+      "additionalProperties": {
+        "$ref": "#/$defs/database_profile"
+      }
+    },
     "region": {
       "type": "string",
       "minLength": 1,
-      "description": "Key into region_map. Not cross-validated by this schema — an unknown key fails loudly at `terraform plan` via a plain map lookup."
+      "description": "Key into region_map. Not cross-validated by this schema \u2014 an unknown key fails loudly at `terraform plan` via a plain map lookup."
     },
     "environment": {
       "type": "string",
-      "enum": ["dev", "stage", "prod"]
+      "enum": [
+        "dev",
+        "stage",
+        "prod"
+      ]
     },
     "name_prefix": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
     },
-
     "size_map": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
-      "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/per_cloud_string"
+      },
       "description": "Abstract size tiers (e.g. \"small\") to native machine/instance type per cloud."
     },
     "region_map": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
-      "additionalProperties": { "$ref": "#/$defs/region_entry" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/region_entry"
+      },
       "description": "Abstract region keys (e.g. \"eu-central\") to native region/zone per cloud."
     },
     "disk_type_map": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
-      "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/per_cloud_string"
+      },
       "description": "Abstract disk tiers (e.g. \"balanced\") to native disk/volume type per cloud."
     },
     "image_map": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_.-]*$" },
-      "additionalProperties": { "$ref": "#/$defs/per_cloud_string" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_.-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/per_cloud_string"
+      },
       "description": "Abstract image keys (e.g. \"ubuntu-26.04\") to native image reference per cloud. For aws this must be an SSM parameter path starting with /, which the aws module resolves to an AMI ID. Direct AMI IDs are not supported."
     },
-
     "clouds": {
       "type": "object",
       "additionalProperties": false,
@@ -224,15 +248,26 @@
         "gcp": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["project_id"],
+          "required": [
+            "project_id"
+          ],
           "properties": {
             "cloud_sql_network": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["allocated_cidr", "dns_ttl_seconds"],
+              "required": [
+                "allocated_cidr",
+                "dns_ttl_seconds"
+              ],
               "properties": {
-                "allocated_cidr": { "type": "string", "minLength": 1 },
-                "dns_ttl_seconds": { "type": "integer", "minimum": 1 }
+                "allocated_cidr": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "dns_ttl_seconds": {
+                  "type": "integer",
+                  "minimum": 1
+                }
               }
             },
             "project_id": {
@@ -244,7 +279,9 @@
         "aws": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["vpc_cidr"],
+          "required": [
+            "vpc_cidr"
+          ],
           "properties": {
             "vpc_cidr": {
               "type": "string",
@@ -253,7 +290,10 @@
             "rds_network": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["secondary_subnet_cidr", "secondary_availability_zone"],
+              "required": [
+                "secondary_subnet_cidr",
+                "secondary_availability_zone"
+              ],
               "properties": {
                 "secondary_subnet_cidr": {
                   "type": "string",
@@ -269,7 +309,6 @@
         }
       }
     },
-
     "network": {
       "type": "object",
       "additionalProperties": false,
@@ -279,26 +318,45 @@
         "ui_public_ports"
       ],
       "properties": {
-        "management_subnet_cidr": { "type": "string", "minLength": 1 },
-        "workload_subnet_cidr": { "type": "string", "minLength": 1 },
+        "management_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
         "ui_public_ports": {
           "type": "array",
-          "items": { "type": "integer", "enum": [80, 443] },
+          "items": {
+            "type": "integer",
+            "enum": [
+              80,
+              443
+            ]
+          },
           "minItems": 2,
           "maxItems": 2,
           "uniqueItems": true
         }
       }
     },
-
-    "ssh_users": { "$ref": "#/$defs/ssh_users" },
-
+    "ssh_users": {
+      "$ref": "#/$defs/ssh_users"
+    },
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "username", "image_sha"],
+      "required": [
+        "repository",
+        "username",
+        "image_sha"
+      ],
       "properties": {
-        "repository": { "type": "string", "minLength": 1 },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
         "username": {
           "type": "string",
           "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
@@ -309,90 +367,287 @@
         }
       }
     },
-
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": [
+        "history_api",
+        "postgresql"
+      ],
       "properties": {
-        "history_api": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "postgresql": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "history_api": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "postgresql": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
-
     "vms": {
       "type": "object",
       "minProperties": 2,
-      "required": ["bastion"],
-      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$" },
+      "required": [
+        "bastion"
+      ],
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
       "properties": {
         "bastion": {
           "allOf": [
-    {
-      "if": {
-        "required": ["default_cloud", "default_db"],
-        "properties": {
-          "default_cloud": { "const": "gcp" },
-          "default_db": { "const": "cloud" }
-        }
-      },
-      "then": {
-        "properties": {
-          "clouds": {
-            "properties": { "gcp": { "required": ["cloud_sql_network"] } }
-          },
-          "service_ports": { "properties": { "postgresql": { "const": 5432 } } }
-        }
-      }
-    },
-            { "$ref": "#/$defs/vm" },
             {
-              "properties": { "role": { "const": "bastion" } },
-              "required": ["role"]
+              "$ref": "#/$defs/vm"
+            },
+            {
+              "properties": {
+                "role": {
+                  "const": "bastion"
+                }
+              },
+              "required": [
+                "role"
+              ]
             }
           ]
         }
       },
-      "additionalProperties": { "$ref": "#/$defs/vm" }
+      "additionalProperties": {
+        "$ref": "#/$defs/vm"
+      }
+    },
+    "rabbitmq": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_vm",
+        "image",
+        "port",
+        "username",
+        "vhost",
+        "exchange",
+        "queue",
+        "routing_key",
+        "retry_delay_ms",
+        "max_attempts",
+        "timeout_seconds",
+        "reconnect_seconds",
+        "outbox_poll_seconds",
+        "outbox_batch_size",
+        "memory_mb",
+        "queue_max_bytes",
+        "certificate_days"
+      ],
+      "properties": {
+        "host_vm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vhost": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exchange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "queue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "routing_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retry_delay_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reconnect_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "outbox_poll_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "outbox_batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_mb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "queue_max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "certificate_days": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "redis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_vm",
+        "image",
+        "database",
+        "key_prefix",
+        "session_ttl_seconds",
+        "memory_mb",
+        "maxmemory_mb"
+      ],
+      "properties": {
+        "host_vm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "key_prefix": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_ttl_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_mb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxmemory_mb": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     }
   },
-
   "allOf": [
     {
       "if": {
-        "required": ["default_db", "default_cloud"],
+        "required": [
+          "default_db",
+          "default_cloud"
+        ],
         "properties": {
-          "default_db": { "const": "cloud" },
-          "default_cloud": { "const": "aws" }
+          "default_db": {
+            "const": "cloud"
+          },
+          "default_cloud": {
+            "const": "aws"
+          }
         }
       },
       "then": {
         "properties": {
           "clouds": {
-            "properties": { "aws": { "required": ["rds_network"] } }
+            "properties": {
+              "aws": {
+                "required": [
+                  "rds_network"
+                ]
+              }
+            }
           }
         }
       }
     },
     {
-      "if": { "properties": { "default_cloud": { "const": "gcp" } } },
-      "then": { "properties": { "clouds": { "required": ["gcp"] } } }
-    },
-    {
-      "if": { "properties": { "default_cloud": { "const": "aws" } } },
-      "then": { "properties": { "clouds": { "required": ["aws"] } } }
+      "if": {
+        "properties": {
+          "default_cloud": {
+            "const": "gcp"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "required": [
+              "gcp"
+            ]
+          }
+        }
+      }
     },
     {
       "if": {
-        "required": ["default_db"],
-        "properties": { "default_db": { "const": "cloud" } }
+        "properties": {
+          "default_cloud": {
+            "const": "aws"
+          }
+        }
       },
       "then": {
-        "required": ["database_profile", "database_profile_map"],
+        "properties": {
+          "clouds": {
+            "required": [
+              "aws"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "default_db"
+        ],
+        "properties": {
+          "default_db": {
+            "const": "cloud"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "database_profile",
+          "database_profile_map"
+        ],
         "properties": {
           "vms": {
             "additionalProperties": {
-              "properties": { "role": { "not": { "const": "database" } } }
+              "properties": {
+                "role": {
+                  "not": {
+                    "const": "database"
+                  }
+                }
+              }
             }
           }
         }
@@ -400,10 +655,52 @@
       "else": {
         "properties": {
           "vms": {
-            "$comment": "Reject a dictionary in which every VM has a non-database role, requiring at least one database VM in application mode (including omitted default_db).",
+            "$comment": "Reject a dictionary in which every VM has a non-database role, requiring at least one database VM in application mode.",
             "not": {
               "additionalProperties": {
-                "properties": { "role": { "not": { "const": "database" } } }
+                "properties": {
+                  "role": {
+                    "not": {
+                      "const": "database"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "default_cloud",
+          "default_db"
+        ],
+        "properties": {
+          "default_cloud": {
+            "const": "gcp"
+          },
+          "default_db": {
+            "const": "cloud"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "properties": {
+              "gcp": {
+                "required": [
+                  "cloud_sql_network"
+                ]
+              }
+            }
+          },
+          "service_ports": {
+            "properties": {
+              "postgresql": {
+                "const": 5432
               }
             }
           }
@@ -411,68 +708,67 @@
       }
     }
   ],
-
   "$defs": {
-      "database_profile": {
-        "type": "object",
-        "additionalProperties": false,
-        "minProperties": 1,
-        "properties": {
-          "aws": {
-            "$ref": "#/$defs/cloud_database_aws"
-          },
-          "gcp": {
-            "$ref": "#/$defs/cloud_database_gcp"
-          }
+    "database_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "aws": {
+          "$ref": "#/$defs/cloud_database_aws"
+        },
+        "gcp": {
+          "$ref": "#/$defs/cloud_database_gcp"
         }
-      },
-      "cloud_database_aws": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "instance_class",
-          "engine_version",
-          "allocated_storage_gb",
-          "storage_type",
-          "max_allocated_storage_gb",
-          "multi_az",
-          "backup_retention_days"
-        ],
-        "properties": {
-          "instance_class": {
-            "type": "string",
-            "enum": [
-              "db.t4g.micro",
-              "db.t3.micro"
-            ]
-          },
-          "engine_version": {
-            "type": "string",
-            "const": "18"
-          },
-          "allocated_storage_gb": {
-            "type": "integer",
-            "const": 20
-          },
-          "storage_type": {
-            "type": "string",
-            "const": "gp2"
-          },
-          "max_allocated_storage_gb": {
-            "type": "integer",
-            "const": 0
-          },
-          "multi_az": {
-            "type": "boolean",
-            "const": false
-          },
-          "backup_retention_days": {
-            "type": "integer",
-            "const": 1
-          }
+      }
+    },
+    "cloud_database_aws": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance_class",
+        "engine_version",
+        "allocated_storage_gb",
+        "storage_type",
+        "max_allocated_storage_gb",
+        "multi_az",
+        "backup_retention_days"
+      ],
+      "properties": {
+        "instance_class": {
+          "type": "string",
+          "enum": [
+            "db.t4g.micro",
+            "db.t3.micro"
+          ]
+        },
+        "engine_version": {
+          "type": "string",
+          "const": "18"
+        },
+        "allocated_storage_gb": {
+          "type": "integer",
+          "const": 20
+        },
+        "storage_type": {
+          "type": "string",
+          "const": "gp2"
+        },
+        "max_allocated_storage_gb": {
+          "type": "integer",
+          "const": 0
+        },
+        "multi_az": {
+          "type": "boolean",
+          "const": false
+        },
+        "backup_retention_days": {
+          "type": "integer",
+          "const": 1
         }
-      },
-      "cloud_database_gcp": {
+      }
+    },
+    "cloud_database_gcp": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -530,51 +826,88 @@
     },
     "cloud_name": {
       "type": "string",
-      "enum": ["gcp", "aws"]
+      "enum": [
+        "gcp",
+        "aws"
+      ]
     },
     "per_cloud_string": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp", "aws"],
+      "required": [
+        "gcp",
+        "aws"
+      ],
       "properties": {
-        "gcp": { "type": "string", "minLength": 1 },
-        "aws": { "type": "string", "minLength": 1 }
+        "gcp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aws": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "region_entry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp", "aws"],
+      "required": [
+        "gcp",
+        "aws"
+      ],
       "properties": {
         "gcp": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["region", "zone"],
+          "required": [
+            "region",
+            "zone"
+          ],
           "properties": {
-            "region": { "type": "string", "minLength": 1 },
-            "zone": { "type": "string", "minLength": 1 }
+            "region": {
+              "type": "string",
+              "minLength": 1
+            },
+            "zone": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "aws": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["region", "availability_zone"],
+          "required": [
+            "region",
+            "availability_zone"
+          ],
           "properties": {
-            "region": { "type": "string", "minLength": 1 },
-            "availability_zone": { "type": "string", "minLength": 1 }
+            "region": {
+              "type": "string",
+              "minLength": 1
+            },
+            "availability_zone": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }
     },
     "labels": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "ssh_users": {
       "$comment": "Maps Linux usernames to public SSH keys. Private keys and local key-file paths are not accepted.",
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z_][a-z0-9_-]{0,31}$" },
+      "propertyNames": {
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+      },
       "additionalProperties": {
         "type": "string",
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
@@ -586,13 +919,21 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["bastion", "infra", "history", "fetcher", "ui"]
+        "enum": [
+          "bastion",
+          "infra",
+          "history",
+          "fetcher",
+          "ui"
+        ]
       }
     },
     "secret_mappings": {
       "$comment": "Maps application environment variable names to non-secret Secret Manager IDs.",
       "type": "object",
-      "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]*$" },
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
       "additionalProperties": {
         "type": "string",
         "pattern": "^[A-Za-z0-9_-]+$"
@@ -615,7 +956,13 @@
       "properties": {
         "role": {
           "type": "string",
-          "enum": ["bastion", "database", "history", "fetcher", "ui"]
+          "enum": [
+            "bastion",
+            "database",
+            "history",
+            "fetcher",
+            "ui"
+          ]
         },
         "cloud": {
           "$ref": "#/$defs/cloud_name",
@@ -647,8 +994,12 @@
         "assign_public_ip": {
           "type": "boolean"
         },
-        "network_tags": { "$ref": "#/$defs/vm_network_tags" },
-        "labels": { "$ref": "#/$defs/labels" },
+        "network_tags": {
+          "$ref": "#/$defs/vm_network_tags"
+        },
+        "labels": {
+          "$ref": "#/$defs/labels"
+        },
         "secret_mappings": {
           "$ref": "#/$defs/secret_mappings",
           "description": "Required on every VM. Use {} if this VM has no secrets to resolve."
@@ -662,12 +1013,18 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "public_endpoint": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["hostname", "acme_email"],
+          "required": [
+            "hostname",
+            "acme_email"
+          ],
           "properties": {
             "hostname": {
               "type": "string",
@@ -683,44 +1040,94 @@
       "allOf": [
         {
           "if": {
-            "properties": { "assign_public_ip": { "const": true } },
-            "required": ["assign_public_ip"]
+            "properties": {
+              "assign_public_ip": {
+                "const": true
+              }
+            },
+            "required": [
+              "assign_public_ip"
+            ]
           },
           "then": {
-            "properties": { "role": { "enum": ["bastion", "ui"] } }
+            "properties": {
+              "role": {
+                "enum": [
+                  "bastion",
+                  "ui"
+                ]
+              }
+            }
           }
         },
         {
           "if": {
-            "properties": { "role": { "const": "bastion" } },
-            "required": ["role"]
+            "properties": {
+              "role": {
+                "const": "bastion"
+              }
+            },
+            "required": [
+              "role"
+            ]
           },
           "then": {
-            "required": ["ssh_port", "allowed_cidrs"],
+            "required": [
+              "ssh_port",
+              "allowed_cidrs"
+            ],
             "properties": {
-              "assign_public_ip": { "const": true },
-              "network_tags": { "contains": { "const": "bastion" } },
-              "secret_mappings": { "maxProperties": 0 }
+              "assign_public_ip": {
+                "const": true
+              },
+              "network_tags": {
+                "contains": {
+                  "const": "bastion"
+                }
+              },
+              "secret_mappings": {
+                "maxProperties": 0
+              }
             }
           },
           "else": {
             "not": {
               "anyOf": [
-                { "required": ["ssh_port"] },
-                { "required": ["allowed_cidrs"] }
+                {
+                  "required": [
+                    "ssh_port"
+                  ]
+                },
+                {
+                  "required": [
+                    "allowed_cidrs"
+                  ]
+                }
               ]
             }
           }
         },
         {
           "if": {
-            "properties": { "role": { "const": "ui" } },
-            "required": ["role"]
+            "properties": {
+              "role": {
+                "const": "ui"
+              }
+            },
+            "required": [
+              "role"
+            ]
           },
           "then": {
-            "required": ["public_endpoint"],
+            "required": [
+              "public_endpoint"
+            ],
             "properties": {
-              "network_tags": { "contains": { "const": "ui" } }
+              "network_tags": {
+                "contains": {
+                  "const": "ui"
+                }
+              }
             }
           }
         }

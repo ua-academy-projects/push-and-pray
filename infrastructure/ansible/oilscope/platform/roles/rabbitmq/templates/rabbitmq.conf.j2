@@ -1,0 +1,9 @@
+listeners.tcp = none
+listeners.ssl.default = 5671
+ssl_options.cacertfile = /etc/rabbitmq/tls/ca.pem
+ssl_options.certfile = /etc/rabbitmq/tls/ca.pem
+ssl_options.keyfile = /etc/rabbitmq/tls/server.key
+ssl_options.verify = verify_none
+ssl_options.fail_if_no_peer_cert = false
+vm_memory_high_watermark.relative = 0.6
+disk_free_limit.absolute = 512MB

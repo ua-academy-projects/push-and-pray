@@ -13,7 +13,7 @@ resource "aws_security_group" "rds" {
   vpc_id      = var.network.vpc_id
 
   ingress {
-    description = "PostgreSQL from Fetcher, History, and UI"
+    description = "PostgreSQL from Fetcher and History"
     from_port   = var.config.service_ports.postgresql
     to_port     = var.config.service_ports.postgresql
     protocol    = "tcp"
@@ -21,7 +21,6 @@ resource "aws_security_group" "rds" {
     security_groups = [
       var.network.security_group_ids.fetcher,
       var.network.security_group_ids.history,
-      var.network.security_group_ids.ui,
     ]
   }
 }

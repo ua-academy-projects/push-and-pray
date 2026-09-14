@@ -1,0 +1,14 @@
+{% set r = broker_config.rabbitmq %}
+{
+  "vhosts": [{"name": {{ r.vhost | to_json }}}],
+  "exchanges": [{"name": {{ r.exchange | to_json }}, "vhost": {{ r.vhost | to_json }}, "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {}}],
+  "queues": [
+{% for suffix in ['', '.retry', '.dead'] %}
+    {"name": {{ (r.queue ~ suffix) | to_json }}, "vhost": {{ r.vhost | to_json }}, "durable": true, "auto_delete": false,
+     "arguments": {"x-queue-type": "quorum", "x-quorum-initial-group-size": 1, "x-max-length-bytes": {{ r.queue_max_bytes }}, "x-overflow": "reject-publish"{% if suffix == '.retry' %}, "x-message-ttl": {{ r.retry_delay_ms }}{% endif %}{% if suffix == '' %}, "x-delivery-limit": -1{% endif %}}}{{ ',' if not loop.last else '' }}
+{% endfor %}
+  ],
+  "bindings": [{"source": {{ r.exchange | to_json }}, "vhost": {{ r.vhost | to_json }}, "destination": {{ r.queue | to_json }}, "destination_type": "queue", "routing_key": {{ r.routing_key | to_json }}, "arguments": {}}],
+  "policies": [{"name": "reliable-retry", "vhost": {{ r.vhost | to_json }}, "pattern": {{ ('^' ~ (r.queue | regex_escape) ~ '\\.retry$') | to_json }}, "apply-to": "quorum_queues", "priority": 1,
+    "definition": {"dead-letter-strategy": "at-least-once", "overflow": "reject-publish", "dead-letter-exchange": {{ r.exchange | to_json }}, "dead-letter-routing-key": {{ r.routing_key | to_json }}}}]
+}

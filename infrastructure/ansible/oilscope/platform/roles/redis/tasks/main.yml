@@ -1,0 +1,40 @@
+---
+- name: Load session service configuration
+  ansible.builtin.include_vars:
+    file: "{{ project_config_path }}"
+    name: redis_config
+
+- name: Require the selected co-located UI host
+  ansible.builtin.assert:
+    that:
+      - groups['ui'] | length == 1
+      - oilscope_vm_key == redis_config.redis.host_vm
+    fail_msg: This Redis deployment requires one explicitly selected UI host.
+
+- name: Prepare the Redis Compose directory
+  ansible.builtin.file:
+    path: /opt/oilscope/redis
+    state: directory
+    mode: '0755'
+
+- name: Render Redis Compose
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: /opt/oilscope/redis/compose.yaml
+    mode: '0644'
+
+- name: Start the private Redis service
+  ansible.builtin.command:
+    argv: [docker, compose, --file, /opt/oilscope/redis/compose.yaml, up, --detach, --pull, always, --wait]
+  environment:
+    REDIS_PASSWORD: "{{ resolve_secrets_result.REDIS_PASSWORD }}"
+  no_log: true
+  changed_when: true
+
+- name: Expose session settings to UI
+  ansible.builtin.set_fact:
+    oilscope_session_environment:
+      REDIS_URL: "redis://:{{ resolve_secrets_result.REDIS_PASSWORD | urlencode | replace('/', '%2F') }}@redis:6379/{{ redis_config.redis.database }}"
+      REDIS_KEY_PREFIX: "{{ redis_config.redis.key_prefix }}"
+      SESSION_TTL_SECONDS: "{{ redis_config.redis.session_ttl_seconds | string }}"
+  no_log: true

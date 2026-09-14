@@ -30,10 +30,6 @@ server (and therefore its health check) ever starts.
 - `fetcher_compose_project_name`: Compose project name; defaults to
   `petroscope`.
 - `fetcher_service`: Compose service name; defaults to `fetcher`.
-- `fetcher_postgres_user` and `fetcher_postgres_name`: both default to
-  `oil_tracker`.
-- `fetcher_database_host`: defaults to `postgres`; override to the database
-  VM's address when Fetcher and the database run on separate hosts.
 - `fetcher_bind_address`: defaults to `0.0.0.0`.
 - `fetcher_host_port`: defaults to `8002`.
 - `fetcher_health_retries` and `fetcher_health_delay`: health polling
@@ -47,12 +43,15 @@ server (and therefore its health check) ever starts.
 - name: Deploy the Fetcher service
   hosts: fetcher
   become: true
+  vars:
+    project_config_path: /absolute/path/project-config.json
+    terraform_outputs_path: /absolute/path/terraform-outputs.json
   roles:
+    - role: oilscope.platform.database_connection
     - role: oilscope.platform.fetcher
       vars:
         fetcher_postgres_password: "{{ vault_database_password }}"
         fetcher_oilpriceapi_key: "{{ vault_oilpriceapi_key }}"
-        fetcher_database_host: 10.0.1.2
 ```
 
 Running the role again is safe: Compose reconciles the existing Fetcher
@@ -62,3 +61,7 @@ finishes.
 ## License
 
 GPL-2.0-or-later
+
+Database settings come from `oilscope_database_environment`, supplied by the
+`database_connection` role. Run it before rendering Compose and starting Fetcher.
+`terraform_outputs_path` is required only for cloud database mode.

@@ -104,7 +104,6 @@ resource "aws_security_group" "database" {
     security_groups = [
       aws_security_group.fetcher[0].id,
       aws_security_group.history[0].id,
-      aws_security_group.ui[0].id,
     ]
   }
 
@@ -123,6 +122,15 @@ resource "aws_security_group" "history" {
   name        = "${local.resource_prefix}-history-sg"
   description = "Allows SSH from bastion and inbound from UI"
   vpc_id      = aws_vpc.main[0].id
+
+  ingress {
+    description     = "RabbitMQ TLS from Fetcher and History"
+    from_port       = var.config.rabbitmq.port
+    to_port         = var.config.rabbitmq.port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.fetcher[0].id]
+    self            = true
+  }
 
   ingress {
     description     = "Allows SSH from bastion"

@@ -604,7 +604,7 @@ exports.handler = async () => {
     let body = '';
     for await (const chunk of response) body += chunk;
     const result = JSON.parse(body);
-    if (result.status !== 'ok' || result.history !== 'connected' || result.sessions !== 'postgresql') {
+    if (result.status !== 'ok' || result.history !== 'connected' || result.sessions !== 'redis') {
       throw new Error('Health dependency check failed');
     }
   });

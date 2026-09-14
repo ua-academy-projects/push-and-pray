@@ -10,15 +10,18 @@ import (
 )
 
 type Config struct {
-	OilPriceAPIKey string
-	DataProvider   string
-	DatabaseURL    string
-	QueueName      string
-	CronHours      []int
-	Timezone       *time.Location
-	FetchOnStartup bool
-	RequestTimeout time.Duration
-	ListenAddress  string
+	OilPriceAPIKey                                        string
+	DataProvider                                          string
+	DatabaseURL                                           string
+	QueueName                                             string
+	RabbitURL, RabbitCA, RabbitExchange, RabbitRoutingKey string
+	RabbitTimeout, OutboxPollInterval                     time.Duration
+	OutboxBatchSize                                       int
+	CronHours                                             []int
+	Timezone                                              *time.Location
+	FetchOnStartup                                        bool
+	RequestTimeout                                        time.Duration
+	ListenAddress                                         string
 }
 
 func Load() (Config, error) {
@@ -60,11 +63,30 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("REQUEST_TIMEOUT_SECONDS must be a positive integer")
 	}
 
+	for _, key := range []string{"RABBITMQ_URL", "RABBITMQ_CA_FILE", "RABBITMQ_EXCHANGE", "RABBITMQ_ROUTING_KEY", "RABBITMQ_QUEUE"} {
+		if os.Getenv(key) == "" {
+			return Config{}, fmt.Errorf("%s is required", key)
+		}
+	}
+	rabbitTimeout, err := strconv.Atoi(os.Getenv("RABBITMQ_TIMEOUT_SECONDS"))
+	if err != nil || rabbitTimeout < 1 {
+		return Config{}, fmt.Errorf("RABBITMQ_TIMEOUT_SECONDS must be positive")
+	}
+	poll, err := strconv.Atoi(os.Getenv("OUTBOX_POLL_SECONDS"))
+	if err != nil || poll < 1 {
+		return Config{}, fmt.Errorf("OUTBOX_POLL_SECONDS must be positive")
+	}
+	batch, err := strconv.Atoi(os.Getenv("OUTBOX_BATCH_SIZE"))
+	if err != nil || batch < 1 {
+		return Config{}, fmt.Errorf("OUTBOX_BATCH_SIZE must be positive")
+	}
 	return Config{
+		RabbitURL: os.Getenv("RABBITMQ_URL"), RabbitCA: os.Getenv("RABBITMQ_CA_FILE"), RabbitExchange: os.Getenv("RABBITMQ_EXCHANGE"), RabbitRoutingKey: os.Getenv("RABBITMQ_ROUTING_KEY"),
+		RabbitTimeout: time.Duration(rabbitTimeout) * time.Second, OutboxPollInterval: time.Duration(poll) * time.Second, OutboxBatchSize: batch,
 		OilPriceAPIKey: apiKey,
 		DataProvider:   provider,
 		DatabaseURL:    databaseURL,
-		QueueName:      env("PGMQ_QUEUE", "price_observations"),
+		QueueName:      os.Getenv("RABBITMQ_QUEUE"),
 		CronHours:      hours,
 		Timezone:       location,
 		FetchOnStartup: fetchOnStartup,

@@ -14,10 +14,11 @@ services:
     init: true
     environment:
       HISTORY_SERVICE_URL: http://${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:8001
-      DATABASE_URL: postgresql://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker
-      SESSION_TTL_SECONDS: "2592000"
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:?required}
       SESSION_COOKIE_SECURE: "false"
       LOG_LEVEL: INFO
+      REDIS_URL: ${REDIS_URL:?required}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:?required}
       TZ: UTC
     ports:
       - "${UI_LAN_IP}:8080:8080"

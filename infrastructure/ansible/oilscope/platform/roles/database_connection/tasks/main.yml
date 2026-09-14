@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Load database hosting configuration
+  ansible.builtin.include_vars:
+    file: "{{ project_config_path }}"
+    name: database_connection_config
+
+- name: Select database hosting mode
+  ansible.builtin.set_fact:
+    oilscope_database_mode: "{{ database_connection_config.default_db }}"
+
+- name: Resolve the application database connection
+  ansible.builtin.set_fact:
+    oilscope_database_connection:
+      host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+      port: "{{ database_connection_config.service_ports.postgresql }}"
+      database: oil_tracker
+      sslmode: disable
+  when: oilscope_database_mode == 'application'
+
+- name: Resolve the managed database connection
+  when: oilscope_database_mode == 'cloud'
+  block:
+    - name: Read refreshed Terraform outputs from the controller
+      ansible.builtin.include_vars:
+        file: "{{ terraform_outputs_path }}"
+        name: database_connection_terraform_outputs
+      no_log: true
+
+    - name: Select this provider's database output
+      ansible.builtin.set_fact:
+        oilscope_database_connection: >-
+          {{ database_connection_terraform_outputs[
+               database_connection_config.default_cloud ~ '_database_connection'
+             ].value }}
+
+    - name: Require an applied managed database with verified TLS
+      ansible.builtin.assert:
+        that:
+          - oilscope_database_connection is mapping
+          - oilscope_database_connection.host | length > 0
+          - oilscope_database_connection.sslmode == 'verify-full'
+        fail_msg: >-
+          The selected managed database is missing or lacks verified TLS.
+          Refresh terraform_outputs_path from the applied deployment's Terraform outputs.
+
+    - name: Create the public database CA directory
+      ansible.builtin.file:
+        path: "{{ database_connection_ca_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Refresh the provider's public database CA bundle
+      ansible.builtin.get_url:
+        url: "{{ oilscope_database_connection.ca_bundle_url }}"
+        dest: "{{ database_connection_ca_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        validate_certs: true
+        force: true
+
+    - name: Identify the installed CA bundle for Compose reconciliation
+      ansible.builtin.stat:
+        path: "{{ database_connection_ca_file }}"
+        checksum_algorithm: sha256
+      register: oilscope_database_ca
+
+- name: Expose non-secret Compose connection settings
+  ansible.builtin.set_fact:
+    oilscope_database_environment:
+      DATABASE_HOST: "{{ oilscope_database_connection.host }}"
+      DATABASE_PORT: "{{ oilscope_database_connection.port | string }}"
+      POSTGRES_DB: "{{ oilscope_database_connection.database }}"
+      POSTGRES_USER: >-
+        {{ 'oil_tracker_' ~ oilscope_vm_key if oilscope_database_mode == 'cloud' else 'oil_tracker' }}
+      DATABASE_SSLMODE: "{{ oilscope_database_connection.sslmode }}"
+      DATABASE_SSLROOTCERT: >-
+        {{ database_connection_container_ca_file if oilscope_database_mode == 'cloud' else '' }}

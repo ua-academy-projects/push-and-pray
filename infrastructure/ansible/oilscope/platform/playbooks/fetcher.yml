@@ -20,14 +20,18 @@
 
     - role: oilscope.platform.docker_engine
 
-    - role: oilscope.platform.compose_project
-      vars:
-        compose_project_config_path: "{{ project_config_path }}"
-        compose_project_workload: "{{ oilscope_role }}"
+    - role: oilscope.platform.database_connection
 
     - role: oilscope.platform.resolve_secrets
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - role: oilscope.platform.broker_connection
+
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_workload: "{{ oilscope_role }}"
 
     - role: oilscope.platform.registry_auth
       vars:
@@ -41,7 +45,5 @@
 
     - role: oilscope.platform.fetcher
       vars:
-        fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

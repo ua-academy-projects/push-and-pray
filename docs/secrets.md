@@ -9,6 +9,92 @@ a section says otherwise.
 
 ## Where the catalog comes from
 
+For the current PostgreSQL deployment, use `POSTGRES_PASSWORD` as the mapping
+key. The lifecycle below distinguishes the shared application-mode login from
+the restricted cloud-mode logins; older generic per-service examples later in
+this document are illustrative, not the current project's exact mappings.
+
+## PostgreSQL password lifecycle
+
+Passwords are deployment secrets, not Docker image contents. Publishing an
+image to the shared GHCR namespace does not publish its deployment passwords.
+Access to images and access to AWS/GCP secrets are separate permissions.
+
+In application mode, the database container and Fetcher/History currently use
+the `oil_tracker` login. They must receive the same password. Mapping all three
+workloads' `POSTGRES_PASSWORD` to one secret ensures that consistency. UI uses
+Redis and does not need a PostgreSQL password.
+
+For example, with a secret named `oilscope-db-password`:
+
+```json
+"secret_mappings": {
+  "POSTGRES_PASSWORD": "oilscope-db-password"
+}
+```
+
+Terraform creates the secret container and scoped workload read grants. The
+operator supplies its value separately, after the container exists. The
+uploader derives its source variable from the secret ID. With configuration
+prefix `oilscope-prod-`, `oilscope-db-password` does not start with that full
+prefix, so its source variable is `OILSCOPE_DB_PASSWORD`.
+
+For initial setup only, generate a value without printing it and upload just
+that secret (substitute the actual config path):
+
+```sh
+export OILSCOPE_DB_PASSWORD="$(openssl rand -hex 32)"
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file=/absolute/path/project-config.new.json \
+  -e '{"secret_versions_only":["oilscope-db-password"]}'
+unset OILSCOPE_DB_PASSWORD
+```
+
+The operator needs the selected provider's upload permission. This command
+does not initialize PostgreSQL or upload the other required workload secrets.
+If the DB already exists, preserve its current password or follow coordinated
+rotation; do not upload a random replacement as though it were first setup.
+
+On deployment, `resolve_secrets` reads the value on each target VM using its
+AWS instance role or GCP service account. Ansible supplies it as transient
+task environment, and Compose passes it to the container. No manual password
+copy to each VM is needed. Sensitive tasks use `no_log`; host root/Docker
+administrators can still inspect container environments.
+
+An operator who needs to retrieve the AWS value can use Secrets Manager's
+**Retrieve secret value** action for the named secret, with explicit read
+permission. Deployment does not require the operator to display it. Do not
+confuse permission to upload a new version with permission to read one.
+
+In cloud mode, administrator and runtime credentials are separate:
+
+- RDS generates/manages the administrator password in Secrets Manager;
+  `admin_secret_arn` identifies it. Do not manually upload that managed value.
+- The GCP module generates the administrator password and writes the SQL user
+  and admin secret together; those values are present in Terraform state.
+- The operator supplies runtime password secret versions via the same uploader.
+  The cloud migration role reads admin/runtime values using the controller's
+  operator identity, then creates or updates `oil_tracker_<vm-key>` logins
+  from the History migration host. Runtime VMs receive only their mapped
+  secrets, not administrator-secret read grants.
+- Separate Fetcher/History secret IDs allow independent passwords. If their
+  mappings still point to the same ID, the separate logins share a password;
+  separate SQL users do not automatically generate separate secrets.
+
+**Rotation requires updating both the secret and the database login.** The
+application-mode database role currently does not issue `ALTER ROLE` for an
+existing volume. Changing `POSTGRES_PASSWORD` and restarting the PostgreSQL
+container only changes its environment, not the initialized login password.
+Plan an explicit SQL password change and coordinated client restart. In cloud
+mode, rerun managed-role provisioning to apply the new runtime secret to the
+login before restarting clients; this is not continuous automatic rotation.
+Do not delete database storage to rotate a password.
+
+References: [RDS-managed passwords](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-secrets-manager.html)
+and [PostgreSQL image initialization](https://github.com/docker-library/postgres/blob/master/docker-entrypoint.sh).
+
+## Secret mapping examples
+
 There is no hand-written list of secrets. Every container is derived from
 `secret_mappings` in the project configuration JSON:
 
@@ -301,8 +387,9 @@ somewhere else first.
 
 The database modules manage administrator credentials separately from workload
 `secret_mappings`. Do not add these administrator secrets to application VM
-mappings. Ansible will use an authorized migration identity to bootstrap
-restricted runtime database roles in a later step.
+mappings. Ansible now uses the controller operator identity to read these secrets and
+bootstrap restricted runtime roles from the first History host. See
+[managed migrations](../infrastructure/ansible/oilscope/platform/roles/database_migrate/README.md).
 
 AWS RDS generates its administrator password in Secrets Manager and Terraform
 exports `admin_secret_arn` without reading the password. GCP Terraform generates
@@ -317,3 +404,11 @@ state backups. No secret values belong in project JSON, outputs, logs, or Git.
 Keep password changes under Terraform management so the SQL account and secret
 version stay synchronized; there is no automatic GCP password rotation here.
 This differs from the RDS-managed password workflow.
+
+Managed migration invocations require AWS CLI or gcloud on the controller,
+authenticated as an operator who may read the administrator secret and each
+workload's POSTGRES_PASSWORD secret. Workload VM identities do not receive
+administrator-secret IAM grants. Runtime users are `oil_tracker_<vm-key>` in
+cloud mode and keep their existing secret mappings. Administrator credentials
+are visible to root/Docker administrators while the migration container runs;
+no credential-bearing SQL or Compose files are persisted by the role.

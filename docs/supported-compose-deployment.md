@@ -6,20 +6,44 @@ non-secret `deployment.env` file containing the application image SHA from the
 external project configuration JSON. Secret retrieval and injection are handled
 outside Compose through the parent process environment.
 
-The canonical configuration is the `compose_project` role template at
-`infrastructure/ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2`.
-The role installs it as `/opt/oilscope/app/compose.yaml`. The older role-specific
-Compose files are retained for the Vagrant development environment; they are not
-the supported GHCR deployment configuration.
+There is no single combined Compose file anymore. `oilscope.platform.
+compose_project` always renders exactly one per-role template for a given
+VM — `compose.database.yaml.j2`, `compose.fetcher.yaml.j2`,
+`compose.history.yaml.j2`, or `compose.ui.yaml.j2` at
+`infrastructure/ansible/oilscope/platform/roles/compose_project/templates/`,
+selected by that VM's own role — installed as `/opt/oilscope/app/compose.yaml`.
+There is no "run everything on one machine" option: every workload VM runs
+exactly one role's Compose project. RabbitMQ and Redis are **not** rendered by
+`compose_project` at all — they're each their own dedicated role and Compose
+project (`oilscope-rabbitmq` on the History VM, `oilscope-redis` on the UI
+VM); see [RabbitMQ and Redis deployment](../infrastructure/ansible/oilscope/platform/README.md#rabbitmq-and-redis-deployment)
+and [Database modes and coordinated cutover](database-modes.md).
 
 ## Required settings
 
 | Variable | Description |
 | --- | --- |
 | `APP_IMAGE_TAG` | Immutable Git commit SHA installed from the external JSON by the Ansible role. Do not use `latest`. |
-| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include PGMQ, `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
+| `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include the SQL migrations and `petroscope-migrate`; it no longer needs PGMQ or `pg_cron` — those extensions were retired when the application moved to RabbitMQ and Redis. |
 | `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
 | `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
+
+Fetcher and History additionally require, with no compiled-in default —
+Compose fails to start rather than falling back to a previous value if any
+of these are unset: `POSTGRES_USER`, `POSTGRES_PASSWORD_URL` (the
+URL-encoded form of `POSTGRES_PASSWORD` used inside the connection string),
+`DATABASE_HOST`, `DATABASE_PORT`, `POSTGRES_DB`, `DATABASE_SSLMODE`
+(`disable` in application mode, `verify-full` plus a required
+`DATABASE_SSLROOTCERT` in cloud mode), `RABBITMQ_URL`, `RABBITMQ_CA_FILE`,
+`RABBITMQ_EXCHANGE`, `RABBITMQ_ROUTING_KEY`, `RABBITMQ_QUEUE`,
+`RABBITMQ_TIMEOUT_SECONDS`, `RABBITMQ_RECONNECT_SECONDS`,
+`RABBITMQ_MAX_ATTEMPTS`, `OUTBOX_POLL_SECONDS`, `OUTBOX_BATCH_SIZE`. UI
+instead requires `REDIS_URL`, `REDIS_KEY_PREFIX`, and `SESSION_TTL_SECONDS` —
+it has no PostgreSQL connection at all. The `oilscope.platform.
+database_connection` and `broker_connection` Ansible roles derive all of
+these from inventory/Terraform outputs and project configuration; they are
+not meant to be hand-typed for a real deployment, only for a manual/local
+Compose invocation like the ones below.
 
 Authenticate to the private registry before deployment. Supply a GitHub token
 with `read:packages` to `docker login ghcr.io` through standard input; do not put
@@ -29,11 +53,8 @@ the token in Compose, this repository, or a shell argument.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `POSTGRES_DB` | `oil_tracker` | Database name |
-| `POSTGRES_USER` | `oil_tracker` | Database user |
-| `DATABASE_HOST` | `postgres` | PostgreSQL hostname; set the database VM address for split-host deployment |
-| `DATABASE_PORT` | `5432` | PostgreSQL service port |
-| `DATABASE_SSLMODE` | `disable` | Client PostgreSQL TLS mode |
+| `POSTGRES_DB` | `oil_tracker` | Database name (the `postgres` container's own default; Fetcher/History must still be given it explicitly, see above) |
+| `POSTGRES_USER` | `oil_tracker` | Database user (same caveat) |
 | `DATABASE_BIND_ADDRESS` | `0.0.0.0` | PostgreSQL host bind address |
 | `DATABASE_HOST_PORT` | `5432` | Published PostgreSQL host port |
 | `HISTORY_SERVICE_URL` | `http://history:8001` | UI-to-History endpoint; set the History VM address for split-host deployment |
@@ -44,16 +65,11 @@ the token in Compose, this repository, or a shell argument.
 | `FETCHER_LISTEN_ADDRESS` | `0.0.0.0:8002` | Fetcher listen endpoint inside its container |
 | `UI_BIND_ADDRESS` | `0.0.0.0` | UI host bind address |
 | `UI_HTTP_PORT` | `80` | Published UI HTTP port |
-| `PGMQ_QUEUE` | `price_observations` | PostgreSQL queue name |
-| `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60` | History queue visibility timeout |
-| `PGMQ_POLL_INTERVAL_SECONDS` | `1` | History queue polling interval |
-| `PGMQ_MAX_ATTEMPTS` | `5` | History maximum delivery attempts |
 | `DATA_PROVIDER` | `oilpriceapi` | Fetcher data provider |
 | `FETCH_CRON_HOURS` | `0,6,12,18` | Fetch schedule hours |
 | `FETCH_TIMEZONE` | `UTC` | Fetch schedule timezone |
 | `FETCH_ON_STARTUP` | `true` | Fetch immediately after startup |
 | `REQUEST_TIMEOUT_SECONDS` | `15` | Fetcher provider timeout |
-| `SESSION_TTL_SECONDS` | `2592000` | PostgreSQL UI-session lifetime |
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` when HTTPS terminates at the application host |
 | `LOG_LEVEL` | `INFO` | History and UI log level |
 | `APPLICATION_PLATFORM` | `linux/amd64` | Application image platform |
@@ -61,49 +77,64 @@ the token in Compose, this repository, or a shell argument.
 | `APPLICATION_PULL_POLICY` | `always` | Application image pull policy |
 | `POSTGRES_PULL_POLICY` | `always` | PostgreSQL image pull policy |
 
-## Complete stack on one machine
+`SESSION_TTL_SECONDS` (the Redis session TTL) has no default and is listed as
+required above, not here — UI fails to start without it, matching every
+other connection-shaped setting in this deployment.
 
-After exporting the required secret variables, use this single startup command:
+## Starting each role
+
+Cross-host ordering is handled by the deployment orchestrator, not by
+Compose — there's no single file where `depends_on` could coordinate this
+across VMs even if every role happened to run on one machine. Run
+`docker compose ... pull` before each role's `up`/`run` command:
 
 ```sh
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml pull && \
-  docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --wait
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d postgres   # database VM, application mode only
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml run --rm migrate # database VM, application mode only
+# start RabbitMQ (History VM) and Redis (UI VM) here — see the cross-references above
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d history     # History VM
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d fetcher     # Fetcher VM
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d ui          # UI VM
 ```
 
-Compose starts PostgreSQL, waits for it to become healthy, applies every
-migration through the one-shot `migrate` service, starts Fetcher and History,
-then starts UI after History is healthy. UI is published on host port 80 by
-default.
+Cloud mode runs migrations from a **separate** Compose project — never from
+`/opt/oilscope/app/compose.yaml`, and never as a hand-typed invocation with
+this document's `--env-file`. The `oilscope.platform.database_migrate` role
+renders its own project at `/opt/oilscope/migrate/compose.yaml` (project name
+`oilscope-migrate`) on the first History host, and runs it itself with
+transient administrator/runtime credentials it reads from Secrets Manager
+using the *controller operator's* identity:
 
-Run the application smoke test:
+```sh
+docker compose --project-name oilscope-migrate --file /opt/oilscope/migrate/compose.yaml pull migrate
+docker compose --project-name oilscope-migrate --file /opt/oilscope/migrate/compose.yaml run --rm --no-deps -T migrate
+```
+
+These two commands are shown for reference/troubleshooting only — there is no
+supported manual invocation of cloud-mode migrations; the credentials are
+process-transient Ansible facts, not a file an operator can export and reuse.
+See [`database_migrate`'s README](../infrastructure/ansible/oilscope/platform/roles/database_migrate/README.md)
+for the credential-retrieval and grant sequence.
+
+On application VMs, set `DATABASE_HOST` to the database VM endpoint (or the
+managed endpoint in cloud mode) and `RABBITMQ_URL`/`RABBITMQ_CA_FILE` to the
+History VM's broker. On the UI VM, also set `HISTORY_SERVICE_URL` to the
+History VM endpoint and `REDIS_URL` to its own co-located Redis. Network
+firewalls must permit only the required cross-VM traffic.
+
+Run the application smoke test once every role is up:
 
 ```sh
 infrastructure/docker/smoke-test.sh
 ```
 
-Stop the deployment without deleting PostgreSQL data:
+Stop a role without deleting its data:
 
 ```sh
 docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml down
 ```
 
-## Independent VM roles
-
-Cross-host ordering is handled by the deployment orchestrator, not by Compose.
-Start PostgreSQL first, run the independently executable migration job, and
-then start the application roles. Use `--no-deps` so a role does not try to
-start its same-file dependencies on that VM:
-
-```sh
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps postgres
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml run --rm --no-deps migrate
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps history
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps fetcher
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps ui
-```
-
-Run `docker compose ... pull SERVICE` before each role command. On application
-VMs, set `DATABASE_HOST` to the database VM endpoint. On the UI VM, also set
-`HISTORY_SERVICE_URL` to the History VM endpoint. Network firewalls must permit
-only the required cross-VM traffic; Compose dependencies do not coordinate
-services across machines.
+RabbitMQ and Redis use their own separate `docker compose ... down` (project
+names `oilscope-rabbitmq`/`oilscope-redis`) and are **not** stopped by this
+command — see [Database modes and coordinated cutover](database-modes.md)
+for when their data should, and should not, be reset.

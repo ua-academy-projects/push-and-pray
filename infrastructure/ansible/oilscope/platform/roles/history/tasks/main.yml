@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 - name: Deploy only History
-  environment:
-    DOCKER_CONFIG: "{{ history_docker_config_dir }}"
-    POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
-    HISTORY_HOST_PORT: "{{ history_host_port }}"
+  environment: >-
+    {{ oilscope_database_environment | combine(oilscope_broker_environment) | combine({
+         'DOCKER_CONFIG': history_docker_config_dir,
+         'POSTGRES_PASSWORD': history_postgres_password,
+         'POSTGRES_PASSWORD_URL': history_postgres_password | urlencode | replace('/', '%2F'),
+         'HISTORY_HOST_PORT': history_host_port | string
+       }) }}
   no_log: true
   block:
     - name: Pull the History image
@@ -60,13 +62,4 @@
   delay: "{{ history_health_delay }}"
   until:
     - (history_health.json | default({})).get('status', '') == 'ok'
-    - >-
-      (history_health.json | default({})).get('database', '') == 'connected'
-    - >-
-      (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
-    - >-
-      (history_health.json | default({})).get(
-        'pgmq_consumer', ''
-      ) == 'ready'
+    - (history_health.json | default({})).get('rabbitmq_consumer', '') == 'ready'

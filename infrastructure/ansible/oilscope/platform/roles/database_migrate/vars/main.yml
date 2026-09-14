@@ -1,0 +1,3 @@
+---
+database_migrate_dir: /opt/oilscope/migrate
+database_migrate_project: oilscope-migrate

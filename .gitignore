@@ -33,6 +33,7 @@ crash.*.log
 *.pem
 *.key
 !project-config.example.json
+!project-config.cloud-example.json
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz

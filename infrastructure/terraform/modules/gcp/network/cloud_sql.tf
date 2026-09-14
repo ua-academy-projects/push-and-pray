@@ -32,7 +32,7 @@ resource "google_compute_firewall" "cloud_sql_clients" {
   direction          = "EGRESS"
   priority           = 900
   destination_ranges = [var.config.clouds.gcp.cloud_sql_network.allocated_cidr]
-  target_tags        = [local.network_tags.fetcher, local.network_tags.history, local.network_tags.ui]
+  target_tags        = [local.network_tags.fetcher, local.network_tags.history]
   allow {
     protocol = "tcp"
     ports    = ["5432"]

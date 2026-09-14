@@ -1,0 +1,54 @@
+---
+- name: Load messaging configuration
+  ansible.builtin.include_vars:
+    file: "{{ project_config_path }}"
+    name: broker_config
+
+- name: Resolve the selected RabbitMQ inventory host
+  ansible.builtin.set_fact:
+    oilscope_broker_host: "{{ item }}"
+  loop: "{{ groups['history'] }}"
+  when: hostvars[item].oilscope_vm_key == broker_config.rabbitmq.host_vm
+
+- name: Refuse to continue without a resolved RabbitMQ host
+  ansible.builtin.assert:
+    that:
+      - oilscope_broker_host is defined
+    fail_msg: >-
+      No history-group host has oilscope_vm_key ==
+      {{ broker_config.rabbitmq.host_vm }}. Check rabbitmq.host_vm in the
+      project configuration against the discovered inventory.
+
+- name: Read the broker trust certificate over SSH
+  ansible.builtin.slurp:
+    src: /opt/oilscope/rabbitmq/tls/ca.pem
+  delegate_to: "{{ oilscope_broker_host }}"
+  register: oilscope_broker_ca
+
+- name: Prepare broker client trust directory
+  ansible.builtin.file:
+    path: /etc/oilscope/rabbitmq
+    state: directory
+    mode: '0755'
+
+- name: Install broker client trust certificate
+  ansible.builtin.copy:
+    content: "{{ oilscope_broker_ca.content | b64decode }}"
+    dest: /etc/oilscope/rabbitmq/ca.pem
+    mode: '0644'
+
+- name: Build the authenticated broker connection settings
+  ansible.builtin.set_fact:
+    oilscope_broker_environment:
+      RABBITMQ_URL: >-
+        amqps://{{ broker_config.rabbitmq.username | urlencode }}:{{ resolve_secrets_result.RABBITMQ_PASSWORD | urlencode | replace('/', '%2F') }}@{{ hostvars[oilscope_broker_host].internal_ip }}:{{ broker_config.rabbitmq.port }}/{{ broker_config.rabbitmq.vhost | urlencode | replace('/', '%2F') }}
+      RABBITMQ_CA_FILE: /run/oilscope/rabbitmq/ca.pem
+      RABBITMQ_EXCHANGE: "{{ broker_config.rabbitmq.exchange }}"
+      RABBITMQ_ROUTING_KEY: "{{ broker_config.rabbitmq.routing_key }}"
+      RABBITMQ_QUEUE: "{{ broker_config.rabbitmq.queue }}"
+      RABBITMQ_TIMEOUT_SECONDS: "{{ broker_config.rabbitmq.timeout_seconds | string }}"
+      RABBITMQ_RECONNECT_SECONDS: "{{ broker_config.rabbitmq.reconnect_seconds | string }}"
+      RABBITMQ_MAX_ATTEMPTS: "{{ broker_config.rabbitmq.max_attempts | string }}"
+      OUTBOX_POLL_SECONDS: "{{ broker_config.rabbitmq.outbox_poll_seconds | string }}"
+      OUTBOX_BATCH_SIZE: "{{ broker_config.rabbitmq.outbox_batch_size | string }}"
+  no_log: true

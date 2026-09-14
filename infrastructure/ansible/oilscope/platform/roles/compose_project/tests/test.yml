@@ -5,6 +5,28 @@
   connection: local
   gather_facts: false
   tasks:
+    # compose.fetcher.yaml.j2/compose.history.yaml.j2 read oilscope_database_mode/
+    # oilscope_broker_ca/oilscope_database_ca, which the real deployment playbooks
+    # set via the database_connection/broker_connection roles before compose_project
+    # runs. Those roles need real inventory groups, SSH access to slurp a live
+    # broker CA, and (in cloud mode) a real terraform_outputs_path — none of which
+    # this isolated, localhost-only role test can provide. Fake only the shape
+    # these templates read, so this test still catches real Jinja/rendering
+    # regressions in compose_project itself without standing up the whole chain.
+    - name: Fake the shared connection facts compose_project's templates expect
+      ansible.builtin.set_fact:
+        oilscope_database_mode: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).default_db }}"
+        oilscope_broker_ca:
+          content: "{{ 'test-only-broker-ca' | b64encode }}"
+        oilscope_database_ca:
+          stat:
+            checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+        # Real constants from database_connection/vars/main.yml, not fakes —
+        # copied here since that role's vars only load when the role itself
+        # runs, which (see above) this isolated test deliberately doesn't do.
+        database_connection_ca_dir: /etc/oilscope/database-tls
+        database_connection_container_ca_dir: /run/oilscope/database-tls
+
     - name: Render the Compose definition for each workload role
       ansible.builtin.include_role:
         name: oilscope.platform.compose_project
@@ -32,11 +54,33 @@
           - /tmp/oilscope-compose-project-test/{{ item }}/compose.yaml
           - config
           - --quiet
+      # The full set of required (":?") variables across every rendered
+      # template — grep templates/*.j2 for '\${[A-Z_]+:\?' to regenerate this
+      # list if a service adds a new required setting.
       environment:
         DATABASE_HOST: 127.0.0.1
+        DATABASE_PORT: "5432"
+        DATABASE_SSLMODE: disable
+        DATABASE_SSLROOTCERT: /dev/null
         HISTORY_SERVICE_URL: http://127.0.0.1:8001
         OILPRICEAPI_KEY: test-only
+        OUTBOX_BATCH_SIZE: "50"
+        OUTBOX_POLL_SECONDS: "5"
+        POSTGRES_DB: oil_tracker
         POSTGRES_PASSWORD: test-only
+        POSTGRES_PASSWORD_URL: test-only
+        POSTGRES_USER: oil_tracker
+        RABBITMQ_CA_FILE: /dev/null
+        RABBITMQ_EXCHANGE: test-only
+        RABBITMQ_MAX_ATTEMPTS: "5"
+        RABBITMQ_QUEUE: test-only
+        RABBITMQ_RECONNECT_SECONDS: "5"
+        RABBITMQ_ROUTING_KEY: test-only
+        RABBITMQ_TIMEOUT_SECONDS: "10"
+        RABBITMQ_URL: amqps://test-only
+        REDIS_KEY_PREFIX: "test:"
+        REDIS_URL: redis://test-only
+        SESSION_TTL_SECONDS: "2592000"
       changed_when: false
       loop:
         - database

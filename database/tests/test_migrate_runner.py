@@ -63,12 +63,19 @@ class MigrationRunnerTests(unittest.TestCase):
             for path in sorted((self.migrations / group).glob("*.sql"))
         ]
         self.assertEqual(calls, expected)
-        self.assertEqual(len(calls), 7)
+        # Not a fixed literal: application/cloud migrations are currently
+        # retired/empty, so this only asserts "every common file ran," not a
+        # specific historical count that would go stale as profiles change.
+        self.assertEqual(len(calls), len(expected))
 
     def test_cloud_runs_only_common_with_empty_profile(self):
         result, calls = self.run_profile("cloud")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(calls), 5)
+        expected_common = [
+            path.relative_to(self.migrations).as_posix()
+            for path in sorted((self.migrations / "common").glob("*.sql"))
+        ]
+        self.assertEqual(len(calls), len(expected_common))
         self.assertTrue(all(path.startswith("common/") for path in calls))
 
     def test_invalid_profile_fails_before_sql(self):

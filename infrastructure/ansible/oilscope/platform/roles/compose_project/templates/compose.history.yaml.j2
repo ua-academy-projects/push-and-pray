@@ -9,16 +9,42 @@ services:
     init: true
     environment:
       # yamllint disable rule:line-length
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD_URL:?POSTGRES_PASSWORD_URL is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:?DATABASE_PORT is required}/${POSTGRES_DB:?POSTGRES_DB is required}?sslmode=${DATABASE_SSLMODE:?DATABASE_SSLMODE is required}{{ '&sslrootcert=${DATABASE_SSLROOTCERT:?DATABASE_SSLROOTCERT is required}' if oilscope_database_mode == 'cloud' else '' }}
       # yamllint enable rule:line-length
-      PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
-      PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
-      PGMQ_POLL_INTERVAL_SECONDS: ${PGMQ_POLL_INTERVAL_SECONDS:-1}
-      PGMQ_MAX_ATTEMPTS: ${PGMQ_MAX_ATTEMPTS:-5}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      RABBITMQ_URL: ${RABBITMQ_URL:?required}
+      RABBITMQ_CA_FILE: ${RABBITMQ_CA_FILE:?required}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:?required}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:?required}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:?required}
+      RABBITMQ_TIMEOUT_SECONDS: ${RABBITMQ_TIMEOUT_SECONDS:?required}
+      RABBITMQ_RECONNECT_SECONDS: ${RABBITMQ_RECONNECT_SECONDS:?required}
+      RABBITMQ_MAX_ATTEMPTS: ${RABBITMQ_MAX_ATTEMPTS:?required}
+      OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:?required}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:?required}
       TZ: UTC
     ports:
       - "${HISTORY_BIND_ADDRESS:-0.0.0.0}:${HISTORY_HOST_PORT:-8001}:8001"
+    labels:
+      oilscope.broker-ca: "{{ oilscope_broker_ca.content | hash('sha256') }}"
+{% if oilscope_database_mode == 'cloud' %}
+      oilscope.database-ca-sha256: "{{ oilscope_database_ca.stat.checksum }}"
+{% endif %}
+    volumes:
+      - type: bind
+        source: /etc/oilscope/rabbitmq
+        target: /run/oilscope/rabbitmq
+        read_only: true
+        bind:
+          create_host_path: false
+{% if oilscope_database_mode == 'cloud' %}
+      - type: bind
+        source: "{{ database_connection_ca_dir }}"
+        target: "{{ database_connection_container_ca_dir }}"
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
     healthcheck:
       test:
         - CMD
@@ -29,8 +55,7 @@ services:
           data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
           assert data["status"] == "ok";
           assert data["database"] == "connected";
-          assert data["pgmq_extension"] == "installed";
-          assert data["pgmq_consumer"] == "ready"
+          assert data["rabbitmq_consumer"] == "ready"
       interval: 10s
       timeout: 5s
       retries: 20

@@ -1,0 +1,60 @@
+---
+- name: Read this workload's existing database password
+  ansible.builtin.include_tasks: read_secret.yml
+  vars:
+    database_migrate_secret_id: "{{ database_migrate_workload.value.secret_mappings.POSTGRES_PASSWORD }}"
+
+- name: Apply this workload's runtime role operation
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_migrate_project }}"
+      - --file
+      - "{{ database_migrate_dir }}/compose.yaml"
+      - run
+      - --rm
+      - --no-deps
+      - -T
+      - migrate
+      - psql
+      - -X
+      - --set=ON_ERROR_STOP=1
+      - "--file=/opt/oilscope/bootstrap/{{ database_migrate_operation }}.sql"
+  environment: >-
+    {{ database_migrate_environment | combine({
+         'RUNTIME_DB_USER': 'oil_tracker_' ~ database_migrate_workload.key,
+         'RUNTIME_DB_PASSWORD': database_migrate_secret_value,
+         'RUNTIME_DB_ROLE': database_migrate_workload.value.role
+       }) }}
+  no_log: true
+  changed_when: true
+
+- name: Verify login and table access with runtime credentials
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_migrate_project }}"
+      - --file
+      - "{{ database_migrate_dir }}/compose.yaml"
+      - run
+      - --rm
+      - --no-deps
+      - -T
+      - migrate
+      - psql
+      - -X
+      - --set=ON_ERROR_STOP=1
+      - --file=/opt/oilscope/bootstrap/verify.sql
+  environment: >-
+    {{ database_migrate_environment | combine({
+         'DATABASE_ADMIN_USER': 'oil_tracker_' ~ database_migrate_workload.key,
+         'DATABASE_ADMIN_PASSWORD': database_migrate_secret_value,
+         'RUNTIME_DB_ROLE': database_migrate_workload.value.role
+       }) }}
+  no_log: true
+  changed_when: false
+  when: database_migrate_operation == 'grants'

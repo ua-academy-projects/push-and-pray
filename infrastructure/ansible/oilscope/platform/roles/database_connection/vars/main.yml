@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_connection_ca_dir: /etc/oilscope/database-tls
+database_connection_ca_file: "{{ database_connection_ca_dir }}/ca-bundle.pem"
+database_connection_container_ca_dir: /run/oilscope/database-tls
+database_connection_container_ca_file: "{{ database_connection_container_ca_dir }}/ca-bundle.pem"

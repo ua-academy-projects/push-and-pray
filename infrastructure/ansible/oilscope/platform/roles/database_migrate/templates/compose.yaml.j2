@@ -1,0 +1,32 @@
+name: oilscope-migrate
+services:
+  migrate:
+    image: "{{ database_connection_config.registry.repository }}/database:{{ database_connection_config.registry.image_sha }}"
+    restart: "no"
+    entrypoint: []
+    command: ["petroscope-migrate"]
+    environment:
+      PGHOST: ${DATABASE_HOST:?required}
+      PGPORT: ${DATABASE_PORT:?required}
+      PGDATABASE: ${POSTGRES_DB:?required}
+      PGUSER: ${DATABASE_ADMIN_USER:?required}
+      PGPASSWORD: ${DATABASE_ADMIN_PASSWORD:?required}
+      PGSSLMODE: verify-full
+      PGSSLROOTCERT: "{{ database_connection_container_ca_file }}"
+      MIGRATION_PROFILE: cloud
+      RUNTIME_DB_USER: ${RUNTIME_DB_USER:-}
+      RUNTIME_DB_PASSWORD: ${RUNTIME_DB_PASSWORD:-}
+      RUNTIME_DB_ROLE: ${RUNTIME_DB_ROLE:-}
+    volumes:
+      - type: bind
+        source: "{{ database_connection_ca_dir }}"
+        target: "{{ database_connection_container_ca_dir }}"
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "{{ database_migrate_dir }}/sql"
+        target: /opt/oilscope/bootstrap
+        read_only: true
+        bind:
+          create_host_path: false

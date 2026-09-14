@@ -45,6 +45,7 @@
 
     - role: oilscope.platform.database
       vars:
+        database_host_port: "{{ compose_project_config.service_ports.postgresql }}"
         database_postgres_image: >-
           {{
             compose_project_config.registry.repository

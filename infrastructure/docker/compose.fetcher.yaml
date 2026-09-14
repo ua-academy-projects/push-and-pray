@@ -18,7 +18,6 @@ services:
       DATA_PROVIDER: oilpriceapi
 
       DATABASE_URL: postgres://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker?sslmode=disable
-      PGMQ_QUEUE: price_observations
 
       FETCH_CRON_HOURS: "0,6,12,18"
       FETCH_TIMEZONE: UTC
@@ -27,10 +26,23 @@ services:
       LISTEN_ADDRESS: 0.0.0.0:8002
 
       LOG_LEVEL: INFO
+      RABBITMQ_URL: ${RABBITMQ_URL:?required}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:?required}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:?required}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:?required}
+      RABBITMQ_TIMEOUT_SECONDS: ${RABBITMQ_TIMEOUT_SECONDS:?required}
+      RABBITMQ_RECONNECT_SECONDS: ${RABBITMQ_RECONNECT_SECONDS:?required}
+      RABBITMQ_MAX_ATTEMPTS: ${RABBITMQ_MAX_ATTEMPTS:?required}
+      OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:?required}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:?required}
+      RABBITMQ_CA_FILE: /run/oilscope/rabbitmq/ca.pem
       TZ: UTC
 
     ports:
       - "${FETCHER_LAN_IP:?FETCHER_LAN_IP is required}:8002:8002"
+
+    volumes:
+      - ${RABBITMQ_CA_DIR:?required}:/run/oilscope/rabbitmq:ro
 
     healthcheck:
       test:

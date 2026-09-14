@@ -16,8 +16,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"oil-price-tracker/fetcher/internal/config"
-	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
+	"oil-price-tracker/fetcher/internal/rabbitmq"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
 )
@@ -54,13 +54,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	collector := service.New(
-		priceProvider,
-		pgmq.Publisher{
-			DB:        database,
-			QueueName: configuration.QueueName,
-		},
-	)
+	publisher := &rabbitmq.Publisher{DB: database, URL: configuration.RabbitURL, CAFile: configuration.RabbitCA,
+		Exchange: configuration.RabbitExchange, RoutingKey: configuration.RabbitRoutingKey, QueueName: configuration.QueueName,
+		Timeout: configuration.RabbitTimeout, PollInterval: configuration.OutboxPollInterval, BatchSize: configuration.OutboxBatchSize}
+	collector := service.New(priceProvider, publisher)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -68,6 +65,9 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer stop()
+	dispatcherDone := make(chan struct{})
+	go func() { defer close(dispatcherDone); publisher.Run(ctx) }()
+	defer func() { stop(); <-dispatcherDone }()
 
 	var nextRunUnix atomic.Int64
 
@@ -124,8 +124,12 @@ func main() {
 
 	mux.HandleFunc("GET /health", func(
 		response http.ResponseWriter,
-		_ *http.Request,
+		request *http.Request,
 	) {
+		outboxContext, cancelOutbox := context.WithTimeout(request.Context(), configuration.RabbitTimeout)
+		outbox := outboxBacklog(outboxContext, database)
+		cancelOutbox()
+
 		running, last, lastError := collector.Status()
 
 		var nextRun any
@@ -134,14 +138,22 @@ func main() {
 			nextRun = time.Unix(unix, 0).UTC()
 		}
 
+		statusCode := http.StatusOK
+		status := "ok"
+
+		if !publisher.Ready.Load() {
+			statusCode = http.StatusServiceUnavailable
+			status = "not_ready"
+		}
+
 		writeJSON(
 			response,
-			http.StatusOK,
+			statusCode,
 			map[string]any{
-				"status":   "ok",
+				"status":   status,
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
+				"delivery": "rabbitmq",
 				"queue":    configuration.QueueName,
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,
@@ -150,6 +162,7 @@ func main() {
 				},
 				"last_result": last,
 				"last_error":  lastError,
+				"outbox":      outbox,
 			},
 		)
 	})
@@ -230,6 +243,38 @@ func main() {
 
 	if err := server.Shutdown(shutdownContext); err != nil {
 		slog.Error("HTTP shutdown failed", "error", err)
+	}
+}
+
+// outboxBacklog reports the durable outbox's pending backlog for operator
+// visibility (queue depth is not otherwise observable without querying
+// Postgres directly). It never fails the health check itself: a query error
+// is surfaced as a diagnostic field, not a 503, since it reflects a stats
+// query, not the publisher's own readiness.
+func outboxBacklog(ctx context.Context, database *sql.DB) map[string]any {
+	var pendingCount int
+
+	var oldestPendingAt sql.NullTime
+
+	err := database.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*), MIN(created_at) FROM published_queue_events WHERE status = 'pending'`,
+	).Scan(&pendingCount, &oldestPendingAt)
+	if err != nil {
+		slog.Error("query outbox backlog", "error", err)
+
+		return map[string]any{"error": "unavailable"}
+	}
+
+	var oldestPendingSeconds any
+
+	if oldestPendingAt.Valid {
+		oldestPendingSeconds = time.Since(oldestPendingAt.Time).Seconds()
+	}
+
+	return map[string]any{
+		"pending_count":          pendingCount,
+		"oldest_pending_seconds": oldestPendingSeconds,
 	}
 }
 

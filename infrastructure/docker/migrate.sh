@@ -18,18 +18,11 @@ for directory in "${migrations_root}/common" "${migrations_root}/${MIGRATION_PRO
     fi
 done
 
-# Common migrations and the application profile must never be silently skipped.
+# Common migrations must never be silently skipped. Provider profiles may be empty.
 set -- "${migrations_root}/common/"*.sql
 if [ ! -f "$1" ]; then
     echo "No common migrations found" >&2
     exit 1
-fi
-if [ "${MIGRATION_PROFILE}" = application ]; then
-    set -- "${migrations_root}/application/"*.sql
-    if [ ! -f "$1" ]; then
-        echo "No application migrations found" >&2
-        exit 1
-    fi
 fi
 
 : "${PGHOST:?PGHOST is required}"

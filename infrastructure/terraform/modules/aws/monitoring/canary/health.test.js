@@ -23,7 +23,7 @@ async function withResponse(status, body, action) {
 }
 
 test('healthy dependencies pass', async () => {
-  await withResponse(200, JSON.stringify({status:'ok',history:'connected',sessions:'postgresql'}), () => checkHealth('https://example.com/health'));
+  await withResponse(200, JSON.stringify({status:'ok',history:'connected',sessions:'redis'}), () => checkHealth('https://example.com/health'));
 });
 test('HTTP failures and redirects fail even with a healthy body', async () => {
   for (const status of [301,500,503]) {
@@ -31,7 +31,7 @@ test('HTTP failures and redirects fail even with a healthy body', async () => {
   }
 });
 test('HTTP 200 alone is insufficient', async () => {
-  for (const body of ['{}','{"status":"ok","history":"down","sessions":"postgresql"}']) {
+  for (const body of ['{}','{"status":"ok","history":"down","sessions":"redis"}']) {
     await withResponse(200, body, () => assert.rejects(checkHealth('https://example.com'), /dependencies/));
   }
 });
