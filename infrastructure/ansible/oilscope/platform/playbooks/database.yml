@@ -10,6 +10,10 @@
   roles:
     - role: oilscope.platform.host_baseline
 
+    - role: oilscope.platform.observability_agent
+      vars:
+        observability_agent_config_path: "{{ project_config_path }}"
+
     - role: oilscope.platform.docker_engine
 
     - role: oilscope.platform.compose_project

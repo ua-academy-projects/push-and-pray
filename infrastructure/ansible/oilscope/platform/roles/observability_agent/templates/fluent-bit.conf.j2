@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+[SERVICE]
+    flush         5
+    log_level     info
+    parsers_file  {{ observability_agent_aws_fluentbit_parsers_path }}
+    storage.path  {{ observability_agent_aws_fluentbit_state_dir }}/storage
+    storage.type  filesystem
+
+[INPUT]
+    name            systemd
+    tag             journald
+    read_from_tail  on
+    db              {{ observability_agent_aws_fluentbit_state_dir }}/journald.db
+    storage.type    filesystem
+
+# Container output arrives as one JSON document per line; the parser unpacks
+# it next to the journal fields so Logs Insights discovers the keys. Lines that
+# are not JSON keep MESSAGE as it is.
+[FILTER]
+    name          parser
+    match         journald
+    key_name      MESSAGE
+    parser        json
+    reserve_data  on
+
+[OUTPUT]
+    name              cloudwatch_logs
+    match             journald
+    region            {{ observability_agent_aws_region }}
+    log_group_name    {{ observability_agent_aws_log_group }}
+    log_stream_name   {{ inventory_hostname }}
+    auto_create_group off

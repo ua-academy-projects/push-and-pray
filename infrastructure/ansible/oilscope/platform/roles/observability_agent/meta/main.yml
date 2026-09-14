@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+galaxy_info:
+  author: Push and Pray team
+  description: >-
+    Install the agent that ships this host's journal and host metrics to the
+    cloud it runs on
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+  galaxy_tags:
+    - logging
+    - monitoring
+    - gcp
+    - aws
+
+dependencies: []

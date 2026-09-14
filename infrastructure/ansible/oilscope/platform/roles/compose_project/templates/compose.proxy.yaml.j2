@@ -16,6 +16,13 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--ping=true"
       - "--log.level=INFO"
+      - "--log.format=json"
+      # The only record of external traffic: real client address, status and
+      # duration per request. Health probes bypass Traefik, so no noise here.
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.defaultmode=keep"
+      - "--accesslog.fields.headers.names.User-Agent=keep"
     ports:
       - "443:443"
     volumes:

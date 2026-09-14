@@ -42,10 +42,22 @@ though the deployment playbook applies the baseline first regardless.
 - `docker_engine_group` and `docker_engine_group_members`: accounts granted
   access to the Docker socket. Members that do not exist on the target are
   skipped rather than created.
+- `docker_engine_daemon_config_path` and `docker_engine_daemon_config`: the
+  daemon configuration, written as JSON to `/etc/docker/daemon.json`. The
+  default sets the `journald` logging driver with the Compose project and
+  service labels attached to every line, so container output lands in the
+  host's journal and `observability_agent` ships it to the cloud without
+  Docker knowing which one. A change restarts the daemon before any container
+  is created in the same play.
 
 The repository is written in deb822 format to
 `/etc/apt/sources.list.d/docker.sources`. The apt cache is refreshed only when
 that file changes, which keeps a repeat run free of changes.
+
+The logging driver is fixed when a container is created. A container that
+already exists keeps its previous driver until it is recreated, which the
+workload roles do on the next image change; remove it by hand to force that
+sooner.
 
 ## Dependencies
 

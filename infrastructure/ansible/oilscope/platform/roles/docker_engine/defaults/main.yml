@@ -53,3 +53,13 @@ docker_engine_service_state: started
 docker_engine_group: docker
 docker_engine_group_members:
   - deploy
+
+# Daemon configuration. Containers log to the journal on every cloud, and the
+# observability_agent role ships the journal to whichever cloud the host runs
+# on, so Docker itself stays unaware of the provider. The Compose labels ride
+# along as journal fields, which is what a query filters on.
+docker_engine_daemon_config_path: /etc/docker/daemon.json
+docker_engine_daemon_config:
+  log-driver: journald
+  log-opts:
+    labels: com.docker.compose.project,com.docker.compose.service

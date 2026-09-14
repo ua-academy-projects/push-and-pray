@@ -40,3 +40,14 @@ host_baseline_directories:
     owner: "{{ host_baseline_deploy_user }}"
     group: "{{ host_baseline_deploy_group }}"
     mode: "0750"
+
+# Journal settings. Every container logs through docker.service, so the
+# per-unit rate limit that suits an ordinary daemon would silently drop a
+# chatty container's lines; the size cap keeps the journal off a small boot
+# disk's last gigabytes.
+host_baseline_journald_config_path: /etc/systemd/journald.conf.d/oilscope.conf
+host_baseline_journald_config:
+  Storage: persistent
+  SystemMaxUse: 500M
+  RateLimitIntervalSec: 30s
+  RateLimitBurst: 50000

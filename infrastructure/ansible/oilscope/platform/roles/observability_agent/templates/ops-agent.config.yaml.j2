@@ -1,0 +1,41 @@
+# {{ ansible_managed }}
+logging:
+  receivers:
+    journald:
+      type: systemd_journald
+  processors:
+    # Container output arrives as one JSON document per line; journal entries
+    # from sshd, the kernel or Postgres are not JSON and pass through as they
+    # are. The journald driver stores the line under MESSAGE.
+    parse_container_json:
+      type: parse_json
+      field: MESSAGE
+    # Docker stamps every stderr line PRIORITY=3, which the receiver reads as
+    # ERROR; the level the application itself wrote is the one that means
+    # something. The applications also disagree on the message key.
+    set_severity:
+      type: modify_fields
+      fields:
+        severity:
+          move_from: jsonPayload.level
+          map_values:
+{% for level, severity in observability_agent_severity_map.items() %}
+            {{ level }}: {{ severity }}
+{% endfor %}
+          map_values_exclusive: true
+        jsonPayload.message:
+          move_from: jsonPayload.msg
+  service:
+    pipelines:
+      # Replaces the built-in pipeline, which also tails /var/log/syslog and
+      # would ship every journal line twice on a host that has rsyslog.
+      default_pipeline:
+        receivers: [journald]
+        processors: [parse_container_json, set_severity]
+{% if not observability_agent_gcp_metrics_enabled | bool %}
+metrics:
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: []
+{% endif %}

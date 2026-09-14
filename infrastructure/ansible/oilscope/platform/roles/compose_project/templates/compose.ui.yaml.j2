@@ -15,6 +15,11 @@ services:
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
       SESSION_COOKIE_SECURE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Trust X-Forwarded-For so the request log shows the client, not Traefik.
+      # Safe here because nothing but Traefik can reach this container: it
+      # publishes no port and sits on the edge network alone.
+      UVICORN_PROXY_HEADERS: "true"
+      UVICORN_FORWARDED_ALLOW_IPS: "*"
       TZ: UTC
     healthcheck:
       test:

@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Test the observability_agent role (cloud it has no agent for)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  tasks:
+    # ignore_errors on include_role does not reach the tasks the role includes,
+    # so the expected failure has to be caught with a rescue. Catching it also
+    # turns the check into a real assertion: the play fails if the role somehow
+    # accepts a cloud it has no install tasks for.
+    - name: Expect the role to refuse an unsupported cloud
+      block:
+        - name: Include the role for a host on an unsupported cloud
+          ansible.builtin.include_role:
+            name: observability_agent
+          vars:
+            observability_agent_cloud: azure
+
+        - name: Fail because the role accepted an unsupported cloud
+          ansible.builtin.fail:
+            msg: the role must refuse a cloud it has no install tasks for
+      rescue:
+        - name: Report the expected refusal
+          ansible.builtin.debug:
+            msg: the role refused the unsupported cloud, as it should
+
+# The templates are rendered without installing anything, so the role's own
+# variable files are loaded by hand rather than through include_role.
+- name: Test the observability_agent role (rendered configurations)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  tasks:
+    - name: Load the role's variables
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../defaults/main.yml"
+        - "{{ playbook_dir }}/../vars/main.yml"
+
+    # include_vars outranks task vars, so the override has to be a fact too.
+    - name: Disable the metrics subagent
+      ansible.builtin.set_fact:
+        observability_agent_gcp_metrics_enabled: false
+
+    - name: Render the Ops Agent configuration
+      ansible.builtin.set_fact:
+        observability_agent_test_ops_agent: >-
+          {{ lookup('ansible.builtin.template',
+                    playbook_dir ~ '/../templates/ops-agent.config.yaml.j2')
+             | from_yaml }}
+
+    - name: Expect the Ops Agent pipeline to parse containers and drop metrics
+      ansible.builtin.assert:
+        that:
+          - observability_agent_test_ops_agent.logging.service.pipelines.default_pipeline.receivers == ['journald']
+          - "'parse_container_json' in observability_agent_test_ops_agent.logging.service.pipelines.default_pipeline.processors"
+          - observability_agent_test_ops_agent.logging.processors.parse_container_json.field == 'MESSAGE'
+          - observability_agent_test_ops_agent.metrics.service.pipelines.default_pipeline.receivers == []
+        quiet: true
+
+    - name: Render the CloudWatch agent configuration
+      ansible.builtin.set_fact:
+        observability_agent_test_cloudwatch: >-
+          {{ lookup('ansible.builtin.template',
+                    playbook_dir ~ '/../templates/cloudwatch-agent.json.j2')
+             | from_json }}
+
+    - name: Expect the CloudWatch agent to collect what EC2 does not
+      ansible.builtin.assert:
+        that:
+          - observability_agent_test_cloudwatch.metrics.namespace == 'CWAgent'
+          - "'mem' in observability_agent_test_cloudwatch.metrics.metrics_collected"
+        quiet: true

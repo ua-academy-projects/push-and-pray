@@ -1,3 +1,7 @@
 # SPDX-License-Identifier: MIT-0
 ---
-# handlers file for host_baseline
+- name: Restart the journal
+  become: true
+  ansible.builtin.systemd_service:
+    name: systemd-journald
+    state: restarted

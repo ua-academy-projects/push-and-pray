@@ -61,6 +61,23 @@
   loop: "{{ docker_engine_held_packages }}"
   when: docker_engine_hold | bool
 
+- name: Install the Docker daemon configuration
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ docker_engine_daemon_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ docker_engine_daemon_config | to_nice_json }}\n"
+  notify: Restart Docker
+
+# The daemon must run the configured logging driver before any compose task
+# in this play creates a container, and handlers would otherwise not run until
+# the end of the play. On a fresh host the service is not running yet, so the
+# restart below simply starts it.
+- name: Apply a pending Docker restart
+  ansible.builtin.meta: flush_handlers
+
 - name: Enable and start the Docker socket
   become: true
   ansible.builtin.systemd_service:

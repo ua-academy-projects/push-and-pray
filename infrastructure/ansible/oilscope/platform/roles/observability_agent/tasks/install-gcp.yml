@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create the apt keyring directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ observability_agent_gcp_keyring_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Ops Agent repository signing key
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ observability_agent_gcp_gpg_url }}"
+    dest: "{{ observability_agent_gcp_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Ops Agent apt repository
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ observability_agent_gcp_repository_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: {{ observability_agent_gcp_repository_url }}
+      Suites: google-cloud-ops-agent-{{ ansible_facts['distribution_release'] }}-all
+      Components: main
+      Signed-By: {{ observability_agent_gcp_keyring_path }}
+  notify: Refresh the apt cache
+
+# The cache must be current before the install task below, and handlers would
+# otherwise not run until the end of the play.
+- name: Apply a pending apt cache refresh
+  ansible.builtin.meta: flush_handlers
+
+- name: Install the Ops Agent
+  become: true
+  ansible.builtin.apt:
+    name: "{{ observability_agent_gcp_package }}"
+    state: present
+    install_recommends: false
+
+- name: Install the Ops Agent configuration
+  become: true
+  ansible.builtin.template:
+    src: ops-agent.config.yaml.j2
+    dest: "{{ observability_agent_gcp_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the Ops Agent
+
+- name: Enable and start the Ops Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ observability_agent_gcp_service }}"
+    enabled: true
+    state: started

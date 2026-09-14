@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# The bastion play runs without fact gathering; the repository suites below
+# need the release codename regardless of how the role was reached.
+- name: Gather the facts this role depends on
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+  when: ansible_facts['distribution_release'] is not defined
+
+- name: Refuse a cloud this role has no agent for
+  ansible.builtin.assert:
+    that: observability_agent_cloud in observability_agent_supported_clouds
+    fail_msg: >-
+      cannot install an observability agent for cloud
+      '{{ observability_agent_cloud }}'; supported clouds are
+      {{ observability_agent_supported_clouds | join(', ') }}.
+      The dynamic inventory normally supplies oilscope_cloud - set
+      observability_agent_cloud explicitly when running outside it.
+    quiet: true
+
+- name: Install this cloud's agent
+  ansible.builtin.include_tasks: "install-{{ observability_agent_cloud }}.yml"

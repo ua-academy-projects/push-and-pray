@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Ansible reports the kernel architecture; the CloudWatch agent download path
+# wants the dpkg name.
+observability_agent_architecture_map:
+  x86_64: amd64
+  aarch64: arm64
+
+observability_agent_architecture: >-
+  {{
+    observability_agent_architecture_map.get(
+      ansible_facts['architecture'], ansible_facts['architecture']
+    )
+  }}
+
+# Log levels the applications emit, mapped onto Cloud Logging severities.
+# Python's logging, Go's slog and Traefik each spell them differently.
+observability_agent_severity_map:
+  debug: DEBUG
+  DEBUG: DEBUG
+  info: INFO
+  INFO: INFO
+  warn: WARNING
+  WARN: WARNING
+  warning: WARNING
+  WARNING: WARNING
+  error: ERROR
+  ERROR: ERROR
+  fatal: CRITICAL
+  FATAL: CRITICAL
+  critical: CRITICAL
+  CRITICAL: CRITICAL

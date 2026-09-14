@@ -11,6 +11,29 @@
     cache_valid_time: 3600
     install_recommends: false
 
+- name: Create the journal drop-in directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ host_baseline_journald_config_path | dirname }}"
+    owner: root
+    group: root
+    mode: "0755"
+    state: directory
+
+- name: Configure the journal
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ host_baseline_journald_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Journal]
+      {% for key, value in host_baseline_journald_config.items() %}
+      {{ key }}={{ value }}
+      {% endfor %}
+  notify: Restart the journal
+
 - name: Create deployment group
   become: true
   ansible.builtin.group:

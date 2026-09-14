@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Refresh the apt cache
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Restart the Ops Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ observability_agent_gcp_service }}"
+    state: restarted
+
+- name: Restart Fluent Bit
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ observability_agent_aws_fluentbit_service }}"
+    state: restarted
+
+# The agent reads its configuration only through its own control tool; a
+# plain service restart keeps whatever it loaded last time. -s restarts it.
+- name: Load the CloudWatch agent configuration
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ observability_agent_aws_cloudwatch_ctl }}"
+      - -a
+      - fetch-config
+      - -m
+      - ec2
+      - -s
+      - -c
+      - "file:{{ observability_agent_aws_cloudwatch_config_path }}"
+  changed_when: true

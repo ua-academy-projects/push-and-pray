@@ -2,8 +2,8 @@
 
 Prepares Ubuntu workload VMs with the common operating-system state required
 before Docker and application roles run. The role installs prerequisite
-packages, creates the locked deployment account, and manages OilScope
-directories and permissions.
+packages, creates the locked deployment account, manages OilScope
+directories and permissions, and sizes the journal for container output.
 
 ## Requirements
 
@@ -23,6 +23,11 @@ directories and permissions.
   `oilscope_cloud` from the dynamic inventory; an unknown value simply adds no
   extra packages.
 - `host_baseline_directories`: directories with their owner, group, and mode.
+- `host_baseline_journald_config_path` and `host_baseline_journald_config`:
+  journal settings written as a drop-in. The defaults keep the journal on
+  disk, cap it at 500 MB, and raise the per-unit rate limit: every container
+  logs through `docker.service`, so the limit that suits a single daemon
+  would silently drop a chatty container's lines.
 
 See `defaults/main.yml` for the complete default values.
 

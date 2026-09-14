@@ -1,0 +1,128 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    observability_agent_config: >-
+      {{ lookup('ansible.builtin.file', observability_agent_config_path) | from_json }}
+
+# The group name is built from the same name_prefix and environment that
+# Terraform turns into resource_prefix, so the two cannot drift apart.
+- name: Derive the CloudWatch destination
+  ansible.builtin.set_fact:
+    observability_agent_aws_region: "{{ observability_agent_config.clouds.aws.region }}"
+    observability_agent_aws_log_group: >-
+      /{{ observability_agent_config.name_prefix }}-{{ observability_agent_config.environment }}/journald
+
+- name: Create the apt keyring directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ observability_agent_aws_fluentbit_keyring_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the Fluent Bit repository signing key
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ observability_agent_aws_fluentbit_gpg_url }}"
+    dest: "{{ observability_agent_aws_fluentbit_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Fluent Bit apt repository
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ observability_agent_aws_fluentbit_repository_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      Types: deb
+      URIs: {{ observability_agent_aws_fluentbit_repository_url }}/{{ ansible_facts['distribution_release'] }}
+      Suites: {{ ansible_facts['distribution_release'] }}
+      Components: main
+      Signed-By: {{ observability_agent_aws_fluentbit_keyring_path }}
+  notify: Refresh the apt cache
+
+# The cache must be current before the install task below, and handlers would
+# otherwise not run until the end of the play.
+- name: Apply a pending apt cache refresh
+  ansible.builtin.meta: flush_handlers
+
+- name: Install Fluent Bit
+  become: true
+  ansible.builtin.apt:
+    name: "{{ observability_agent_aws_fluentbit_package }}"
+    state: present
+    install_recommends: false
+
+- name: Create the Fluent Bit state directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ observability_agent_aws_fluentbit_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install the Fluent Bit configuration
+  become: true
+  ansible.builtin.template:
+    src: fluent-bit.conf.j2
+    dest: "{{ observability_agent_aws_fluentbit_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Fluent Bit
+
+- name: Enable and start Fluent Bit
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ observability_agent_aws_fluentbit_service }}"
+    enabled: true
+    state: started
+
+- name: Install the CloudWatch agent for host metrics
+  when: observability_agent_aws_cloudwatch_metrics_enabled | bool
+  block:
+    - name: Create the package cache directory
+      become: true
+      ansible.builtin.file:
+        path: "{{ observability_agent_aws_cloudwatch_deb_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download the CloudWatch agent package
+      become: true
+      ansible.builtin.get_url:
+        url: "{{ observability_agent_aws_cloudwatch_deb_url }}"
+        dest: "{{ observability_agent_aws_cloudwatch_deb_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install the CloudWatch agent
+      become: true
+      ansible.builtin.apt:
+        deb: "{{ observability_agent_aws_cloudwatch_deb_path }}"
+
+    - name: Install the CloudWatch agent configuration
+      become: true
+      ansible.builtin.template:
+        src: cloudwatch-agent.json.j2
+        dest: "{{ observability_agent_aws_cloudwatch_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Load the CloudWatch agent configuration
+
+    - name: Enable and start the CloudWatch agent
+      become: true
+      ansible.builtin.systemd_service:
+        name: "{{ observability_agent_aws_cloudwatch_service }}"
+        enabled: true
+        state: started

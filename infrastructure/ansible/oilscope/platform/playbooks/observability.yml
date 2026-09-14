@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Installs or updates the agent on every host without touching a container.
+# The deployment playbooks apply the same role, so this is for rolling an agent
+# change out on its own.
+- name: Apply the observability agent to every host
+  hosts: all
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.observability_agent
+      vars:
+        observability_agent_config_path: "{{ project_config_path }}"

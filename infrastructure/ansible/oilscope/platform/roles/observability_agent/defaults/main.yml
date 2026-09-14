@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Which cloud this host runs on. The dynamic inventory stamps oilscope_cloud on
+# every host from the resource's own cloud label or tag, so normally nothing has
+# to be passed in.
+observability_agent_cloud: "{{ oilscope_cloud | default('') }}"
+
+# One task file per cloud, selected by name rather than by a conditional, so
+# adding a provider adds a file and not a branch.
+observability_agent_supported_clouds:
+  - gcp
+  - aws
+
+# Project configuration JSON. AWS derives the region and the log group from it;
+# GCP needs nothing, the Ops Agent reads the project from the metadata server.
+observability_agent_config_path: ""
+
+# --- GCP: Ops Agent, logs and host metrics in one package ------------------
+observability_agent_gcp_keyring_path: /etc/apt/keyrings/google-cloud-ops-agent.gpg
+observability_agent_gcp_gpg_url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+observability_agent_gcp_repository_url: https://packages.cloud.google.com/apt
+observability_agent_gcp_repository_path: /etc/apt/sources.list.d/google-cloud-ops-agent.sources
+observability_agent_gcp_package: google-cloud-ops-agent
+observability_agent_gcp_service: google-cloud-ops-agent
+observability_agent_gcp_config_path: /etc/google-cloud-ops-agent/config.yaml
+
+# The metrics subagent costs about 100 MB of memory. Disable it on a host that
+# cannot spare that; logs keep flowing.
+observability_agent_gcp_metrics_enabled: true
+
+# --- AWS: Fluent Bit for logs ----------------------------------------------
+# The CloudWatch agent cannot read the journal, so the two jobs need two
+# packages here.
+observability_agent_aws_fluentbit_keyring_path: /etc/apt/keyrings/fluentbit.asc
+observability_agent_aws_fluentbit_gpg_url: https://packages.fluentbit.io/fluentbit.key
+observability_agent_aws_fluentbit_repository_url: https://packages.fluentbit.io/ubuntu
+observability_agent_aws_fluentbit_repository_path: /etc/apt/sources.list.d/fluent-bit.sources
+observability_agent_aws_fluentbit_package: fluent-bit
+observability_agent_aws_fluentbit_service: fluent-bit
+observability_agent_aws_fluentbit_config_path: /etc/fluent-bit/fluent-bit.conf
+observability_agent_aws_fluentbit_parsers_path: /etc/fluent-bit/parsers.conf
+observability_agent_aws_fluentbit_state_dir: /var/lib/fluent-bit
+
+# --- AWS: CloudWatch agent for host metrics --------------------------------
+# Distributed as a plain .deb rather than through an apt repository.
+observability_agent_aws_cloudwatch_metrics_enabled: true
+observability_agent_aws_cloudwatch_deb_url: >-
+  https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/{{
+    observability_agent_architecture }}/latest/amazon-cloudwatch-agent.deb
+observability_agent_aws_cloudwatch_deb_path: /var/cache/oilscope/amazon-cloudwatch-agent.deb
+observability_agent_aws_cloudwatch_package: amazon-cloudwatch-agent
+observability_agent_aws_cloudwatch_service: amazon-cloudwatch-agent
+observability_agent_aws_cloudwatch_config_path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+observability_agent_aws_cloudwatch_ctl: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+observability_agent_aws_cloudwatch_interval_seconds: 60
