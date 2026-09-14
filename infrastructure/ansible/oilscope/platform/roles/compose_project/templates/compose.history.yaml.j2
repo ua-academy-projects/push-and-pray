@@ -15,6 +15,13 @@ services:
       PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
       PGMQ_POLL_INTERVAL_SECONDS: ${PGMQ_POLL_INTERVAL_SECONDS:-1}
       PGMQ_MAX_ATTEMPTS: ${PGMQ_MAX_ATTEMPTS:-5}
+      MESSAGING_BACKEND: ${MESSAGING_BACKEND:-pgmq}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-oil_tracker}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-oil_tracker}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-price_observations}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: UTC
     ports:
@@ -29,8 +36,7 @@ services:
           data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
           assert data["status"] == "ok";
           assert data["database"] == "connected";
-          assert data["pgmq_extension"] == "installed";
-          assert data["pgmq_consumer"] == "ready"
+          assert data["messaging_consumer"] == "ready"
       interval: 10s
       timeout: 5s
       retries: 20

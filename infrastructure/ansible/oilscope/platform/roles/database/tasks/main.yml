@@ -19,7 +19,7 @@
     'Downloaded newer image' in database_image_pull.stdout or
     'Pull complete' in database_image_pull.stdout
 
-- name: Start the PostgreSQL service
+- name: Start the database infrastructure services
   ansible.builtin.command:
     argv:
       - docker
@@ -31,7 +31,7 @@
       - up
       - --detach
       - --no-deps
-      - "{{ database_postgres_service }}"
+      - "{{ item }}"
   args:
     chdir: "{{ database_compose_project_dir }}"
   environment: "{{ database_runtime_environment }}"
@@ -41,8 +41,9 @@
     'Started' in database_compose_up.stderr or
     'Recreated' in database_compose_up.stderr
   no_log: true
+  loop: "{{ database_runtime_services }}"
 
-- name: Get the PostgreSQL container ID
+- name: Get the database infrastructure container IDs
   ansible.builtin.command:
     argv:
       - docker
@@ -53,28 +54,31 @@
       - "{{ database_compose_file }}"
       - ps
       - --quiet
-      - "{{ database_postgres_service }}"
+      - "{{ item }}"
   args:
     chdir: "{{ database_compose_project_dir }}"
   environment: "{{ database_runtime_environment }}"
-  register: database_container
+  register: database_containers
   changed_when: false
-  failed_when: database_container.stdout | trim | length == 0
+  failed_when: database_containers.stdout | trim | length == 0
   no_log: true
+  loop: "{{ database_runtime_services }}"
 
-- name: Wait for PostgreSQL to become healthy
+- name: Wait for the database infrastructure services to become healthy
   ansible.builtin.command:
     argv:
       - docker
       - inspect
       - --format
       - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
-      - "{{ database_container.stdout | trim }}"
+      - "{{ item.stdout | trim }}"
   register: database_health
   changed_when: false
   retries: "{{ database_health_retries }}"
   delay: "{{ database_health_delay }}"
   until: database_health.stdout | trim == 'healthy'
+  loop: "{{ database_containers.results }}"
+  no_log: true
 
 - name: Apply database migrations
   ansible.builtin.command:

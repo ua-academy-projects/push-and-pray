@@ -82,7 +82,9 @@ run "gcp_only" {
   assert {
     condition = (
       output.monitoring_status.gcp.enabled &&
+      output.monitoring_status.gcp.http_5xx_enabled &&
       !output.monitoring_status.aws.enabled &&
+      !output.monitoring_status.aws.http_5xx_enabled &&
       toset(output.monitoring_status.gcp.vm_names) == toset([for name in keys(output.resolved_vm_configuration) : "oilscope-dev-${name}"])
     )
     error_message = "GCP-only monitoring must cover only Terraform-managed GCP VMs."
@@ -118,7 +120,9 @@ run "aws_only" {
   assert {
     condition = (
       output.monitoring_status.aws.enabled &&
+      output.monitoring_status.aws.http_5xx_enabled &&
       !output.monitoring_status.gcp.enabled &&
+      !output.monitoring_status.gcp.http_5xx_enabled &&
       toset(output.monitoring_status.aws.vm_names) == toset([for name in keys(output.resolved_vm_configuration) : "oilscope-dev-${name}"])
     )
     error_message = "AWS-only monitoring must cover only Terraform-managed AWS VMs."
@@ -149,6 +153,8 @@ run "hybrid" {
     condition = (
       output.monitoring_status.gcp.enabled &&
       output.monitoring_status.aws.enabled &&
+      !output.monitoring_status.gcp.http_5xx_enabled &&
+      output.monitoring_status.aws.http_5xx_enabled &&
       toset(output.monitoring_status.gcp.vm_names) == toset(["oilscope-dev-bastion", "oilscope-dev-infra", "oilscope-dev-history", "oilscope-dev-fetcher"]) &&
       toset(output.monitoring_status.aws.vm_names) == toset(["oilscope-dev-ui"])
     )

@@ -21,6 +21,80 @@
     group: root
     mode: "0755"
 
+- name: Create the persistent Traefik access-log directory
+  ansible.builtin.file:
+    path: "{{ edge_proxy_access_log_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download the Google Cloud Ops Agent installer
+  ansible.builtin.get_url:
+    url: https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+    dest: "{{ edge_proxy_gcp_agent_installer_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - edge_proxy_http_5xx_enabled | bool
+    - oilscope_cloud == "gcp"
+
+- name: Install the Google Cloud Ops Agent
+  ansible.builtin.command:
+    argv:
+      - "{{ edge_proxy_gcp_agent_installer_path }}"
+      - --also-install
+  args:
+    creates: /opt/google-cloud-ops-agent/bin/google_cloud_ops_agent_engine
+  when:
+    - edge_proxy_http_5xx_enabled | bool
+    - oilscope_cloud == "gcp"
+
+- name: Configure the Google Cloud Ops Agent for Traefik access logs
+  ansible.builtin.template:
+    src: google-cloud-ops-agent.yaml.j2
+    dest: /etc/google-cloud-ops-agent/config.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Google Cloud Ops Agent
+  when:
+    - edge_proxy_http_5xx_enabled | bool
+    - oilscope_cloud == "gcp"
+
+- name: Download the Amazon CloudWatch Agent package
+  ansible.builtin.get_url:
+    url: >-
+      https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+    dest: "{{ edge_proxy_aws_agent_package_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - edge_proxy_http_5xx_enabled | bool
+    - oilscope_cloud == "aws"
+
+- name: Install the Amazon CloudWatch Agent
+  ansible.builtin.apt:
+    deb: "{{ edge_proxy_aws_agent_package_path }}"
+    state: present
+  when:
+    - edge_proxy_http_5xx_enabled | bool
+    - oilscope_cloud == "aws"
+
+- name: Configure the Amazon CloudWatch Agent for Traefik access logs
+  ansible.builtin.template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Amazon CloudWatch Agent configuration
+  when:
+    - edge_proxy_http_5xx_enabled | bool
+    - oilscope_cloud == "aws"
+
 - name: Install the Traefik dynamic routing configuration
   ansible.builtin.template:
     src: dynamic.yml.j2
@@ -43,7 +117,6 @@
     mode: "0600"
   when: not edge_proxy_acme_stat.stat.exists
 
-
 - name: Pull the Traefik image
   ansible.builtin.command:
     argv:
@@ -63,8 +136,6 @@
     'Pull complete' in edge_proxy_pull.stdout or
     'Downloaded newer image' in edge_proxy_pull.stderr or
     'Pull complete' in edge_proxy_pull.stderr
-
-
 - name: Start Traefik
   ansible.builtin.command:
     argv:

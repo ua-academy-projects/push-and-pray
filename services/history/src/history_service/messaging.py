@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Any
 
+import aio_pika
 from pydantic import ValidationError
 from sqlalchemy import text
 
@@ -192,3 +193,73 @@ class PGMQConsumer:
 
             if not archived:
                 raise RuntimeError(f"failed to archive PGMQ message {msg_id}")
+
+
+class RabbitMQConsumer:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.connection: aio_pika.abc.AbstractRobustConnection | None = None
+        self.task: asyncio.Task[None] | None = None
+        self.ready = False
+
+    @property
+    def is_ready(self) -> bool:
+        return bool(self.ready and self.task is not None and not self.task.done())
+
+    async def start(self) -> None:
+        self.connection = await aio_pika.connect_robust(
+            host=self.settings.rabbitmq_host,
+            port=self.settings.rabbitmq_port,
+            login=self.settings.rabbitmq_user,
+            password=self.settings.rabbitmq_password,
+            virtualhost=self.settings.rabbitmq_vhost,
+        )
+        channel = await self.connection.channel()
+        await channel.set_qos(prefetch_count=1)
+        queue = await channel.declare_queue(
+            self.settings.rabbitmq_queue,
+            durable=True,
+        )
+        self.ready = True
+        self.task = asyncio.create_task(self._run(queue), name="rabbitmq-history-consumer")
+
+    async def stop(self) -> None:
+        self.ready = False
+        if self.task is not None:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
+        if self.connection is not None:
+            await self.connection.close()
+
+    async def _run(self, queue: aio_pika.abc.AbstractQueue) -> None:
+        async with queue.iterator() as iterator:
+            async for message in iterator:
+                await self._handle_message(message)
+
+    async def _handle_message(
+        self,
+        message: aio_pika.abc.AbstractIncomingMessage,
+    ) -> None:
+        try:
+            event = ObservationEvent.model_validate_json(message.body)
+        except ValidationError:
+            logger.exception("rejecting invalid RabbitMQ message")
+            await message.reject(requeue=False)
+            return
+
+        try:
+            await asyncio.to_thread(self._persist, event)
+        except Exception:
+            logger.exception("RabbitMQ persistence failed; requeueing message")
+            await message.nack(requeue=True)
+            return
+
+        await message.ack()
+
+    @staticmethod
+    def _persist(event: ObservationEvent) -> None:
+        with SessionLocal() as session:
+            insert_batch(session, event.observations)

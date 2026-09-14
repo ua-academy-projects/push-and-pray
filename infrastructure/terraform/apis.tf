@@ -13,6 +13,14 @@ locals {
     local.monitoring.enabled && local.monitoring.lifecycle.enabled && length(local.gcp_placements) > 0
     ? ["logging.googleapis.com", "monitoring.googleapis.com"]
     : [],
+    local.monitoring.enabled && local.monitoring.http_5xx.enabled && anytrue([
+      for vm in values(local.vms) : vm.cloud == "gcp" && vm.role == "ui"
+    ])
+    ? ["logging.googleapis.com", "monitoring.googleapis.com"]
+    : [],
+    local.database_mode == "managed" && local.managed_cloud == "gcp"
+    ? ["sqladmin.googleapis.com", "servicenetworking.googleapis.com"]
+    : [],
   )
 }
 

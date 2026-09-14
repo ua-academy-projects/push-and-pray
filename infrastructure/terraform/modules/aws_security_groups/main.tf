@@ -134,11 +134,24 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql_from_fetcher" {
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "postgresql_from_ui" {
+resource "aws_vpc_security_group_ingress_rule" "redis_from_ui" {
   security_group_id            = aws_security_group.database.id
   referenced_security_group_id = aws_security_group.ui.id
-  from_port                    = var.policy.postgresql_port
-  to_port                      = var.policy.postgresql_port
+  from_port                    = var.policy.redis_port
+  to_port                      = var.policy.redis_port
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "rabbitmq_from_apps" {
+  for_each = var.policy.rabbitmq_enabled ? {
+    history = aws_security_group.history.id
+    fetcher = aws_security_group.fetcher.id
+  } : {}
+
+  security_group_id            = aws_security_group.database.id
+  referenced_security_group_id = each.value
+  from_port                    = var.policy.rabbitmq_port
+  to_port                      = var.policy.rabbitmq_port
   ip_protocol                  = "tcp"
 }
 
@@ -155,4 +168,3 @@ resource "aws_vpc_security_group_egress_rule" "workloads" {
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
-

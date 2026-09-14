@@ -145,7 +145,7 @@ output "workload_secret_access" {
     for name, workload in local.workload_vms :
     name => sort(
       distinct(
-        values(local.config.application.secret_mappings[workload.role])
+        values(local.effective_secret_mappings[workload.role])
       )
     )
   }
@@ -174,12 +174,53 @@ output "monitoring_status" {
   description = "Enabled provider monitoring and the Terraform-managed VM names it covers."
   value = {
     gcp = {
-      enabled  = module.gcp_monitoring.enabled
-      vm_names = module.gcp_monitoring.monitored_vm_names
+      enabled          = module.gcp_monitoring.enabled
+      http_5xx_enabled = module.gcp_monitoring.http_5xx_enabled
+      vm_names         = module.gcp_monitoring.monitored_vm_names
     }
     aws = {
-      enabled  = module.aws_monitoring.enabled
-      vm_names = module.aws_monitoring.monitored_vm_names
+      enabled          = module.aws_monitoring.enabled
+      http_5xx_enabled = module.aws_monitoring.http_5xx_enabled
+      vm_names         = module.aws_monitoring.monitored_vm_names
     }
+  }
+}
+
+output "database_connection" {
+  description = "Provider-neutral database connection metadata. Passwords are intentionally excluded."
+  value = {
+    mode  = local.database_mode
+    cloud = local.database_mode == "managed" ? local.managed_cloud : local.vms.infra.cloud
+    host = local.database_mode == "managed" ? try(
+      module.gcp_managed_database[0].host,
+      module.aws_managed_database[0].host,
+      null,
+      ) : (
+      local.vms.infra.cloud == "gcp"
+      ? module.vm.vms.infra.internal_ip
+      : module.aws_vm.vms.infra.internal_ip
+    )
+    port = local.database_port
+    name = local.database_name
+  }
+}
+
+output "redis_connection" {
+  description = "Provider-neutral Redis connection metadata. The password is intentionally excluded."
+  value = {
+    host = (
+      local.vms.infra.cloud == "gcp"
+      ? module.vm.vms.infra.internal_ip
+      : module.aws_vm.vms.infra.internal_ip
+    )
+    port = local.redis_port
+  }
+}
+
+output "redis_network_policy" {
+  description = "Provider Redis ingress policy; only the UI workload may connect to the infra VM."
+  value = {
+    gcp = length(module.gcp_firewall) > 0 ? module.gcp_firewall[0].redis_ingress : null
+    aws = length(module.aws_security_groups) > 0 ? module.aws_security_groups[0].redis_ingress : null
   }
 }

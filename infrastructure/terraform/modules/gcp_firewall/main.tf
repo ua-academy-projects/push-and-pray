@@ -62,7 +62,6 @@ resource "google_compute_firewall" "postgresql" {
   source_tags = [
     local.network_tags.fetcher,
     local.network_tags.history,
-    local.network_tags.ui,
   ]
 
   target_tags = [local.network_tags.infra]
@@ -70,5 +69,33 @@ resource "google_compute_firewall" "postgresql" {
   allow {
     protocol = "tcp"
     ports    = [tostring(var.policy.postgresql_port)]
+  }
+}
+
+resource "google_compute_firewall" "redis" {
+  name    = "${var.resource_prefix}-allow-redis"
+  network = var.network_id
+
+  source_tags = [local.network_tags.ui]
+  target_tags = [local.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.policy.redis_port)]
+  }
+}
+
+resource "google_compute_firewall" "rabbitmq" {
+  count = var.policy.rabbitmq_enabled ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-rabbitmq"
+  network = var.network_id
+
+  source_tags = [local.network_tags.fetcher, local.network_tags.history]
+  target_tags = [local.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.policy.rabbitmq_port)]
   }
 }

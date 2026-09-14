@@ -12,3 +12,8 @@ output "workload_subnet_id" {
   description = "Private subnet used by internal workloads."
   value       = aws_subnet.workload.id
 }
+
+output "workload_route_table_id" {
+  description = "Private route table used by workload and database subnets."
+  value       = aws_route_table.workload.id
+}

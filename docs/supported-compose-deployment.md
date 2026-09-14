@@ -51,7 +51,7 @@ the token in Compose, this repository, or a shell argument.
 | `FETCH_TIMEZONE` | `UTC` | Fetch schedule timezone |
 | `FETCH_ON_STARTUP` | `true` | Fetch immediately after startup |
 | `REQUEST_TIMEOUT_SECONDS` | `15` | Fetcher provider timeout |
-| `SESSION_TTL_SECONDS` | `2592000` | PostgreSQL UI-session lifetime |
+| `SESSION_TTL_SECONDS` | `2592000` | Redis UI-session lifetime |
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` when HTTPS terminates at the application host |
 | `LOG_LEVEL` | `INFO` | History and UI log level |
 | `APPLICATION_PLATFORM` | `linux/amd64` | Application image platform |

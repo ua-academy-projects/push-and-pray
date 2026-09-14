@@ -8,3 +8,9 @@ history_postgres_password: ""
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth
+history_database_host: ""
+history_database_sslmode: disable
+history_messaging_backend: pgmq
+history_rabbitmq_host: ""
+history_rabbitmq_password: ""
+history_rabbitmq_port: 5672

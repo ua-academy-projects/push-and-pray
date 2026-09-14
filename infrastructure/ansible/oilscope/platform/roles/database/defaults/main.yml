@@ -15,3 +15,17 @@ database_health_retries: 30
 database_health_delay: 2
 database_docker_config_dir: /run/oilscope/docker-auth
 database_compose_environment: {}
+database_mode: self_hosted
+database_host: postgres
+database_port: 5432
+database_sslmode: disable
+database_rabbitmq_password: ""
+database_rabbitmq_port: 5672
+database_redis_password: ""
+database_redis_bind_address: ""
+database_redis_port: 6379
+database_primary_service: >-
+  {{ 'postgres' if database_mode == 'self_hosted' else 'rabbitmq' }}
+database_runtime_services:
+  - "{{ database_primary_service }}"
+  - redis

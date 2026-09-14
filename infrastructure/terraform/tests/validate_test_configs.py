@@ -22,6 +22,8 @@ def main() -> None:
         TERRAFORM_ROOT / ".terraform" / "test-configs" / "region-override.json",
         TERRAFORM_ROOT / ".terraform" / "test-configs" / "monitoring-absent.json",
         TERRAFORM_ROOT / ".terraform" / "test-configs" / "monitoring-disabled.json",
+        TERRAFORM_ROOT / ".terraform" / "test-configs" / "gcp-managed.json",
+        TERRAFORM_ROOT / ".terraform" / "test-configs" / "aws-managed.json",
     ]
 
     for path in configurations:
@@ -50,6 +52,18 @@ def main() -> None:
     candidate = deepcopy(base)
     candidate["monitoring"]["lifecycle"]["notify_states"] = ["running"]
     invalid.append(("unsupported lifecycle notification state", candidate))
+    candidate = deepcopy(base)
+    candidate["monitoring"]["http_5xx"]["threshold_count"] = 0
+    invalid.append(("non-positive HTTP 5xx threshold", candidate))
+    candidate = deepcopy(base)
+    candidate["monitoring"]["http_5xx"]["duration_minutes"] = 0
+    invalid.append(("non-positive HTTP 5xx duration", candidate))
+    candidate = deepcopy(base)
+    candidate["database_mode"] = "external"
+    invalid.append(("unsupported database mode", candidate))
+    candidate = deepcopy(base)
+    candidate["service_ports"]["redis"] = 0
+    invalid.append(("invalid Redis port", candidate))
     for name, candidate in invalid:
         if validator.is_valid(candidate):
             raise AssertionError(f"Schema accepted {name}")

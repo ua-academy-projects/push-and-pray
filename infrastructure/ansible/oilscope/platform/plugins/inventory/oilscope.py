@@ -95,18 +95,14 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     NAME = "oilscope.platform.oilscope"
 
     def verify_file(self, path):
-        return super().verify_file(path) and path.endswith(
-            ("oilscope.yml", "oilscope.yaml")
-        )
+        return super().verify_file(path) and path.endswith(("oilscope.yml", "oilscope.yaml"))
 
     def parse(self, inventory, loader, path, cache=True):
         super().parse(inventory, loader, path, cache=cache)
         self._read_config_data(path)
 
         if not HAS_YAML:
-            raise AnsibleParserError(
-                "the oilscope inventory plugin requires PyYAML"
-            )
+            raise AnsibleParserError("the oilscope inventory plugin requires PyYAML")
 
         config, project_config_path = self._load_project_config(path)
         providers = self._configured_providers(config)
@@ -180,18 +176,15 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         config_path = self._resolve_config_path(inventory_path)
 
         try:
-            with open(config_path, "r", encoding="utf-8") as handle:
+            with open(config_path, encoding="utf-8") as handle:
                 config = json.load(handle)
         except (OSError, ValueError) as error:
             raise AnsibleParserError(
-                "could not load the project configuration at "
-                f"{config_path}: {error}"
+                f"could not load the project configuration at {config_path}: {error}"
             ) from error
 
         if not isinstance(config, dict):
-            raise AnsibleParserError(
-                "the project configuration must contain a JSON object"
-            )
+            raise AnsibleParserError("the project configuration must contain a JSON object")
 
         return config, config_path
 
@@ -199,9 +192,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         value = mapping.get(key)
 
         if not isinstance(value, str) or not value:
-            raise AnsibleParserError(
-                f"{context} must define a non-empty string {key!r}"
-            )
+            raise AnsibleParserError(f"{context} must define a non-empty string {key!r}")
 
         return value
 
@@ -223,9 +214,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         )
 
         if value not in {"gcp", "aws"}:
-            raise AnsibleParserError(
-                "default_cloud must be either 'gcp' or 'aws'"
-            )
+            raise AnsibleParserError("default_cloud must be either 'gcp' or 'aws'")
 
         return value
 
@@ -240,9 +229,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         cloud = vm.get("cloud", default_cloud)
 
         if cloud not in {"gcp", "aws"}:
-            raise AnsibleParserError(
-                f"unsupported VM cloud {cloud!r}"
-            )
+            raise AnsibleParserError(f"unsupported VM cloud {cloud!r}")
 
         return cloud
 
@@ -250,9 +237,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         region = vm.get("region", default_region)
 
         if not isinstance(region, str) or not region:
-            raise AnsibleParserError(
-                "VM region must be a non-empty logical region name"
-            )
+            raise AnsibleParserError("VM region must be a non-empty logical region name")
 
         return region
 
@@ -271,9 +256,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         mappings = config.get("cloud_mappings")
 
         if not isinstance(mappings, dict):
-            raise AnsibleParserError(
-                "the project configuration must define 'cloud_mappings'"
-            )
+            raise AnsibleParserError("the project configuration must define 'cloud_mappings'")
 
         return mappings
 
@@ -282,9 +265,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         regions = mappings.get("regions")
 
         if not isinstance(regions, dict):
-            raise AnsibleParserError(
-                "cloud_mappings must define a 'regions' object"
-            )
+            raise AnsibleParserError("cloud_mappings must define a 'regions' object")
 
         default_cloud = self._default_cloud(config)
         default_region = self._default_region(config)
@@ -292,10 +273,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         logical_regions = {
             self._vm_region(vm, default_region)
             for vm in self._vms(config).values()
-            if (
-                isinstance(vm, dict)
-                and self._vm_cloud(vm, default_cloud) == provider
-            )
+            if (isinstance(vm, dict) and self._vm_cloud(vm, default_cloud) == provider)
         }
 
         resolved_regions = []
@@ -304,16 +282,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             logical_mapping = regions.get(logical_region)
 
             if not isinstance(logical_mapping, dict):
-                raise AnsibleParserError(
-                    f"no cloud mapping exists for region {logical_region!r}"
-                )
+                raise AnsibleParserError(f"no cloud mapping exists for region {logical_region!r}")
 
             provider_mapping = logical_mapping.get(provider)
 
             if not isinstance(provider_mapping, dict):
-                raise AnsibleParserError(
-                    f"region {logical_region!r} has no {provider!r} mapping"
-                )
+                raise AnsibleParserError(f"region {logical_region!r} has no {provider!r} mapping")
 
             provider_region = self._require_string(
                 provider_mapping,
@@ -331,9 +305,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         regions = mappings.get("regions")
 
         if not isinstance(regions, dict):
-            raise AnsibleParserError(
-                "cloud_mappings must define a 'regions' object"
-            )
+            raise AnsibleParserError("cloud_mappings must define a 'regions' object")
 
         default_cloud = self._default_cloud(config)
         default_region = self._default_region(config)
@@ -341,10 +313,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         logical_regions = {
             self._vm_region(vm, default_region)
             for vm in self._vms(config).values()
-            if (
-                isinstance(vm, dict)
-                and self._vm_cloud(vm, default_cloud) == provider
-            )
+            if (isinstance(vm, dict) and self._vm_cloud(vm, default_cloud) == provider)
         }
 
         resolved_zones = []
@@ -353,16 +322,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             logical_mapping = regions.get(logical_region)
 
             if not isinstance(logical_mapping, dict):
-                raise AnsibleParserError(
-                    f"no cloud mapping exists for region {logical_region!r}"
-                )
+                raise AnsibleParserError(f"no cloud mapping exists for region {logical_region!r}")
 
             provider_mapping = logical_mapping.get(provider)
 
             if not isinstance(provider_mapping, dict):
-                raise AnsibleParserError(
-                    f"region {logical_region!r} has no {provider!r} mapping"
-                )
+                raise AnsibleParserError(f"region {logical_region!r} has no {provider!r} mapping")
 
             provider_zone = self._require_string(
                 provider_mapping,
@@ -392,16 +357,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         bastions = [
             vm
             for vm in self._vms(config).values()
-            if (
-                isinstance(vm, dict)
-                and vm.get("role") == bastion_role
-            )
+            if (isinstance(vm, dict) and vm.get("role") == bastion_role)
         ]
 
         if len(bastions) != 1:
             raise AnsibleParserError(
-                "expected exactly one VM with role "
-                f"{bastion_role!r}, found {len(bastions)}"
+                f"expected exactly one VM with role {bastion_role!r}, found {len(bastions)}"
             )
 
         try:
@@ -415,16 +376,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         clouds = config.get("clouds")
 
         if not isinstance(clouds, dict):
-            raise AnsibleParserError(
-                "the project configuration must define 'clouds'"
-            )
+            raise AnsibleParserError("the project configuration must define 'clouds'")
 
         gcp = clouds.get("gcp")
 
         if not isinstance(gcp, dict):
-            raise AnsibleParserError(
-                "the project configuration must define clouds.gcp"
-            )
+            raise AnsibleParserError("the project configuration must define clouds.gcp")
 
         project_id = self._require_string(
             gcp,
@@ -451,17 +408,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         bastion_port = self._bastion_ssh_port(config)
         workload_port = int(self.get_option("workload_ssh_port"))
 
-        is_bastion = (
-            f"labels.role | default('') == '{bastion_role}'"
-        )
+        is_bastion = f"labels.role | default('') == '{bastion_role}'"
 
-        has_public = (
-            "networkInterfaces[0].accessConfigs | default([])"
-        )
+        has_public = "networkInterfaces[0].accessConfigs | default([])"
 
-        public_ip = (
-            "networkInterfaces[0].accessConfigs[0].natIP"
-        )
+        public_ip = "networkInterfaces[0].accessConfigs[0].natIP"
 
         private_ip = "networkInterfaces[0].networkIP"
 
@@ -485,28 +436,15 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 },
             ],
             "groups": {
-                "workloads": (
-                    "labels.role is defined and "
-                    f"labels.role != '{bastion_role}'"
-                ),
+                "workloads": (f"labels.role is defined and labels.role != '{bastion_role}'"),
                 "gcp": "true",
             },
             "compose": {
                 "internal_ip": private_ip,
-                "public_ip": (
-                    f"{public_ip} if {has_public} else ''"
-                ),
-                "ansible_host": (
-                    f"{public_ip} if {is_bastion} "
-                    f"else {private_ip}"
-                ),
-                "ansible_port": (
-                    f"{bastion_port} if {is_bastion} "
-                    f"else {workload_port}"
-                ),
-                "oilscope_role": (
-                    "labels.role | default('')"
-                ),
+                "public_ip": (f"{public_ip} if {has_public} else ''"),
+                "ansible_host": (f"{public_ip} if {is_bastion} else {private_ip}"),
+                "ansible_port": (f"{bastion_port} if {is_bastion} else {workload_port}"),
+                "oilscope_role": ("labels.role | default('')"),
                 "oilscope_cloud": "'gcp'",
                 "oilscope_region": repr(provider_region),
                 "project_config_path": repr(project_config_path),
@@ -553,24 +491,17 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 },
             ],
             "groups": {
-                "workloads": (
-                    "tags.role is defined and "
-                    f"tags.role != '{bastion_role}'"
-                ),
+                "workloads": (f"tags.role is defined and tags.role != '{bastion_role}'"),
                 "aws": "true",
             },
             "compose": {
                 "internal_ip": "private_ip_address",
                 "public_ip": "public_ip_address | default('')",
                 "ansible_host": (
-                    "public_ip_address "
-                    f"if tags.role == '{bastion_role}' "
-                    "else private_ip_address"
+                    f"public_ip_address if tags.role == '{bastion_role}' else private_ip_address"
                 ),
                 "ansible_port": (
-                    f"{bastion_port} "
-                    f"if tags.role == '{bastion_role}' "
-                    f"else {workload_port}"
+                    f"{bastion_port} if tags.role == '{bastion_role}' else {workload_port}"
                 ),
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "'aws'",
@@ -605,8 +536,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 )
         except OSError as error:
             raise AnsibleParserError(
-                "could not write generated inventory settings "
-                f"to {generated}: {error}"
+                f"could not write generated inventory settings to {generated}: {error}"
             ) from error
 
         return generated
@@ -615,10 +545,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         try:
             os.unlink(path)
         except OSError as error:
-            display.vvv(
-                f"could not remove temporary inventory file "
-                f"{path}: {error}"
-            )
+            display.vvv(f"could not remove temporary inventory file {path}: {error}")
 
     def _delegate(
         self,
@@ -631,9 +558,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         delegate = inventory_loader.get(delegate_name)
 
         if delegate is None:
-            raise AnsibleParserError(
-                f"the {delegate_name} inventory plugin is unavailable"
-            )
+            raise AnsibleParserError(f"the {delegate_name} inventory plugin is unavailable")
 
         for option in (
             "cache",
@@ -647,10 +572,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     self.get_option(option),
                 )
             except (AnsibleError, KeyError) as error:
-                display.vvv(
-                    f"{delegate_name} rejected "
-                    f"the {option} option: {error}"
-                )
+                display.vvv(f"{delegate_name} rejected the {option} option: {error}")
 
         delegate.parse(
             inventory,

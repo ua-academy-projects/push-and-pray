@@ -9,6 +9,15 @@ database_runtime_environment: >-
       'POSTGRES_USER': database_postgres_user,
       'POSTGRES_DB': database_postgres_name,
       'DATABASE_BIND_ADDRESS': database_bind_address | string,
-      'DATABASE_HOST_PORT': database_host_port | string
+      'DATABASE_HOST_PORT': database_host_port | string,
+      'DATABASE_MODE': database_mode,
+      'DATABASE_HOST': database_host,
+      'DATABASE_PORT': database_port | string,
+      'DATABASE_SSLMODE': database_sslmode,
+      'RABBITMQ_PASSWORD': database_rabbitmq_password,
+      'RABBITMQ_HOST_PORT': database_rabbitmq_port | string,
+      'REDIS_PASSWORD': database_redis_password,
+      'REDIS_BIND_ADDRESS': database_redis_bind_address,
+      'REDIS_HOST_PORT': database_redis_port | string
     })
   }}

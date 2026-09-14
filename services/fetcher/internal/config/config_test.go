@@ -78,3 +78,19 @@ func TestParseHoursRejectsInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRabbitMQConfiguration(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("MESSAGING_BACKEND", "rabbitmq")
+	t.Setenv("RABBITMQ_HOST", "10.0.1.4")
+	t.Setenv("RABBITMQ_PASSWORD", "test-only-password")
+	t.Setenv("RABBITMQ_QUEUE", "managed-prices")
+
+	configuration, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if configuration.MessagingBackend != "rabbitmq" || configuration.QueueName != "managed-prices" {
+		t.Fatalf("unexpected RabbitMQ configuration: %#v", configuration)
+	}
+}

@@ -35,3 +35,13 @@
     - role: oilscope.platform.history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        history_database_host: >-
+          {{ resolve_secrets_result.DATABASE_HOST
+             | default(hostvars[groups['database'][0]].internal_ip) }}
+        history_database_sslmode: >-
+          {{ 'require' if (compose_project_config.database_mode | default('self_hosted')) == 'managed' else 'disable' }}
+        history_messaging_backend: >-
+          {{ 'rabbitmq' if (compose_project_config.database_mode | default('self_hosted')) == 'managed' else 'pgmq' }}
+        history_rabbitmq_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+        history_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}

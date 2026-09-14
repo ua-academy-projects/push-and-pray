@@ -12,8 +12,17 @@ Children receive structured inputs and never reopen the JSON file.
 | `aws_network` | AWS VPC, subnets, internet gateway, routing and optional NAT |
 | `aws_security_groups` | AWS role security groups and ingress/egress policy |
 | `aws_vm` | AWS VM filtering/mappings, AMIs, EC2, identities and Elastic IPs |
-| `gcp_monitoring` | GCP CPU dashboard, per-VM alerts and email notification channel |
-| `aws_monitoring` | AWS CPU/health dashboard, per-VM alarms and SNS email notifications |
+| `gcp_monitoring` | GCP CPU/HTTP dashboard, per-VM alerts and email notification channel |
+| `aws_monitoring` | AWS CPU/health/HTTP dashboard, per-VM alarms and SNS email notifications |
+| `gcp_managed_database` | Private-IP Cloud SQL PostgreSQL and service networking |
+| `aws_managed_database` | Private RDS PostgreSQL, DB subnets and app-only security group |
+
+`database_mode` defaults to `self_hosted`, preserving PostgreSQL on the
+database VM and PGMQ. `managed` provisions the database in the selected cloud,
+keeps the database VM as the private RabbitMQ, Redis, and migration host, and distributes
+generated credentials through the existing cloud secret stores. Self-hosted mode runs
+PostgreSQL, PGMQ, and Redis on that VM. Managed mode
+rejects mixed-cloud workloads because no private cross-cloud path exists.
 
 VM modules are called once and iterate internally. Networks receive structured
 network configuration; policy modules receive a shared policy object. Root
@@ -51,6 +60,16 @@ GCP creates per-VM log-matched policies for explicit stop API calls and the
 reset, start, and delete events are excluded. AWS uses one EventBridge EC2
 state-change rule filtered to Terraform-managed instance IDs and the configured
 `stopped`/`terminated` states, with the existing SNS topic as its target.
+
+Set `monitoring.http_5xx.enabled` to monitor downstream HTTP 500-599 responses
+returned by Traefik on the provider that hosts the UI VM. `threshold_count`
+defaults to `5` responses in the `duration_minutes` window, which defaults to
+`5`. GCP uses the `traefik_access` Cloud Logging stream, a log-based counter,
+the existing Monitoring dashboard, and the existing email channel. AWS uses a
+Terraform-managed `<prefix>-traefik-access` CloudWatch log group, a metric
+filter, the existing CloudWatch dashboard, and the existing SNS/email path.
+Re-run the UI Ansible playbook after applying the Terraform plan so the UI host
+installs its provider-specific log agent and starts shipping the Traefik file.
 
 Terraform owns secret containers and IAM grants. It derives IDs from
 `application.secret_mappings`, keyed by application role. Only Ansible uses

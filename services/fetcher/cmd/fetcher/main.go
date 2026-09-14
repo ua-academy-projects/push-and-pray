@@ -18,6 +18,7 @@ import (
 	"oil-price-tracker/fetcher/internal/config"
 	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
+	"oil-price-tracker/fetcher/internal/rabbitmq"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
 )
@@ -42,25 +43,37 @@ func main() {
 		}
 	}
 
-	database, err := sql.Open("pgx", configuration.DatabaseURL)
-	if err != nil {
-		slog.Error("open PostgreSQL connection", "error", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	if err := database.Ping(); err != nil {
-		slog.Error("connect to PostgreSQL", "error", err)
-		os.Exit(1)
-	}
-
-	collector := service.New(
-		priceProvider,
-		pgmq.Publisher{
+	var publisher service.Publisher
+	if configuration.MessagingBackend == "pgmq" {
+		database, err := sql.Open("pgx", configuration.DatabaseURL)
+		if err != nil {
+			slog.Error("open PostgreSQL connection", "error", err)
+			os.Exit(1)
+		}
+		defer database.Close()
+		if err := database.Ping(); err != nil {
+			slog.Error("connect to PostgreSQL", "error", err)
+			os.Exit(1)
+		}
+		publisher = pgmq.Publisher{
 			DB:        database,
 			QueueName: configuration.QueueName,
-		},
-	)
+		}
+	} else {
+		rabbitPublisher, err := rabbitmq.New(
+			configuration.RabbitMQHost, configuration.RabbitMQPort,
+			configuration.RabbitMQUser, configuration.RabbitMQPassword,
+			configuration.RabbitMQVHost, configuration.QueueName,
+		)
+		if err != nil {
+			slog.Error("configure RabbitMQ publisher", "error", err)
+			os.Exit(1)
+		}
+		defer rabbitPublisher.Close()
+		publisher = rabbitPublisher
+	}
+
+	collector := service.New(priceProvider, publisher)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -141,7 +154,7 @@ func main() {
 				"status":   "ok",
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
+				"delivery": configuration.MessagingBackend,
 				"queue":    configuration.QueueName,
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,

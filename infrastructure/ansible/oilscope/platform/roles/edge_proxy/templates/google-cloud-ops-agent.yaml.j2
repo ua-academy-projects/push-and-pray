@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+logging:
+  receivers:
+    traefik_access:
+      type: files
+      include_paths:
+        - {{ edge_proxy_access_log_path }}
+  processors:
+    parse_traefik_json:
+      type: parse_json
+  service:
+    pipelines:
+      traefik_access:
+        receivers:
+          - traefik_access
+        processors:
+          - parse_traefik_json

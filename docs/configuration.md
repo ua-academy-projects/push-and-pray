@@ -23,7 +23,7 @@ Private keys, credentials and secret payloads do not belong in this file.
 | `network.{management_subnet_cidr,workload_subnet_cidr}` | Provider subnets and non-overlap validation |
 | `network.aws_enable_nat_gateway` | Explicit AWS egress choice; false in example |
 | `network.ui_public_ports` | Firewall policy; 80/443 for HTTP redirect, ACME and HTTPS |
-| `service_ports.{history_api,postgresql}` | Firewall policy and Ansible bindings/connections |
+| `service_ports.{history_api,postgresql,rabbitmq,redis}` | Firewall policy and Ansible bindings/connections |
 | `vms.*.{role,size,image,boot_disk.size_gb,boot_disk.type,assign_public_ip}` | Identity, capacity, image, storage and public addressing |
 | `vms.bastion.{ssh_port,allowed_cidrs}` | Bootstrap, SSH enforcement and firewall restrictions |
 | `application.secret_mappings.<role>.<ENV>` | Ansible environment mapping; Terraform consumes referenced IDs for containers/IAM |

@@ -7,3 +7,8 @@ output "monitored_vm_names" {
   description = "Names of Terraform-managed VMs covered by AWS monitoring."
   value       = sort([for vm in values(var.vms) : vm.name if local.enabled])
 }
+
+output "http_5xx_enabled" {
+  description = "Whether AWS HTTP 5xx monitoring is enabled for an AWS UI VM."
+  value       = local.http_5xx_enabled
+}

@@ -6,6 +6,7 @@ output "vms" {
       instance_id           = instance.instance_id
       internal_ip           = instance.network_interface[0].network_ip
       public_ip             = try(google_compute_address.public[name].address, null)
+      role                  = local.resolved_vms[name].role
       network_tags          = instance.tags
       service_account_email = google_service_account.workload[name].email
     }

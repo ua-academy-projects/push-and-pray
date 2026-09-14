@@ -37,6 +37,15 @@
         fetcher_compose_environment:
           DATABASE_PORT: "{{ compose_project_config.service_ports.postgresql | string }}"
         fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
-        fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+          {{ resolve_secrets_result.DATABASE_HOST
+             | default(hostvars[groups['database'][0]].internal_ip) }}
+        fetcher_database_sslmode: >-
+          {{ 'require' if (compose_project_config.database_mode | default('self_hosted')) == 'managed' else 'disable' }}
+        fetcher_postgres_password: >-
+          {{ resolve_secrets_result.POSTGRES_PASSWORD | default('') }}
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"
+        fetcher_messaging_backend: >-
+          {{ 'rabbitmq' if (compose_project_config.database_mode | default('self_hosted')) == 'managed' else 'pgmq' }}
+        fetcher_rabbitmq_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+        fetcher_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}

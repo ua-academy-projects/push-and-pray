@@ -26,12 +26,25 @@ variable "policy" {
     bastion_allowed_cidrs = list(string)
     history_api_port      = number
     postgresql_port       = number
+    rabbitmq_port         = number
+    rabbitmq_enabled      = bool
+    redis_port            = number
     ui_public_ports       = list(string)
   })
 
   validation {
+    condition     = var.policy.redis_port >= 1 && var.policy.redis_port <= 65535
+    error_message = "redis_port must be between 1 and 65535."
+  }
+
+  validation {
     condition     = var.policy.bastion_ssh_port >= 1 && var.policy.bastion_ssh_port <= 65535
     error_message = "bastion_ssh_port must be between 1 and 65535."
+  }
+
+  validation {
+    condition     = var.policy.rabbitmq_port >= 1 && var.policy.rabbitmq_port <= 65535
+    error_message = "rabbitmq_port must be between 1 and 65535."
   }
 
   validation {

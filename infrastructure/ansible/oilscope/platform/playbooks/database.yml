@@ -43,3 +43,16 @@
           }}
         database_host_port: "{{ compose_project_config.service_ports.postgresql }}"
         database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_mode: "{{ compose_project_config.database_mode | default('self_hosted') }}"
+        database_host: >-
+          {{ resolve_secrets_result.DATABASE_HOST | default('postgres') }}
+        database_port: "{{ compose_project_config.service_ports.postgresql }}"
+        database_sslmode: >-
+          {{ 'require' if (compose_project_config.database_mode | default('self_hosted')) == 'managed' else 'disable' }}
+        database_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}
+        database_rabbitmq_port: >-
+          {{ compose_project_config.service_ports.rabbitmq | default(5672) }}
+        database_redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD }}"
+        database_redis_bind_address: "{{ internal_ip }}"
+        database_redis_port: "{{ compose_project_config.service_ports.redis }}"

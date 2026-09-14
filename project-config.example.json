@@ -3,6 +3,7 @@
   "name_prefix": "oilscope",
   "default_cloud": "gcp",
   "default_region": "europe",
+  "database_mode": "self_hosted",
   "clouds": {
     "gcp": {
       "project_id": "example-project-12345"
@@ -77,7 +78,9 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
   },
   "monitoring": {
     "enabled": true,
@@ -96,6 +99,11 @@
         "stopped",
         "terminated"
       ]
+    },
+    "http_5xx": {
+      "enabled": true,
+      "threshold_count": 5,
+      "duration_minutes": 5
     }
   },
   "vms": {
@@ -158,6 +166,7 @@
     "secret_mappings": {
       "database": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "history": {
@@ -170,7 +179,7 @@
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "ui": {
-        "POSTGRES_PASSWORD": "example-db-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },

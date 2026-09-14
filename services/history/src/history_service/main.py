@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
+from .messaging import PGMQConsumer, RabbitMQConsumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,7 +36,10 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+if settings.messaging_backend == "rabbitmq":
+    messaging_consumer = RabbitMQConsumer(settings)
+else:
+    messaging_consumer = PGMQConsumer(settings)
 
 
 @asynccontextmanager
@@ -45,12 +48,12 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
-    await pgmq_consumer.start()
+    await messaging_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await messaging_consumer.stop()
 
 
 app = FastAPI(
@@ -67,23 +70,23 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    extension_installed = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
-            )
-            """
-        )
-    ).scalar_one()
+    extension_installed = False
+    if settings.messaging_backend == "pgmq":
+        extension_installed = db.execute(
+            text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgmq')")
+        ).scalar_one()
 
     return {
         "status": "ok",
         "database": "connected",
         "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
+        "pgmq_consumer": (
+            "ready"
+            if settings.messaging_backend == "pgmq" and messaging_consumer.is_ready
+            else "not_ready"
+        ),
+        "messaging_backend": settings.messaging_backend,
+        "messaging_consumer": ("ready" if messaging_consumer.is_ready else "not_ready"),
     }
 
 

@@ -10,15 +10,21 @@ import (
 )
 
 type Config struct {
-	OilPriceAPIKey string
-	DataProvider   string
-	DatabaseURL    string
-	QueueName      string
-	CronHours      []int
-	Timezone       *time.Location
-	FetchOnStartup bool
-	RequestTimeout time.Duration
-	ListenAddress  string
+	OilPriceAPIKey   string
+	DataProvider     string
+	DatabaseURL      string
+	QueueName        string
+	MessagingBackend string
+	RabbitMQHost     string
+	RabbitMQPort     int
+	RabbitMQUser     string
+	RabbitMQPassword string
+	RabbitMQVHost    string
+	CronHours        []int
+	Timezone         *time.Location
+	FetchOnStartup   bool
+	RequestTimeout   time.Duration
+	ListenAddress    string
 }
 
 func Load() (Config, error) {
@@ -36,8 +42,26 @@ func Load() (Config, error) {
 		"DATABASE_URL",
 		"postgres://oil_tracker:change-me@localhost:5432/oil_tracker?sslmode=disable",
 	))
-	if databaseURL == "" {
+	messagingBackend := strings.ToLower(env("MESSAGING_BACKEND", "pgmq"))
+	if messagingBackend != "pgmq" && messagingBackend != "rabbitmq" {
+		return Config{}, fmt.Errorf("MESSAGING_BACKEND must be pgmq or rabbitmq")
+	}
+	if messagingBackend == "pgmq" && databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL must not be empty")
+	}
+
+	rabbitMQPort, err := strconv.Atoi(env("RABBITMQ_PORT", "5672"))
+	if err != nil || rabbitMQPort < 1 || rabbitMQPort > 65535 {
+		return Config{}, fmt.Errorf("RABBITMQ_PORT must be a valid port")
+	}
+	rabbitMQHost := strings.TrimSpace(os.Getenv("RABBITMQ_HOST"))
+	rabbitMQPassword := os.Getenv("RABBITMQ_PASSWORD")
+	if messagingBackend == "rabbitmq" && (rabbitMQHost == "" || rabbitMQPassword == "") {
+		return Config{}, fmt.Errorf("RABBITMQ_HOST and RABBITMQ_PASSWORD are required")
+	}
+	queueName := env("PGMQ_QUEUE", "price_observations")
+	if messagingBackend == "rabbitmq" {
+		queueName = env("RABBITMQ_QUEUE", "price_observations")
 	}
 
 	hours, err := ParseHours(env("FETCH_CRON_HOURS", "0,6,12,18"))
@@ -61,15 +85,21 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		OilPriceAPIKey: apiKey,
-		DataProvider:   provider,
-		DatabaseURL:    databaseURL,
-		QueueName:      env("PGMQ_QUEUE", "price_observations"),
-		CronHours:      hours,
-		Timezone:       location,
-		FetchOnStartup: fetchOnStartup,
-		RequestTimeout: time.Duration(timeoutSeconds) * time.Second,
-		ListenAddress:  env("LISTEN_ADDRESS", ":8002"),
+		OilPriceAPIKey:   apiKey,
+		DataProvider:     provider,
+		DatabaseURL:      databaseURL,
+		QueueName:        queueName,
+		MessagingBackend: messagingBackend,
+		RabbitMQHost:     rabbitMQHost,
+		RabbitMQPort:     rabbitMQPort,
+		RabbitMQUser:     env("RABBITMQ_USER", "oil_tracker"),
+		RabbitMQPassword: rabbitMQPassword,
+		RabbitMQVHost:    env("RABBITMQ_VHOST", "oil_tracker"),
+		CronHours:        hours,
+		Timezone:         location,
+		FetchOnStartup:   fetchOnStartup,
+		RequestTimeout:   time.Duration(timeoutSeconds) * time.Second,
+		ListenAddress:    env("LISTEN_ADDRESS", ":8002"),
 	}, nil
 }
 

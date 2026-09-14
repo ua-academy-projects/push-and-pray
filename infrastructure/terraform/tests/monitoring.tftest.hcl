@@ -256,6 +256,130 @@ run "gcp_monitoring_disabled" {
   }
 }
 
+run "gcp_http_5xx_monitoring" {
+  command = plan
+
+  module {
+    source = "./modules/gcp_monitoring"
+  }
+
+  variables {
+    project_id      = "oilscope-test-project"
+    resource_prefix = "oilscope-test"
+    monitoring = {
+      enabled            = true
+      notification_email = "alerts@example.com"
+      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      http_5xx           = { enabled = true, threshold_count = 7, duration_minutes = 4 }
+    }
+    vms = {
+      ui = {
+        name                  = "oilscope-test-ui"
+        instance_id           = "3333333333333333333"
+        role                  = "ui"
+        service_account_email = "oilscope-test-ui@oilscope-test-project.iam.gserviceaccount.com"
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(google_logging_metric.http_5xx) == 1 &&
+      length(google_monitoring_alert_policy.http_5xx) == 1 &&
+      length(google_project_iam_member.http_log_writer) == 1 &&
+      length(google_monitoring_dashboard.cpu) == 1 &&
+      length(google_monitoring_notification_channel.email) == 1 &&
+      google_project_iam_member.http_log_writer["ui"].role == "roles/logging.logWriter" &&
+      google_project_iam_member.http_log_writer["ui"].member == "serviceAccount:${var.vms.ui.service_account_email}"
+    )
+    error_message = "GCP HTTP 5xx monitoring must create one UI-scoped metric, alert, dashboard widget, log-writer grant, and reuse the email channel."
+  }
+
+  assert {
+    condition = (
+      strcontains(google_logging_metric.http_5xx["ui"].filter, "log_id(\"traefik_access\")") &&
+      strcontains(google_logging_metric.http_5xx["ui"].filter, "jsonPayload.DownstreamStatus >= 500") &&
+      strcontains(google_logging_metric.http_5xx["ui"].filter, "jsonPayload.DownstreamStatus < 600") &&
+      strcontains(google_monitoring_dashboard.cpu[0].dashboard_json, "Traefik HTTP 5xx responses") &&
+      google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].threshold_value == 7 &&
+      google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].aggregations[0].alignment_period == "240s" &&
+      google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].duration == "0s"
+    )
+    error_message = "GCP must count downstream 500-599 responses and evaluate the configured count over the configured window."
+  }
+}
+
+run "gcp_http_5xx_without_ui" {
+  command = plan
+
+  module {
+    source = "./modules/gcp_monitoring"
+  }
+
+  variables {
+    project_id      = "oilscope-test-project"
+    resource_prefix = "oilscope-test"
+    monitoring = {
+      enabled            = true
+      notification_email = "alerts@example.com"
+      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      http_5xx           = { enabled = true, threshold_count = 5, duration_minutes = 5 }
+    }
+    vms = {
+      history = { name = "oilscope-test-history", instance_id = "1111111111111111111", role = "history" }
+    }
+  }
+
+  assert {
+    condition = (
+      length(google_logging_metric.http_5xx) == 0 &&
+      length(google_monitoring_alert_policy.http_5xx) == 0 &&
+      length(google_project_iam_member.http_log_writer) == 0 &&
+      length(google_monitoring_dashboard.cpu) == 0 &&
+      length(google_monitoring_notification_channel.email) == 0
+    )
+    error_message = "GCP HTTP 5xx resources must not exist without a GCP UI VM."
+  }
+}
+
+run "gcp_http_5xx_disabled" {
+  command = plan
+
+  module {
+    source = "./modules/gcp_monitoring"
+  }
+
+  variables {
+    project_id      = "oilscope-test-project"
+    resource_prefix = "oilscope-test"
+    monitoring = {
+      enabled            = true
+      notification_email = "alerts@example.com"
+      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      http_5xx           = { enabled = false, threshold_count = 5, duration_minutes = 5 }
+    }
+    vms = {
+      ui = {
+        name                  = "oilscope-test-ui"
+        instance_id           = "3333333333333333333"
+        role                  = "ui"
+        service_account_email = "oilscope-test-ui@oilscope-test-project.iam.gserviceaccount.com"
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(google_logging_metric.http_5xx) == 0 &&
+      length(google_monitoring_alert_policy.http_5xx) == 0 &&
+      length(google_project_iam_member.http_log_writer) == 0 &&
+      length(google_monitoring_dashboard.cpu) == 0 &&
+      length(google_monitoring_notification_channel.email) == 0
+    )
+    error_message = "Disabled GCP HTTP 5xx monitoring must create no HTTP resources."
+  }
+}
+
 run "aws_cpu_monitoring" {
   command = plan
 
@@ -339,6 +463,161 @@ run "aws_custom_cpu_threshold" {
       length(aws_cloudwatch_dashboard.cpu) == 1
     )
     error_message = "A custom AWS CPU threshold and duration must update the stable per-VM alarm while retaining the dashboard."
+  }
+}
+
+run "aws_http_5xx_monitoring" {
+  command = apply
+
+  module {
+    source = "./modules/aws_monitoring"
+  }
+
+  override_resource {
+    target = aws_sns_topic.monitoring
+    values = {
+      arn = "arn:aws:sns:eu-central-1:123456789012:oilscope-test-monitoring"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudwatch_log_group.http_5xx
+    values = {
+      arn = "arn:aws:logs:eu-central-1:123456789012:log-group:oilscope-test-traefik-access"
+    }
+  }
+
+  variables {
+    resource_prefix = "oilscope-test"
+    monitoring = {
+      enabled            = true
+      notification_email = "alerts@example.com"
+      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      http_5xx           = { enabled = true, threshold_count = 9, duration_minutes = 3 }
+    }
+    vms = {
+      ui = {
+        name          = "oilscope-test-ui"
+        instance_id   = "i-00112233445566778"
+        role          = "ui"
+        iam_role_name = "oilscope-test-ui-role"
+      }
+    }
+    tags = { managed_by = "terraform" }
+  }
+
+  assert {
+    condition = (
+      length(aws_cloudwatch_log_group.http_5xx) == 1 &&
+      length(aws_cloudwatch_log_metric_filter.http_5xx) == 1 &&
+      length(aws_cloudwatch_metric_alarm.http_5xx) == 1 &&
+      length(aws_iam_role_policy.http_log_writer) == 1 &&
+      length(aws_cloudwatch_dashboard.cpu) == 1 &&
+      length(aws_sns_topic.monitoring) == 1 &&
+      length(aws_sns_topic_subscription.email) == 1
+    )
+    error_message = "AWS HTTP 5xx monitoring must create one UI log path, metric filter, alarm, dashboard widget, least-privilege role policy, and reuse SNS."
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_log_metric_filter.http_5xx["ui"].pattern == "{ $.DownstreamStatus >= 500 && $.DownstreamStatus < 600 }" &&
+      aws_cloudwatch_metric_alarm.http_5xx["ui"].threshold == 9 &&
+      aws_cloudwatch_metric_alarm.http_5xx["ui"].period == 180 &&
+      aws_cloudwatch_metric_alarm.http_5xx["ui"].evaluation_periods == 1 &&
+      strcontains(aws_cloudwatch_dashboard.cpu[0].dashboard_body, "Traefik HTTP 5xx responses")
+    )
+    error_message = "AWS must count downstream 500-599 responses and evaluate the configured count over the configured window."
+  }
+
+  assert {
+    condition = (
+      aws_iam_role_policy.http_log_writer["ui"].role == var.vms.ui.iam_role_name &&
+      toset(jsondecode(aws_iam_role_policy.http_log_writer["ui"].policy).Statement[0].Action) == toset([
+        "logs:CreateLogStream",
+        "logs:DescribeLogStreams",
+        "logs:PutLogEvents",
+      ])
+    )
+    error_message = "Only the AWS UI role may create/describe streams and publish events to the managed Traefik log group."
+  }
+}
+
+run "aws_http_5xx_without_ui" {
+  command = plan
+
+  module {
+    source = "./modules/aws_monitoring"
+  }
+
+  variables {
+    resource_prefix = "oilscope-test"
+    monitoring = {
+      enabled            = true
+      notification_email = "alerts@example.com"
+      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      http_5xx           = { enabled = true, threshold_count = 5, duration_minutes = 5 }
+    }
+    vms = {
+      history = {
+        name          = "oilscope-test-history"
+        instance_id   = "i-0123456789abcdef0"
+        role          = "history"
+        iam_role_name = "oilscope-test-history-role"
+      }
+    }
+    tags = {}
+  }
+
+  assert {
+    condition = (
+      length(aws_cloudwatch_log_group.http_5xx) == 0 &&
+      length(aws_cloudwatch_log_metric_filter.http_5xx) == 0 &&
+      length(aws_cloudwatch_metric_alarm.http_5xx) == 0 &&
+      length(aws_iam_role_policy.http_log_writer) == 0 &&
+      length(aws_cloudwatch_dashboard.cpu) == 0 &&
+      length(aws_sns_topic.monitoring) == 0
+    )
+    error_message = "AWS HTTP 5xx resources must not exist without an AWS UI VM."
+  }
+}
+
+run "http_5xx_disabled" {
+  command = plan
+
+  module {
+    source = "./modules/aws_monitoring"
+  }
+
+  variables {
+    resource_prefix = "oilscope-test"
+    monitoring = {
+      enabled            = true
+      notification_email = "alerts@example.com"
+      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      http_5xx           = { enabled = false, threshold_count = 5, duration_minutes = 5 }
+    }
+    vms = {
+      ui = {
+        name          = "oilscope-test-ui"
+        instance_id   = "i-00112233445566778"
+        role          = "ui"
+        iam_role_name = "oilscope-test-ui-role"
+      }
+    }
+    tags = {}
+  }
+
+  assert {
+    condition = (
+      length(aws_cloudwatch_log_group.http_5xx) == 0 &&
+      length(aws_cloudwatch_log_metric_filter.http_5xx) == 0 &&
+      length(aws_cloudwatch_metric_alarm.http_5xx) == 0 &&
+      length(aws_iam_role_policy.http_log_writer) == 0 &&
+      length(aws_cloudwatch_dashboard.cpu) == 0 &&
+      length(aws_sns_topic.monitoring) == 0
+    )
+    error_message = "Disabled HTTP 5xx monitoring must create no HTTP resources."
   }
 }
 

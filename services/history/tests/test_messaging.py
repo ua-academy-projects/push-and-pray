@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 from history_service import messaging
 from history_service.config import Settings
 
@@ -182,3 +185,46 @@ def test_consumer_archives_after_retry_limit(
     )
 
     assert archived == [999]
+
+
+class FakeRabbitMessage:
+    def __init__(self, payload: dict) -> None:
+        self.body = json.dumps(payload).encode()
+        self.acked = False
+        self.nacked = False
+
+    async def ack(self) -> None:
+        self.acked = True
+
+    async def nack(self, *, requeue: bool) -> None:
+        self.nacked = requeue
+
+    async def reject(self, *, requeue: bool) -> None:
+        self.nacked = not requeue
+
+
+def test_rabbitmq_acknowledges_only_after_persistence(monkeypatch) -> None:
+    consumer = messaging.RabbitMQConsumer(Settings(messaging_backend="rabbitmq"))
+    message = FakeRabbitMessage(valid_event())
+    persisted: list[bool] = []
+    monkeypatch.setattr(consumer, "_persist", lambda event: persisted.append(True))
+
+    asyncio.run(consumer._handle_message(message))
+
+    assert persisted == [True]
+    assert message.acked is True
+    assert message.nacked is False
+
+
+def test_rabbitmq_requeues_failed_persistence(monkeypatch) -> None:
+    consumer = messaging.RabbitMQConsumer(Settings(messaging_backend="rabbitmq"))
+    message = FakeRabbitMessage(valid_event())
+
+    def fail(event) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(consumer, "_persist", fail)
+    asyncio.run(consumer._handle_message(message))
+
+    assert message.acked is False
+    assert message.nacked is True

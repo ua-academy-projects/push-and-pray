@@ -23,6 +23,18 @@ def main() -> None:
     aws_only["clouds"] = {"aws": {}}
     write_config("aws-only", aws_only)
 
+    gcp_managed = deepcopy(base)
+    gcp_managed["database_mode"] = "managed"
+    write_config("gcp-managed", gcp_managed)
+
+    aws_managed = deepcopy(aws_only)
+    aws_managed["database_mode"] = "managed"
+    write_config("aws-managed", aws_managed)
+
+    aws_managed_subnet_overlap = deepcopy(aws_managed)
+    aws_managed_subnet_overlap["network"]["workload_subnet_cidr"] = "10.0.2.0/24"
+    write_config("invalid-aws-managed-subnet-overlap", aws_managed_subnet_overlap)
+
     monitoring_absent = deepcopy(base)
     monitoring_absent.pop("monitoring")
     write_config("monitoring-absent", monitoring_absent)
@@ -34,6 +46,18 @@ def main() -> None:
     hybrid = deepcopy(base)
     hybrid["vms"]["ui"]["cloud"] = "aws"
     write_config("hybrid", hybrid)
+
+    hybrid_managed = deepcopy(hybrid)
+    hybrid_managed["database_mode"] = "managed"
+    write_config("hybrid-managed", hybrid_managed)
+
+    invalid_database_mode = deepcopy(base)
+    invalid_database_mode["database_mode"] = "external"
+    write_config("invalid-database-mode", invalid_database_mode)
+
+    invalid_redis_port = deepcopy(base)
+    invalid_redis_port["service_ports"]["redis"] = 0
+    write_config("invalid-redis-port", invalid_redis_port)
 
     invalid_multi_region = deepcopy(base)
     invalid_multi_region["cloud_mappings"]["regions"]["secondary"] = deepcopy(

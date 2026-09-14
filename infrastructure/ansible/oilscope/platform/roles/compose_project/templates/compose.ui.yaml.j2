@@ -10,7 +10,7 @@ services:
     environment:
       HISTORY_SERVICE_URL: ${HISTORY_SERVICE_URL:?HISTORY_SERVICE_URL is required}
       # yamllint disable rule:line-length
-      DATABASE_URL: postgresql://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@${REDIS_HOST:?REDIS_HOST is required}:${REDIS_PORT:-6379}/0
       # yamllint enable rule:line-length
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
       SESSION_COOKIE_SECURE: "true"

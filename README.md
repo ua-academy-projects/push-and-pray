@@ -16,7 +16,7 @@ have already been persisted in PostgreSQL.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
-- PostgreSQL-backed UI preferences with a sliding 30-day TTL.
+- Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
 - Passwordless project-specific SSH access and journald-based container logging.
 
@@ -50,11 +50,11 @@ have already been persisted in PostgreSQL.
 | -------------- | --------------------------------------------- |
 | Fetcher        | Go 1.24                                       |
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
-| UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
+| UI backend     | Python 3.12, FastAPI, httpx, redis-py, uv     |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
 | Messaging      | PGMQ (PostgreSQL extension)                   |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| UI sessions    | Redis 8                                       |
 | Packaging      | Docker Engine and Docker Compose              |
 
 ## Architecture
@@ -68,7 +68,8 @@ components.
 | History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
 | PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
-| PostgreSQL      | Stores observations and hashed UI sessions; expires sessions through pg_cron                      | Durable market data and session state            |
+| PostgreSQL      | Stores persistent market observations and queue-publication records                               | Durable market data                              |
+| Redis           | Stores UI preferences with sliding expiration                                                      | Ephemeral session state                          |
 
 ### Data flow
 
@@ -86,7 +87,7 @@ components.
 8. Permanently invalid messages and messages exceeding the retry limit are archived.
 9. The UI Service requests saved observations from History over HTTP.
 10. The browser receives only persisted data through the UI Service.
-11. UI preferences are stored in PostgreSQL.
+11. UI preferences are stored separately in authenticated Redis with a sliding TTL.
 
 PGMQ provides durable queue storage inside PostgreSQL. Messages are archived only after
 successful observation persistence. If processing fails before the archive operation, the
@@ -126,7 +127,7 @@ scientific data source.
 │   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
 │   ├── history/                    Python History API and PGMQ consumer
 │   └── ui/
-│       ├── backend/                Python UI gateway and PostgreSQL sessions
+│       ├── backend/                Python UI gateway and Redis sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
@@ -246,7 +247,7 @@ run Python tools through `uv run`.
 | Method | Path                       | Purpose                                           |
 | ------ | -------------------------- | ------------------------------------------------- |
 | `GET`  | `/`                        | React application                                 |
-| `GET`  | `/health`                  | History and PostgreSQL session-persistence status |
+| `GET`  | `/health`                  | History and Redis status                           |
 | `GET`  | `/api/observations`        | Read-only proxy to persisted history              |
 | `GET`  | `/api/latest`              | Read-only proxy to latest persisted values        |
 | `GET`  | `/api/instruments`         | Read-only proxy to instruments                    |
@@ -269,13 +270,11 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
-The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
-expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
-value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
-strings retain the existing API representation. The digest is calculated inside PostgreSQL
-by pgcrypto for every lookup and write. Atomic UPSERTs refresh the expiration on reads and
-updates, while expired rows are replaced with defaults immediately. The pg_cron background
-worker deletes expired rows every minute; its named job and the hstore, pgcrypto, and pg_cron
+UI session preferences use Redis keys named `ui:session:<session-id>`. Reads refresh a
+30-day TTL, malformed values reset to validated defaults, and the Redis server requires
+authentication. The legacy `ui_sessions` schema and its pg_cron cleanup remain migration
+compatible, but the application no longer writes session state to PostgreSQL. The hstore,
+pgcrypto, and pg_cron
 extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 
 ## Configuration
@@ -288,7 +287,8 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `FETCH_TIMEZONE`                  | `UTC`                   | Schedule timezone                        |
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
-| `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
+| `DATABASE_URL`                    | see `.env.example`      | Fetcher and History PostgreSQL connection |
+| `REDIS_URL`                       | `redis://localhost:6379/0` | UI session storage                     |
 | `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |

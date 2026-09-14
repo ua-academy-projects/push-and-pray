@@ -3,9 +3,9 @@
 - name: Deploy only UI
   environment:
     DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
-    DATABASE_PORT: "{{ compose_project_config.service_ports.postgresql | string }}"
-    POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    REDIS_PASSWORD: "{{ ui_redis_password }}"
+    REDIS_HOST: "{{ ui_redis_host }}"
+    REDIS_PORT: "{{ ui_redis_port | string }}"
     HISTORY_SERVICE_URL: >-
       http://{{ hostvars[groups['history'][0]].internal_ip }}:{{ compose_project_config.service_ports.history_api }}
   no_log: true

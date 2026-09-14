@@ -9,8 +9,13 @@ fetcher_runtime_environment: >-
       'POSTGRES_USER': fetcher_postgres_user,
       'POSTGRES_DB': fetcher_postgres_name,
       'DATABASE_HOST': fetcher_database_host,
+      'DATABASE_SSLMODE': fetcher_database_sslmode,
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
-      'FETCHER_HOST_PORT': fetcher_host_port | string
+      'FETCHER_HOST_PORT': fetcher_host_port | string,
+      'MESSAGING_BACKEND': fetcher_messaging_backend,
+      'RABBITMQ_HOST': fetcher_rabbitmq_host,
+      'RABBITMQ_PASSWORD': fetcher_rabbitmq_password,
+      'RABBITMQ_PORT': fetcher_rabbitmq_port | string
     })
   }}

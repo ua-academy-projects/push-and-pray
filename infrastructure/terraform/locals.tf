@@ -21,6 +21,7 @@ locals {
 
   default_cloud  = local.config.default_cloud
   default_region = local.config.default_region
+  database_mode  = try(local.config.database_mode, "self_hosted")
 
   # Cross-cutting role/secret metadata; VM creation mappings live in the children.
   vms = {
@@ -63,6 +64,42 @@ locals {
     if vm.role != "bastion"
   }
 
+  workload_clouds = distinct([for vm in values(local.workload_vms) : vm.cloud])
+  managed_cloud   = local.database_mode == "managed" && length(local.workload_clouds) == 1 ? local.workload_clouds[0] : null
+  database_name   = "oil_tracker"
+  database_user   = "oil_tracker"
+  database_port   = local.config.service_ports.postgresql
+  rabbitmq_port   = try(local.config.service_ports.rabbitmq, 5672)
+  redis_port      = local.config.service_ports.redis
+  managed_database_password_secret_ids = distinct([
+    for role in ["database", "history"] :
+    local.config.application.secret_mappings[role].POSTGRES_PASSWORD
+  ])
+  redis_password_secret_ids = distinct([
+    for role in ["database", "ui"] :
+    local.config.application.secret_mappings[role].REDIS_PASSWORD
+  ])
+  managed_database_host_secret_id = "${local.resource_prefix}-database-host"
+  rabbitmq_password_secret_id     = "${local.resource_prefix}-rabbitmq-password"
+  redis_password_secret_id        = local.redis_password_secret_ids[0]
+
+  aws_database_subnet_cidrs = [
+    try(cidrsubnet(local.config.network.vpc_cidr, 8, 2), "0.0.0.0/32"),
+    try(cidrsubnet(local.config.network.vpc_cidr, 8, 3), "0.0.0.0/32"),
+  ]
+  aws_database_ranges = [
+    for cidr in local.aws_database_subnet_cidrs : {
+      first = try(sum([
+        for index, octet in split(".", cidrhost(cidr, 0)) :
+        tonumber(octet) * pow(256, 3 - index)
+      ]), -1)
+      last = try(sum([
+        for index, octet in split(".", cidrhost(cidr, -1)) :
+        tonumber(octet) * pow(256, 3 - index)
+      ]), -1)
+    }
+  ]
+
   gcp_project_id = try(local.config.clouds.gcp.project_id, null)
 
   gcp_regions = distinct([
@@ -103,6 +140,11 @@ locals {
     lifecycle = {
       enabled       = try(local.config.monitoring.lifecycle.enabled, false)
       notify_states = try(local.config.monitoring.lifecycle.notify_states, [])
+    }
+    http_5xx = {
+      enabled          = try(local.config.monitoring.http_5xx.enabled, false)
+      threshold_count  = try(local.config.monitoring.http_5xx.threshold_count, 5)
+      duration_minutes = try(local.config.monitoring.http_5xx.duration_minutes, 5)
     }
   }
 
@@ -225,6 +267,47 @@ resource "terraform_data" "configuration_validation" {
     }
 
     precondition {
+      condition     = contains(["self_hosted", "managed"], local.database_mode)
+      error_message = "database_mode must be either self_hosted or managed."
+    }
+
+    precondition {
+      condition     = local.redis_port >= 1 && local.redis_port <= 65535
+      error_message = "service_ports.redis must be between 1 and 65535."
+    }
+
+    precondition {
+      condition     = local.database_mode != "managed" || local.database_port == 5432
+      error_message = "Managed Cloud SQL and RDS PostgreSQL deployments require service_ports.postgresql=5432."
+    }
+
+    precondition {
+      condition = local.database_mode != "managed" || local.managed_cloud != "aws" || alltrue([
+        for database_range in local.aws_database_ranges :
+        database_range.first >= local.network_ranges.vpc.first &&
+        database_range.last <= local.network_ranges.vpc.last &&
+        (database_range.last < local.network_ranges.management.first || database_range.first > local.network_ranges.management.last) &&
+        (database_range.last < local.network_ranges.workload.first || database_range.first > local.network_ranges.workload.last)
+      ])
+      error_message = "AWS managed database subnets must fit inside network.vpc_cidr without overlapping management_subnet_cidr or workload_subnet_cidr."
+    }
+
+    precondition {
+      condition     = local.database_mode != "managed" || length(local.workload_clouds) == 1
+      error_message = "database_mode=managed requires all workload VMs to use one cloud because no private cross-cloud database path exists."
+    }
+
+    precondition {
+      condition     = local.database_mode != "managed" || length(local.managed_database_password_secret_ids) == 1
+      error_message = "database_mode=managed requires database and history to map POSTGRES_PASSWORD to the same secret ID."
+    }
+
+    precondition {
+      condition     = length(local.redis_password_secret_ids) == 1
+      error_message = "database and ui must map REDIS_PASSWORD to the same secret ID."
+    }
+
+    precondition {
       condition = alltrue([
         for cidr in [
           local.config.network.vpc_cidr,
@@ -265,6 +348,9 @@ locals {
     bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
     history_api_port      = local.config.service_ports.history_api
     postgresql_port       = local.config.service_ports.postgresql
+    rabbitmq_port         = local.rabbitmq_port
+    rabbitmq_enabled      = local.database_mode == "managed"
+    redis_port            = local.redis_port
     ui_public_ports       = local.config.network.ui_public_ports
   }
 }

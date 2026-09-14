@@ -1,6 +1,8 @@
 # Secrets
 
-Secret values never enter Terraform configuration, plans, or state. The
+Operator-provided secret values never enter project configuration. Terraform-generated
+managed PostgreSQL, RabbitMQ, and Redis passwords are sensitive state values and are never
+exposed through outputs. The
 provider-neutral `application.secret_mappings` values are logical container IDs,
 grouped by application role rather than VM key. Terraform
 creates a container in the same cloud as each consuming workload and grants
@@ -9,8 +11,9 @@ that VM's runtime identity least-privilege read access.
 - GCP uses Secret Manager and a dedicated VM service account.
 - AWS uses Secrets Manager and a dedicated EC2 instance profile.
 
-If the same logical secret is consumed in both clouds, Terraform creates one
-container in each provider. Operators must upload the same value to both.
+If the same operator-provided logical secret is consumed in both clouds, Terraform creates
+one container in each provider. Generated Redis credentials receive the same Terraform-managed
+value in every provider where the database or UI role consumes them.
 `terraform output secret_resource_names` reports provider-specific resource
 identifiers; it never reports values.
 

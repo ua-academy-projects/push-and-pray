@@ -27,25 +27,40 @@ class InventoryTests(unittest.TestCase):
     def setUp(self):
         self.config = json.loads((ROOT / "project-config.example.json").read_text())
         self.plugin = MODULE.InventoryModule()
-        options = {"bastion_role": "bastion", "workload_ssh_port": 22,
-                   "project_config_path": "../../../project-config.example.json"}
+        options = {
+            "bastion_role": "bastion",
+            "workload_ssh_port": 22,
+            "project_config_path": "../../../project-config.example.json",
+        }
         self.plugin.get_option = options.__getitem__
-        self.env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+        # These are non-HTML Ansible and SSH expressions; escaping changes values.
+        self.env = jinja2.Environment(  # noqa: S701
+            undefined=jinja2.StrictUndefined
+        )
+        temporary = Path(tempfile.gettempdir())
+        self.project_config_path = str(temporary / "project.json")
+        self.aws_config_path = str(temporary / "aws.json")
 
     def evaluate(self, settings, attributes):
-        return {name: self.env.compile_expression(expr)(**attributes)
-                for name, expr in settings["compose"].items()}
+        return {
+            name: self.env.compile_expression(expr)(**attributes)
+            for name, expr in settings["compose"].items()
+        }
 
     def test_gcp_discovery_addresses_and_role_groups(self):
-        settings = self.plugin._build_gcp_settings(self.config, "/tmp/project.json")
+        settings = self.plugin._build_gcp_settings(self.config, self.project_config_path)
         self.assertEqual(settings["zones"], ["europe-west1-b"])
         self.assertIn("labels.cloud = gcp", settings["filters"])
         self.assertEqual(settings["keyed_groups"][0]["key"], "labels.role")
-        attributes = {"labels": {"role": "bastion"}, "networkInterfaces": [
-            {"networkIP": "10.0.0.2", "accessConfigs": [{"natIP": "192.0.2.1"}]}]}
+        attributes = {
+            "labels": {"role": "bastion"},
+            "networkInterfaces": [
+                {"networkIP": "10.0.0.2", "accessConfigs": [{"natIP": "192.0.2.1"}]}
+            ],
+        }
         result = self.evaluate(settings, attributes)
         self.assertEqual((result["ansible_host"], result["ansible_port"]), ("192.0.2.1", 8787))
-        self.assertEqual(result["project_config_path"], "/tmp/project.json")
+        self.assertEqual(result["project_config_path"], self.project_config_path)
         attributes["labels"]["role"] = "database"
         attributes["networkInterfaces"][0]["accessConfigs"] = []
         result = self.evaluate(settings, attributes)
@@ -55,12 +70,15 @@ class InventoryTests(unittest.TestCase):
 
     def test_aws_discovery_addresses_and_role_groups(self):
         self.config["default_cloud"] = "aws"
-        settings = self.plugin._build_aws_settings(self.config, "/tmp/aws.json")
+        settings = self.plugin._build_aws_settings(self.config, self.aws_config_path)
         self.assertEqual(settings["regions"], ["eu-central-1"])
         self.assertEqual(settings["filters"]["tag:cloud"], "aws")
         self.assertEqual(settings["keyed_groups"][0]["key"], "tags.role")
-        attributes = {"tags": {"role": "bastion"}, "private_ip_address": "10.0.0.2",
-                      "public_ip_address": "192.0.2.2"}
+        attributes = {
+            "tags": {"role": "bastion"},
+            "private_ip_address": "10.0.0.2",
+            "public_ip_address": "192.0.2.2",
+        }
         result = self.evaluate(settings, attributes)
         self.assertEqual((result["ansible_host"], result["ansible_port"]), ("192.0.2.2", 8787))
         attributes["tags"]["role"] = "ui"
@@ -75,7 +93,7 @@ class InventoryTests(unittest.TestCase):
             calls = []
             files = []
 
-            def delegate(name, inventory, loader, generated, cache):
+            def delegate(name, inventory, loader, generated, cache, calls=calls, files=files):
                 settings = yaml.safe_load(Path(generated).read_text())
                 calls.append(settings["plugin"])
                 files.append(Path(generated))
@@ -83,16 +101,26 @@ class InventoryTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temporary:
                 path = Path(temporary) / "project.json"
                 path.write_text(json.dumps(config))
-                with patch.dict(os.environ, {"OILSCOPE_PROJECT_CONFIG": str(path)}), \
-                        patch.object(self.plugin, "_read_config_data"), \
-                        patch.object(self.plugin, "_delegate", side_effect=delegate):
-                    self.plugin.parse(InventoryData(), DataLoader(), str(ROOT / "infrastructure/ansible/inventory/oilscope.yml"))
-            self.assertEqual(calls, [MODULE.GCP_DELEGATE, MODULE.AWS_DELEGATE] if hybrid else [MODULE.GCP_DELEGATE])
+                with (
+                    patch.dict(os.environ, {"OILSCOPE_PROJECT_CONFIG": str(path)}),
+                    patch.object(self.plugin, "_read_config_data"),
+                    patch.object(self.plugin, "_delegate", side_effect=delegate),
+                ):
+                    self.plugin.parse(
+                        InventoryData(),
+                        DataLoader(),
+                        str(ROOT / "infrastructure/ansible/inventory/oilscope.yml"),
+                    )
+            self.assertEqual(
+                calls,
+                [MODULE.GCP_DELEGATE, MODULE.AWS_DELEGATE] if hybrid else [MODULE.GCP_DELEGATE],
+            )
             self.assertTrue(all(not path.exists() for path in files))
 
     def test_region_override(self):
         self.config["cloud_mappings"]["regions"]["alternate"] = {
-            "gcp": {"region": "us-central1", "zone": "us-central1-a"}}
+            "gcp": {"region": "us-central1", "zone": "us-central1-a"}
+        }
         for vm in self.config["vms"].values():
             vm["region"] = "alternate"
         self.assertEqual(self.plugin._provider_zones(self.config, "gcp"), ["us-central1-a"])
@@ -100,16 +128,20 @@ class InventoryTests(unittest.TestCase):
     def test_invalid_region_mapping(self):
         self.config["vms"]["history"]["region"] = "missing"
         with self.assertRaises(AnsibleParserError):
-            self.plugin._build_gcp_settings(self.config, "/tmp/project.json")
+            self.plugin._build_gcp_settings(self.config, self.project_config_path)
 
     def test_nested_proxy_has_explicit_key_and_final_port(self):
-        variables = yaml.safe_load((ROOT / "infrastructure/ansible/inventory/group_vars/workloads.yml").read_text())
+        variables = yaml.safe_load(
+            (ROOT / "infrastructure/ansible/inventory/group_vars/workloads.yml").read_text()
+        )
         self.env.filters["quote"] = shlex.quote
         result = self.env.from_string(variables["ansible_ssh_common_args"]).render(
             oilscope_ssh_base_args="-o StrictHostKeyChecking=accept-new",
             oilscope_bastion_ssh_port=8787,
             oilscope_bastion_private_key_file="/home/operator/keys/my key",
-            oilscope_bastion_address="192.0.2.1", ansible_user="operator")
+            oilscope_bastion_address="192.0.2.1",
+            ansible_user="operator",
+        )
         args = shlex.split(result)
         proxy = next(arg.split("=", 1)[1] for arg in args if arg.startswith("ProxyCommand="))
         nested = shlex.split(proxy)

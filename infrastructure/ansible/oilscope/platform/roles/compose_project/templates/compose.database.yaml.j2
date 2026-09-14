@@ -1,6 +1,7 @@
 name: petroscope
 
 services:
+{% if (compose_project_config.database_mode | default('self_hosted')) == 'self_hosted' %}
   postgres:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
@@ -34,6 +35,47 @@ services:
       retries: 20
       start_period: 15s
     stop_grace_period: 30s
+{% else %}
+  rabbitmq:
+    image: rabbitmq:4-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-oil_tracker}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oil_tracker}
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:${RABBITMQ_HOST_PORT:-5672}:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+{% endif %}
+
+  redis:
+    image: redis:8.2.8-bookworm
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - --appendonly
+      - "yes"
+    ports:
+      - "${REDIS_BIND_ADDRESS:?REDIS_BIND_ADDRESS is required}:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   migrate:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
@@ -42,14 +84,23 @@ services:
     restart: "no"
     command: ["petroscope-migrate"]
     environment:
-      PGHOST: postgres
-      PGPORT: 5432
+      PGHOST: ${DATABASE_HOST:-postgres}
+      PGPORT: ${DATABASE_PORT:-5432}
       PGUSER: ${POSTGRES_USER:-oil_tracker}
       PGDATABASE: ${POSTGRES_DB:-oil_tracker}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGSSLMODE: ${DATABASE_SSLMODE:-disable}
+      DATABASE_MODE: ${DATABASE_MODE:-self_hosted}
+{% if (compose_project_config.database_mode | default('self_hosted')) == 'self_hosted' %}
     depends_on:
       postgres:
         condition: service_healthy
+{% endif %}
 
 volumes:
+{% if (compose_project_config.database_mode | default('self_hosted')) == 'self_hosted' %}
   postgres_data:
+{% else %}
+  rabbitmq_data:
+{% endif %}
+  redis_data:

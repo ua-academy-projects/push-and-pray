@@ -17,8 +17,28 @@
 - name: Select the application's secret mappings for this role
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
-      {{ resolve_secrets_config.application.secret_mappings[oilscope_role]
-         | default({}) }}
+      {{
+        (resolve_secrets_config.application.secret_mappings[oilscope_role]
+         | default({}))
+        | combine(
+            {
+              'DATABASE_HOST': resolve_secrets_config.name_prefix ~ '-' ~
+                resolve_secrets_config.environment ~ '-database-host'
+            }
+            if (resolve_secrets_config.database_mode | default('self_hosted')) == 'managed'
+               and oilscope_role in ['database', 'history', 'fetcher', 'ui']
+            else {}
+          )
+        | combine(
+            {
+              'RABBITMQ_PASSWORD': resolve_secrets_config.name_prefix ~ '-' ~
+                resolve_secrets_config.environment ~ '-rabbitmq-password'
+            }
+            if (resolve_secrets_config.database_mode | default('self_hosted')) == 'managed'
+               and oilscope_role in ['database', 'history', 'fetcher']
+            else {}
+          )
+      }}
 
 - name: Fetch an access token from the instance metadata server
   ansible.builtin.uri:

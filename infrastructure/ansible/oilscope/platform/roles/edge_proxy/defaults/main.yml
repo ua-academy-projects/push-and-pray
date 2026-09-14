@@ -2,3 +2,20 @@ edge_proxy_dir: /opt/oilscope/proxy
 edge_proxy_compose_file: "{{ edge_proxy_dir }}/compose.yaml"
 edge_proxy_compose_project_name: oilscope-proxy
 edge_proxy_network_name: oilscope-edge
+edge_proxy_access_log_dir: /var/log/oilscope/traefik
+edge_proxy_access_log_path: "{{ edge_proxy_access_log_dir }}/access.log"
+edge_proxy_http_5xx_enabled: >-
+  {{
+    (compose_project_config.get('monitoring', {}).get('enabled', false) | bool)
+    and
+    (
+      compose_project_config.get('monitoring', {})
+      .get('http_5xx', {})
+      .get('enabled', false) | bool
+    )
+  }}
+edge_proxy_gcp_agent_installer_path: >-
+  /usr/local/sbin/add-google-cloud-ops-agent-repo.sh
+edge_proxy_aws_agent_package_path: /var/tmp/amazon-cloudwatch-agent.deb
+edge_proxy_aws_log_group_name: >-
+  {{ compose_project_config.name_prefix }}-{{ compose_project_config.environment }}-traefik-access
