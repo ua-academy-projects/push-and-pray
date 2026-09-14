@@ -39,7 +39,7 @@ func (publisher Publisher) Publish(ctx context.Context, observations []model.Obs
 		return fmt.Errorf("encode observation event: %w", err)
 	}
 
-	return provider.Retry(ctx, 5, time.Second, func() error {
+	return provider.Retry(ctx, 8, time.Second, func() error {
 		return publisher.publishOnce(ctx, eventKey, body)
 	})
 }
