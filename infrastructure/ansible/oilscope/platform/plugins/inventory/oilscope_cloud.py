@@ -267,11 +267,19 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             ) from port_error
 
     def _connect_ports(self, config, cloud):
-        """(bastion port, workload port) to connect on, honouring the override."""
-        override = self.get_option("bastion_connect_port")
-        bastion_port = int(override) if override else self._bastion_ssh_port(config)
+        """(bastion connect port, bastion final port, workload port).
 
-        return bastion_port, int(self.get_option("workload_ssh_port"))
+        The connect port honours the bootstrap override; the final port never
+        does. The override says how to reach the bastion *now*, while the final
+        port is what the bastion role configures - conflating them made the role
+        write the bootstrap port into sshd and lock the bastion out once the
+        bootstrap firewall rule was removed.
+        """
+        final_port = self._bastion_ssh_port(config)
+        override = self.get_option("bastion_connect_port")
+        connect_port = int(override) if override else final_port
+
+        return connect_port, final_port, int(self.get_option("workload_ssh_port"))
 
     # ---------------------------------------------------------------- settings
 
@@ -285,7 +293,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         project_id = self._require(profile, "project_id", f"clouds.{cloud}")
         zone = self._require(profile, "zone", f"clouds.{cloud}")
         bastion_role = plain(self.get_option("bastion_role"))
-        bastion_port, workload_port = self._connect_ports(config, cloud)
+        bastion_port, bastion_final_port, workload_port = self._connect_ports(config, cloud)
 
         is_bastion = f"labels.role | default('') == '{bastion_role}'"
         has_public = "networkInterfaces[0].accessConfigs | default([])"
@@ -313,7 +321,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
                 "oilscope_role": "labels.role | default('')",
                 "oilscope_cloud": f"'{cloud}'",
-                "oilscope_ssh_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+                "oilscope_ssh_port": f"{bastion_final_port} if {is_bastion} else {workload_port}",
             },
         }
 
@@ -321,7 +329,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         profile = config["clouds"][cloud]
         region = self._require(profile, "region", f"clouds.{cloud}")
         bastion_role = plain(self.get_option("bastion_role"))
-        bastion_port, workload_port = self._connect_ports(config, cloud)
+        bastion_port, bastion_final_port, workload_port = self._connect_ports(config, cloud)
 
         is_bastion = f"tags.role | default('') == '{bastion_role}'"
         public = "public_ip_address | default('')"
@@ -347,7 +355,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": f"'{cloud}'",
-                "oilscope_ssh_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+                "oilscope_ssh_port": f"{bastion_final_port} if {is_bastion} else {workload_port}",
             },
         }
 
