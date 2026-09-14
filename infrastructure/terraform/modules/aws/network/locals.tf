@@ -10,4 +10,10 @@ locals {
   ui_public_ports = [
     for port in var.config.network.ui_public_ports : tostring(port)
   ]
+
+  rds_enabled = (
+    local.enabled &&
+    var.config.default_cloud == "aws" &&
+    var.config.default_db == "cloud"
+  )
 }

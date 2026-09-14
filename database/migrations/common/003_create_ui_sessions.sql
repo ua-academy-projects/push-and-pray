@@ -1,7 +1,6 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS hstore;
 
 CREATE OR REPLACE FUNCTION pg_temp.ui_session_preferences_to_hstore(preferences JSONB)
@@ -52,11 +51,5 @@ $$;
 
 CREATE INDEX IF NOT EXISTS ix_ui_sessions_expires_at
     ON ui_sessions (expires_at);
-
-SELECT cron.schedule(
-    'delete-expired-ui-sessions',
-    '* * * * *',
-    $$DELETE FROM public.ui_sessions WHERE expires_at <= CURRENT_TIMESTAMP$$
-);
 
 COMMIT;

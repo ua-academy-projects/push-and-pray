@@ -54,3 +54,10 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[0].id
   subnet_id      = aws_subnet.workload[0].id
 }
+
+resource "aws_route_table_association" "rds_secondary" {
+  count = local.rds_enabled ? 1 : 0
+
+  route_table_id = aws_route_table.private[0].id
+  subnet_id      = aws_subnet.rds_secondary[0].id
+}

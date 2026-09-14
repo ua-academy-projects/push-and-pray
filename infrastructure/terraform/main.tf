@@ -1,3 +1,10 @@
+module "gcp_database" {
+  source = "./modules/gcp/database"
+
+  config  = local.config
+  network = module.gcp_network
+}
+
 module "gcp_network" {
   source = "./modules/gcp/network"
 
@@ -51,4 +58,11 @@ module "gcp_monitoring" {
 
   config = local.config
   vms    = module.gcp_vm.vms
+}
+
+module "aws_database" {
+  source = "./modules/aws/database"
+
+  config  = local.config
+  network = module.aws_network
 }

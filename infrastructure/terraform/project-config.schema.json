@@ -154,6 +154,26 @@
       "$ref": "#/$defs/cloud_name",
       "description": "Which cloud this apply targets. Single-cloud-per-apply: every VM in `vms` deploys here."
     },
+    "default_db": {
+      "type": "string",
+      "enum": ["application", "cloud"],
+      "description": "Database hosting mode: application uses PostgreSQL on the database VM; cloud uses managed PostgreSQL on the selected default_cloud."
+    },
+      "database_profile": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]*$",
+        "description": "Key into database_profile_map; used in cloud database mode."
+      },
+      "database_profile_map": {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/database_profile"
+        }
+      },
     "region": {
       "type": "string",
       "minLength": 1,
@@ -206,6 +226,15 @@
           "additionalProperties": false,
           "required": ["project_id"],
           "properties": {
+            "cloud_sql_network": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["allocated_cidr", "dns_ttl_seconds"],
+              "properties": {
+                "allocated_cidr": { "type": "string", "minLength": 1 },
+                "dns_ttl_seconds": { "type": "integer", "minimum": 1 }
+              }
+            },
             "project_id": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
@@ -220,6 +249,21 @@
             "vpc_cidr": {
               "type": "string",
               "minLength": 1
+            },
+            "rds_network": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["secondary_subnet_cidr", "secondary_availability_zone"],
+              "properties": {
+                "secondary_subnet_cidr": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "secondary_availability_zone": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
           }
         }
@@ -284,6 +328,23 @@
       "properties": {
         "bastion": {
           "allOf": [
+    {
+      "if": {
+        "required": ["default_cloud", "default_db"],
+        "properties": {
+          "default_cloud": { "const": "gcp" },
+          "default_db": { "const": "cloud" }
+        }
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "properties": { "gcp": { "required": ["cloud_sql_network"] } }
+          },
+          "service_ports": { "properties": { "postgresql": { "const": 5432 } } }
+        }
+      }
+    },
             { "$ref": "#/$defs/vm" },
             {
               "properties": { "role": { "const": "bastion" } },
@@ -298,16 +359,175 @@
 
   "allOf": [
     {
+      "if": {
+        "required": ["default_db", "default_cloud"],
+        "properties": {
+          "default_db": { "const": "cloud" },
+          "default_cloud": { "const": "aws" }
+        }
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "properties": { "aws": { "required": ["rds_network"] } }
+          }
+        }
+      }
+    },
+    {
       "if": { "properties": { "default_cloud": { "const": "gcp" } } },
       "then": { "properties": { "clouds": { "required": ["gcp"] } } }
     },
     {
       "if": { "properties": { "default_cloud": { "const": "aws" } } },
       "then": { "properties": { "clouds": { "required": ["aws"] } } }
+    },
+    {
+      "if": {
+        "required": ["default_db"],
+        "properties": { "default_db": { "const": "cloud" } }
+      },
+      "then": {
+        "required": ["database_profile", "database_profile_map"],
+        "properties": {
+          "vms": {
+            "additionalProperties": {
+              "properties": { "role": { "not": { "const": "database" } } }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "vms": {
+            "$comment": "Reject a dictionary in which every VM has a non-database role, requiring at least one database VM in application mode (including omitted default_db).",
+            "not": {
+              "additionalProperties": {
+                "properties": { "role": { "not": { "const": "database" } } }
+              }
+            }
+          }
+        }
+      }
     }
   ],
 
   "$defs": {
+      "database_profile": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "aws": {
+            "$ref": "#/$defs/cloud_database_aws"
+          },
+          "gcp": {
+            "$ref": "#/$defs/cloud_database_gcp"
+          }
+        }
+      },
+      "cloud_database_aws": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "instance_class",
+          "engine_version",
+          "allocated_storage_gb",
+          "storage_type",
+          "max_allocated_storage_gb",
+          "multi_az",
+          "backup_retention_days"
+        ],
+        "properties": {
+          "instance_class": {
+            "type": "string",
+            "enum": [
+              "db.t4g.micro",
+              "db.t3.micro"
+            ]
+          },
+          "engine_version": {
+            "type": "string",
+            "const": "18"
+          },
+          "allocated_storage_gb": {
+            "type": "integer",
+            "const": 20
+          },
+          "storage_type": {
+            "type": "string",
+            "const": "gp2"
+          },
+          "max_allocated_storage_gb": {
+            "type": "integer",
+            "const": 0
+          },
+          "multi_az": {
+            "type": "boolean",
+            "const": false
+          },
+          "backup_retention_days": {
+            "type": "integer",
+            "const": 1
+          }
+        }
+      },
+      "cloud_database_gcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tier",
+        "disk_size_gb",
+        "database_version",
+        "backup_retained_count",
+        "availability_type",
+        "edition",
+        "disk_type",
+        "disk_autoresize"
+      ],
+      "properties": {
+        "tier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "disk_size_gb": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "database_version": {
+          "type": "string",
+          "const": "POSTGRES_18"
+        },
+        "backup_retained_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "availability_type": {
+          "type": "string",
+          "enum": [
+            "ZONAL",
+            "REGIONAL"
+          ]
+        },
+        "edition": {
+          "type": "string",
+          "enum": [
+            "ENTERPRISE",
+            "ENTERPRISE_PLUS"
+          ]
+        },
+        "disk_type": {
+          "type": "string",
+          "enum": [
+            "PD_SSD",
+            "PD_HDD"
+          ]
+        },
+        "disk_autoresize": {
+          "type": "boolean"
+        }
+      }
+    },
     "cloud_name": {
       "type": "string",
       "enum": ["gcp", "aws"]

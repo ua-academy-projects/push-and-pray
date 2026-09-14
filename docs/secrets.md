@@ -2,9 +2,10 @@
 
 Deployment credentials live in Google Secret Manager (GCP) or AWS Secrets
 Manager (AWS), depending on `default_cloud` in the project configuration.
-Terraform creates the containers and decides who may read them; it never
-sees, stores or transports a value. Everything below applies to both clouds
-unless a section says otherwise.
+For workload secrets, Terraform creates containers and decides who may read
+them without handling values. Managed database administrator credentials are
+the exception described below. Everything else applies to both clouds unless
+a section says otherwise.
 
 ## Where the catalog comes from
 
@@ -295,3 +296,24 @@ see the README and [security-scanning.md](security-scanning.md).
 is no undo, and the values are not in state to be recovered from. Before
 destroying a project that anyone else relies on, confirm the values exist
 somewhere else first.
+
+## Managed database administrator credentials
+
+The database modules manage administrator credentials separately from workload
+`secret_mappings`. Do not add these administrator secrets to application VM
+mappings. Ansible will use an authorized migration identity to bootstrap
+restricted runtime database roles in a later step.
+
+AWS RDS generates its administrator password in Secrets Manager and Terraform
+exports `admin_secret_arn` without reading the password. GCP Terraform generates
+a 32-character password, creates `oil_tracker_admin`, and writes a JSON secret
+with `username` and `password` under `<prefix>-<environment>-database-admin`.
+`gcp_database_connection.admin_secret_id` exports the secret resource name only.
+
+The GCP generated password, SQL user password, and secret payload are stored in
+sensitive Terraform state. Sensitive marking hides normal CLI output; it does
+not encrypt state or remove the values. Restrict backend access and protect
+state backups. No secret values belong in project JSON, outputs, logs, or Git.
+Keep password changes under Terraform management so the SQL account and secret
+version stay synchronized; there is no automatic GCP password rotation here.
+This differs from the RDS-managed password workflow.

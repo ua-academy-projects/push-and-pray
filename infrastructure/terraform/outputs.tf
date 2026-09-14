@@ -1,3 +1,8 @@
+output "gcp_database_connection" {
+  description = "Managed GCP database connection metadata, without password values; null outside GCP cloud database mode."
+  value       = module.gcp_database.connection
+}
+
 locals {
   vm_names = merge(
     { for name, vm in module.gcp_vm.vms : name => vm.name },
@@ -13,6 +18,11 @@ locals {
     { for name, vm in module.gcp_vm.vms : name => vm.public_ip },
     { for name, vm in module.aws_vm.vms : name => vm.public_ip },
   )
+}
+
+output "aws_database_connection" {
+  description = "Managed AWS database connection metadata, without password values; null outside AWS cloud database mode."
+  value       = module.aws_database.connection
 }
 
 output "bastion_public_ip" {

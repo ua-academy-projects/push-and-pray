@@ -1,6 +1,37 @@
 #!/bin/sh
 set -eu
 
+: "${MIGRATION_PROFILE:=application}"
+case "${MIGRATION_PROFILE}" in
+    application|cloud) ;;
+    *)
+        echo "MIGRATION_PROFILE must be application or cloud" >&2
+        exit 1
+        ;;
+esac
+
+migrations_root=/opt/petroscope/migrations
+for directory in "${migrations_root}/common" "${migrations_root}/${MIGRATION_PROFILE}"; do
+    if [ ! -d "${directory}" ]; then
+        echo "Missing migration directory: ${directory}" >&2
+        exit 1
+    fi
+done
+
+# Common migrations and the application profile must never be silently skipped.
+set -- "${migrations_root}/common/"*.sql
+if [ ! -f "$1" ]; then
+    echo "No common migrations found" >&2
+    exit 1
+fi
+if [ "${MIGRATION_PROFILE}" = application ]; then
+    set -- "${migrations_root}/application/"*.sql
+    if [ ! -f "$1" ]; then
+        echo "No application migrations found" >&2
+        exit 1
+    fi
+fi
+
 : "${PGHOST:?PGHOST is required}"
 : "${PGPORT:=5432}"
 : "${PGUSER:?PGUSER is required}"
@@ -25,7 +56,10 @@ do
     sleep 2
 done
 
-for migration in /opt/petroscope/migrations/*.sql; do
+for migration in "${migrations_root}/common/"*.sql \
+    "${migrations_root}/${MIGRATION_PROFILE}/"*.sql; do
+    # The cloud profile currently has no SQL files; ignore its unmatched glob.
+    [ -f "${migration}" ] || continue
     echo "Applying $(basename "${migration}")"
 
     psql \

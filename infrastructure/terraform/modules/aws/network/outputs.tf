@@ -6,6 +6,17 @@ output "workload_subnet_id" {
   value = try(aws_subnet.workload[0].id, null)
 }
 
+output "vpc_id" {
+  value = try(aws_vpc.main[0].id, null)
+}
+
+output "rds_subnet_ids" {
+  value = local.rds_enabled ? [
+    aws_subnet.workload[0].id,
+    aws_subnet.rds_secondary[0].id
+  ] : []
+}
+
 output "security_group_ids" {
   value = {
     bastion  = try(aws_security_group.bastion[0].id, null)

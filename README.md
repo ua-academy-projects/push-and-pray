@@ -207,7 +207,7 @@ npm run build --prefix services/ui/frontend
 Apply the database migrations:
 
 ```bash
-for migration in database/migrations/*.sql; do
+for migration in database/migrations/common/*.sql database/migrations/application/*.sql; do
   PGPASSWORD=change-me psql \
     -h 127.0.0.1 \
     -U oil_tracker \
@@ -294,7 +294,25 @@ source metadata, and four different time concepts:
 | `created_at`         | PostgreSQL insertion time         |
 
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
-ordered in `database/migrations/` and are safe to apply repeatedly.
+ordered within `database/migrations/common/`, followed by the selected profile
+directory, and are safe to apply repeatedly. The container migration runner uses
+`MIGRATION_PROFILE=application` when omitted; `cloud` runs common migrations and
+the currently empty cloud profile. PGMQ and local pg_cron setup are application-only.
+The planned RabbitMQ/Redis conversion will replace PGMQ and PostgreSQL session
+expiry; managed database modules therefore do not configure pg_cron. Running the
+cloud SQL profile alone does not complete managed deployment.
+
+AWS RDS and [GCP Cloud SQL](infrastructure/terraform/modules/gcp/database/README.md)
+Terraform modules now expose private database connection metadata using explicit
+JSON database profiles. Cloud SQL includes private services access, private DNS,
+shared-CA TLS, and an administrator secret. Ansible connection/CA wiring and
+restricted runtime roles remain pending. See [credential handling](docs/secrets.md#managed-database-administrator-credentials)
+for the GCP Terraform-state exception. No infrastructure was deployed as part
+of implementing these modules.
+
+Run migration-runner checks without PostgreSQL using
+`python3 -m unittest discover -s database/tests -v`. These stub the database commands
+and verify selection and failure handling, not SQL execution.
 
 The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
 expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference

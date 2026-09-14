@@ -21,3 +21,11 @@ resource "aws_subnet" "workload" {
   cidr_block        = var.config.network.workload_subnet_cidr
   availability_zone = local.availability_zone
 }
+
+resource "aws_subnet" "rds_secondary" {
+  count                   = local.rds_enabled ? 1 : 0
+  vpc_id                  = aws_vpc.main[0].id
+  cidr_block              = var.config.clouds.aws.rds_network.secondary_subnet_cidr
+  availability_zone       = var.config.clouds.aws.rds_network.secondary_availability_zone
+  map_public_ip_on_launch = false
+}

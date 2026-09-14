@@ -1,7 +1,9 @@
 locals {
+  cloud_sql_enabled = var.config.default_cloud == "gcp" && var.config.default_db == "cloud"
+
   enabled = anytrue([
     for vm in values(var.config.vms) : try(vm.cloud, var.config.default_cloud) == "gcp"
-  ])
+  ]) || local.cloud_sql_enabled
 
   resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
 
