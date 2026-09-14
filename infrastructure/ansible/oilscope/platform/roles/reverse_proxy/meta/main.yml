@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Push and Pray team
-  description: Run the fallback Traefik proxy when Cloudflare HTTPS is disabled
+  description: Install Nginx and Let's Encrypt HTTPS for the OilScope UI
   license: GPL-2.0-or-later
   min_ansible_version: "2.16"
 

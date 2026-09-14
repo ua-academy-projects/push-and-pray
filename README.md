@@ -155,6 +155,11 @@ the `oilscope.platform.compose_project` Ansible role. See
 required parent-process environment, the one-command startup, independent VM roles,
 shutdown, and smoke test.
 
+Public UI HTTPS can be managed end to end with Cloudflare DNS, Terraform,
+Nginx, Certbot, and Let's Encrypt. See
+[Cloudflare DNS and UI HTTPS](docs/cloudflare-https.md) for the required
+configuration, scoped API-token permissions, and exact deployment commands.
+
 The older role-specific files below remain for the Vagrant development topology:
 
 | Compose file            | Project               | Services   |

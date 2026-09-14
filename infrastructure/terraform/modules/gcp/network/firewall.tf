@@ -103,7 +103,10 @@ resource "google_compute_firewall" "ui_web" {
 
   allow {
     protocol = "tcp"
-    ports    = [for port in var.config.network.ui_public_ports : tostring(port)]
+    ports = [
+      for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ui_public_ports) :
+      tostring(port)
+    ]
   }
 }
 

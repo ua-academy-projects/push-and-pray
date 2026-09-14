@@ -1,0 +1,141 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the Cloudflare HTTPS configuration
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_cloudflare.enabled | default(false) | bool
+      - reverse_proxy_hostname | length > 0
+      - reverse_proxy_acme_email | length > 0
+    fail_msg: >-
+      The enabled Cloudflare configuration requires hostname and acme_email.
+
+- name: Require a Cloudflare API token for certificate renewal
+  ansible.builtin.assert:
+    that:
+      - reverse_proxy_cloudflare_api_token | length > 0
+    fail_msg: CLOUDFLARE_API_TOKEN is missing or empty for the HTTPS deployment.
+  no_log: true
+
+- name: Install Nginx, Certbot, and the Cloudflare DNS plugin
+  ansible.builtin.apt:
+    name: "{{ reverse_proxy_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the restricted Cloudflare credentials for Certbot
+  ansible.builtin.copy:
+    content: |
+      dns_cloudflare_api_token = {{ reverse_proxy_cloudflare_api_token }}
+    dest: "{{ reverse_proxy_cloudflare_credentials_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Request the Let's Encrypt certificate through Cloudflare DNS
+  ansible.builtin.command:
+    argv:
+      - certbot
+      - certonly
+      - --dns-cloudflare
+      - --dns-cloudflare-credentials
+      - "{{ reverse_proxy_cloudflare_credentials_file }}"
+      - --dns-cloudflare-propagation-seconds
+      - "30"
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - "{{ reverse_proxy_acme_email }}"
+      - --cert-name
+      - "{{ reverse_proxy_hostname }}"
+      - --domain
+      - "{{ reverse_proxy_hostname }}"
+  args:
+    creates: "/etc/letsencrypt/live/{{ reverse_proxy_hostname }}/fullchain.pem"
+
+- name: Check for the legacy Traefik Compose project
+  ansible.builtin.stat:
+    path: "{{ reverse_proxy_legacy_traefik_compose_file }}"
+  register: reverse_proxy_legacy_traefik
+
+- name: Stop the legacy Traefik Compose project
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - oilscope-proxy
+      - --file
+      - "{{ reverse_proxy_legacy_traefik_compose_file }}"
+      - down
+      - --remove-orphans
+  register: reverse_proxy_legacy_traefik_down
+  changed_when: >-
+    'Removed' in reverse_proxy_legacy_traefik_down.stderr or
+    'Stopped' in reverse_proxy_legacy_traefik_down.stderr
+  when: reverse_proxy_legacy_traefik.stat.exists
+
+- name: Remove the legacy Traefik project directory
+  ansible.builtin.file:
+    path: "{{ reverse_proxy_legacy_traefik_dir }}"
+    state: absent
+  when: reverse_proxy_legacy_traefik.stat.exists
+
+- name: Install the OilScope Nginx virtual host
+  ansible.builtin.template:
+    src: oilscope-ui.conf.j2
+    dest: "{{ reverse_proxy_nginx_site }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Nginx
+
+- name: Enable the OilScope Nginx virtual host
+  ansible.builtin.file:
+    src: "{{ reverse_proxy_nginx_site }}"
+    dest: "{{ reverse_proxy_nginx_site_link }}"
+    state: link
+  notify: Reload Nginx
+
+- name: Disable the default Nginx virtual host
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload Nginx
+
+- name: Create the Certbot deploy-hook directory
+  ansible.builtin.file:
+    path: "{{ reverse_proxy_certbot_deploy_hook | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the post-renewal Nginx reload hook
+  ansible.builtin.copy:
+    content: |
+      #!/bin/sh
+      set -eu
+      systemctl reload nginx
+    dest: "{{ reverse_proxy_certbot_deploy_hook }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Validate the Nginx configuration
+  ansible.builtin.command:
+    argv: [nginx, -t]
+  changed_when: false
+
+- name: Enable and start Nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Enable automatic certificate renewal
+  ansible.builtin.systemd_service:
+    name: certbot.timer
+    enabled: true
+    state: started

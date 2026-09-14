@@ -17,7 +17,7 @@ locals {
   ui_ports = merge({}, [
     for location, vms in local.vms_by_location :
     contains([for vm in values(vms) : vm.role], "ui") ? {
-      for port in var.config.network.ui_public_ports :
+      for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ui_public_ports) :
       location == var.config.default_location ? tostring(port) : "${location}/${port}" => {
         location = location
         port     = port

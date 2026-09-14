@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+reverse_proxy_cloudflare: "{{ compose_project_config.cloudflare | default({}) }}"
+reverse_proxy_hostname: "{{ reverse_proxy_cloudflare.hostname | default('') }}"
+reverse_proxy_acme_email: "{{ reverse_proxy_cloudflare.acme_email | default('') }}"
+reverse_proxy_cloudflare_api_token: >-
+  {{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') }}
+reverse_proxy_cloudflare_credentials_file: /etc/letsencrypt/cloudflare.ini
+reverse_proxy_nginx_site: /etc/nginx/sites-available/oilscope-ui
+reverse_proxy_nginx_site_link: /etc/nginx/sites-enabled/oilscope-ui
+reverse_proxy_certbot_deploy_hook: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+reverse_proxy_legacy_traefik_dir: /opt/oilscope/proxy
+reverse_proxy_legacy_traefik_compose_file: "{{ reverse_proxy_legacy_traefik_dir }}/compose.yaml"
+reverse_proxy_packages:
+  - nginx
+  - certbot
+  - python3-certbot-dns-cloudflare

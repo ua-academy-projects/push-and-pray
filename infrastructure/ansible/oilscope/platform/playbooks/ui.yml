@@ -16,15 +16,20 @@
         compose_project_config_path: "{{ project_config_path }}"
         compose_project_workload: "{{ oilscope_role }}"
 
-    - role: oilscope.platform.registry_auth
-
     - role: oilscope.platform.compose_project
       vars:
         compose_project_config_path: "{{ project_config_path }}"
         compose_project_dir: /opt/oilscope/proxy
         compose_project_workload: proxy
+      when: not (compose_project_config.cloudflare.enabled | default(false) | bool)
 
     - role: oilscope.platform.edge_proxy
+      when: not (compose_project_config.cloudflare.enabled | default(false) | bool)
+
+    - role: oilscope.platform.reverse_proxy
+      when: compose_project_config.cloudflare.enabled | default(false) | bool
+
+    - role: oilscope.platform.registry_auth
 
     - role: oilscope.platform.ui
       vars:
@@ -39,3 +44,5 @@
         ui_database_sslmode: >-
           {{ managed_database.sslmode
              if compose_project_config.database_mode == 'managed' else 'disable' }}
+        ui_history_service_url: >-
+          http://{{ hostvars[groups['history'][0]].internal_ip }}:8001

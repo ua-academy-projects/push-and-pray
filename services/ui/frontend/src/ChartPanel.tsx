@@ -90,9 +90,9 @@ export default function ChartPanel({
         point.observation.source_observed_at,
       ]),
       smooth: smooth ? 0.24 : false,
-      showSymbol: style === "points",
+      showSymbol: style === "points" || series.points.length === 1,
       symbol: "circle",
-      symbolSize: style === "points" ? 8 : 5,
+      symbolSize: style === "points" || series.points.length === 1 ? 8 : 5,
       sampling: "lttb" as const,
       connectNulls: true,
       lineStyle: {

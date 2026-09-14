@@ -1,3 +1,4 @@
+{% set cloudflare_enabled = compose_project_config.cloudflare.enabled | default(false) %}
 name: petroscope
 
 services:
@@ -5,16 +6,17 @@ services:
   redis:
     image: ${REDIS_IMAGE:-redis:8.2.8-bookworm}
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --appendfsync
-      - everysec
-      - --maxmemory-policy
-      - noeviction
-      - --requirepass
-      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - /bin/sh
+      - -ec
+      - >-
+        exec redis-server
+        --appendonly yes
+        --appendfsync everysec
+        --maxmemory-policy noeviction
+        --requirepass "$${REDIS_PASSWORD}"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -59,16 +61,23 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+{% if cloudflare_enabled %}
+    ports:
+      - "127.0.0.1:8080:8080"
+{% else %}
     networks:
       - oilscope-edge
+{% endif %}
 {% if compose_project_config.database_mode == 'managed' %}
     depends_on:
       redis:
         condition: service_healthy
 {% endif %}
+{% if not cloudflare_enabled %}
 networks:
   oilscope-edge:
     external: true
+{% endif %}
 {% if compose_project_config.database_mode == 'managed' %}
 volumes:
   redis_data:

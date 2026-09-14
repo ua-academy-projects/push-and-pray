@@ -76,6 +76,12 @@ GHCR_USERNAME
 GHCR_TOKEN
 ```
 
+Cloudflare DNS and certificate automation use `CLOUDFLARE_API_TOKEN` from the
+Terraform and Ansible controller environment. It is not an application secret
+and is never uploaded by `secret_versions`. The HTTPS role installs it only on
+the UI VM as a root-readable Certbot renewal credential. See
+[Cloudflare DNS and UI HTTPS](cloudflare-https.md).
+
 ```sh
 ansible-playbook oilscope.platform.upload_secret_versions \
   -e project_config_path=/absolute/path/project-config.json

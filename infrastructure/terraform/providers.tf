@@ -10,3 +10,6 @@ provider "aws" {
   region              = local.config.locations[local.config.default_location].aws.region
   allowed_account_ids = [local.config.clouds.aws.account_id]
 }
+
+# Authentication is read by the provider from CLOUDFLARE_API_TOKEN.
+provider "cloudflare" {}

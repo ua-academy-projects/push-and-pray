@@ -65,6 +65,7 @@
   args:
     chdir: "{{ ui_compose_project_dir }}"
   environment:
+    HISTORY_SERVICE_URL: "{{ ui_history_service_url }}"
     REDIS_PASSWORD: "{{ ui_redis_password }}"
   register: ui_redis_up
   changed_when: >-
@@ -84,8 +85,7 @@
     DATABASE_PORT: "{{ ui_database_port }}"
     DATABASE_SSLMODE: "{{ ui_database_sslmode }}"
     REDIS_PASSWORD: "{{ ui_redis_password }}"
-    HISTORY_SERVICE_URL: >-
-      http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
+    HISTORY_SERVICE_URL: "{{ ui_history_service_url }}"
   no_log: true
   block:
     - name: Pull the UI image

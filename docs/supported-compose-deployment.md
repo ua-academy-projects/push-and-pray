@@ -13,7 +13,7 @@ The `compose_project` role renders exactly one workload definition to
 | `database` | Self-managed PostgreSQL or managed-DB migrations, selected by `database_mode` |
 | `history` | History API with PGMQ, or RabbitMQ plus its consumer in managed mode |
 | `fetcher` | Scheduled Fetcher |
-| `ui` | UI with PostgreSQL sessions, or Redis sessions in managed mode; Traefik is separate |
+| `ui` | UI with PostgreSQL sessions, or Redis sessions in managed mode; the HTTPS proxy is separate |
 
 Image references are rendered from `registry.repository` and
 `registry.image_tag` in the external project configuration JSON. Runtime
@@ -28,10 +28,15 @@ workload.
 See [PostgreSQL infrastructure modes](database-modes.md) for the switch,
 provider selection, private networking, and Terraform-to-Ansible handoff.
 
-When the UI VM has a `public_endpoint`, Traefik obtains its certificate through
-ACME and routes by hostname. Without that optional setting, Traefik uses its
-generated certificate and a catch-all HTTPS route, which keeps IP-based dev
-deployments functional without changing `project-config.json`.
+When `cloudflare.enabled` is true, the UI container publishes port 8080 only on
+`127.0.0.1`. The `reverse_proxy` role installs Nginx on the UI VM, obtains a
+Let's Encrypt certificate through Cloudflare DNS-01, redirects HTTP to HTTPS,
+and proxies HTTPS to the loopback-only UI port. The hostname and ACME email both
+come from the root `cloudflare` configuration. See
+[Cloudflare DNS and UI HTTPS](cloudflare-https.md).
+
+When Cloudflare is disabled, the existing Traefik path remains available for
+IP-based development deployments.
 
 `compose.deployment.yaml.j2` is retained only for the legacy Terraform
 cloud-init path. The Ansible role does not install it.
