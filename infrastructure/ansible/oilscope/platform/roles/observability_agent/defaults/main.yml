@@ -16,7 +16,9 @@ observability_agent_supported_clouds:
 observability_agent_config_path: ""
 
 # --- GCP: Ops Agent, logs and host metrics in one package ------------------
-observability_agent_gcp_keyring_path: /etc/apt/keyrings/google-cloud-ops-agent.gpg
+# Google serves an ASCII-armored key, and apt reads the format off the file
+# extension: .gpg would be taken for binary and ignored as unsupported.
+observability_agent_gcp_keyring_path: /etc/apt/keyrings/google-cloud-ops-agent.asc
 observability_agent_gcp_gpg_url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
 observability_agent_gcp_repository_url: https://packages.cloud.google.com/apt
 observability_agent_gcp_repository_path: /etc/apt/sources.list.d/google-cloud-ops-agent.sources
