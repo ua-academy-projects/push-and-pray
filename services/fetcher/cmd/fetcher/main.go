@@ -16,6 +16,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"oil-price-tracker/fetcher/internal/config"
+	"oil-price-tracker/fetcher/internal/httplog"
 	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
 	"oil-price-tracker/fetcher/internal/schedule"
@@ -23,6 +24,10 @@ import (
 )
 
 func main() {
+	// One JSON document per line on stdout: the log agent parses the level
+	// from it, and Docker would mark anything on stderr as an error.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	configuration, err := config.Load()
 	if err != nil {
 		slog.Error("invalid configuration", "error", err)
@@ -196,7 +201,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              configuration.ListenAddress,
-		Handler:           mux,
+		Handler:           httplog.Handler(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,

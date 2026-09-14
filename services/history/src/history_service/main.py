@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
+from .logging_config import configure_logging
 from .messaging import PGMQConsumer
 from .models import PriceObservation
 from .repository import (
@@ -29,10 +30,7 @@ from .schemas import (
 
 settings = get_settings()
 
-logging.basicConfig(
-    level=settings.log_level,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+configure_logging(settings.log_level)
 
 logger = logging.getLogger(__name__)
 

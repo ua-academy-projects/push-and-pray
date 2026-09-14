@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,13 +10,11 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from psycopg import Error as PostgreSQLError
 
+from .logging_config import configure_logging
 from .session_store import PostgreSQLSessionStore
 from .sessions import SessionPreferences, resolve_session_id
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 STATIC_DIR = Path(__file__).parent / "static"
 HISTORY_SERVICE_URL = os.getenv("HISTORY_SERVICE_URL", "http://localhost:8001").rstrip("/")
