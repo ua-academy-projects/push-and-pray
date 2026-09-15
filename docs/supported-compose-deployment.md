@@ -5,19 +5,49 @@ Terraform creates the VMs, networking, workload identities, and secret
 containers. Terraform cloud-init configures only the bastion's SSH service;
 Ansible configures and deploys the workload VMs.
 
+`database.mode` in `project-config.json` selects the architecture:
+
+```json
+"database": {
+  "mode": "self_managed",
+  "version": "18",
+  "size": "micro",
+  "storage_gb": 20
+}
+```
+
+`self_managed` runs PostgreSQL and its extensions on the infrastructure VM.
+`managed` creates private Cloud SQL or RDS PostgreSQL according to
+`default_cloud`, and runs RabbitMQ and Redis on the infrastructure VM. Both
+providers use the configured 20 GB development storage allocation.
+
+Development RDS instances set `backup_retention_period` to `0`, delete
+automated backups, and skip a final snapshot. Stage and production retain seven
+days of backups, require a final snapshot, and enable deletion protection.
+
 Each workload VM receives one role-specific Compose definition:
 
 | Inventory group | Compose services | Installed file |
 | --- | --- | --- |
-| `database` | PostgreSQL and the migration job | `/opt/oilscope/app/compose.yaml` |
+| `infrastructure` | PostgreSQL, or RabbitMQ and Redis; migration job | `/opt/oilscope/app/compose.yaml` |
 | `history` | History | `/opt/oilscope/app/compose.yaml` |
 | `fetcher` | Fetcher | `/opt/oilscope/app/compose.yaml` |
 | `ui` | UI | `/opt/oilscope/app/compose.yaml` |
 | `ui` | Traefik proxy | `/opt/oilscope/proxy/compose.yaml` |
 
-The application images use the immutable Git commit tag from
-`registry.image_tag` in `project-config.json`. The database image is the
-project's `database` image with the same tag.
+Application images use the OCI tag from `registry.image_tag`. A personal,
+mutable tag such as `andrii-miroshnyk` is suitable for an isolated development
+environment; use an immutable version tag for shared or release deployments.
+The database image is required in both database modes because it also provides
+the migration command.
+
+```json
+"registry": {
+  "repository": "ghcr.io/example-org/example-project",
+  "username": "example-operator",
+  "image_tag": "example-operator"
+}
+```
 
 ## Secrets
 
@@ -26,8 +56,11 @@ controller environment:
 
 ```sh
 export DB_PASSWORD="$(openssl rand -hex 32)"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
+export TF_VAR_database_password="${DB_PASSWORD}"
 
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
@@ -65,7 +98,7 @@ ansible-playbook oilscope.platform.deploy_workloads \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-The orchestrator deploys Database, History, Fetcher, and UI in that order. The
+The orchestrator deploys Infrastructure, History, Fetcher, and UI in that order. The
 UI play also starts Traefik, which terminates HTTPS and redirects HTTP traffic
 from port 80 to port 443.
 

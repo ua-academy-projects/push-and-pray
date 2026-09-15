@@ -3,7 +3,8 @@
 Installs one selected OilScope Compose definition. Each workload VM receives
 only its own application services:
 
-- `database`: PostgreSQL and the one-shot migration service;
+- `infrastructure`: PostgreSQL in self-managed mode, or RabbitMQ and Redis in
+  managed mode, plus the one-shot migration service;
 - `history`: History only;
 - `fetcher`: Fetcher only;
 - `ui`: UI only.
@@ -23,15 +24,15 @@ The controller must have access to the external project configuration JSON.
 
 - `compose_project_config_path`: required controller-side path to the non-secret
   project configuration JSON.
-- `compose_project_workload`: required workload name: `database`, `history`,
+- `compose_project_workload`: required workload name: `infrastructure`, `history`,
   `fetcher`, `ui`, or `proxy`.
 - `compose_project_dir`: installation directory; defaults to `/opt/oilscope/app`.
 - `compose_project_owner` and `compose_project_group`: installed file ownership;
   both default to `deploy`.
 
 Image references are rendered from `registry.repository` and
-`registry.image_tag` in the project configuration. Secret values and private
-registry authentication are not handled by this role.
+`registry.image_tag`. Secret values and private registry authentication are not
+handled by this role.
 
 ## Example playbook
 

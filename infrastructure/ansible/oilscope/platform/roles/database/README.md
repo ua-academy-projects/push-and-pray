@@ -14,8 +14,7 @@ The database image must contain `petroscope-migrate` and the migrations under
 
 ## Required variables
 
-- `database_postgres_image`: complete image reference pinned with
-  a full 40-character Git SHA tag.
+- `database_postgres_image`: complete image reference with an OCI image tag.
 - `database_postgres_password`: password supplied by the deployment secret
   mechanism. The role marks tasks receiving it with `no_log` and does not write
   it to disk.
@@ -45,7 +44,7 @@ The database image must contain `petroscope-migrate` and the migrations under
     - role: oilscope.platform.database
       vars:
         database_postgres_image: >-
-          ghcr.io/ua-academy-projects/push-and-pray/database:0123456789abcdef0123456789abcdef01234567
+          ghcr.io/ua-academy-projects/push-and-pray/database:example-operator
         database_postgres_password: "{{ vault_database_password }}"
 ```
 

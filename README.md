@@ -12,11 +12,11 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through PGMQ, a PostgreSQL extension-backed queue.
+- Selectable durable delivery through PGMQ or RabbitMQ.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
-- PostgreSQL-backed UI preferences with a sliding 30-day TTL.
+- PostgreSQL- or Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and role-specific Docker Compose projects.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Terraform deployments on AWS and GCP with Ansible-managed workloads and
@@ -57,9 +57,9 @@ log metrics, HTTPS checks, and manual notification prerequisites.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
+| Messaging      | PGMQ or RabbitMQ                              |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| UI sessions    | PostgreSQL extensions or Redis                |
 | Packaging      | Docker Engine and Docker Compose              |
 | Infrastructure | Terraform, AWS, Google Cloud                  |
 | Automation     | Ansible                                       |
@@ -69,6 +69,13 @@ log metrics, HTTPS checks, and manual notification prerequisites.
 
 The runtime is divided into three application services and two infrastructure
 components.
+
+Cloud deployments select one of two architectures with `database.mode` in
+`project-config.json`. `self_managed` runs PostgreSQL with PGMQ and the session
+extensions on the infrastructure VM. `managed` provisions private Cloud SQL or
+RDS PostgreSQL, runs RabbitMQ and Redis on the infrastructure VM, and uses no
+PostgreSQL extensions. GCP clients reach Cloud SQL through the Auth Proxy with
+private IP; AWS clients use the private RDS endpoint.
 
 | Component       | Responsibility                                                                                    | Owns                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -159,7 +166,7 @@ extension.
 
 The supported production-style deployment uses the `oilscope.platform`
 Ansible collection to install one role-specific Compose definition on each
-workload VM and pull prebuilt GHCR images. See
+workload VM and pull prebuilt registry images. See
 [the supported Compose deployment guide](docs/supported-compose-deployment.md)
 for the deployment order, secrets flow, and operating commands.
 
@@ -200,6 +207,10 @@ Additional moving tags identify the delivery channel:
 Images are pushed only after a successful Buildx build. The registry login uses the
 workflow-scoped `GITHUB_TOKEN`, which GitHub Actions masks in logs; workflows do not print
 or pass the token as a Docker build argument.
+
+For isolated development, images may also be published manually under a personal,
+mutable tag such as `andrii-miroshnyk` and selected through `registry.image_tag` in
+`project-config.json`. Prefer immutable version tags for shared and release deployments.
 
 ## Local development
 
@@ -326,6 +337,10 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
 | `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
+| `MESSAGING_BACKEND`               | `pgmq`                  | `pgmq` or `rabbitmq`                     |
+| `RABBITMQ_URL`                    | none                    | RabbitMQ connection in managed mode      |
+| `SESSION_BACKEND`                 | `postgresql`            | `postgresql` or `redis`                  |
+| `REDIS_URL`                       | none                    | Redis connection in managed mode         |
 | `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |

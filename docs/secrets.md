@@ -12,6 +12,8 @@ Each VM declares the application variable name and secret container ID:
 ```json
 "secret_mappings": {
   "POSTGRES_PASSWORD": "db-password",
+  "RABBITMQ_PASSWORD": "rabbitmq-password",
+  "REDIS_PASSWORD": "redis-password",
   "GHCR_TOKEN": "ghcr-token"
 }
 ```
@@ -34,9 +36,17 @@ region; GCP containers are scoped to `cloud_settings.gcp.project_id`.
 | `secret_versions` Ansible role | Upload versions from the operator environment to every required cloud and scope |
 | `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
 
-Terraform deliberately creates no secret versions. A value supplied to
-Terraform can be retained in state and plan artifacts, so values stay in the
-Ansible workflow.
+Terraform deliberately creates no secret versions. Managed PostgreSQL creation
+is the one exception to the Ansible-only value flow: set the ephemeral
+`TF_VAR_database_password` variable to the same value as `DB_PASSWORD`.
+The managed database resources use provider write-only password arguments, so
+the value is not retained in Terraform plans or state.
+
+The deployment applies this password when a managed database is created. It
+does not support rotating the password of an existing managed database in
+place; recreate the development database when changing `DB_PASSWORD`. The
+providers require an internal write-only password version, which is fixed at
+`1` in Terraform and is not a project configuration option.
 
 ## Uploading values
 
@@ -67,6 +77,9 @@ Run from the repository root:
 
 ```bash
 export DB_PASSWORD="$(openssl rand -hex 32)"
+export TF_VAR_database_password="${DB_PASSWORD}"
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
 

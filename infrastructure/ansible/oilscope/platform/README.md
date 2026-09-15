@@ -16,7 +16,7 @@ uvx check-jsonschema \
 
 Deploy the application workloads in dependency order:
 
-1. Database
+1. Infrastructure and database migrations
 2. History
 3. Fetcher
 4. UI
