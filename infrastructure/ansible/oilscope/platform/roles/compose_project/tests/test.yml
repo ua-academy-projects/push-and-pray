@@ -15,7 +15,7 @@
         compose_project_group: "{{ lookup('ansible.builtin.pipe', 'id -gn') }}"
         compose_project_config_path: "{{ project_config_path }}"
       loop:
-        - database
+        - infra
         - history
         - fetcher
         - ui
@@ -36,9 +36,11 @@
         HISTORY_SERVICE_URL: http://127.0.0.1:8001
         OILPRICEAPI_KEY: test-only
         POSTGRES_PASSWORD: test-only
+        RABBITMQ_PASSWORD: test-only
+        REDIS_PASSWORD: test-only
       changed_when: false
       loop:
-        - database
+        - infra
         - history
         - fetcher
         - ui

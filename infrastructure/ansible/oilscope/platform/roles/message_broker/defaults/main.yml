@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+message_broker_compose_project_dir: /opt/oilscope/app
+message_broker_compose_file: "{{ message_broker_compose_project_dir }}/compose.yaml"
+message_broker_compose_project_name: petroscope
+message_broker_service: rabbitmq
+
+message_broker_user: oil_tracker
+message_broker_vhost: oil_tracker
+message_broker_password: ""
+message_broker_bind_address: 0.0.0.0
+message_broker_host_port: 5672
+
+message_broker_health_retries: 30
+message_broker_health_delay: 2
+message_broker_docker_config_dir: /run/oilscope/docker-auth
+message_broker_compose_environment: {}

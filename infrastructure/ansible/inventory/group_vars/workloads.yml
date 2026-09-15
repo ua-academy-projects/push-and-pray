@@ -23,3 +23,24 @@ ansible_ssh_common_args: >-
   -i {{ ansible_ssh_private_key_file }}
   {{ oilscope_ssh_base_args }}
   {{ ansible_user }}@{{ oilscope_bastion_address }}"
+
+# The infra VM of this deployment: PostgreSQL in self-hosted mode, RabbitMQ
+# and Redis in managed mode. One per project, so the first is the only one.
+oilscope_infra_host: >-
+  {{ hostvars[groups['infra'][0]].internal_ip
+     if (groups['infra'] | default([]) | length) > 0
+     else undef('no VM with the role infra was discovered; the workloads have'
+                ~ ' nothing to connect to') }}
+
+# Where the workloads find the database: the managed endpoint the inventory
+# plugin discovered, or the infra VM itself.
+oilscope_database_host: >-
+  {{ (oilscope_managed_database_host
+      | default(undef('the managed database endpoint is unknown: the inventory'
+                      ~ ' plugin did not discover it (discover_database is off,'
+                      ~ ' or the inventory was not built by oilscope_cloud), so'
+                      ~ ' pass -e oilscope_managed_database_host=<address>')))
+     if oilscope_database_managed else oilscope_infra_host }}
+oilscope_database_port: >-
+  {{ (oilscope_managed_database_port | default(oilscope_postgresql_port))
+     if oilscope_database_managed else oilscope_postgresql_port }}

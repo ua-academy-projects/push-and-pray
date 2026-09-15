@@ -1,0 +1,134 @@
+{#
+  What the infra VM runs follows the database mode in the project
+  configuration. Self-hosted: the PostgreSQL container, with the queue in
+  PGMQ and the UI sessions in a table. Managed: PostgreSQL lives in the cloud,
+  and this VM carries the RabbitMQ broker and the Redis cache that take those
+  two jobs over. The migration job is present either way, because this is the
+  one machine that owns the schema.
+#}
+{% set infra_managed = compose_project_config.database.mode | default('self-hosted') == 'managed' %}
+name: petroscope
+
+services:
+{% if not infra_managed %}
+  postgres:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oil_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-oil_tracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_cron
+      - -c
+      - cron.database_name=${POSTGRES_DB:-oil_tracker}
+      - -c
+      - cron.use_background_workers=on
+    ports:
+      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:${DATABASE_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+{% else %}
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.1.8}
+    restart: unless-stopped
+    hostname: petroscope-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-oil_tracker}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oil_tracker}
+      TZ: UTC
+    ports:
+      - "${INFRA_BIND_ADDRESS:-0.0.0.0}:${AMQP_HOST_PORT:-5672}:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmq-diagnostics
+        - -q
+        - ping
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.9-bookworm}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      TZ: UTC
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "${INFRA_BIND_ADDRESS:-0.0.0.0}:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli --no-auth-warning -a "$${REDIS_PASSWORD}" ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+{% endif %}
+
+  migrate:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: "no"
+    command: ["petroscope-migrate"]
+    environment:
+{% if infra_managed %}
+      PGHOST: ${DATABASE_HOST:?DATABASE_HOST is required}
+      PGPORT: ${DATABASE_PORT:-5432}
+      PGSSLMODE: ${DATABASE_SSLMODE:-require}
+{% else %}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGSSLMODE: disable
+{% endif %}
+      PGUSER: ${POSTGRES_USER:-oil_tracker}
+      PGDATABASE: ${POSTGRES_DB:-oil_tracker}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+{% if not infra_managed %}
+    depends_on:
+      postgres:
+        condition: service_healthy
+{% endif %}
+
+volumes:
+{% if not infra_managed %}
+  postgres_data:
+{% else %}
+  rabbitmq_data:
+  redis_data:
+{% endif %}

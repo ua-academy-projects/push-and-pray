@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Refuse the amqp backend without a broker password
+  ansible.builtin.assert:
+    that: fetcher_queue_backend != 'amqp' or fetcher_amqp_password | length > 0
+    fail_msg: fetcher_amqp_password must be set when the queue backend is amqp
+    quiet: true
+
 - name: Pull the Fetcher image
   ansible.builtin.command:
     argv:

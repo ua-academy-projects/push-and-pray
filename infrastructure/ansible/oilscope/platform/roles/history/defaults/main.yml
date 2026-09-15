@@ -5,6 +5,22 @@ history_compose_file: "{{ history_compose_project_dir }}/compose.yaml"
 history_compose_project_name: petroscope
 
 history_postgres_password: ""
+history_postgres_user: "{{ oilscope_database_user | default('oil_tracker') }}"
+history_postgres_name: "{{ oilscope_database_name | default('oil_tracker') }}"
+
+# Where the database is and how the queue reaches the service. The group
+# variables derive all of them from the database mode; a play outside that
+# inventory sets them by hand.
+history_database_host: "{{ oilscope_database_host }}"
+history_database_port: "{{ oilscope_database_port | default(5432) }}"
+history_database_sslmode: "{{ oilscope_database_sslmode | default('disable') }}"
+history_queue_backend: "{{ oilscope_queue_backend | default('pgmq') }}"
+history_amqp_host: "{{ oilscope_infra_host | default('127.0.0.1') }}"
+history_amqp_port: "{{ oilscope_amqp_port | default(5672) }}"
+history_amqp_user: "{{ oilscope_amqp_user | default('oil_tracker') }}"
+history_amqp_vhost: "{{ oilscope_amqp_vhost | default('oil_tracker') }}"
+history_amqp_password: ""
+
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_migrations_compose_project_dir: /opt/oilscope/app
+database_migrations_compose_file: "{{ database_migrations_compose_project_dir }}/compose.yaml"
+database_migrations_compose_project_name: petroscope
+database_migrations_service: migrate
+
+# Where the migrations connect. Self-hosted: the PostgreSQL container next
+# door, by its Compose service name. Managed: the endpoint of the cloud
+# database, over TLS.
+database_migrations_host: postgres
+database_migrations_port: 5432
+database_migrations_sslmode: disable
+database_migrations_postgres_password: ""
+database_migrations_postgres_user: oil_tracker
+database_migrations_postgres_name: oil_tracker
+
+database_migrations_docker_config_dir: /run/oilscope/docker-auth
+database_migrations_compose_environment: {}

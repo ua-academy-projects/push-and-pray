@@ -2,7 +2,7 @@
 ---
 galaxy_info:
   author: Push and Pray team
-  description: Deploy the OilScope PostgreSQL service and run migrations
+  description: Deploy the self-hosted OilScope PostgreSQL service
   license: GPL-2.0-or-later
   min_ansible_version: "2.16"
   galaxy_tags:

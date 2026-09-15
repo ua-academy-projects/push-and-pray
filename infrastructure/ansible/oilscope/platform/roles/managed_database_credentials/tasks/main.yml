@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    managed_database_credentials_config: >-
+      {{ lookup('ansible.builtin.file', managed_database_credentials_config_path) | from_json }}
+
+- name: Stop when the database is not managed
+  ansible.builtin.meta: end_play
+  when: managed_database_credentials_config.database.mode | default('self-hosted') != 'managed'
+
+# The managed database lives on the cloud that hosts the infra VM, and the
+# password container to fill is the one that VM maps to POSTGRES_PASSWORD.
+- name: Find the infra VM
+  ansible.builtin.set_fact:
+    managed_database_credentials_infra: >-
+      {{ managed_database_credentials_config.vms
+         | dict2items
+         | selectattr('value.role', 'equalto', 'infra')
+         | map(attribute='value')
+         | first
+         | default(undef('no VM under vms has the role infra')) }}
+
+- name: Derive the cloud, the instance and the secret container
+  ansible.builtin.set_fact:
+    managed_database_credentials_cloud: >-
+      {{ managed_database_credentials_infra.cloud
+         | default(managed_database_credentials_config.default_cloud) }}
+    managed_database_credentials_prefix: >-
+      {{ managed_database_credentials_config.name_prefix }}-{{ managed_database_credentials_config.environment }}
+    managed_database_credentials_username: >-
+      {{ managed_database_credentials_config.database.username }}
+    managed_database_credentials_secret_id: >-
+      {{ managed_database_credentials_infra.secret_mappings.POSTGRES_PASSWORD
+         | default(undef('the infra VM maps no POSTGRES_PASSWORD secret')) }}
+
+- name: Refuse a cloud this role cannot reach
+  ansible.builtin.assert:
+    that: managed_database_credentials_cloud in managed_database_credentials_supported_clouds
+    fail_msg: >-
+      the infra VM is on '{{ managed_database_credentials_cloud }}', which this
+      role cannot reconcile credentials on; supported clouds are
+      {{ managed_database_credentials_supported_clouds | join(', ') }}
+    quiet: true
+
+- name: Reconcile the credentials on the cloud that hosts the database
+  ansible.builtin.include_tasks: "{{ managed_database_credentials_cloud }}.yml"

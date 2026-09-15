@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# The infra VM carries whatever the database mode leaves on a VM. Self-hosted:
+# the PostgreSQL container. Managed: the RabbitMQ broker and the Redis cache
+# that take over the queue and the UI sessions. Either way it is the one host
+# that runs the schema migrations, so one machine owns the schema.
+- name: Deploy Infra
+  hosts: infra
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+
+  roles:
+    - role: oilscope.platform.host_baseline
+
+    - role: oilscope.platform.observability_agent
+      vars:
+        observability_agent_config_path: "{{ project_config_path }}"
+
+    - role: oilscope.platform.docker_engine
+
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_workload: "{{ oilscope_role }}"
+
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_registry: >-
+          {{ compose_project_config.registry.repository
+             | regex_replace('/.*$', '') }}
+        registry_auth_username: >-
+          {{ compose_project_config.registry.username | default('') }}
+        registry_auth_token: >-
+          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
+
+    - role: oilscope.platform.database
+      when: not oilscope_database_managed
+      vars:
+        database_postgres_image: >-
+          {{
+            compose_project_config.registry.repository
+            ~ '/database:'
+            ~ compose_project_config.registry.image_sha
+          }}
+        database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_postgres_user: "{{ oilscope_database_user }}"
+        database_postgres_name: "{{ oilscope_database_name }}"
+        database_host_port: "{{ oilscope_postgresql_port }}"
+
+    - role: oilscope.platform.message_broker
+      when: oilscope_database_managed
+      vars:
+        message_broker_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+        message_broker_user: "{{ oilscope_amqp_user }}"
+        message_broker_vhost: "{{ oilscope_amqp_vhost }}"
+        message_broker_host_port: "{{ oilscope_amqp_port }}"
+
+    - role: oilscope.platform.session_cache
+      when: oilscope_database_managed
+      vars:
+        session_cache_password: "{{ resolve_secrets_result.REDIS_PASSWORD }}"
+        session_cache_host_port: "{{ oilscope_redis_port }}"
+
+    - role: oilscope.platform.database_migrations
+      vars:
+        database_migrations_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_migrations_postgres_user: "{{ oilscope_database_user }}"
+        database_migrations_postgres_name: "{{ oilscope_database_name }}"
+        # Self-hosted: the container next door, by its Compose service name.
+        # Managed: the endpoint the inventory discovered.
+        database_migrations_host: >-
+          {{ oilscope_database_host if oilscope_database_managed else 'postgres' }}
+        database_migrations_port: >-
+          {{ oilscope_database_port if oilscope_database_managed else 5432 }}
+        database_migrations_sslmode: "{{ oilscope_database_sslmode }}"

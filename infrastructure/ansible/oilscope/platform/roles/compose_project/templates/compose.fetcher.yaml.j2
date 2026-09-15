@@ -13,7 +13,15 @@ services:
       # yamllint disable rule:line-length
       DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+      # pgmq publishes into the database above; amqp into the RabbitMQ on the
+      # infra VM. The password in the URL is percent-encoded.
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-pgmq}
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
+      # yamllint disable rule:line-length
+      AMQP_URL: amqp://${RABBITMQ_USER:-oil_tracker}:${RABBITMQ_PASSWORD_URL:-}@${AMQP_HOST:-127.0.0.1}:${AMQP_PORT:-5672}/${RABBITMQ_VHOST:-oil_tracker}
+      # yamllint enable rule:line-length
+      AMQP_EXCHANGE: ${AMQP_EXCHANGE:-oil.price.events}
+      AMQP_ROUTING_KEY: ${AMQP_ROUTING_KEY:-prices.observed}
       FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}
       FETCH_TIMEZONE: ${FETCH_TIMEZONE:-UTC}
       FETCH_ON_STARTUP: ${FETCH_ON_STARTUP:-true}

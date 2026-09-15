@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Project configuration JSON - the same file Terraform and the inventory read.
+managed_database_credentials_config_path: ""
+
+# One task file per cloud, selected by the cloud hosting the infra VM.
+managed_database_credentials_supported_clouds:
+  - gcp
+  - aws
+
+# --- GCP ------------------------------------------------------------------
+# The application role is created through the Cloud SQL Admin API with the
+# password the operator holds for the project's secret container: the
+# environment variable upload_secret_versions reads, or, when that is unset,
+# the latest version in Secret Manager.
+managed_database_credentials_gcloud: gcloud
+managed_database_credentials_project_id: ""
+
+# --- AWS ------------------------------------------------------------------
+# RDS generated the master password itself; it is copied from the secret RDS
+# keeps into the project's own container, the one the workloads read.
+managed_database_credentials_aws_cli: aws
+managed_database_credentials_region: ""

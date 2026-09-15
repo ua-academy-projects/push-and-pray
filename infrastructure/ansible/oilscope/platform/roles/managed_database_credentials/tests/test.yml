@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the managed_database_credentials role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Write a self-hosted configuration
+      ansible.builtin.copy:
+        dest: /tmp/oilscope-managed-database-credentials-test.json
+        mode: "0600"
+        content: >-
+          {{ {'database': {'mode': 'self-hosted'}, 'vms': {}} | to_json }}
+
+    - name: Include the role against it
+      ansible.builtin.include_role:
+        name: managed_database_credentials
+      vars:
+        managed_database_credentials_config_path: /tmp/oilscope-managed-database-credentials-test.json
+
+    - name: Verify the role stopped without reaching a cloud
+      ansible.builtin.assert:
+        that:
+          - managed_database_credentials_cloud is not defined

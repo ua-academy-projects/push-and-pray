@@ -1,0 +1,144 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Resolve the project
+  ansible.builtin.set_fact:
+    managed_database_credentials_project: >-
+      {{ managed_database_credentials_project_id
+         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
+         | default(managed_database_credentials_config.clouds.gcp.project_id | default(''), true) }}
+    managed_database_credentials_instance: "{{ managed_database_credentials_prefix }}-database"
+
+- name: Fail when the project is unknown
+  ansible.builtin.assert:
+    that: managed_database_credentials_project | length > 0
+    fail_msg: >-
+      no GCP project; set managed_database_credentials_project_id,
+      $GOOGLE_PROJECT, or clouds.gcp.project_id in the configuration
+    quiet: true
+
+# The same variable name upload_secret_versions derives for this container:
+# the ID with the project prefix dropped, upper-cased, non-alphanumerics to _.
+- name: Name the environment variable that may hold the password
+  ansible.builtin.set_fact:
+    managed_database_credentials_variable: >-
+      {{ managed_database_credentials_secret_id
+         | regex_replace('^' ~ (managed_database_credentials_prefix ~ '-') | regex_escape, '')
+         | upper | regex_replace('[^A-Z0-9]', '_') }}
+
+- name: Take the password from the environment
+  ansible.builtin.set_fact:
+    managed_database_credentials_password: >-
+      {{ lookup('ansible.builtin.env', managed_database_credentials_variable) }}
+  no_log: true
+
+# Not in the environment: read the version that was uploaded earlier. Needs
+# secretAccessor on the container, which a version manager does not have by
+# default - exporting the variable is the way that needs no extra grant.
+- name: Read the password from Secret Manager
+  ansible.builtin.command:
+    argv:
+      - "{{ managed_database_credentials_gcloud }}"
+      - secrets
+      - versions
+      - access
+      - latest
+      - "--secret={{ managed_database_credentials_secret_id }}"
+      - "--project={{ managed_database_credentials_project }}"
+  register: managed_database_credentials_stored
+  changed_when: false
+  no_log: true
+  when: managed_database_credentials_password | length == 0
+
+- name: Keep the stored password
+  ansible.builtin.set_fact:
+    managed_database_credentials_password: "{{ managed_database_credentials_stored.stdout }}"
+  no_log: true
+  when: managed_database_credentials_stored is not skipped
+
+- name: Fail when no password is available
+  ansible.builtin.assert:
+    that: managed_database_credentials_password | length > 0
+    fail_msg: >-
+      no password for {{ managed_database_credentials_secret_id }}: export
+      ${{ managed_database_credentials_variable }} (the value
+      upload_secret_versions reads) or grant yourself access to the container
+    quiet: true
+
+# The Admin API takes the password in a request body. gcloud would take it on
+# the command line, where every process on the machine can read it.
+- name: Get an access token for the Admin API
+  ansible.builtin.command:
+    argv:
+      - "{{ managed_database_credentials_gcloud }}"
+      - auth
+      - print-access-token
+  register: managed_database_credentials_token
+  changed_when: false
+  no_log: true
+
+- name: List the roles on the instance
+  ansible.builtin.uri:
+    url: >-
+      https://sqladmin.googleapis.com/v1/projects/{{ managed_database_credentials_project
+      }}/instances/{{ managed_database_credentials_instance }}/users
+    headers:
+      Authorization: "Bearer {{ managed_database_credentials_token.stdout | trim }}"
+    return_content: true
+  register: managed_database_credentials_users
+  no_log: true
+
+- name: Note whether the application role exists
+  ansible.builtin.set_fact:
+    managed_database_credentials_exists: >-
+      {{ managed_database_credentials_users.json['items'] | default([])
+         | selectattr('name', 'equalto', managed_database_credentials_username)
+         | list | length > 0 }}
+
+- name: Create the application role
+  ansible.builtin.uri:
+    url: >-
+      https://sqladmin.googleapis.com/v1/projects/{{ managed_database_credentials_project
+      }}/instances/{{ managed_database_credentials_instance }}/users
+    method: POST
+    headers:
+      Authorization: "Bearer {{ managed_database_credentials_token.stdout | trim }}"
+    body_format: json
+    body:
+      name: "{{ managed_database_credentials_username }}"
+      password: "{{ managed_database_credentials_password }}"
+    status_code: [200]
+  changed_when: true
+  no_log: true
+  when:
+    - not managed_database_credentials_exists
+    - not ansible_check_mode
+
+# Always set on an existing role: the API does not tell whether the password
+# already matches, and setting an unchanged one is harmless.
+- name: Set the application role's password
+  ansible.builtin.uri:
+    url: >-
+      https://sqladmin.googleapis.com/v1/projects/{{ managed_database_credentials_project
+      }}/instances/{{ managed_database_credentials_instance }}/users?name={{
+      managed_database_credentials_username }}
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ managed_database_credentials_token.stdout | trim }}"
+    body_format: json
+    body:
+      name: "{{ managed_database_credentials_username }}"
+      password: "{{ managed_database_credentials_password }}"
+    status_code: [200]
+  changed_when: true
+  no_log: true
+  when:
+    - managed_database_credentials_exists
+    - not ansible_check_mode
+
+- name: Report
+  ansible.builtin.debug:
+    msg: >-
+      gcp: role {{ managed_database_credentials_username }} on
+      {{ managed_database_credentials_instance }}
+      {{ 'updated' if managed_database_credentials_exists else 'created' }}
+      with the password of {{ managed_database_credentials_secret_id }}

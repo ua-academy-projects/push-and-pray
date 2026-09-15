@@ -13,3 +13,36 @@ oilscope_ssh_base_args: >-
   -o StrictHostKeyChecking=accept-new
   -o IdentitiesOnly=yes
 ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"
+
+# The project configuration, read once. Every play passes project_config_path,
+# and the roles that need the whole file still read it themselves; these are
+# the few answers that shape a deployment before any role runs.
+oilscope_config: >-
+  {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+# Where PostgreSQL runs decides what else runs. Self-hosted: the infra VM
+# carries the database, the queue is PGMQ inside it and the UI sessions are a
+# table. Managed: the database is Cloud SQL or RDS, and the infra VM carries
+# RabbitMQ for the queue and Redis for the sessions instead.
+oilscope_database_mode: "{{ oilscope_config.database.mode | default('self-hosted') }}"
+oilscope_database_managed: "{{ oilscope_database_mode == 'managed' }}"
+oilscope_queue_backend: "{{ 'amqp' if oilscope_database_managed else 'pgmq' }}"
+oilscope_session_backend: "{{ 'redis' if oilscope_database_managed else 'postgres' }}"
+
+oilscope_database_name: "{{ oilscope_config.database.name | default('oil_tracker') }}"
+oilscope_database_user: "{{ oilscope_config.database.username | default('oil_tracker') }}"
+oilscope_database_sslmode: "{{ 'require' if oilscope_database_managed else 'disable' }}"
+
+oilscope_postgresql_port: "{{ oilscope_config.service_ports.postgresql | default(5432) }}"
+oilscope_amqp_port: "{{ oilscope_config.service_ports.amqp | default(5672) }}"
+oilscope_redis_port: "{{ oilscope_config.service_ports.redis | default(6379) }}"
+
+# Broker and cache identities. The vhost and the users are named after the
+# database role so nothing in the services has to learn a second name.
+oilscope_amqp_user: "{{ oilscope_database_user }}"
+oilscope_amqp_vhost: "{{ oilscope_database_name }}"
+
+# In managed mode the inventory plugin sets oilscope_managed_database_host and
+# oilscope_managed_database_port on the all group from the cloud API. They are
+# deliberately not given defaults here: a file under group_vars outranks what
+# an inventory plugin sets, so a default would silently replace the answer.

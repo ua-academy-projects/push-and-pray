@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_migrations_runtime_environment: >-
+  {{
+    database_migrations_compose_environment
+    | combine({
+      'DOCKER_CONFIG': database_migrations_docker_config_dir,
+      'POSTGRES_PASSWORD': database_migrations_postgres_password,
+      'POSTGRES_USER': database_migrations_postgres_user,
+      'POSTGRES_DB': database_migrations_postgres_name,
+      'DATABASE_HOST': database_migrations_host | string,
+      'DATABASE_PORT': database_migrations_port | string,
+      'DATABASE_SSLMODE': database_migrations_sslmode
+    })
+  }}

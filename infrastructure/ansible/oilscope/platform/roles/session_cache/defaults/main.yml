@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+session_cache_compose_project_dir: /opt/oilscope/app
+session_cache_compose_file: "{{ session_cache_compose_project_dir }}/compose.yaml"
+session_cache_compose_project_name: petroscope
+session_cache_service: redis
+
+session_cache_password: ""
+session_cache_bind_address: 0.0.0.0
+session_cache_host_port: 6379
+
+session_cache_health_retries: 30
+session_cache_health_delay: 2
+session_cache_docker_config_dir: /run/oilscope/docker-auth
+session_cache_compose_environment: {}

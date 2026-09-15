@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Refuse to run without a broker password
+  ansible.builtin.assert:
+    that: message_broker_password | length > 0
+    fail_msg: message_broker_password must be set
+    quiet: true
+
+- name: Pull the RabbitMQ image
+  ansible.builtin.command:
+    argv: "{{ message_broker_compose_argv + ['pull', message_broker_service] }}"
+  args:
+    chdir: "{{ message_broker_compose_project_dir }}"
+  environment: "{{ message_broker_runtime_environment }}"
+  register: message_broker_pull
+  changed_when: >-
+    'Downloaded newer image' in message_broker_pull.stdout or
+    'Downloaded newer image' in message_broker_pull.stderr or
+    'Pull complete' in message_broker_pull.stdout or
+    'Pull complete' in message_broker_pull.stderr
+  no_log: true
+
+# --remove-orphans retires whatever the previous database mode left behind on
+# this host - the PostgreSQL container, when the deployment has just switched
+# to a managed database. Its volume stays, so switching back finds the data.
+- name: Start the RabbitMQ service
+  ansible.builtin.command:
+    argv: >-
+      {{ message_broker_compose_argv
+         + ['up', '--detach', '--no-deps', '--remove-orphans', message_broker_service] }}
+  args:
+    chdir: "{{ message_broker_compose_project_dir }}"
+  environment: "{{ message_broker_runtime_environment }}"
+  register: message_broker_up
+  changed_when: >-
+    'Created' in message_broker_up.stderr or
+    'Started' in message_broker_up.stderr or
+    'Recreated' in message_broker_up.stderr or
+    'Removed' in message_broker_up.stderr
+  no_log: true
+
+- name: Get the RabbitMQ container ID
+  ansible.builtin.command:
+    argv: "{{ message_broker_compose_argv + ['ps', '--quiet', message_broker_service] }}"
+  args:
+    chdir: "{{ message_broker_compose_project_dir }}"
+  environment: "{{ message_broker_runtime_environment }}"
+  register: message_broker_container
+  changed_when: false
+  failed_when: message_broker_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for RabbitMQ to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ message_broker_container.stdout | trim }}"
+  register: message_broker_health
+  changed_when: false
+  retries: "{{ message_broker_health_retries }}"
+  delay: "{{ message_broker_health_delay }}"
+  until: message_broker_health.stdout | trim == 'healthy'
+
+# RABBITMQ_DEFAULT_PASS is read once, when the data directory is created. A
+# password rotated later would leave the broker on the old one, so the current
+# value is checked against the running broker and set when it does not match.
+- name: Check the broker accepts the current password
+  ansible.builtin.command:
+    argv: >-
+      {{ message_broker_compose_argv
+         + ['exec', '-T', message_broker_service,
+            'rabbitmqctl', 'authenticate_user', message_broker_user, message_broker_password] }}
+  args:
+    chdir: "{{ message_broker_compose_project_dir }}"
+  environment: "{{ message_broker_runtime_environment }}"
+  register: message_broker_authenticated
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Set the broker password
+  ansible.builtin.command:
+    argv: >-
+      {{ message_broker_compose_argv
+         + ['exec', '-T', message_broker_service,
+            'rabbitmqctl', 'change_password', message_broker_user, message_broker_password] }}
+  args:
+    chdir: "{{ message_broker_compose_project_dir }}"
+  environment: "{{ message_broker_runtime_environment }}"
+  changed_when: true
+  no_log: true
+  when: message_broker_authenticated.rc != 0

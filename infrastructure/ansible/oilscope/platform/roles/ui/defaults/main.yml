@@ -5,6 +5,22 @@ ui_compose_file: "{{ ui_compose_project_dir }}/compose.yaml"
 ui_compose_project_name: petroscope
 
 ui_postgres_password: ""
+ui_postgres_user: "{{ oilscope_database_user | default('oil_tracker') }}"
+ui_postgres_name: "{{ oilscope_database_name | default('oil_tracker') }}"
+
+# Where the database is and where the sessions live. The group variables
+# derive all of them from the database mode; a play outside that inventory
+# sets them by hand.
+ui_database_host: "{{ oilscope_database_host }}"
+ui_database_port: "{{ oilscope_database_port | default(5432) }}"
+ui_database_sslmode: "{{ oilscope_database_sslmode | default('disable') }}"
+ui_session_backend: "{{ oilscope_session_backend | default('postgres') }}"
+ui_redis_host: "{{ oilscope_infra_host | default('127.0.0.1') }}"
+ui_redis_port: "{{ oilscope_redis_port | default(6379) }}"
+ui_redis_password: ""
+ui_history_url: >-
+  http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
+
 ui_health_retries: 30
 ui_health_delay: 2
 ui_docker_config_dir: /run/oilscope/docker-auth

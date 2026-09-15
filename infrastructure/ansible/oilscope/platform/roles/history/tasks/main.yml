@@ -1,10 +1,28 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Refuse the amqp backend without a broker password
+  ansible.builtin.assert:
+    that: history_queue_backend != 'amqp' or history_amqp_password | length > 0
+    fail_msg: history_amqp_password must be set when the queue backend is amqp
+    quiet: true
+
+# Passwords reach the Compose file twice: as the value itself, and
+# percent-encoded for the places that build a URL out of it.
 - name: Deploy only History
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    POSTGRES_USER: "{{ history_postgres_user }}"
+    POSTGRES_DB: "{{ history_postgres_name }}"
+    DATABASE_HOST: "{{ history_database_host }}"
+    DATABASE_PORT: "{{ history_database_port | string }}"
+    DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+    QUEUE_BACKEND: "{{ history_queue_backend }}"
+    AMQP_HOST: "{{ history_amqp_host }}"
+    AMQP_PORT: "{{ history_amqp_port | string }}"
+    RABBITMQ_USER: "{{ history_amqp_user }}"
+    RABBITMQ_VHOST: "{{ history_amqp_vhost }}"
+    RABBITMQ_PASSWORD_URL: "{{ history_amqp_password | urlencode }}"
   no_log: true
   block:
     - name: Pull the History image
@@ -63,9 +81,9 @@
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
+        'queue_backend', ''
+      ) == history_queue_backend
     - >-
       (history_health.json | default({})).get(
-        'pgmq_consumer', ''
+        'queue_consumer', ''
       ) == 'ready'

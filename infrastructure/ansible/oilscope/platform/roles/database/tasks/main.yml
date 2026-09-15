@@ -19,6 +19,9 @@
     'Downloaded newer image' in database_image_pull.stdout or
     'Pull complete' in database_image_pull.stdout
 
+# --remove-orphans retires whatever the previous database mode left behind on
+# this host - the RabbitMQ and Redis containers, when the deployment has just
+# switched back from a managed database. Their volumes stay.
 - name: Start the PostgreSQL service
   ansible.builtin.command:
     argv:
@@ -31,6 +34,7 @@
       - up
       - --detach
       - --no-deps
+      - --remove-orphans
       - "{{ database_postgres_service }}"
   args:
     chdir: "{{ database_compose_project_dir }}"
@@ -39,7 +43,8 @@
   changed_when: >-
     'Created' in database_compose_up.stderr or
     'Started' in database_compose_up.stderr or
-    'Recreated' in database_compose_up.stderr
+    'Recreated' in database_compose_up.stderr or
+    'Removed' in database_compose_up.stderr
   no_log: true
 
 - name: Get the PostgreSQL container ID
@@ -75,23 +80,3 @@
   retries: "{{ database_health_retries }}"
   delay: "{{ database_health_delay }}"
   until: database_health.stdout | trim == 'healthy'
-
-- name: Apply database migrations
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ database_compose_project_name }}"
-      - --file
-      - "{{ database_compose_file }}"
-      - run
-      - --rm
-      - --no-deps
-      - "{{ database_migration_service }}"
-  args:
-    chdir: "{{ database_compose_project_dir }}"
-  environment: "{{ database_runtime_environment }}"
-  register: database_migrations
-  changed_when: "'Applying ' in database_migrations.stdout"
-  no_log: true

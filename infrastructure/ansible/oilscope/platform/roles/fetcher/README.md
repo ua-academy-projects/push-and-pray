@@ -20,8 +20,17 @@ server (and therefore its health check) ever starts.
   not write it to disk.
 - `fetcher_oilpriceapi_key`: price data provider API key supplied by the
   deployment secret mechanism. Same `no_log` handling as the password.
+- `fetcher_amqp_password`: broker password, required when
+  `fetcher_queue_backend` is `amqp`. Same `no_log` handling.
 
 ## Optional variables
+
+- `fetcher_database_host`, `fetcher_database_port`, `fetcher_database_sslmode`:
+  where PostgreSQL is; default to the group variables the inventory derives
+  from the database mode.
+- `fetcher_queue_backend`: `pgmq` or `amqp`; `fetcher_amqp_host`,
+  `fetcher_amqp_port`, `fetcher_amqp_user`, `fetcher_amqp_vhost` describe the
+  broker for the latter. All default to the group variables.
 
 - `fetcher_compose_project_dir`: Compose directory; defaults to
   `/opt/oilscope/app`.
@@ -32,8 +41,6 @@ server (and therefore its health check) ever starts.
 - `fetcher_service`: Compose service name; defaults to `fetcher`.
 - `fetcher_postgres_user` and `fetcher_postgres_name`: both default to
   `oil_tracker`.
-- `fetcher_database_host`: defaults to `postgres`; override to the database
-  VM's address when Fetcher and the database run on separate hosts.
 - `fetcher_bind_address`: defaults to `0.0.0.0`.
 - `fetcher_host_port`: defaults to `8002`.
 - `fetcher_health_retries` and `fetcher_health_delay`: health polling

@@ -133,21 +133,38 @@ GCP, so before the infrastructure is created it is legitimately empty.
 ## Groups
 
 Terraform labels every VM with `role=<role>`, which becomes the `bastion`,
-`database`, `history`, `fetcher` and `ui` groups the deployment roles expect.
+`infra`, `history`, `fetcher` and `ui` groups the deployment roles expect.
 Everything except the bastion also joins `workloads`.
 
 The group name comes from the `role` label, not from the key in the project
-configuration: `vms.infra` has `role: database` and therefore lands in the
-`database` group, which is what the `ui` role looks for.
+configuration: `vms.infra` has `role: infra` and therefore lands in the
+`infra` group, which is where the workloads look for PostgreSQL, or for the
+broker and the cache when the database is managed.
 
 ## Host variables
 
 `internal_ip` is set on every host. This is a contract, not a convenience: the
-`ui` role resolves its Database and History peers through that exact variable
-name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
+workload roles resolve their Infra and History peers through that exact
+variable name. Also set: `public_ip`, `oilscope_role`, `ansible_host`,
+`ansible_port`.
 For the bastion, `bastion_ssh_port` is always the final port from
 `bastion.ssh_port`. `ansible_port` normally uses that value, but can use
 `OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
+
+## The managed database
+
+When `database.mode` is `managed`, the plugin also asks the cloud hosting the
+`infra` VM where the database is - the Private Service Connect endpoint
+address on GCP, the RDS endpoint on AWS, both named after `name_prefix` and
+`environment` the way Terraform names them - and sets
+`oilscope_managed_database_host` and `oilscope_managed_database_port` on the
+`all` group. The group variables turn those into `oilscope_database_host`,
+which every workload role reads. Terraform state is never opened.
+
+The lookup needs the Compute Engine API on GCP or `rds:DescribeDBInstances` on
+AWS. Set `discover_database: false` in the inventory file, or
+`OILSCOPE_DISCOVER_DATABASE=false`, to skip it and pass
+`-e oilscope_managed_database_host=<address>` instead.
 
 Raw instance fields from the API are prefixed with `gcp_`, because two of them
 — `name` and `tags` — collide with names Ansible reserves.

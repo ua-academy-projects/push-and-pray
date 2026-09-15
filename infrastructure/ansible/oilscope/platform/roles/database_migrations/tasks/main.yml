@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Refuse to run without a database password
+  ansible.builtin.assert:
+    that: database_migrations_postgres_password | length > 0
+    fail_msg: database_migrations_postgres_password must be set
+    quiet: true
+
+- name: Pull the migration image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_migrations_compose_project_name }}"
+      - --file
+      - "{{ database_migrations_compose_file }}"
+      - pull
+      - "{{ database_migrations_service }}"
+  args:
+    chdir: "{{ database_migrations_compose_project_dir }}"
+  environment: "{{ database_migrations_runtime_environment }}"
+  register: database_migrations_pull
+  changed_when: >-
+    'Downloaded newer image' in database_migrations_pull.stdout or
+    'Downloaded newer image' in database_migrations_pull.stderr or
+    'Pull complete' in database_migrations_pull.stdout or
+    'Pull complete' in database_migrations_pull.stderr
+  no_log: true
+
+# The image carries the SQL and petroscope-migrate; every statement in it is
+# idempotent, so the job can run on every deployment. --no-deps keeps Compose
+# from touching the other services on this host.
+- name: Apply database migrations
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_migrations_compose_project_name }}"
+      - --file
+      - "{{ database_migrations_compose_file }}"
+      - run
+      - --rm
+      - --no-deps
+      - "{{ database_migrations_service }}"
+  args:
+    chdir: "{{ database_migrations_compose_project_dir }}"
+  environment: "{{ database_migrations_runtime_environment }}"
+  register: database_migrations_result
+  changed_when: "'Applying ' in database_migrations_result.stdout"
+  no_log: true
+
+- name: Report the migrations that ran
+  ansible.builtin.debug:
+    msg: >-
+      {{ database_migrations_result.stdout_lines
+         | select('match', '^(Applying |Database migrations)')
+         | list }}

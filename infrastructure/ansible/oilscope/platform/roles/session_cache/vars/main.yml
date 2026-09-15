@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+session_cache_runtime_environment: >-
+  {{
+    session_cache_compose_environment
+    | combine({
+      'DOCKER_CONFIG': session_cache_docker_config_dir,
+      'REDIS_PASSWORD': session_cache_password,
+      'INFRA_BIND_ADDRESS': session_cache_bind_address | string,
+      'REDIS_HOST_PORT': session_cache_host_port | string
+    })
+  }}
+
+session_cache_compose_argv:
+  - docker
+  - compose
+  - --project-name
+  - "{{ session_cache_compose_project_name }}"
+  - --file
+  - "{{ session_cache_compose_file }}"

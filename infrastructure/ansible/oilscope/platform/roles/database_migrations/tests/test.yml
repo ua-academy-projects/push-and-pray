@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the database_migrations role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Expect the role to refuse a missing password
+      block:
+        - name: Include the role without a password
+          ansible.builtin.include_role:
+            name: database_migrations
+
+        - name: Note that the role did not refuse
+          ansible.builtin.set_fact:
+            database_migrations_refused: false
+      rescue:
+        - name: Note that the role refused
+          ansible.builtin.set_fact:
+            database_migrations_refused: true
+
+    - name: Verify a missing password is rejected
+      ansible.builtin.assert:
+        that: database_migrations_refused

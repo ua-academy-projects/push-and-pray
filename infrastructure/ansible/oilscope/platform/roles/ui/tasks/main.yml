@@ -1,12 +1,27 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Refuse the redis backend without a cache password
+  ansible.builtin.assert:
+    that: ui_session_backend != 'redis' or ui_redis_password | length > 0
+    fail_msg: ui_redis_password must be set when the session backend is redis
+    quiet: true
+
+# Passwords reach the Compose file twice: as the value itself, and
+# percent-encoded for the places that build a URL out of it.
 - name: Deploy only UI
   environment:
     DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
-    HISTORY_SERVICE_URL: >-
-      http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
+    POSTGRES_USER: "{{ ui_postgres_user }}"
+    POSTGRES_DB: "{{ ui_postgres_name }}"
+    DATABASE_HOST: "{{ ui_database_host }}"
+    DATABASE_PORT: "{{ ui_database_port | string }}"
+    DATABASE_SSLMODE: "{{ ui_database_sslmode }}"
+    SESSION_BACKEND: "{{ ui_session_backend }}"
+    REDIS_HOST: "{{ ui_redis_host }}"
+    REDIS_PORT: "{{ ui_redis_port | string }}"
+    REDIS_PASSWORD_URL: "{{ ui_redis_password | urlencode }}"
+    HISTORY_SERVICE_URL: "{{ ui_history_url }}"
   no_log: true
   block:
     - name: Pull the UI image

@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Refuse to run without a cache password
+  ansible.builtin.assert:
+    that: session_cache_password | length > 0
+    fail_msg: session_cache_password must be set
+    quiet: true
+
+- name: Pull the Redis image
+  ansible.builtin.command:
+    argv: "{{ session_cache_compose_argv + ['pull', session_cache_service] }}"
+  args:
+    chdir: "{{ session_cache_compose_project_dir }}"
+  environment: "{{ session_cache_runtime_environment }}"
+  register: session_cache_pull
+  changed_when: >-
+    'Downloaded newer image' in session_cache_pull.stdout or
+    'Downloaded newer image' in session_cache_pull.stderr or
+    'Pull complete' in session_cache_pull.stdout or
+    'Pull complete' in session_cache_pull.stderr
+  no_log: true
+
+# The password is part of the container's command line, so a rotated secret
+# makes Compose recreate the container; nothing else has to be reconciled.
+- name: Start the Redis service
+  ansible.builtin.command:
+    argv: >-
+      {{ session_cache_compose_argv
+         + ['up', '--detach', '--no-deps', '--remove-orphans', session_cache_service] }}
+  args:
+    chdir: "{{ session_cache_compose_project_dir }}"
+  environment: "{{ session_cache_runtime_environment }}"
+  register: session_cache_up
+  changed_when: >-
+    'Created' in session_cache_up.stderr or
+    'Started' in session_cache_up.stderr or
+    'Recreated' in session_cache_up.stderr or
+    'Removed' in session_cache_up.stderr
+  no_log: true
+
+- name: Get the Redis container ID
+  ansible.builtin.command:
+    argv: "{{ session_cache_compose_argv + ['ps', '--quiet', session_cache_service] }}"
+  args:
+    chdir: "{{ session_cache_compose_project_dir }}"
+  environment: "{{ session_cache_runtime_environment }}"
+  register: session_cache_container
+  changed_when: false
+  failed_when: session_cache_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for Redis to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ session_cache_container.stdout | trim }}"
+  register: session_cache_health
+  changed_when: false
+  retries: "{{ session_cache_health_retries }}"
+  delay: "{{ session_cache_health_delay }}"
+  until: session_cache_health.stdout | trim == 'healthy'

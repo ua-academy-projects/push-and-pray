@@ -36,7 +36,6 @@
 
     - role: oilscope.platform.fetcher
       vars:
-        fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        fetcher_amqp_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

@@ -12,6 +12,10 @@ services:
       # yamllint disable rule:line-length
       DATABASE_URL: postgresql://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+      # postgres keeps the sessions in the database above; redis in the Redis
+      # on the infra VM. The password in the URL is percent-encoded.
+      SESSION_BACKEND: ${SESSION_BACKEND:-postgres}
+      REDIS_URL: redis://:${REDIS_PASSWORD_URL:-}@${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6379}/0
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
       SESSION_COOKIE_SECURE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

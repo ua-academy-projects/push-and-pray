@@ -1,16 +1,17 @@
 # Database role
 
-Pulls the immutable OilScope PostgreSQL image, starts the database service,
-waits for its Docker health check, and applies the bundled SQL migrations.
+Pulls the immutable OilScope PostgreSQL image, starts the database service and
+waits for its Docker health check. Used only when `database.mode` is
+`self-hosted`; a managed database is created by Terraform instead, and the
+infra VM then runs the `message_broker` and `session_cache` roles in its
+place. The schema migrations belong to `database_migrations`, which runs in
+both modes.
 
 ## Requirements
 
 The target must have Docker with the Compose plugin installed. The supported
 Compose definition must already be installed on the target; use the
 `oilscope.platform.compose_project` role for that step.
-
-The database image must contain `petroscope-migrate` and the migrations under
-`/opt/petroscope/migrations`, as defined by `Dockerfile.database`.
 
 ## Required variables
 
@@ -39,10 +40,11 @@ The database image must contain `petroscope-migrate` and the migrations under
 ```yaml
 ---
 - name: Deploy the database
-  hosts: database
+  hosts: infra
   become: true
   roles:
     - role: oilscope.platform.database
+      when: not oilscope_database_managed
       vars:
         database_postgres_image: >-
           ghcr.io/ua-academy-projects/push-and-pray/database:0123456789abcdef0123456789abcdef01234567
@@ -50,8 +52,7 @@ The database image must contain `petroscope-migrate` and the migrations under
 ```
 
 Running the role again is safe: Compose reconciles the existing PostgreSQL
-container and the bundled migrations use idempotent SQL operations. The
-migration container is removed after every successful run.
+container.
 
 ## License
 

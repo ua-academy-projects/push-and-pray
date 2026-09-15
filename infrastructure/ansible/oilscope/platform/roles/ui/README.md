@@ -7,16 +7,28 @@ existing Docker health check.
 
 - Docker and the Compose plugin are installed.
 - `/opt/oilscope/app/compose.yaml` is installed.
-- The dynamic GCP inventory contains hosts in the `database` and `history`
-  groups, each with an `internal_ip` variable.
+- The inventory built by `oilscope_cloud` contains a host in the `history`
+  group with an `internal_ip` variable and supplies `oilscope_database_host`,
+  `oilscope_session_backend` and the related group variables.
 - Database is healthy and migrated, and History is healthy.
 
-The deployment workflow retrieves `POSTGRES_PASSWORD` and passes it as
-`ui_postgres_password`. This role does not retrieve or store secret values.
+The deployment workflow retrieves `POSTGRES_PASSWORD` and, in managed mode,
+`REDIS_PASSWORD` and passes them as `ui_postgres_password` and
+`ui_redis_password`. This role does not retrieve or store secret values.
 
 ## Variables
 
 - `ui_postgres_password`: password injected by the deployment workflow.
+- `ui_redis_password`: cache password, required when `ui_session_backend` is
+  `redis`.
+- `ui_database_host`, `ui_database_port`, `ui_database_sslmode`: where
+  PostgreSQL is; default to the group variables the inventory derives from
+  the database mode.
+- `ui_session_backend`: `postgres` or `redis`; `ui_redis_host` and
+  `ui_redis_port` describe the cache for the latter. All default to the group
+  variables.
+- `ui_history_url`: where the History API is; defaults to the `history` host's
+  internal address.
 - `ui_health_retries` and `ui_health_delay`: Docker health-check polling
   controls, defaulting to 30 attempts every 2 seconds.
 

@@ -16,7 +16,8 @@ uvx check-jsonschema \
 
 Deploy the application workloads in dependency order:
 
-1. Database
+1. Infra - PostgreSQL when the database is self-hosted, RabbitMQ and Redis
+   when it is managed, and the schema migrations either way
 2. History
 3. Fetcher
 4. UI
@@ -30,6 +31,23 @@ ansible-playbook oilscope.platform.deploy_workloads \
 ```
 
 The deployment stops if a workload fails, preventing dependent workloads from being deployed.
+
+## A managed database
+
+With `database.mode` set to `managed` in the project configuration, PostgreSQL
+is Cloud SQL or RDS rather than a container, and the infra VM carries the
+RabbitMQ broker and the Redis cache instead. Terraform creates the instance;
+one extra playbook runs between `terraform apply` and the deployment, to give
+the instance and the workloads one password to agree on without Terraform ever
+holding it:
+
+```bash
+ansible-playbook oilscope.platform.managed_database_credentials   -e project_config_path=/absolute/path/project-config.json
+```
+
+The inventory plugin finds the database endpoint through the cloud API, so
+nothing about the address is written down. See `docs/managed-database.md` for
+the whole procedure, including moving data between the two modes.
 
 ## Ship logs and metrics
 

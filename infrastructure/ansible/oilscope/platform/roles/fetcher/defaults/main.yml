@@ -6,9 +6,21 @@ fetcher_compose_project_name: petroscope
 fetcher_service: fetcher
 fetcher_postgres_password: ""
 fetcher_oilpriceapi_key: ""
-fetcher_postgres_user: oil_tracker
-fetcher_postgres_name: oil_tracker
-fetcher_database_host: postgres
+fetcher_postgres_user: "{{ oilscope_database_user | default('oil_tracker') }}"
+fetcher_postgres_name: "{{ oilscope_database_name | default('oil_tracker') }}"
+
+# Where the database is and where the queue goes. The group variables derive
+# all of them from the database mode; a play outside that inventory sets them
+# by hand.
+fetcher_database_host: "{{ oilscope_database_host }}"
+fetcher_database_port: "{{ oilscope_database_port | default(5432) }}"
+fetcher_database_sslmode: "{{ oilscope_database_sslmode | default('disable') }}"
+fetcher_queue_backend: "{{ oilscope_queue_backend | default('pgmq') }}"
+fetcher_amqp_host: "{{ oilscope_infra_host | default('127.0.0.1') }}"
+fetcher_amqp_port: "{{ oilscope_amqp_port | default(5672) }}"
+fetcher_amqp_user: "{{ oilscope_amqp_user | default('oil_tracker') }}"
+fetcher_amqp_vhost: "{{ oilscope_amqp_vhost | default('oil_tracker') }}"
+fetcher_amqp_password: ""
 fetcher_bind_address: 0.0.0.0
 fetcher_host_port: 8002
 fetcher_health_retries: 30

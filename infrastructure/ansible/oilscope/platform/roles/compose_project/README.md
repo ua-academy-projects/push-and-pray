@@ -3,7 +3,9 @@
 Installs the Compose definition for one OilScope workload VM. Each target gets
 only the services assigned to its role:
 
-- `database`: PostgreSQL and the one-shot migration service;
+- `infra`: the one-shot migration service, plus PostgreSQL when the database
+  is self-hosted, or RabbitMQ and Redis when it is managed - decided by
+  `database.mode` in the project configuration;
 - `history`: History only;
 - `fetcher`: Fetcher only;
 - `ui`: UI only.
@@ -17,7 +19,7 @@ The controller must have access to the external project configuration JSON.
 
 - `compose_project_config_path`: required controller-side path to the non-secret
   project configuration JSON.
-- `compose_project_workload`: required host role: `database`, `history`,
+- `compose_project_workload`: required host role: `infra`, `history`,
   `fetcher`, or `ui`.
 - `compose_project_dir`: installation directory; defaults to `/opt/oilscope/app`.
 - `compose_project_owner` and `compose_project_group`: installed file ownership;

@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Resolve the region
+  ansible.builtin.set_fact:
+    managed_database_credentials_target_region: >-
+      {{ managed_database_credentials_region
+         | default(managed_database_credentials_config.clouds.aws.region | default(''), true) }}
+    managed_database_credentials_instance: "{{ managed_database_credentials_prefix }}-database"
+
+- name: Fail when the region is unknown
+  ansible.builtin.assert:
+    that: managed_database_credentials_target_region | length > 0
+    fail_msg: >-
+      no AWS region; set managed_database_credentials_region or
+      clouds.aws.region in the configuration
+    quiet: true
+
+- name: Find the secret RDS keeps the master password in
+  ansible.builtin.command:
+    argv:
+      - "{{ managed_database_credentials_aws_cli }}"
+      - rds
+      - describe-db-instances
+      - --db-instance-identifier
+      - "{{ managed_database_credentials_instance }}"
+      - --region
+      - "{{ managed_database_credentials_target_region }}"
+      - --query
+      - DBInstances[0].MasterUserSecret.SecretArn
+      - --output
+      - text
+  register: managed_database_credentials_master_secret
+  changed_when: false
+
+- name: Fail when RDS manages no password
+  ansible.builtin.assert:
+    that: managed_database_credentials_master_secret.stdout | trim not in ['', 'None']
+    fail_msg: >-
+      {{ managed_database_credentials_instance }} has no RDS-managed master
+      password; apply the Terraform configuration first
+    quiet: true
+
+# RDS stores {"username": ..., "password": ...}. Only the password moves on;
+# the workloads already know the role name from the configuration.
+- name: Read the master password
+  ansible.builtin.command:
+    argv:
+      - "{{ managed_database_credentials_aws_cli }}"
+      - secretsmanager
+      - get-secret-value
+      - --secret-id
+      - "{{ managed_database_credentials_master_secret.stdout | trim }}"
+      - --region
+      - "{{ managed_database_credentials_target_region }}"
+      - --query
+      - SecretString
+      - --output
+      - text
+  register: managed_database_credentials_master_value
+  changed_when: false
+  no_log: true
+
+- name: Keep the password
+  ansible.builtin.set_fact:
+    managed_database_credentials_password: >-
+      {{ (managed_database_credentials_master_value.stdout | from_json).password }}
+  no_log: true
+
+# The same discipline as upload_secret_versions: the value travels on stdin,
+# never as an argument.
+- name: Put the password into the project's container
+  ansible.builtin.command:
+    argv:
+      - "{{ managed_database_credentials_aws_cli }}"
+      - secretsmanager
+      - put-secret-value
+      - --secret-id
+      - "{{ managed_database_credentials_secret_id }}"
+      - --region
+      - "{{ managed_database_credentials_target_region }}"
+      - --secret-string
+      - file:///dev/stdin
+      - --query
+      - VersionId
+      - --output
+      - text
+    stdin: "{{ managed_database_credentials_password }}"
+    stdin_add_newline: false
+  register: managed_database_credentials_put
+  changed_when: true
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Report
+  ansible.builtin.debug:
+    msg: >-
+      aws: the master password of {{ managed_database_credentials_instance }}
+      is now version {{ managed_database_credentials_put.stdout | default('(check mode)') | trim }}
+      of {{ managed_database_credentials_secret_id }}

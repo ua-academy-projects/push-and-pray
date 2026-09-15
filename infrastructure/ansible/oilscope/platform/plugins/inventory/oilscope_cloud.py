@@ -36,6 +36,11 @@ description:
   - Every host gets C(oilscope_cloud) from the resource's own C(cloud) label or
     tag. Workloads use it to pick the bastion of their own cloud, because
     without cross-cloud networking a bastion cannot reach the other provider.
+  - When the configuration runs the database as a managed service, the plugin
+    also asks the cloud hosting the C(infra) VM where that database is - the
+    Private Service Connect endpoint address on GCP, the RDS endpoint on AWS -
+    and publishes it to every host as C(oilscope_managed_database_host) and
+    C(oilscope_managed_database_port). Terraform state is never read.
   - The wrapper exists because neither discovery plugin reads that file, and
     neither evaluates Jinja in its own configuration - a template expression
     there reaches the API as literal text.
@@ -91,9 +96,21 @@ options:
         which authenticates the way boto3 does.
     type: str
     default: application
+  discover_database:
+    description:
+      - Whether to look the managed database endpoint up. Off, the variables
+        are not set and a play that needs them must be given
+        C(oilscope_managed_database_host) another way, for example with C(-e).
+        Only read when C(database.mode) is C(managed).
+    type: bool
+    default: true
+    env:
+      - name: OILSCOPE_DISCOVER_DATABASE
 requirements:
   - google.cloud collection, google-auth and requests, for GCP discovery
   - amazon.aws collection and boto3, for AWS discovery
+  - the Compute Engine API (GCP) or C(rds:DescribeDBInstances) (AWS) for the
+    managed database lookup
 notes:
   - GCP authenticates with Application Default Credentials. Run
     C(gcloud auth application-default login) on the controller first.
@@ -154,6 +171,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     os.unlink(generated)
                 except OSError as cleanup_error:
                     display.vvv(f"could not remove {generated}: {cleanup_error}")
+
+        self._publish_database(inventory, config)
 
     # ------------------------------------------------------------------ config
 
@@ -251,16 +270,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         bastion = config.get("bastion")
 
         if not isinstance(bastion, dict):
-            raise AnsibleParserError(
-                "the project configuration must define a 'bastion' object"
-            )
+            raise AnsibleParserError("the project configuration must define a 'bastion' object")
 
         try:
             return int(bastion["ssh_port"])
         except KeyError as missing:
-            raise AnsibleParserError(
-                "the 'bastion' block must define ssh_port"
-            ) from missing
+            raise AnsibleParserError("the 'bastion' block must define ssh_port") from missing
         except (TypeError, ValueError) as port_error:
             raise AnsibleParserError(
                 "the 'bastion' block must define an integer ssh_port"
@@ -294,6 +309,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         zone = self._require(profile, "zone", f"clouds.{cloud}")
         bastion_role = plain(self.get_option("bastion_role"))
         bastion_port, bastion_final_port, workload_port = self._connect_ports(config, cloud)
+        name_prefix = self._require(config, "name_prefix", "the configuration root")
+        environment = self._require(config, "environment", "the configuration root")
 
         is_bastion = f"labels.role | default('') == '{bastion_role}'"
         has_public = "networkInterfaces[0].accessConfigs | default([])"
@@ -305,8 +322,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "projects": [plain(project_id)],
             "zones": [plain(zone)],
             "filters": [
-                f"labels.application = {self._require(config, 'name_prefix', 'the configuration root')}",
-                f"labels.environment = {self._require(config, 'environment', 'the configuration root')}",
+                f"labels.application = {name_prefix}",
+                f"labels.environment = {environment}",
                 f"labels.cloud = {cloud}",
             ],
             "auth_kind": plain(self.get_option("auth_kind")),
@@ -358,6 +375,139 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "oilscope_ssh_port": f"{bastion_final_port} if {is_bastion} else {workload_port}",
             },
         }
+
+    # ---------------------------------------------------------------- database
+
+    def _database_managed(self, config):
+        database = config.get("database")
+
+        if database is None:
+            return False
+
+        if not isinstance(database, dict):
+            raise AnsibleParserError("the project configuration's 'database' must be a JSON object")
+
+        return database.get("mode", "self-hosted") == "managed"
+
+    def _infra_cloud(self, config):
+        """The cloud hosting the infra VM - the one that builds the managed database."""
+        for vm in self._vms(config).values():
+            if isinstance(vm, dict) and vm.get("role") == "infra":
+                return self._placement(config, vm)
+
+        raise AnsibleParserError(
+            "the database is managed but no VM under 'vms' has the role 'infra'"
+        )
+
+    def _resource_prefix(self, config):
+        name_prefix = self._require(config, "name_prefix", "the configuration root")
+        environment = self._require(config, "environment", "the configuration root")
+
+        return f"{name_prefix}-{environment}"
+
+    def _publish_database(self, inventory, config):
+        """Hand every host the managed database endpoint, when there is one.
+
+        Terraform knows the address, but its state is not something Ansible
+        should have to read. The endpoint carries a name derived from the same
+        configuration, so it can be asked for directly.
+        """
+        if not self._database_managed(config) or not self.get_option("discover_database"):
+            return
+
+        cloud = self._infra_cloud(config)
+        lookups = {"gcp": self._gcp_database, "aws": self._aws_database}
+        host, port = lookups[cloud](config)
+
+        inventory.set_variable("all", "oilscope_managed_database_host", host)
+        inventory.set_variable("all", "oilscope_managed_database_port", port)
+
+        display.vvv(f"managed database on {cloud}: {host}:{port}")
+
+    def _gcp_database(self, config):
+        try:
+            import google.auth
+            from google.auth.transport.requests import AuthorizedSession
+        except ImportError as error:
+            raise AnsibleParserError(
+                f"the managed database lookup on GCP needs google-auth and requests: {error}"
+            ) from error
+
+        profile = config["clouds"]["gcp"]
+        project_id = self._require(profile, "project_id", "clouds.gcp")
+        region = self._require(profile, "region", "clouds.gcp")
+        name = f"{self._resource_prefix(config)}-database-endpoint"
+
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/compute.readonly"]
+        )
+        session = AuthorizedSession(credentials)
+        response = session.get(
+            "https://compute.googleapis.com/compute/v1"
+            f"/projects/{project_id}/regions/{region}/addresses/{name}",
+            timeout=30,
+        )
+
+        if response.status_code == 404:
+            raise AnsibleParserError(
+                f"the managed database endpoint {name!r} does not exist in {project_id}/{region}; "
+                "apply the Terraform configuration first, or set discover_database to false"
+            )
+
+        if response.status_code != 200:
+            raise AnsibleParserError(
+                f"could not read the managed database endpoint {name!r}: "
+                f"HTTP {response.status_code} {response.text[:200]}"
+            )
+
+        address = response.json().get("address")
+
+        if not address:
+            raise AnsibleParserError(f"the endpoint {name!r} carries no address yet")
+
+        return address, int(config.get("service_ports", {}).get("postgresql", 5432))
+
+    def _aws_database(self, config):
+        try:
+            import boto3
+            from botocore.exceptions import BotoCoreError, ClientError
+        except ImportError as error:
+            raise AnsibleParserError(
+                f"the managed database lookup on AWS needs boto3: {error}"
+            ) from error
+
+        profile = config["clouds"]["aws"]
+        region = self._require(profile, "region", "clouds.aws")
+        identifier = f"{self._resource_prefix(config)}-database"
+
+        try:
+            response = boto3.client("rds", region_name=region).describe_db_instances(
+                DBInstanceIdentifier=identifier
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "DBInstanceNotFound":
+                raise AnsibleParserError(
+                    f"the managed database {identifier!r} does not exist in {region}; "
+                    "apply the Terraform configuration first, or set discover_database to false"
+                ) from error
+
+            raise AnsibleParserError(
+                f"could not describe the managed database {identifier!r}: {error}"
+            ) from error
+        except BotoCoreError as error:
+            raise AnsibleParserError(
+                f"could not describe the managed database {identifier!r}: {error}"
+            ) from error
+
+        endpoint = response["DBInstances"][0].get("Endpoint") or {}
+
+        if not endpoint.get("Address"):
+            raise AnsibleParserError(
+                f"the managed database {identifier!r} has no endpoint yet; "
+                "it is still being created"
+            )
+
+        return endpoint["Address"], int(endpoint.get("Port", 5432))
 
     def _write_settings(self, settings, cloud):
         digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()

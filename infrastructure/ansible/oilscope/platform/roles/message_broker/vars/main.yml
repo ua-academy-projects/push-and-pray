@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+message_broker_runtime_environment: >-
+  {{
+    message_broker_compose_environment
+    | combine({
+      'DOCKER_CONFIG': message_broker_docker_config_dir,
+      'RABBITMQ_USER': message_broker_user,
+      'RABBITMQ_VHOST': message_broker_vhost,
+      'RABBITMQ_PASSWORD': message_broker_password,
+      'INFRA_BIND_ADDRESS': message_broker_bind_address | string,
+      'AMQP_HOST_PORT': message_broker_host_port | string
+    })
+  }}
+
+message_broker_compose_argv:
+  - docker
+  - compose
+  - --project-name
+  - "{{ message_broker_compose_project_name }}"
+  - --file
+  - "{{ message_broker_compose_file }}"
