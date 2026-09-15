@@ -1,6 +1,7 @@
 {
   "default_cloud": "gcp",
   "default_region": "europe",
+  "zone_id": "example",
   "clouds": {
     "gcp": {
         "project_id": "example-id",

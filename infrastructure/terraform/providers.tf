@@ -8,3 +8,5 @@ provider "google" {
 provider "aws" {
   region = local.config.regions[local.config.default_region].aws.region
 }
+
+provider "cloudflare" {}

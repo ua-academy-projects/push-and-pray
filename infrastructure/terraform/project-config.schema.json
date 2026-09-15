@@ -22,7 +22,8 @@
     "monitoring",
     "vms",
     "database",
-    "messaging"
+    "messaging",
+    "zone_id"
   ],
   "properties": {
     "default_cloud": {
@@ -422,6 +423,9 @@
         "visibility_timeout_seconds": { "type": "integer", "minimum": 1 },
         "max_delivery_attempts": { "type": "integer", "minimum": 1 }
       }
+    },
+    "zone_id": {
+        "type": "string"
     },
     "vms": {
       "type": "object",

@@ -8,7 +8,6 @@ module "network" {
   management_subnet_cidr = local.config.network.management_subnet_cidr
   workload_subnet_cidr   = local.config.network.workload_subnet_cidr
 
-  depends_on = [google_project_service.required]
 }
 
 module "database" {
@@ -28,7 +27,6 @@ module "database" {
   managed_settings                  = local.config.database.managed.gcp
   managed_database_password         = var.managed_database_password
   managed_database_password_version = var.managed_database_password_version
-  depends_on                        = [google_project_service.required]
 }
 
 module "messaging" {
@@ -43,7 +41,6 @@ module "messaging" {
   publisher_service_account_email = module.vm[0].service_account_emails[local.fetcher_vm_name]
   consumer_service_account_email  = module.vm[0].service_account_emails[local.history_vm_name]
 
-  depends_on = [google_project_service.required]
 }
 
 module "security" {
@@ -64,7 +61,6 @@ module "security" {
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
 
-  depends_on = [google_project_service.required]
 }
 
 module "vm" {
@@ -79,7 +75,6 @@ module "vm" {
   management_subnet_id = module.network[0].management_subnet_id
   workload_subnet_id   = module.network[0].workload_subnet_id
 
-  depends_on = [google_project_service.required]
 }
 
 module "secrets" {
@@ -96,7 +91,6 @@ module "secrets" {
 
   secret_version_managers = var.secret_version_managers
 
-  depends_on = [google_project_service.required]
 }
 
 module "monitoring" {
@@ -111,5 +105,4 @@ module "monitoring" {
   uptime_hostname        = try(local.ui_vm.public_endpoint.hostname, null)
   service_account_emails = module.vm[0].service_account_emails
 
-  depends_on = [google_project_service.required]
 }
