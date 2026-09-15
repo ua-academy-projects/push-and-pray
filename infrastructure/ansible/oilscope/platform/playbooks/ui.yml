@@ -41,3 +41,9 @@
     - role: oilscope.platform.ui
       vars:
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_session_backend: >-
+          {{ 'redis' if compose_project_config.database.mode == 'managed' else 'postgresql' }}
+        ui_database_host: "{{ hostvars[groups['infrastructure'][0]].internal_ip }}"
+        ui_redis_url: >-
+          redis://:{{ resolve_secrets_result.REDIS_PASSWORD | urlencode }}@{{
+          hostvars[groups['infrastructure'][0]].internal_ip }}:6379/0

@@ -12,6 +12,7 @@
     "common_labels",
     "ssh_users",
     "registry",
+    "database",
     "network",
     "service_ports",
     "monitoring",
@@ -63,11 +64,14 @@
           "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
         "image_tag": {
-          "description": "OCI image tag containing the Git commit SHA used to build the images.",
+          "description": "OCI image tag used for all application images.",
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"
         }
       }
+    },
+    "database": {
+      "$ref": "#/$defs/database"
     },
     "network": {
       "type": "object",
@@ -76,6 +80,7 @@
         "vpc_cidr",
         "public_subnet_cidr",
         "private_subnet_cidr",
+        "managed_database",
         "ui_public_ports"
       ],
       "properties": {
@@ -87,6 +92,9 @@
         },
         "private_subnet_cidr": {
           "$ref": "#/$defs/ipv4_cidr"
+        },
+        "managed_database": {
+          "$ref": "#/$defs/managed_database_network"
         },
         "ui_public_ports": {
           "type": "array",
@@ -103,7 +111,7 @@
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": ["history_api", "postgresql", "rabbitmq", "redis"],
       "properties": {
         "history_api": {
           "type": "integer",
@@ -111,6 +119,16 @@
           "maximum": 65535
         },
         "postgresql": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "rabbitmq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "redis": {
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
@@ -126,7 +144,7 @@
     "vms": {
       "type": "object",
       "minProperties": 2,
-      "required": ["bastion"],
+      "required": ["bastion", "infrastructure"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -141,6 +159,23 @@
                 "tags": {
                   "contains": {
                     "const": "bastion"
+                  }
+                }
+              },
+              "required": ["tags"]
+            }
+          ]
+        },
+        "infrastructure": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/vm"
+            },
+            {
+              "properties": {
+                "tags": {
+                  "contains": {
+                    "const": "infrastructure"
                   }
                 }
               },
@@ -170,6 +205,58 @@
     }
   },
   "$defs": {
+    "database": {
+      "description": "Selects the PostgreSQL deployment architecture and its non-secret settings.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "version", "size", "storage_gb"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["self_managed", "managed"]
+        },
+        "version": {
+          "type": "string",
+          "const": "18"
+        },
+        "size": {
+          "type": "string",
+          "enum": ["micro", "small", "medium"]
+        },
+        "storage_gb": {
+          "description": "Managed PostgreSQL storage allocation in GB; the shared minimum accommodates RDS PostgreSQL gp3.",
+          "type": "integer",
+          "minimum": 20
+        }
+      }
+    },
+    "managed_database_network": {
+      "description": "Private address space reserved for provider-managed PostgreSQL.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gcp_private_service_cidr", "aws_private_subnet_cidrs"],
+      "properties": {
+        "gcp_private_service_cidr": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ipv4_cidr"
+            },
+            {
+              "pattern": "/24$"
+            }
+          ]
+        },
+        "aws_private_subnet_cidrs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ipv4_cidr"
+          }
+        }
+      }
+    },
     "ipv4_address": {
       "type": "string",
       "format": "ipv4"
@@ -525,7 +612,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["bastion", "database", "history", "fetcher", "ui"]
+        "enum": ["bastion", "infrastructure", "history", "fetcher", "ui"]
       }
     },
     "secret_mappings": {

@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Start infrastructure services
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['docker', 'compose', '--project-name', infrastructure_compose_project_name,
+         '--file', infrastructure_compose_file, 'up', '--detach', '--remove-orphans']
+        + (['postgres'] if compose_project_config.database.mode == 'self_managed'
+           else ['rabbitmq', 'redis']
+           + (['cloud-sql-proxy'] if compose_project_config.default_cloud == 'gcp' else []))
+      }}
+  args:
+    chdir: "{{ infrastructure_compose_project_dir }}"
+  environment:
+    DOCKER_CONFIG: "{{ infrastructure_docker_config_dir }}"
+    POSTGRES_PASSWORD: "{{ infrastructure_postgres_password }}"
+    RABBITMQ_PASSWORD: "{{ infrastructure_rabbitmq_password }}"
+    REDIS_PASSWORD: "{{ infrastructure_redis_password }}"
+    INFRASTRUCTURE_BIND_ADDRESS: "{{ infrastructure_internal_ip }}"
+    DATABASE_HOST: "{{ infrastructure_database_host }}"
+    DATABASE_SSLMODE: "{{ infrastructure_database_sslmode }}"
+    CLOUD_SQL_CONNECTION_NAME: "{{ infrastructure_cloud_sql_connection_name }}"
+  register: infrastructure_compose_up
+  changed_when: >-
+    'Created' in infrastructure_compose_up.stderr or
+    'Started' in infrastructure_compose_up.stderr or
+    'Recreated' in infrastructure_compose_up.stderr
+  no_log: true
+
+- name: Wait for RabbitMQ
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ infrastructure_compose_project_name }}"
+      - --file
+      - "{{ infrastructure_compose_file }}"
+      - exec
+      - --no-TTY
+      - rabbitmq
+      - rabbitmq-diagnostics
+      - -q
+      - ping
+  args:
+    chdir: "{{ infrastructure_compose_project_dir }}"
+  register: infrastructure_rabbitmq_health
+  changed_when: false
+  retries: 30
+  delay: 2
+  until: infrastructure_rabbitmq_health.rc == 0
+  when: compose_project_config.database.mode == 'managed'
+
+- name: Wait for Redis
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ infrastructure_compose_project_name }}"
+      - --file
+      - "{{ infrastructure_compose_file }}"
+      - exec
+      - --no-TTY
+      - redis
+      - redis-cli
+      - -a
+      - "{{ infrastructure_redis_password }}"
+      - ping
+  args:
+    chdir: "{{ infrastructure_compose_project_dir }}"
+  register: infrastructure_redis_health
+  changed_when: false
+  retries: 30
+  delay: 2
+  until: infrastructure_redis_health.stdout | trim == 'PONG'
+  when: compose_project_config.database.mode == 'managed'
+  no_log: true
+
+- name: Apply database migrations
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ infrastructure_compose_project_name }}"
+      - --file
+      - "{{ infrastructure_compose_file }}"
+      - run
+      - --rm
+      - migrate
+  args:
+    chdir: "{{ infrastructure_compose_project_dir }}"
+  environment:
+    DOCKER_CONFIG: "{{ infrastructure_docker_config_dir }}"
+    POSTGRES_PASSWORD: "{{ infrastructure_postgres_password }}"
+    DATABASE_HOST: "{{ infrastructure_database_host }}"
+    DATABASE_SSLMODE: "{{ infrastructure_database_sslmode }}"
+    CLOUD_SQL_CONNECTION_NAME: "{{ infrastructure_cloud_sql_connection_name }}"
+  register: infrastructure_migrations
+  changed_when: "'Applying ' in infrastructure_migrations.stdout"
+  no_log: true

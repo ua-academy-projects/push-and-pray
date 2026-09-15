@@ -70,6 +70,32 @@ module "gcp_vm" {
   service_account_emails = module.gcp_secrets.service_account_emails
 }
 
+module "aws_managed_database" {
+  count  = local.config.database.mode == "managed" && local.config.default_cloud == "aws" ? 1 : 0
+  source = "./modules/aws-managed-database"
+
+  config  = local.config
+  network = module.aws_network.networks[local.config.default_location]
+  client_security_group_ids = compact([
+    try(module.aws_security.security_group_ids[local.config.default_location].infrastructure, null),
+    try(module.aws_security.security_group_ids[local.config.default_location].history, null),
+  ])
+  password = var.database_password
+}
+
+module "gcp_managed_database" {
+  count  = local.config.database.mode == "managed" && local.config.default_cloud == "gcp" ? 1 : 0
+  source = "./modules/gcp-managed-database"
+
+  config     = local.config
+  network_id = module.gcp_network.networks[local.config.default_location].network_id
+  client_service_accounts = toset(compact([
+    try(module.gcp_secrets.service_account_emails.infrastructure, null),
+    try(module.gcp_secrets.service_account_emails.history, null),
+  ]))
+  password = var.database_password
+}
+
 module "cloudflare_dns" {
   count  = try(local.config.dns.cloudflare.zone_id, null) == null ? 0 : 1
   source = "./modules/cloudflare-dns"

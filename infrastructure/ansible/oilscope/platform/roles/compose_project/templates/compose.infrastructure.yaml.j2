@@ -1,0 +1,122 @@
+name: petroscope
+
+services:
+{% if compose_project_config.database.mode == 'self_managed' %}
+  postgres:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_tag }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oil_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-oil_tracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PGDATA: /var/lib/postgresql/18/docker
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_cron
+      - -c
+      - cron.database_name=${POSTGRES_DB:-oil_tracker}
+      - -c
+      - cron.use_background_workers=on
+    ports:
+      - "${INFRASTRUCTURE_BIND_ADDRESS:?INFRASTRUCTURE_BIND_ADDRESS is required}:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    stop_grace_period: 30s
+{% else %}
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-oil_tracker}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oil_tracker}
+      TZ: UTC
+    ports:
+      - "${INFRASTRUCTURE_BIND_ADDRESS:?INFRASTRUCTURE_BIND_ADDRESS is required}:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:8.2-bookworm
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    ports:
+      - "${INFRASTRUCTURE_BIND_ADDRESS:?INFRASTRUCTURE_BIND_ADDRESS is required}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD-SHELL, 'redis-cli -a "$${REDIS_PASSWORD}" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+{% if compose_project_config.default_cloud == 'gcp' %}
+
+  cloud-sql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.18.2
+    restart: unless-stopped
+    command:
+      - --private-ip
+      - --address=0.0.0.0
+      - --port=5432
+      - ${CLOUD_SQL_CONNECTION_NAME:?CLOUD_SQL_CONNECTION_NAME is required}
+    security_opt:
+      - no-new-privileges:true
+{% endif %}
+{% endif %}
+
+  migrate:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_tag }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: "no"
+    command: [petroscope-migrate]
+    environment:
+      PGHOST: ${DATABASE_HOST:-postgres}
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-oil_tracker}
+      PGDATABASE: ${POSTGRES_DB:-oil_tracker}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGSSLMODE: ${DATABASE_SSLMODE:-disable}
+      DATABASE_MODE: "{{ compose_project_config.database.mode }}"
+{% if compose_project_config.database.mode == 'self_managed' %}
+    depends_on:
+      postgres:
+        condition: service_healthy
+{% elif compose_project_config.default_cloud == 'gcp' %}
+    depends_on:
+      - cloud-sql-proxy
+{% endif %}
+
+volumes:
+{% if compose_project_config.database.mode == 'self_managed' %}
+  postgres_data:
+{% else %}
+  rabbitmq_data:
+  redis_data:
+{% endif %}

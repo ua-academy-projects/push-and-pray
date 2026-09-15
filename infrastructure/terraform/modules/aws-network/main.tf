@@ -33,6 +33,27 @@ resource "aws_subnet" "private" {
   tags = merge(local.context.labels, { Name = "${local.context.resource_prefix}-${each.key}-private" })
 }
 
+data "aws_availability_zones" "available" {
+  for_each = local.managed_database_placements
+
+  region = each.value.region
+  state  = "available"
+}
+
+resource "aws_subnet" "database" {
+  for_each = local.database_subnets
+
+  region                  = each.value.region
+  vpc_id                  = aws_vpc.this[each.value.location].id
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.zone
+  map_public_ip_on_launch = false
+
+  tags = merge(local.context.labels, {
+    Name = "${local.context.resource_prefix}-${each.value.location}-database-${split("/", each.key)[1]}"
+  })
+}
+
 resource "aws_internet_gateway" "this" {
   for_each = local.placements
 
@@ -88,6 +109,17 @@ resource "aws_route_table" "private" {
   tags = merge(local.context.labels, { Name = "${local.context.resource_prefix}-${each.key}-private" })
 }
 
+resource "aws_route_table" "database" {
+  for_each = local.managed_database_placements
+
+  region = each.value.region
+  vpc_id = aws_vpc.this[each.key].id
+
+  tags = merge(local.context.labels, {
+    Name = "${local.context.resource_prefix}-${each.key}-database-isolated"
+  })
+}
+
 resource "aws_route_table_association" "public" {
   for_each = local.placements
 
@@ -102,4 +134,12 @@ resource "aws_route_table_association" "private" {
   region         = each.value.region
   subnet_id      = aws_subnet.private[each.key].id
   route_table_id = aws_route_table.private[each.key].id
+}
+
+resource "aws_route_table_association" "database" {
+  for_each = local.database_subnets
+
+  region         = each.value.region
+  subnet_id      = aws_subnet.database[each.key].id
+  route_table_id = aws_route_table.database[each.value.location].id
 }

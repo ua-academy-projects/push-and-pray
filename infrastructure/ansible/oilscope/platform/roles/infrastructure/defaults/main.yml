@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+infrastructure_compose_project_dir: /opt/oilscope/app
+infrastructure_compose_file: "{{ infrastructure_compose_project_dir }}/compose.yaml"
+infrastructure_compose_project_name: petroscope
+infrastructure_docker_config_dir: /run/oilscope/docker-auth
+infrastructure_postgres_password: ""
+infrastructure_rabbitmq_password: ""
+infrastructure_redis_password: ""
+infrastructure_internal_ip: ""
+infrastructure_database_host: postgres
+infrastructure_database_sslmode: disable
+infrastructure_cloud_sql_connection_name: ""

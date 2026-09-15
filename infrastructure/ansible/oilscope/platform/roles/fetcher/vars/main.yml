@@ -9,6 +9,8 @@ fetcher_runtime_environment: >-
       'POSTGRES_USER': fetcher_postgres_user,
       'POSTGRES_DB': fetcher_postgres_name,
       'DATABASE_HOST': fetcher_database_host,
+      'MESSAGING_BACKEND': fetcher_messaging_backend,
+      'RABBITMQ_URL': fetcher_rabbitmq_url,
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string

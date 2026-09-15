@@ -6,6 +6,10 @@ output "networks" {
       vpc_id            = aws_vpc.this[location].id
       public_subnet_id  = aws_subnet.public[location].id
       private_subnet_id = aws_subnet.private[location].id
+      database_subnet_ids = [
+        for key, subnet in aws_subnet.database : subnet.id
+        if startswith(key, "${location}/")
+      ]
     }
   }
 }

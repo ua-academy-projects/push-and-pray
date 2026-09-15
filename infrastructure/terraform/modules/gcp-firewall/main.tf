@@ -73,10 +73,43 @@ resource "google_compute_firewall" "postgresql" {
     for tag in ["fetcher", "history", "ui"] : "${local.resource_prefix}-${each.key}-${tag}"
     if contains(keys(local.tags), "${each.key}/${tag}")
   ]
-  target_tags = ["${local.resource_prefix}-${each.key}-database"]
+  target_tags = ["${local.resource_prefix}-${each.key}-infrastructure"]
 
   allow {
     protocol = "tcp"
     ports    = [tostring(var.config.service_ports.postgresql)]
+  }
+}
+
+resource "google_compute_firewall" "rabbitmq" {
+  count = var.config.database.mode == "managed" && var.config.default_cloud == "gcp" ? 1 : 0
+
+  name    = "${local.resource_prefix}-${local.managed_database_location}-allow-rabbitmq"
+  network = var.networks[local.managed_database_location].network_id
+
+  source_tags = [
+    "${local.resource_prefix}-${local.managed_database_location}-fetcher",
+    "${local.resource_prefix}-${local.managed_database_location}-history",
+  ]
+  target_tags = ["${local.resource_prefix}-${local.managed_database_location}-infrastructure"]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.config.service_ports.rabbitmq)]
+  }
+}
+
+resource "google_compute_firewall" "redis" {
+  count = var.config.database.mode == "managed" && var.config.default_cloud == "gcp" ? 1 : 0
+
+  name    = "${local.resource_prefix}-${local.managed_database_location}-allow-redis"
+  network = var.networks[local.managed_database_location].network_id
+
+  source_tags = ["${local.resource_prefix}-${local.managed_database_location}-ui"]
+  target_tags = ["${local.resource_prefix}-${local.managed_database_location}-infrastructure"]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.config.service_ports.redis)]
   }
 }

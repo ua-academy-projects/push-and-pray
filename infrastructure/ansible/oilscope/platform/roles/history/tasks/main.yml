@@ -4,7 +4,11 @@
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    DATABASE_HOST: "{{ history_database_host }}"
+    DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+    MESSAGING_BACKEND: "{{ history_messaging_backend }}"
+    RABBITMQ_URL: "{{ history_rabbitmq_url }}"
+    CLOUD_SQL_CONNECTION_NAME: "{{ history_cloud_sql_connection_name }}"
   no_log: true
   block:
     - name: Pull the History image
@@ -26,7 +30,6 @@
         'Downloaded newer image' in history_compose_pull.stderr or
         'Pull complete' in history_compose_pull.stdout or
         'Pull complete' in history_compose_pull.stderr
-
     - name: Start only History
       ansible.builtin.command:
         argv:
@@ -38,7 +41,6 @@
           - "{{ history_compose_file }}"
           - up
           - --detach
-          - --no-deps
           - history
       args:
         chdir: "{{ history_compose_project_dir }}"
@@ -63,9 +65,5 @@
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
-    - >-
-      (history_health.json | default({})).get(
-        'pgmq_consumer', ''
+        'messaging', ''
       ) == 'ready'

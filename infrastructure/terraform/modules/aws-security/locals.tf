@@ -88,7 +88,29 @@ locals {
           region   = var.networks[location].region
         }
         if contains(keys(local.tags), "${location}/${tag}")
-      ] if contains(keys(local.tags), "${location}/database")
+      ] if contains(keys(local.tags), "${location}/infrastructure") && var.config.database.mode == "self_managed"
     ]) : client.key => client
+  }
+
+  rabbitmq_rules = {
+    for tag in ["fetcher", "history"] : "${var.config.default_location}/${tag}" => {
+      location = var.config.default_location
+      tag      = tag
+      region   = var.networks[var.config.default_location].region
+    }
+    if var.config.database.mode == "managed" && var.config.default_cloud == "aws" &&
+    contains(keys(local.tags), "${var.config.default_location}/infrastructure") &&
+    contains(keys(local.tags), "${var.config.default_location}/${tag}")
+  }
+
+  redis_rules = {
+    for tag in ["ui"] : "${var.config.default_location}/${tag}" => {
+      location = var.config.default_location
+      tag      = tag
+      region   = var.networks[var.config.default_location].region
+    }
+    if var.config.database.mode == "managed" && var.config.default_cloud == "aws" &&
+    contains(keys(local.tags), "${var.config.default_location}/infrastructure") &&
+    contains(keys(local.tags), "${var.config.default_location}/${tag}")
   }
 }

@@ -63,9 +63,31 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
   for_each = local.postgresql_rules
 
   region                       = each.value.region
-  security_group_id            = aws_security_group.tag["${each.value.location}/database"].id
+  security_group_id            = aws_security_group.tag["${each.value.location}/infrastructure"].id
   referenced_security_group_id = aws_security_group.tag[each.key].id
   from_port                    = var.config.service_ports.postgresql
   to_port                      = var.config.service_ports.postgresql
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "rabbitmq" {
+  for_each = local.rabbitmq_rules
+
+  region                       = each.value.region
+  security_group_id            = aws_security_group.tag["${each.value.location}/infrastructure"].id
+  referenced_security_group_id = aws_security_group.tag[each.key].id
+  from_port                    = var.config.service_ports.rabbitmq
+  to_port                      = var.config.service_ports.rabbitmq
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis" {
+  for_each = local.redis_rules
+
+  region                       = each.value.region
+  security_group_id            = aws_security_group.tag["${each.value.location}/infrastructure"].id
+  referenced_security_group_id = aws_security_group.tag[each.key].id
+  from_port                    = var.config.service_ports.redis
+  to_port                      = var.config.service_ports.redis
   ip_protocol                  = "tcp"
 }

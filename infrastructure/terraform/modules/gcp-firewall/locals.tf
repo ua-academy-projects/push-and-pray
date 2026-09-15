@@ -40,9 +40,11 @@ locals {
 
   database_locations = toset([
     for location in keys(var.networks) : location
-    if contains(keys(local.tags), "${location}/database") && anytrue([
+    if var.config.database.mode == "self_managed" && contains(keys(local.tags), "${location}/infrastructure") && anytrue([
       for tag in ["fetcher", "history", "ui"] :
       contains(keys(local.tags), "${location}/${tag}")
     ])
   ])
+
+  managed_database_location = var.config.default_location
 }

@@ -10,9 +10,14 @@ services:
     environment:
       OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
       DATA_PROVIDER: ${DATA_PROVIDER:-oilpriceapi}
+      MESSAGING_BACKEND: "{{ 'rabbitmq' if compose_project_config.database.mode == 'managed' else 'pgmq' }}"
+{% if compose_project_config.database.mode == 'self_managed' %}
       # yamllint disable rule:line-length
       DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+{% else %}
+      RABBITMQ_URL: ${RABBITMQ_URL:?RABBITMQ_URL is required}
+{% endif %}
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}
       FETCH_TIMEZONE: ${FETCH_TIMEZONE:-UTC}

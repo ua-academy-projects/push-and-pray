@@ -14,17 +14,32 @@
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "username": "example-operator",
-    "image_tag": "0123456789abcdef0123456789abcdef01234567"
+    "image_tag": "example-operator"
+  },
+  "database": {
+    "mode": "self_managed",
+    "version": "18",
+    "size": "micro",
+    "storage_gb": 20
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
     "public_subnet_cidr": "10.0.0.0/24",
     "private_subnet_cidr": "10.0.1.0/26",
+    "managed_database": {
+      "gcp_private_service_cidr": "10.0.2.0/24",
+      "aws_private_subnet_cidrs": [
+        "10.0.2.0/24",
+        "10.0.3.0/24"
+      ]
+    },
     "ui_public_ports": [80, 443]
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
   },
   "monitoring": {
     "aws": {
@@ -66,7 +81,7 @@
       "ssh_port": 8787,
       "allowed_cidrs": ["192.0.2.10/32"]
     },
-    "infra": {
+    "infrastructure": {
       "machine_type": "micro",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.1.10",
@@ -81,9 +96,11 @@
         }
       },
       "assign_public_ip": false,
-      "tags": ["database"],
+      "tags": ["infrastructure"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -99,6 +116,7 @@
       "tags": ["history"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -114,6 +132,7 @@
       "tags": ["fetcher"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "OILPRICEAPI_KEY": "example-api-key",
         "GHCR_TOKEN": "example-ghcr-token"
       }
@@ -130,6 +149,7 @@
       "tags": ["ui"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "public_endpoint": {
