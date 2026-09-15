@@ -1,7 +1,8 @@
 # Docker Engine
 
 Installs a pinned Docker Engine with the Compose plugin from Docker's official
-apt repository, holds the pinned packages, and enables the service.
+apt repository, holds the pinned packages, enables the service, and records
+container exits in the journal.
 
 This role owns Docker package provisioning for workload VMs.
 
@@ -49,6 +50,10 @@ though the deployment playbook applies the baseline first regardless.
   host's journal and `observability_agent` ships it to the cloud without
   Docker knowing which one. A change restarts the daemon before any container
   is created in the same play.
+- `docker_engine_events_service` and `docker_engine_events_unit_path`: a
+  systemd unit that streams `docker events` for container exits into the
+  journal as JSON, one line per exit with the container's name and exit code.
+  The cloud alert for a crashed container matches these lines.
 
 The repository is written in deb822 format to
 `/etc/apt/sources.list.d/docker.sources`. The apt cache is refreshed only when

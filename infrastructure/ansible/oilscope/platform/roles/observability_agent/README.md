@@ -23,12 +23,15 @@ logs:
   logging driver, and the Compose project and service names ride along as
   `COM_DOCKER_COMPOSE_PROJECT` and `COM_DOCKER_COMPOSE_SERVICE`;
 - `docker.service` itself: pulls, failed starts, restarts;
+- `docker-events.service`: one JSON line per container exit, with the name
+  and exit code, which the crashed-container alert matches;
 - `ssh.service`, `sudo` and PAM — the bastion's reason to run the agent;
 - the kernel, which is where an OOM kill is recorded;
 - systemd, cloud-init, unattended-upgrades and apt.
 
 Host metrics: CPU, memory, swap, disk usage and network. On AWS only what EC2
-does not already report is collected (memory, swap, disk usage).
+does not already report is collected (memory used in bytes and percent, swap,
+disk usage); the memory alert reads `mem_used`.
 
 ## How container lines are handled
 
@@ -41,6 +44,9 @@ document per line with `level` and `message` or `msg` keys; a plain-text line
 still arrives, just without a severity of its own.
 
 On AWS the same parse runs in Fluent Bit so Logs Insights discovers the keys.
+Fluent Bit also adds `instance`, the inventory hostname, to every record: an
+EC2 host's own hostname is its address, and the container alarms need the
+name.
 
 ## Requirements
 

@@ -63,3 +63,8 @@ docker_engine_daemon_config:
   log-driver: journald
   log-opts:
     labels: com.docker.compose.project,com.docker.compose.service
+
+# A unit that streams container exit events into the journal, so the
+# observability agent can raise an alert when a container crashes.
+docker_engine_events_service: docker-events
+docker_engine_events_unit_path: /etc/systemd/system/docker-events.service

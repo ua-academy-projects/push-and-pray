@@ -90,3 +90,41 @@ module "vm" {
     },
   )
 }
+
+# ---------------------------------------------------------- observability
+# Logs and metrics leave every VM through an agent; these grant it the right
+# to write, draw the dashboard and decide who hears when a threshold breaks.
+# The metric table lives in monitoring, so alerting never names a metric.
+
+module "logging" {
+  source = "./modules/logging"
+  count  = local.is_active ? 1 : 0
+
+  project_id     = local.profile.project_id
+  identities     = local.identities
+  retention_days = try(var.config.observability.log_retention_days, 30)
+}
+
+module "monitoring" {
+  source = "./modules/monitoring"
+  count  = local.is_active ? 1 : 0
+
+  project_id      = local.profile.project_id
+  resource_prefix = local.resource_prefix
+  identities      = local.identities
+  labels          = local.common_labels
+  thresholds      = try(var.config.observability.thresholds, {})
+}
+
+module "alerting" {
+  source = "./modules/alerting"
+  count  = local.is_active ? 1 : 0
+
+  project_id      = local.profile.project_id
+  resource_prefix = local.resource_prefix
+  email           = var.config.observability.alert_email
+  metrics         = module.monitoring[0].metrics
+  log_name        = module.logging[0].log_name
+  budget_usd      = try(local.profile.budget_usd, null)
+  billing_account = try(local.profile.billing_account, null)
+}

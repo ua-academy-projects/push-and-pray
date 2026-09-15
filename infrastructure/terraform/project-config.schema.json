@@ -14,6 +14,7 @@
     "registry",
     "bastion",
     "network",
+    "observability",
     "service_ports",
     "clouds",
     "vms"
@@ -80,6 +81,32 @@
         }
       }
     },
+    "observability": {
+      "$comment": "Provider-independent alerting settings. Thresholds and log retention have defaults in the Terraform modules; only the recipient has to be written down.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alert_email"],
+      "properties": {
+        "alert_email": {
+          "$comment": "Where every alert and budget notification goes. AWS sends a subscription confirmation to this address first.",
+          "type": "string",
+          "format": "email",
+          "minLength": 3
+        },
+        "thresholds": {
+          "$comment": "Overrides for the alert thresholds. Every key is optional and falls back to the module default.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu_utilization": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "memory_used_gb": { "type": "number", "exclusiveMinimum": 0 },
+            "disk_write_ops_per_second": { "type": "number", "exclusiveMinimum": 0 },
+            "network_received_mbit_per_second": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "log_retention_days": { "type": "integer", "minimum": 1 }
+      }
+    },
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
@@ -138,6 +165,12 @@
               "$comment": "AWS resources are addressed by region and credentials, never by a project identifier.",
               "not": {
                 "required": ["project_id"]
+              }
+            },
+            {
+              "$comment": "An AWS budget is scoped to the account behind the credentials, so there is nothing to name.",
+              "not": {
+                "required": ["billing_account"]
               }
             },
             {
@@ -256,6 +289,16 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "budget_usd": {
+          "$comment": "Monthly spend on this cloud, in US dollars, above which the billing alert fires. Absent means no budget is created.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "billing_account": {
+          "$comment": "GCP only. A budget belongs to a billing account, not to a project, so the project alone is not enough to create one.",
+          "type": "string",
+          "pattern": "^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$"
         }
       }
     },

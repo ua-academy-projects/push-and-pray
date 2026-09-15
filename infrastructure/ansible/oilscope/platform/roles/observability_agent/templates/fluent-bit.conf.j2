@@ -23,6 +23,13 @@
     parser        json
     reserve_data  on
 
+# An EC2 host's own hostname is its address, not its name; the alarms that
+# name an instance filter on this field instead.
+[FILTER]
+    name    record_modifier
+    match   journald
+    record  instance {{ inventory_hostname }}
+
 [OUTPUT]
     name              cloudwatch_logs
     match             journald

@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Record container exits in the journal
+Documentation=https://docs.docker.com/reference/cli/docker/system/events/
+After=docker.service
+Requires=docker.service
+
+[Service]
+# One JSON line per exit, with the container name and exit code, so the
+# cloud alert on a crashed container has something to match.
+ExecStart=/usr/bin/docker events --filter type=container --filter event=die --format '{{ '{{' }}json .{{ '}}' }}'
+Restart=always
+RestartSec=5
+SyslogIdentifier=docker-events
+
+[Install]
+WantedBy=multi-user.target

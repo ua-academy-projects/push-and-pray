@@ -17,13 +17,19 @@ host CPU, memory, disk, network ────────────────
 
 ## Who does what
 
-- `infrastructure/terraform/modules/<cloud>/observability.tf` grants each VM's
-  identity — the workloads and the bastion — the right to write logs and
-  metrics, and on AWS creates the log group.
+- `infrastructure/terraform/modules/<cloud>/modules/logging` grants each VM's
+  identity — the workloads and the bastion — the right to write logs, sets
+  retention, and on AWS creates the log group.
+- `.../modules/monitoring` grants the right to write metrics, defines the
+  watched metrics and their thresholds, and draws the dashboard.
+- `.../modules/alerting` turns those metrics and the journal into e-mail, and
+  keeps a monthly budget.
 - `host_baseline` keeps the journal on disk, caps it at 500 MB and raises the
   per-unit rate limit, because every container logs through `docker.service`.
 - `docker_engine` writes `/etc/docker/daemon.json` with the `journald` logging
   driver and attaches the Compose project and service labels to every line.
+  It also runs `docker-events.service`, which writes one JSON line to the
+  journal per container exit, with the container's name and exit code.
 - `observability_agent` installs the cloud's agent and configures it to parse
   container lines as JSON and use the application's own log level as the
   entry's severity.
@@ -87,6 +93,47 @@ fields @timestamp, ClientHost, RequestPath, DownstreamStatus, Duration
 | filter CONTAINER_NAME = "oilscope-proxy-traefik-1" and DownstreamStatus >= 500
 ```
 
+## Dashboard and alerts
+
+Every VM, the bastion included, is watched for the same five things:
+
+| | GCP metric | AWS metric | Alert when |
+| --- | --- | --- | --- |
+| CPU | `instance/cpu/utilization` | `CPUUtilization` | above 0.75 (75 %) for 5 min |
+| Memory | `agent.googleapis.com/memory/bytes_used` | `CWAgent mem_used` | above 1.5 GB for 5 min |
+| Disk writes | `instance/disk/write_ops_count` | `VolumeWriteOps` (root volume) | above 1000 ops/s for 5 min |
+| Network in | `instance/network/received_bytes_count` | `NetworkIn` | above 1 Mbit/s for 5 min |
+| Health | `instance/uptime` | `StatusCheckFailed` | no data for 5 min, or a failed check |
+
+The thresholds are module defaults; `observability.thresholds` in the project
+configuration overrides any of them. The dashboard is `<prefix> hosts` in
+Cloud Monitoring and `<prefix>-hosts` in CloudWatch, one chart per row above
+with the threshold drawn across.
+
+Three more alerts come from the journal rather than from metrics:
+
+- **A container died**: `docker-events.service` records every container exit;
+  an exit code other than 0 raises an alert naming the instance, the
+  container and the code. Code 0 is a planned stop and is ignored, so a deploy
+  is silent.
+- **HTTP 5xx**: a request log line from ui, history or fetcher with
+  `status >= 500` raises an alert naming the container, the instance and the
+  path. It needs the JSON request logs, so an image without them never fires.
+- **Budget**: 100 % of `clouds.<cloud>.budget_usd` spent in the month. On
+  GCP the budget lives on `clouds.gcp.billing_account`, and applying it needs
+  a costs-manager role on that account; without the field no budget is
+  created.
+
+Everything goes to `observability.alert_email`. GCP mails it straight away;
+**AWS first sends an SNS subscription confirmation, and nothing arrives until
+that link is clicked.**
+
+On GCP the alerts and the dashboard select VMs by the `application` and
+`environment` labels, so a new VM is covered as soon as it exists. CloudWatch
+has no such selector: alarms are per instance and, for containers, per
+instance and container name, so a new Compose service on AWS means a new
+entry in the alerting module's `containers_by_role`.
+
 ## Rolling it out
 
 1. `terraform apply` — the IAM grants and the log group must exist before an
@@ -94,7 +141,7 @@ fields @timestamp, ClientHost, RequestPath, DownstreamStatus, Duration
 2. `ansible-playbook oilscope.platform.observability` — agents on every host,
    containers untouched.
 3. `ansible-playbook oilscope.platform.deploy_workloads` — the Docker daemon
-   configuration and the journal settings.
+   configuration, the journal settings and `docker-events.service`.
 4. The logging driver is fixed when a container is created, so a container
    that already exists keeps `json-file` until it is recreated. The next image
    change does that; to do it sooner, remove the container

@@ -8,4 +8,12 @@ locals {
   common_labels   = module.selection.common_labels
 
   bastion_name = "${local.resource_prefix}-bastion"
+
+  # Every VM identity on this cloud, the bastion included: logging and
+  # monitoring both grant it the right to write. Count-based, so the bastion
+  # joins only when the cloud is active.
+  identities = merge(
+    { for name in keys(local.workload_vms) : name => module.identity[name].member },
+    local.is_active ? { bastion = module.bastion_identity[0].member } : {},
+  )
 }

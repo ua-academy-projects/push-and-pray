@@ -93,6 +93,24 @@
     enabled: "{{ docker_engine_service_enabled }}"
     state: "{{ docker_engine_service_state }}"
 
+- name: Install the container exit recorder
+  become: true
+  ansible.builtin.template:
+    src: docker-events.service.j2
+    dest: "{{ docker_engine_events_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the container exit recorder
+
+- name: Enable and start the container exit recorder
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ docker_engine_events_service }}"
+    enabled: "{{ docker_engine_service_enabled }}"
+    state: "{{ docker_engine_service_state }}"
+    daemon_reload: true
+
 - name: Read the local account database
   ansible.builtin.getent:
     database: passwd
