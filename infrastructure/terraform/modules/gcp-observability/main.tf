@@ -119,27 +119,20 @@ resource "google_monitoring_alert_policy" "http_5xx" {
   conditions {
     display_name = "At least one HTTP 5xx response in five minutes"
 
-    condition_threshold {
-      filter          = "resource.type=\"gce_instance\" AND metric.type=\"logging.googleapis.com/user/${google_logging_metric.http_5xx[0].name}\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
-
-      aggregations {
-        alignment_period   = "300s"
-        per_series_aligner = "ALIGN_SUM"
-      }
-
-      trigger {
-        count = 1
-      }
+    condition_matched_log {
+      filter = google_logging_metric.http_5xx[0].filter
     }
   }
 
   notification_channels = local.notification_channels
 
   alert_strategy {
+    auto_close           = "1800s"
     notification_prompts = ["OPENED", "CLOSED"]
+
+    notification_rate_limit {
+      period = "300s"
+    }
   }
 }
 
