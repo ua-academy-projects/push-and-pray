@@ -40,14 +40,22 @@ use generic `app` or `db` tags.
 | `<prefix>-allow-bastion-ssh-bootstrap` | `bastion.allowed_cidrs` | Bastion | `22` (temporary and opt-in) |
 | `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
 | `<prefix>-allow-history-api` | UI | History | `config.service_ports.history_api` |
-| `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `config.service_ports.postgresql` |
+| `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `config.service_ports.postgresql` (self-hosted database only) |
+| `<prefix>-allow-amqp` | Fetcher, History, UI | Infra | `config.service_ports.amqp` (managed database only) |
+| `<prefix>-allow-redis` | Fetcher, History, UI | Infra | `config.service_ports.redis` (managed database only) |
 | `<prefix>-allow-ui-web` | `0.0.0.0/0` | UI | `config.network.ui_public_ports` (`443` only) |
+
+What the infra VM serves follows `database_managed`: with a self-hosted
+database it runs PostgreSQL, with a managed one it runs the RabbitMQ broker and
+the Redis cache instead, so the three rules swap as one. The managed database
+itself needs no rule: its Private Service Connect endpoint is not a VM, and
+egress from the VPC is allowed by default.
 
 Port 80 is deliberately closed. Traefik terminates TLS on 443 and solves the
 ACME challenge with TLS-ALPN-01, so nothing ever listens on 80; opening it
 would expose a port with no service behind it.
 
-There are likewise no rules for `6379`, `8002`, `8080` or `15672` - Fetcher's
+There are likewise no rules for `8002`, `8080` or `15672` - Fetcher's
 `8002` serves its local container health check only, and UI's `8080` stays
 inside the UI VM's Docker network behind Traefik. Everything else is blocked by
 Google Cloud's implied deny-ingress rule.

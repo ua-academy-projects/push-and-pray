@@ -8,6 +8,16 @@ output "workload_subnet_id" {
   value       = google_compute_subnetwork.workload.id
 }
 
+output "database_subnet_id" {
+  description = "ID of the subnet reserved for the managed database endpoint, or null when no such subnet exists."
+  value       = one(google_compute_subnetwork.database[*].id)
+}
+
+output "database_subnet_cidr" {
+  description = "Range of the database subnet, or null when no such subnet exists."
+  value       = one(google_compute_subnetwork.database[*].ip_cidr_range)
+}
+
 output "network_id" {
   description = "ID of the VPC."
   value       = google_compute_network.main.id

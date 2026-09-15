@@ -85,8 +85,13 @@ resource "aws_vpc_security_group_ingress_rule" "history_api" {
   tags = var.tags
 }
 
+# What the infra instance serves depends on where the database runs.
+# Self-hosted: PostgreSQL. Managed: the RabbitMQ broker and the Redis cache
+# that take over the queue and the sessions. The clients are the same three
+# workloads either way; the managed database has a security group of its own
+# in the database module.
 resource "aws_vpc_security_group_ingress_rule" "postgresql" {
-  for_each = toset(local.database_client_scopes)
+  for_each = var.database_managed ? toset([]) : toset(local.database_client_scopes)
 
   security_group_id            = aws_security_group.scope["infra"].id
   referenced_security_group_id = aws_security_group.scope[each.value].id
@@ -94,6 +99,32 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
   ip_protocol = "tcp"
   from_port   = var.config.service_ports.postgresql
   to_port     = var.config.service_ports.postgresql
+
+  tags = var.tags
+}
+
+resource "aws_vpc_security_group_ingress_rule" "amqp" {
+  for_each = var.database_managed ? toset(local.database_client_scopes) : toset([])
+
+  security_group_id            = aws_security_group.scope["infra"].id
+  referenced_security_group_id = aws_security_group.scope[each.value].id
+
+  ip_protocol = "tcp"
+  from_port   = var.config.service_ports.amqp
+  to_port     = var.config.service_ports.amqp
+
+  tags = var.tags
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis" {
+  for_each = var.database_managed ? toset(local.database_client_scopes) : toset([])
+
+  security_group_id            = aws_security_group.scope["infra"].id
+  referenced_security_group_id = aws_security_group.scope[each.value].id
+
+  ip_protocol = "tcp"
+  from_port   = var.config.service_ports.redis
+  to_port     = var.config.service_ports.redis
 
   tags = var.tags
 }

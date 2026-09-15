@@ -9,5 +9,6 @@ locals {
 
   workload_scopes = ["infra", "history", "fetcher", "ui"]
 
+  # The workloads that talk to whatever the infra instance serves.
   database_client_scopes = ["fetcher", "history", "ui"]
 }

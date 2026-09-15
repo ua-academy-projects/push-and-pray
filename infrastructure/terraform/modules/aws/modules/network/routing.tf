@@ -60,3 +60,20 @@ resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private.id
   route_table_id = aws_route_table.private.id
 }
+
+# The database subnets know only the VPC's own range: no gateway, no NAT. A
+# route table with no routes of its own is exactly that.
+resource "aws_route_table" "isolated" {
+  count = var.enable_database_subnets ? 1 : 0
+
+  vpc_id = aws_vpc.main.id
+
+  tags = merge(var.tags, { Name = "${var.resource_prefix}-isolated" })
+}
+
+resource "aws_route_table_association" "database" {
+  count = length(aws_subnet.database)
+
+  subnet_id      = aws_subnet.database[count.index].id
+  route_table_id = aws_route_table.isolated[0].id
+}

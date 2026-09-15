@@ -6,6 +6,8 @@ module "network" {
 
   resource_prefix = local.resource_prefix
   profile         = local.profile
+
+  enable_database_subnet = local.builds_database
 }
 
 module "firewall" {
@@ -18,6 +20,25 @@ module "firewall" {
   bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+  database_managed             = local.database_managed
+}
+
+# ---------------------------------------------------------------- database
+# Present only in managed mode. The infra VM then carries the broker and the
+# cache instead of PostgreSQL; the firewall above already opens their ports.
+
+module "database" {
+  source = "./modules/database"
+  count  = local.builds_database ? 1 : 0
+
+  resource_prefix = local.resource_prefix
+  project_id      = local.profile.project_id
+  region          = local.profile.region
+  network_id      = module.network[0].network_id
+  subnet_id       = module.network[0].database_subnet_id
+  settings        = var.config.database
+  tier            = module.selection.database_size
+  labels          = local.common_labels
 }
 
 module "bastion_spec" {

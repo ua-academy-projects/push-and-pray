@@ -9,4 +9,11 @@ locals {
     fetcher = "${var.resource_prefix}-fetcher"
     ui      = "${var.resource_prefix}-ui"
   }
+
+  # The workloads that talk to whatever the infra VM serves.
+  infra_client_tags = [
+    local.network_tags.fetcher,
+    local.network_tags.history,
+    local.network_tags.ui,
+  ]
 }

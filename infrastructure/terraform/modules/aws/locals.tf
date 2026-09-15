@@ -9,6 +9,9 @@ locals {
 
   bastion_name = "${local.resource_prefix}-bastion"
 
+  database_managed = module.selection.database_managed
+  builds_database  = module.selection.builds_database
+
   # A NAT gateway bills by the hour from the moment it exists. The bastion always
   # holds a public address, so only workloads can create the need for one.
   needs_nat_gateway = length([

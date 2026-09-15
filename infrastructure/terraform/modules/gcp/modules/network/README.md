@@ -14,6 +14,7 @@ changes with the application while this layout does not.
 | `<prefix>-vpc` | Custom-mode regional VPC without automatic subnets |
 | `<prefix>-management` | Management subnet used by the bastion |
 | `<prefix>-workload` | Workload subnet with Private Google Access enabled |
+| `<prefix>-database` | Subnet for the managed database endpoint, only when `enable_database_subnet`; no NAT, no Private Google Access |
 | `<prefix>-router`, `<prefix>-nat` | Outbound internet access for the workload subnet |
 
 ## Egress
@@ -27,7 +28,8 @@ module has to grant egress explicitly.
 | Name | Description |
 | --- | --- |
 | `resource_prefix` | Prefix for every resource name |
-| `profile` | Cloud profile; only `subnets.management` and `subnets.workload` are read |
+| `profile` | Cloud profile; only `subnets.management`, `subnets.workload` and `subnets.database` are read |
+| `enable_database_subnet` | Whether to create the database subnet from the first range in `subnets.database` |
 
 `profile` is a narrow object type, so the caller passes the whole profile and
 the type documents exactly what is used.
@@ -40,6 +42,7 @@ the type documents exactly what is used.
 | `region` | Region both subnets live in, derived from the provider |
 | `management_subnet_id`, `_name`, `_cidr`, `_gateway` | Bastion subnet |
 | `workload_subnet_id`, `_name`, `_cidr`, `_gateway` | Workload subnet |
+| `database_subnet_id`, `database_subnet_cidr` | Database subnet, or `null` when none is created |
 | `router_name`, `nat_name` | Cloud Router and Cloud NAT |
 
 ## Usage

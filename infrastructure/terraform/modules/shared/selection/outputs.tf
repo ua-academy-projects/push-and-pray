@@ -40,3 +40,23 @@ output "skipped_vms" {
     if !local.is_active
   }
 }
+
+output "database_managed" {
+  description = "Whether the project runs PostgreSQL as a managed service. The same answer on every cloud; see builds_database for who acts on it."
+  value       = local.database_managed
+}
+
+output "builds_database" {
+  description = "Whether this cloud creates the managed database: it is active, the database is managed, and the infra VM is here."
+  value       = local.builds_database
+}
+
+output "database_size" {
+  description = "This provider's tier for the configured database size label, or null when the label is not in its database_sizes."
+  value       = local.database_size
+}
+
+output "database_settings" {
+  description = "The database block of the configuration, as written."
+  value       = var.config.database
+}

@@ -17,6 +17,8 @@ variable "config" {
     service_ports = object({
       history_api = number
       postgresql  = number
+      amqp        = number
+      redis       = number
     })
   })
 
@@ -60,6 +62,12 @@ variable "bastion" {
 
 variable "enable_bastion_ssh_bootstrap" {
   description = "Whether to temporarily allow direct bastion SSH on port 22 when the final SSH port differs."
+  type        = bool
+  default     = false
+}
+
+variable "database_managed" {
+  description = "Whether PostgreSQL is a managed service. Decides what the infra VM opens to the workloads: the PostgreSQL port when it runs the database itself, the broker and cache ports when the database lives elsewhere."
   type        = bool
   default     = false
 }

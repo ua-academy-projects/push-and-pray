@@ -26,7 +26,19 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "amqp": 5672,
+    "redis": 6379
+  },
+  "database": {
+    "mode": "self-hosted",
+    "engine_version": "17",
+    "size": "small",
+    "storage_gb": 20,
+    "name": "oil_tracker",
+    "username": "oil_tracker",
+    "backup_retention_days": 1,
+    "deletion_protection": false
   },
   "clouds": {
     "gcp": {
@@ -35,13 +47,19 @@
       "zone": "europe-west1-b",
       "subnets": {
         "management": "10.0.0.0/29",
-        "workload": "10.0.1.0/26"
+        "workload": "10.0.1.0/26",
+        "database": ["10.0.2.0/28"]
       },
       "machine_sizes": {
         "tiny": "e2-micro",
         "small": "e2-small",
         "medium": "e2-medium",
         "large": "e2-standard-2"
+      },
+      "database_sizes": {
+        "small": "db-f1-micro",
+        "medium": "db-g1-small",
+        "large": "db-custom-2-7680"
       },
       "disk_types": {
         "standard": "pd-standard",
@@ -61,13 +79,19 @@
       "network_cidr": "10.1.0.0/16",
       "subnets": {
         "management": "10.1.0.0/28",
-        "workload": "10.1.1.0/26"
+        "workload": "10.1.1.0/26",
+        "database": ["10.1.2.0/28", "10.1.3.0/28"]
       },
       "machine_sizes": {
         "tiny": "t3.micro",
         "small": "t3.small",
         "medium": "t3.medium",
         "large": "t3.large"
+      },
+      "database_sizes": {
+        "small": "db.t4g.micro",
+        "medium": "db.t4g.small",
+        "large": "db.t4g.medium"
       },
       "disk_types": {
         "standard": "standard",
@@ -83,7 +107,7 @@
   },
   "vms": {
     "infra": {
-      "role": "database",
+      "role": "infra",
       "size": "tiny",
       "image": "ubuntu-lts",
       "internal_ip": "10.0.1.2",
@@ -95,6 +119,8 @@
       "network_tags": ["infra"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-broker-password",
+        "REDIS_PASSWORD": "example-cache-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -111,6 +137,7 @@
       "network_tags": ["history"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-broker-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -127,6 +154,7 @@
       "network_tags": ["fetcher"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-broker-password",
         "OILPRICEAPI_KEY": "example-api-key",
         "GHCR_TOKEN": "example-ghcr-token"
       }
@@ -144,6 +172,7 @@
       "network_tags": ["ui"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "REDIS_PASSWORD": "example-cache-password",
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "public_endpoint": {

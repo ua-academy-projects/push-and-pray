@@ -73,3 +73,17 @@ output "workload_secret_access" {
     name => sort(distinct(values(workload.secret_mappings)))
   }
 }
+
+output "database" {
+  description = "The managed database on this cloud - host, port, names, and the ARN of the secret RDS keeps the master password in - or null when this cloud does not build one. Never a password."
+  value = local.builds_database ? {
+    mode                = "managed"
+    cloud               = local.this_cloud
+    host                = module.database[0].host
+    port                = module.database[0].port
+    name                = module.database[0].name
+    username            = var.config.database.username
+    instance            = module.database[0].instance_identifier
+    password_secret_arn = module.database[0].master_user_secret_arn
+  } : null
+}

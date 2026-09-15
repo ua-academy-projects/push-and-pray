@@ -7,8 +7,9 @@ module "network" {
   resource_prefix = local.resource_prefix
   profile         = local.profile
 
-  enable_nat_gateway = local.needs_nat_gateway
-  tags               = local.common_tags
+  enable_nat_gateway      = local.needs_nat_gateway
+  enable_database_subnets = local.builds_database
+  tags                    = local.common_tags
 }
 
 module "firewall" {
@@ -21,7 +22,30 @@ module "firewall" {
   bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+  database_managed             = local.database_managed
   tags                         = local.common_tags
+}
+
+# ---------------------------------------------------------------- database
+# Present only in managed mode. The infra instance then carries the broker
+# and the cache instead of PostgreSQL, but still runs the schema migrations -
+# which is why it is among the database's clients.
+
+module "database" {
+  source = "./modules/database"
+  count  = local.builds_database ? 1 : 0
+
+  resource_prefix = local.resource_prefix
+  vpc_id          = module.network[0].vpc_id
+  subnet_ids      = module.network[0].database_subnet_ids
+  client_security_group_ids = {
+    for scope in ["fetcher", "history", "ui", "infra"] :
+    scope => module.firewall[0].security_group_ids[scope]
+  }
+  settings       = var.config.database
+  instance_class = module.selection.database_size
+  port           = var.config.service_ports.postgresql
+  tags           = local.common_tags
 }
 
 # --------------------------------------------------------------------- bastion

@@ -52,3 +52,8 @@ output "workload_secret_access" {
   description = "Secret IDs each workload identity may read. Names only - never values."
   value       = merge(module.gcp.workload_secret_access, module.aws.workload_secret_access)
 }
+
+output "database" {
+  description = "The managed database, from whichever cloud builds it: mode, cloud, host, port, name, username, instance, and on AWS the ARN of the RDS-managed password secret. Null in self-hosted mode - the database is then the infra VM's PostgreSQL container, at workload_internal_ips.infra."
+  value       = module.gcp.database != null ? module.gcp.database : module.aws.database
+}

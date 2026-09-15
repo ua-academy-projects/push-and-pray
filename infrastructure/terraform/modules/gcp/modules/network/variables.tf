@@ -14,14 +14,29 @@ variable "profile" {
     subnets = object({
       management = string
       workload   = string
+      database   = optional(list(string), [])
     })
   })
 
   validation {
     condition = alltrue([
-      for cidr in values(var.profile.subnets) :
+      for cidr in concat(
+        [var.profile.subnets.management, var.profile.subnets.workload],
+        var.profile.subnets.database,
+      ) :
       can(cidrhost(cidr, 0))
     ])
     error_message = "Every subnet range must be a valid CIDR."
+  }
+}
+
+variable "enable_database_subnet" {
+  description = "Whether to create the database subnet. Only a managed database lives there; a self-hosted one sits on a workload VM."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_database_subnet || length(var.profile.subnets.database) > 0
+    error_message = "The database subnet needs a range in subnets.database."
   }
 }

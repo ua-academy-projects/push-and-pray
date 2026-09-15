@@ -24,3 +24,23 @@ resource "aws_subnet" "private" {
 
   tags = merge(var.tags, { Name = "${var.resource_prefix}-private" })
 }
+
+# RDS refuses a subnet group that does not span two availability zones, even
+# for one instance that will only ever sit in one of them. So the database
+# ranges take the first zones the region offers rather than the zone the VMs
+# are pinned to.
+data "aws_availability_zones" "available" {
+  count = var.enable_database_subnets ? 1 : 0
+
+  state = "available"
+}
+
+resource "aws_subnet" "database" {
+  count = var.enable_database_subnets ? length(var.profile.subnets.database) : 0
+
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.profile.subnets.database[count.index]
+  availability_zone = data.aws_availability_zones.available[0].names[count.index]
+
+  tags = merge(var.tags, { Name = "${var.resource_prefix}-database-${count.index + 1}" })
+}

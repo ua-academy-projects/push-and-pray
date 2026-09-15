@@ -16,6 +16,7 @@
     "network",
     "observability",
     "service_ports",
+    "database",
     "clouds",
     "vms"
   ],
@@ -108,19 +109,76 @@
       }
     },
     "service_ports": {
+      "$comment": "postgresql is where the database listens in either mode. amqp and redis are the RabbitMQ and Redis ports the infra VM opens instead of PostgreSQL when the database is managed.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": ["history_api", "postgresql", "amqp", "redis"],
       "properties": {
         "history_api": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "$ref": "#/$defs/port"
         },
         "postgresql": {
+          "$ref": "#/$defs/port"
+        },
+        "amqp": {
+          "$ref": "#/$defs/port"
+        },
+        "redis": {
+          "$ref": "#/$defs/port"
+        }
+      }
+    },
+    "database": {
+      "$comment": "Where PostgreSQL runs. self-hosted keeps the container on the infra VM, with the queue in PGMQ and the UI sessions in a table. managed moves it to the cloud's service - Cloud SQL on GCP, RDS on AWS - in the database subnet of the cloud that hosts the infra VM; the queue then goes to RabbitMQ and the sessions to Redis, both on that same VM. The block is always present so switching is a one-word change; the sizing fields are read only in managed mode.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "engine_version",
+        "size",
+        "storage_gb",
+        "name",
+        "username",
+        "backup_retention_days",
+        "deletion_protection"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["self-hosted", "managed"]
+        },
+        "engine_version": {
+          "$comment": "PostgreSQL major version of the managed instance. Pinned to the major the self-hosted image ships, so a dump moves between the two modes without a version jump; widen the list together with infrastructure/docker/Dockerfile.database.",
+          "type": "string",
+          "enum": ["17"]
+        },
+        "size": {
+          "$comment": "Key into clouds.<cloud>.database_sizes of the cloud hosting the infra VM.",
+          "$ref": "#/$defs/resource_label"
+        },
+        "storage_gb": {
+          "$comment": "Initial disk size. Both clouds grow it automatically from here.",
           "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "minimum": 10
+        },
+        "name": {
+          "$comment": "Database and application role names. The self-hosted container uses the same values, so nothing in the services changes with the mode.",
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+        },
+        "username": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]{0,62}$"
+        },
+        "backup_retention_days": {
+          "$comment": "0 turns automated backups off. An AWS free-tier account refuses anything above 1.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 35
+        },
+        "deletion_protection": {
+          "$comment": "Refuse to destroy the instance, and on AWS take a final snapshot when it is destroyed anyway. Off is right for an environment that is rebuilt often.",
+          "type": "boolean"
         }
       }
     },
@@ -177,6 +235,18 @@
               "required": ["network_cidr"]
             },
             {
+              "$comment": "RDS refuses a DB subnet group that does not span two availability zones.",
+              "properties": {
+                "subnets": {
+                  "properties": {
+                    "database": {
+                      "minItems": 2
+                    }
+                  }
+                }
+              }
+            },
+            {
               "$comment": "AWS names a principal by ARN.",
               "properties": {
                 "secret_version_managers": {
@@ -203,6 +273,11 @@
     }
   },
   "$defs": {
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
     "cloud_name": {
       "type": "string",
       "enum": ["gcp", "aws"]
@@ -231,6 +306,7 @@
         "zone",
         "subnets",
         "machine_sizes",
+        "database_sizes",
         "disk_types",
         "images"
       ],
@@ -257,7 +333,7 @@
         "subnets": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["management", "workload"],
+          "required": ["management", "workload", "database"],
           "properties": {
             "management": {
               "type": "string",
@@ -266,11 +342,26 @@
             "workload": {
               "type": "string",
               "minLength": 1
+            },
+            "database": {
+              "$comment": "Ranges reserved for a managed database. Created only in managed mode, never routed to the internet. GCP needs one, for the Private Service Connect endpoint; AWS needs two in different availability zones, because a DB subnet group must span two even for a single instance.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
         "machine_sizes": {
           "$comment": "Abstract size label to this provider's machine type, for example tiny to e2-micro or t3.micro.",
+          "$ref": "#/$defs/label_map"
+        },
+        "database_sizes": {
+          "$comment": "Abstract size label to this provider's managed database tier, for example small to db-f1-micro or db.t4g.micro.",
           "$ref": "#/$defs/label_map"
         },
         "disk_types": {
@@ -407,8 +498,9 @@
           "$ref": "#/$defs/cloud_name"
         },
         "role": {
+          "$comment": "infra carries whatever the database mode leaves on a VM: the PostgreSQL container when self-hosted, RabbitMQ and Redis when managed.",
           "type": "string",
-          "enum": ["database", "history", "fetcher", "ui"]
+          "enum": ["infra", "history", "fetcher", "ui"]
         },
         "size": {
           "$comment": "Label resolved through the hosting cloud's machine_sizes map.",

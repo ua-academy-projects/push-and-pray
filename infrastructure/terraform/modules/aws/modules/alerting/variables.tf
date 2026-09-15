@@ -36,10 +36,10 @@ variable "containers_by_role" {
   description = "Container names each role runs. CloudWatch cannot lift a name out of a log line into a notification, so the pairs are enumerated and each gets its own alarm, named after both."
   type        = map(list(string))
   default = {
-    database = ["petroscope-postgres-1", "petroscope-migrate-1"]
-    history  = ["petroscope-history-1"]
-    fetcher  = ["petroscope-fetcher-1"]
-    ui       = ["petroscope-ui-1", "oilscope-proxy-traefik-1"]
+    infra   = ["petroscope-postgres-1", "petroscope-migrate-1", "petroscope-rabbitmq-1", "petroscope-redis-1"]
+    history = ["petroscope-history-1"]
+    fetcher = ["petroscope-fetcher-1"]
+    ui      = ["petroscope-ui-1", "oilscope-proxy-traefik-1"]
   }
 }
 

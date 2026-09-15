@@ -8,6 +8,11 @@ output "private_subnet_id" {
   value       = aws_subnet.private.id
 }
 
+output "database_subnet_ids" {
+  description = "IDs of the subnets reserved for the managed database, in the order their ranges were configured. Empty when no such subnets exist."
+  value       = aws_subnet.database[*].id
+}
+
 output "vpc_id" {
   description = "ID of the VPC."
   value       = aws_vpc.main.id

@@ -9,8 +9,9 @@ module "selection" {
 
   # What this provider accepts in each lookup map. Data, not a branch.
   profile_value_patterns = {
-    machine_sizes = "^[a-z][0-9]?[a-z0-9]*-[a-z0-9-]+$"
-    disk_types    = "^pd-(standard|balanced|ssd)$"
-    images        = "^projects/[^/]+/global/images/"
+    machine_sizes  = "^[a-z][0-9]?[a-z0-9]*-[a-z0-9-]+$"
+    database_sizes = "^db-(f1-micro|g1-small|custom-[0-9]+-[0-9]+)$"
+    disk_types     = "^pd-(standard|balanced|ssd)$"
+    images         = "^projects/[^/]+/global/images/"
   }
 }

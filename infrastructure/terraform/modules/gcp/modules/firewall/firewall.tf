@@ -70,20 +70,57 @@ resource "google_compute_firewall" "history_api" {
   }
 }
 
+# What the infra VM serves depends on where the database runs. Self-hosted:
+# PostgreSQL. Managed: the RabbitMQ broker and the Redis cache that take over
+# the queue and the sessions. The clients are the same three workloads either
+# way. The managed database itself needs no rule here - a Private Service
+# Connect endpoint is not a VM, and egress from the VPC is allowed by default.
 resource "google_compute_firewall" "postgresql" {
+  count = var.database_managed ? 0 : 1
+
   name    = "${var.resource_prefix}-allow-postgresql"
   network = var.network_id
 
-  source_tags = [
-    local.network_tags.fetcher,
-    local.network_tags.history,
-    local.network_tags.ui,
-  ]
-
+  source_tags = local.infra_client_tags
   target_tags = [local.network_tags.infra]
 
   allow {
     protocol = "tcp"
     ports    = [tostring(var.config.service_ports.postgresql)]
+  }
+}
+
+moved {
+  from = google_compute_firewall.postgresql
+  to   = google_compute_firewall.postgresql[0]
+}
+
+resource "google_compute_firewall" "amqp" {
+  count = var.database_managed ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-amqp"
+  network = var.network_id
+
+  source_tags = local.infra_client_tags
+  target_tags = [local.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.config.service_ports.amqp)]
+  }
+}
+
+resource "google_compute_firewall" "redis" {
+  count = var.database_managed ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-redis"
+  network = var.network_id
+
+  source_tags = local.infra_client_tags
+  target_tags = [local.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.config.service_ports.redis)]
   }
 }

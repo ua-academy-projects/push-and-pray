@@ -4,19 +4,21 @@ output "network_tags" {
 }
 
 output "firewall_rule_names" {
-  description = "Name of every ingress rule this module creates, by purpose. The bootstrap rule is absent unless it is enabled."
+  description = "Name of every ingress rule this module creates, by purpose. The bootstrap rule is absent unless it is enabled; postgresql exists only with a self-hosted database, amqp and redis only with a managed one."
   value = merge(
     {
       bastion_ssh  = google_compute_firewall.bastion_ssh.name
       workload_ssh = google_compute_firewall.workload_ssh.name
       ui_web       = google_compute_firewall.ui_web.name
       history_api  = google_compute_firewall.history_api.name
-      postgresql   = google_compute_firewall.postgresql.name
     },
     {
       for rule in google_compute_firewall.bastion_ssh_bootstrap :
       "bastion_ssh_bootstrap" => rule.name
     },
+    { for rule in google_compute_firewall.postgresql : "postgresql" => rule.name },
+    { for rule in google_compute_firewall.amqp : "amqp" => rule.name },
+    { for rule in google_compute_firewall.redis : "redis" => rule.name },
   )
 }
 

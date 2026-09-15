@@ -15,9 +15,11 @@ changes with the application while this layout does not.
 | `<prefix>-vpc` | The VPC, carrying its own CIDR range |
 | `<prefix>-public` | Subnet routed to the internet gateway - bastion and anything holding a public IP |
 | `<prefix>-private` | Subnet routed through NAT |
+| `<prefix>-database-1`, `-2` | Subnets for the managed database, only when `enable_database_subnets`; one per range, in the first availability zones of the region |
 | `<prefix>-igw` | Internet gateway |
 | `<prefix>-nat`, `<prefix>-nat-ip` | NAT gateway and its address, only when `enable_nat_gateway` |
 | `<prefix>-public`, `<prefix>-private` route tables | One default route each, plus their associations |
+| `<prefix>-isolated` route table | No routes beyond the VPC itself; the database subnets are associated with it |
 
 ## Two placement rules that differ from GCP
 
@@ -43,6 +45,7 @@ every VM on this cloud has a public address.
 | `resource_prefix` | Prefix for every resource name |
 | `profile` | Cloud profile; `network_cidr`, `zone` and both subnet ranges are read |
 | `enable_nat_gateway` | Whether any VM needs outbound access without a public IP |
+| `enable_database_subnets` | Whether to create the database subnets from `subnets.database`; RDS needs two, in different zones |
 | `tags` | Tags for every resource |
 
 ## Outputs
@@ -53,6 +56,7 @@ every VM on this cloud has a public address.
 | `availability_zone` | Zone both subnets are bound to |
 | `public_subnet_id`, `public_subnet_cidr` | Subnet routed to the gateway |
 | `private_subnet_id`, `private_subnet_cidr` | Subnet routed through NAT |
+| `database_subnet_ids` | Database subnets in configured order, empty when none are created |
 | `internet_gateway_id` | Internet gateway |
 | `nat_gateway_id` | NAT gateway, or `null` when none is created |
 | `nat_public_ip` | Address every private VM appears to come from - useful for upstream allowlisting |

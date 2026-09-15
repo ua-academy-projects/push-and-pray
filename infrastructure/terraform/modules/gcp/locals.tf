@@ -9,6 +9,9 @@ locals {
 
   bastion_name = "${local.resource_prefix}-bastion"
 
+  database_managed = module.selection.database_managed
+  builds_database  = module.selection.builds_database
+
   # Every VM identity on this cloud, the bastion included: logging and
   # monitoring both grant it the right to write. Count-based, so the bastion
   # joins only when the cloud is active.

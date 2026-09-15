@@ -41,8 +41,16 @@ The VM module joins the groups matching each VM's `network_tags`.
 | `bastion_ssh_bootstrap` | `bastion.allowed_cidrs` | bastion group | `22` (temporary and opt-in) |
 | `workload_ssh` | bastion group | infra, history, fetcher, ui groups | `22` |
 | `history_api` | ui group | history group | `config.service_ports.history_api` |
-| `postgresql` | fetcher, history, ui groups | infra group | `config.service_ports.postgresql` |
+| `postgresql` | fetcher, history, ui groups | infra group | `config.service_ports.postgresql` (self-hosted database only) |
+| `amqp` | fetcher, history, ui groups | infra group | `config.service_ports.amqp` (managed database only) |
+| `redis` | fetcher, history, ui groups | infra group | `config.service_ports.redis` (managed database only) |
 | `ui_web` | `0.0.0.0/0` | ui group | `config.network.ui_public_ports` (`443` only) |
+
+What the infra instance serves follows `database_managed`: with a self-hosted
+database it runs PostgreSQL, with a managed one it runs the RabbitMQ broker and
+the Redis cache instead, so the three rules swap as one. The managed database
+has a security group of its own in the `database` module, which admits the
+three workloads and the infra instance.
 
 Port 80 is deliberately closed. Traefik terminates TLS on 443 and solves the
 ACME challenge with TLS-ALPN-01, so nothing ever listens on 80.

@@ -15,7 +15,7 @@ provider "google" {
 }
 
 provider "aws" {
-  region = try(local.config.clouds.aws.region, "us-east-1")
+  region                      = try(local.config.clouds.aws.region, "us-east-1")
   access_key                  = local.aws_in_use ? null : "unused"
   secret_key                  = local.aws_in_use ? null : "unused"
   skip_credentials_validation = !local.aws_in_use

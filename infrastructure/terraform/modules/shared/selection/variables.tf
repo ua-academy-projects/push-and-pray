@@ -99,6 +99,52 @@ variable "config" {
       ]
     ]))}."
   }
+
+  validation {
+    condition = (
+      length([
+        for name, vm in var.config.vms : name
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
+      ]) == 0
+      || try(var.config.database.mode, "self-hosted") != "managed"
+      || (
+        anytrue([
+          for name, vm in var.config.vms :
+          vm.role == "infra"
+          if try(vm.cloud, var.config.default_cloud) == var.cloud
+        ])
+        && length([
+          for name, vm in var.config.vms : name
+          if try(vm.cloud, var.config.default_cloud) == var.cloud
+        ]) == length(var.config.vms)
+      )
+    )
+    error_message = "A managed database is reachable only inside one VPC, so in managed mode every workload must sit on the cloud that hosts the infra VM."
+  }
+
+  validation {
+    condition = (
+      length([
+        for name, vm in var.config.vms : name
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
+      ]) == 0
+      || try(var.config.database.mode, "self-hosted") != "managed"
+      || contains(keys(try(var.config.clouds[var.cloud].database_sizes, {})), try(var.config.database.size, ""))
+    )
+    error_message = "database.size must be a label declared in this cloud's database_sizes."
+  }
+
+  validation {
+    condition = (
+      length([
+        for name, vm in var.config.vms : name
+        if try(vm.cloud, var.config.default_cloud) == var.cloud
+      ]) == 0
+      || try(var.config.database.mode, "self-hosted") != "managed"
+      || length(try(var.config.clouds[var.cloud].subnets.database, [])) > 0
+    )
+    error_message = "A managed database needs at least one range in this cloud's subnets.database."
+  }
 }
 
 variable "cloud" {
