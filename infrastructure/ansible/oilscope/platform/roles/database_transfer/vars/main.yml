@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_transfer_runtime_environment: >-
+  {{
+    database_transfer_compose_environment
+    | combine({
+      'DOCKER_CONFIG': database_transfer_docker_config_dir,
+      'POSTGRES_PASSWORD': database_transfer_postgres_password,
+      'POSTGRES_USER': database_transfer_postgres_user,
+      'POSTGRES_DB': database_transfer_postgres_name,
+      'PGPASSWORD': database_transfer_postgres_password
+    })
+  }}
+
+database_transfer_compose_argv:
+  - docker
+  - compose
+  - --project-name
+  - "{{ database_transfer_compose_project_name }}"
+  - --file
+  - "{{ database_transfer_compose_file }}"
+
+# psql inside the PostgreSQL container, over its socket: no password, no
+# network, and independent of which secret version the container was born
+# with.
+database_transfer_local_psql: >-
+  {{ database_transfer_compose_argv
+     + ['exec', '-T', database_transfer_postgres_service,
+        'psql', '-U', database_transfer_postgres_user, '-d', database_transfer_postgres_name,
+        '-v', 'ON_ERROR_STOP=1', '-Atc'] }}
+
+# A one-off container from the database image, pointed at the managed
+# instance. PGPASSWORD is passed by name and read from this task's
+# environment, so it never becomes an argument. --user root lets the same
+# container read and write the dump directory the role owns.
+database_transfer_remote_run: >-
+  {{ database_transfer_compose_argv
+     + ['run', '--rm', '--no-deps', '--user', 'root',
+        '--volume', database_transfer_dump_dir ~ ':/transfer',
+        '--env', 'PGHOST=' ~ database_transfer_managed_host,
+        '--env', 'PGPORT=' ~ (database_transfer_managed_port | string),
+        '--env', 'PGSSLMODE=' ~ database_transfer_managed_sslmode,
+        '--env', 'PGPASSWORD',
+        database_transfer_migrate_service] }}
+
+database_transfer_remote_psql: >-
+  {{ database_transfer_remote_run + ['psql', '-v', 'ON_ERROR_STOP=1', '-Atc'] }}
+
+# The queue must be empty, if there is a queue at all.
+database_transfer_queue_depth_sql: >-
+  SELECT CASE WHEN to_regnamespace('pgmq') IS NULL THEN 0
+              ELSE (SELECT queue_length FROM pgmq.metrics('{{ database_transfer_queue }}')) END
+
+database_transfer_count_sql: SELECT count(*) FROM price_observations
+
+# What moves: the observations and every other application table, but not the
+# queue (drained before the dump), the sessions (preferences, recreated from
+# defaults) or the publish ledger (a fresh start on the other side). Only the
+# public schema is dumped: pgmq and pg_cron keep tables of their own that a
+# server without the extension cannot take.
+database_transfer_dump_argv:
+  - pg_dump
+  - --format=custom
+  - --no-owner
+  - --no-privileges
+  - --schema=public
+  - --exclude-table=public.ui_sessions
+  - --exclude-table=public.published_queue_events
+
+# The schema on the target comes from the migrations, so only rows are
+# restored into it.
+database_transfer_restore_argv:
+  - pg_restore
+  - --data-only
+  - --no-owner
+  - --no-privileges
+  - --exit-on-error

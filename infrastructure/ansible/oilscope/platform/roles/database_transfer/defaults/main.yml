@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# to_managed: the PostgreSQL container on this VM is the source, the managed
+# instance the target. to_self_hosted: the other way round.
+database_transfer_direction: to_managed
+
+database_transfer_compose_project_dir: /opt/oilscope/app
+database_transfer_compose_file: "{{ database_transfer_compose_project_dir }}/compose.yaml"
+database_transfer_compose_project_name: petroscope
+database_transfer_postgres_service: postgres
+database_transfer_migrate_service: migrate
+
+database_transfer_postgres_password: ""
+database_transfer_postgres_user: oil_tracker
+database_transfer_postgres_name: oil_tracker
+
+# The managed side. Discovered by the inventory plugin while the configuration
+# says managed; on the way back the configuration no longer does, so the
+# address has to be passed in.
+database_transfer_managed_host: >-
+  {{ oilscope_managed_database_host
+     | default(undef('the managed database endpoint is unknown; pass'
+                     ~ ' -e database_transfer_managed_host=<address>'
+                     ~ ' (terraform output database names it)')) }}
+database_transfer_managed_port: >-
+  {{ oilscope_managed_database_port | default(oilscope_postgresql_port | default(5432)) }}
+database_transfer_managed_sslmode: require
+
+# The queue that has to be empty before a self-hosted source is dumped: a
+# message still in it would be lost with the container.
+database_transfer_queue: price_observations
+database_transfer_drain_retries: 60
+database_transfer_drain_delay: 5
+
+# Dumps stay here until removed by hand - the only copy if a restore has to
+# be repeated. Readable by the owner alone.
+database_transfer_dump_dir: /var/tmp/oilscope-transfer
+database_transfer_dump_owner: root
+database_transfer_dump_group: root
+
+# Refuse a target that already holds observations, unless told to empty it.
+database_transfer_force: false
+
+database_transfer_docker_config_dir: /run/oilscope/docker-auth
+database_transfer_compose_environment: {}

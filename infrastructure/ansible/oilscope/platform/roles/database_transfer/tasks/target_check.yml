@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# A data-only restore into a table that already holds rows fails on the first
+# duplicate key. Rather than let pg_restore find that out halfway through, the
+# target is checked first, and emptied only when explicitly asked.
+- name: Count the rows at the target
+  ansible.builtin.command:
+    argv: "{{ database_transfer_target_psql + [database_transfer_count_sql] }}"
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  register: database_transfer_existing
+  changed_when: false
+  no_log: true
+
+- name: Refuse a target that is not empty
+  ansible.builtin.assert:
+    that: database_transfer_existing.stdout | trim == '0' or (database_transfer_force | bool)
+    fail_msg: >-
+      the target already holds {{ database_transfer_existing.stdout | trim }}
+      observations; rerun with -e database_transfer_force=true to replace them
+    quiet: true
+
+- name: Empty the target
+  ansible.builtin.command:
+    argv: "{{ database_transfer_target_psql + ['TRUNCATE TABLE price_observations'] }}"
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  changed_when: true
+  no_log: true
+  when: database_transfer_existing.stdout | trim != '0'

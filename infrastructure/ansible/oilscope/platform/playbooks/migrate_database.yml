@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Move the observations between the self-hosted and the managed PostgreSQL.
+# The fetcher is paused around the transfer so nothing is written meanwhile;
+# history and the UI keep answering from whatever they are pointed at.
+#
+#   ansible-playbook oilscope.platform.migrate_database \
+#     -i infrastructure/ansible/inventory/oilscope.yml \
+#     -e project_config_path=/absolute/path/project-config.json \
+#     -e database_transfer_direction=to_managed
+#
+# See docs/managed-database.md for where this sits in the switch-over.
+- name: Pause the Fetcher
+  hosts: fetcher
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Stop the Fetcher service
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - petroscope
+          - --file
+          - /opt/oilscope/app/compose.yaml
+          - stop
+          - fetcher
+      args:
+        chdir: /opt/oilscope/app
+      register: migrate_database_fetcher_stop
+      changed_when: "'Stopped' in migrate_database_fetcher_stop.stderr"
+
+- name: Move the data
+  hosts: infra
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - role: oilscope.platform.registry_auth
+      vars:
+        registry_auth_registry: >-
+          {{ oilscope_config.registry.repository
+             | regex_replace('/.*$', '') }}
+        registry_auth_username: >-
+          {{ oilscope_config.registry.username | default('') }}
+        registry_auth_token: >-
+          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
+
+    - role: oilscope.platform.database_transfer
+      vars:
+        database_transfer_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_transfer_postgres_user: "{{ oilscope_database_user }}"
+        database_transfer_postgres_name: "{{ oilscope_database_name }}"
+
+- name: Resume the Fetcher
+  hosts: fetcher
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Start the Fetcher service
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - petroscope
+          - --file
+          - /opt/oilscope/app/compose.yaml
+          - start
+          - fetcher
+      args:
+        chdir: /opt/oilscope/app
+      register: migrate_database_fetcher_start
+      changed_when: "'Started' in migrate_database_fetcher_start.stderr"

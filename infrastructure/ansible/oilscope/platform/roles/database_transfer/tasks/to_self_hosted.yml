@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Count the rows at the source
+  ansible.builtin.command:
+    argv: "{{ database_transfer_remote_psql + [database_transfer_count_sql] }}"
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  register: database_transfer_source_count
+  changed_when: false
+  no_log: true
+
+- name: Check what the target holds
+  ansible.builtin.include_tasks: target_check.yml
+  vars:
+    database_transfer_target_psql: "{{ database_transfer_local_psql }}"
+
+- name: Dump the managed database
+  ansible.builtin.command:
+    argv: >-
+      {{ database_transfer_remote_run
+         + database_transfer_dump_argv
+         + ['--dbname', database_transfer_postgres_name,
+            '-f', '/transfer/' ~ (database_transfer_dump | basename)] }}
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  changed_when: true
+  no_log: true
+
+- name: Copy the dump into the container
+  ansible.builtin.command:
+    argv: >-
+      {{ database_transfer_compose_argv
+         + ['cp', database_transfer_dump,
+            database_transfer_postgres_service ~ ':/tmp/oilscope-transfer.dump'] }}
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  changed_when: true
+
+- name: Restore into the container
+  ansible.builtin.command:
+    argv: >-
+      {{ database_transfer_compose_argv
+         + ['exec', '-T', database_transfer_postgres_service]
+         + database_transfer_restore_argv
+         + ['-U', database_transfer_postgres_user, '--dbname', database_transfer_postgres_name,
+            '/tmp/oilscope-transfer.dump'] }}
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  changed_when: true
+
+- name: Count the rows at the target
+  ansible.builtin.command:
+    argv: "{{ database_transfer_local_psql + [database_transfer_count_sql] }}"
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  register: database_transfer_target_count
+  changed_when: false
+
+- name: Verify every row arrived
+  ansible.builtin.assert:
+    that: database_transfer_target_count.stdout | trim == database_transfer_source_count.stdout | trim
+    fail_msg: >-
+      the container holds {{ database_transfer_target_count.stdout | trim }}
+      observations, the managed database {{ database_transfer_source_count.stdout | trim }}
+    quiet: true
+
+- name: Report
+  ansible.builtin.debug:
+    msg: >-
+      {{ database_transfer_source_count.stdout | trim }} observations moved from
+      {{ database_transfer_managed_host }} into the container; dump kept at
+      {{ database_transfer_dump }}

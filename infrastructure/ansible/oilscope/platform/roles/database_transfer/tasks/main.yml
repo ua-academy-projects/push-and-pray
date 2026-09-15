@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the request
+  ansible.builtin.assert:
+    that:
+      - database_transfer_direction in ['to_managed', 'to_self_hosted']
+      - database_transfer_postgres_password | length > 0
+    fail_msg: >-
+      database_transfer_direction must be to_managed or to_self_hosted, and
+      database_transfer_postgres_password must be set
+    quiet: true
+
+- name: Name this transfer
+  ansible.builtin.set_fact:
+    database_transfer_dump: >-
+      {{ database_transfer_dump_dir }}/oilscope-{{ database_transfer_direction
+      }}-{{ '%Y%m%dT%H%M%SZ' | strftime(utc=true) }}.dump
+
+- name: Keep the dump directory to its owner
+  ansible.builtin.file:
+    path: "{{ database_transfer_dump_dir }}"
+    state: directory
+    owner: "{{ database_transfer_dump_owner }}"
+    group: "{{ database_transfer_dump_group }}"
+    mode: "0700"
+
+- name: Get the PostgreSQL container ID
+  ansible.builtin.command:
+    argv: "{{ database_transfer_compose_argv + ['ps', '--quiet', database_transfer_postgres_service] }}"
+  args:
+    chdir: "{{ database_transfer_compose_project_dir }}"
+  environment: "{{ database_transfer_runtime_environment }}"
+  register: database_transfer_container
+  changed_when: false
+  no_log: true
+
+- name: Refuse to run without the PostgreSQL container
+  ansible.builtin.assert:
+    that: database_transfer_container.stdout | trim | length > 0
+    fail_msg: >-
+      no {{ database_transfer_postgres_service }} container is running on this
+      VM. Going to a managed database, run this before deploy_workloads replaces
+      the container; coming back, run deploy_workloads first so it exists again.
+    quiet: true
+
+- name: Move the data
+  ansible.builtin.include_tasks: "{{ database_transfer_direction }}.yml"

@@ -69,8 +69,9 @@ components.
 | Go Fetcher      | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events      | External API integration and collection schedule |
 | History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
-| PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
-| PostgreSQL      | Stores observations and hashed UI sessions; expires sessions through pg_cron                      | Durable market data and session state            |
+| Queue           | PGMQ inside PostgreSQL, or RabbitMQ when the database is managed - a durable queue between Fetcher and History | Queue visibility, retries, and dead-lettering |
+| PostgreSQL      | Stores observations; self-hosted on a VM or managed (Cloud SQL, RDS); hashed UI sessions and pg_cron expiry when self-hosted | Durable market data                              |
+| Redis           | Holds hashed UI sessions when the database is managed                                              | Session state                                    |
 
 ### Data flow
 
@@ -94,6 +95,11 @@ PGMQ provides durable queue storage inside PostgreSQL. Messages are archived onl
 successful observation persistence. If processing fails before the archive operation, the
 visibility timeout makes the message available again. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
+
+With a managed database (`database.mode: managed` in the project configuration)
+steps 3 to 8 run over RabbitMQ instead - the managed services have no PGMQ - and
+step 11 stores preferences in Redis. The services carry both paths and pick one
+through `QUEUE_BACKEND` and `SESSION_BACKEND`; see `docs/managed-database.md`.
 
 ## Tracked instruments
 
@@ -126,10 +132,10 @@ scientific data source.
 │       ├── config/                 Vagrant configuration template
 │       └── provisioning/           Idempotent guest provisioning scripts
 ├── services/
-│   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
-│   ├── history/                    Python History API and PGMQ consumer
+│   ├── fetcher/                    Go scheduler, provider, PGMQ and AMQP publishers
+│   ├── history/                    Python History API, PGMQ and AMQP consumers
 │   └── ui/
-│       ├── backend/                Python UI gateway and PostgreSQL sessions
+│       ├── backend/                Python UI gateway, PostgreSQL or Redis sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
