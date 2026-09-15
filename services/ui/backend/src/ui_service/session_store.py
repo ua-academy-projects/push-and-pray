@@ -1,16 +1,57 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from typing import Literal, Protocol
 
 from psycopg import AsyncConnection, ProgrammingError
+from psycopg import Error as PostgreSQLError
 from psycopg.types import TypeInfo
 from psycopg.types.hstore import register_hstore
 from pydantic import ValidationError
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from .sessions import SessionPreferences
 
+SessionBackend = Literal["postgres", "redis"]
+
+# Everything a store can raise when its backend is unreachable or refuses the
+# request. The API turns any of these into a 503.
+SESSION_STORE_ERRORS: tuple[type[Exception], ...] = (PostgreSQLError, RedisError)
+
+
+class SessionStore(Protocol):
+    label: str
+
+    async def is_ready(self) -> bool: ...
+
+    async def get(self, session_id: str) -> SessionPreferences: ...
+
+    async def update(
+        self, session_id: str, preferences: SessionPreferences
+    ) -> SessionPreferences: ...
+
+
+def create_session_store(
+    backend: str,
+    *,
+    database_url: str,
+    redis_url: str,
+    ttl_seconds: int,
+) -> SessionStore:
+    if backend == "postgres":
+        return PostgreSQLSessionStore(database_url, ttl_seconds)
+
+    if backend == "redis":
+        return RedisSessionStore(redis_url, ttl_seconds)
+
+    raise ValueError(f"SESSION_BACKEND must be postgres or redis, not {backend!r}")
+
 
 class PostgreSQLSessionStore:
+    label = "postgresql"
+
     def __init__(self, database_url: str, ttl_seconds: int) -> None:
         self.database_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
         self.ttl_seconds = ttl_seconds
@@ -134,4 +175,61 @@ class PostgreSQLSessionStore:
                         self.ttl_seconds,
                     ),
                 )
+        return preferences
+
+
+class RedisSessionStore:
+    """Sessions as Redis strings that expire on their own.
+
+    Mirrors the PostgreSQL store: the cookie value is hashed before it becomes
+    a key, so the store never holds a usable session id; reading a session
+    slides its expiry forward; an unreadable value is replaced by defaults.
+    Redis drops expired keys itself, which is what pg_cron does for the table.
+    """
+
+    label = "redis"
+
+    def __init__(self, redis_url: str, ttl_seconds: int) -> None:
+        self.ttl_seconds = ttl_seconds
+        self.client: Redis = Redis.from_url(
+            redis_url,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            decode_responses=True,
+        )
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return "session:" + hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+
+    async def is_ready(self) -> bool:
+        return bool(await self.client.ping())
+
+    async def get(self, session_id: str) -> SessionPreferences:
+        key = self._key(session_id)
+        stored = await self.client.get(key)
+
+        if stored is None:
+            return await self.update(session_id, SessionPreferences())
+
+        try:
+            preferences = SessionPreferences.model_validate(json.loads(stored))
+        except (TypeError, ValueError, ValidationError):
+            return await self.update(session_id, SessionPreferences())
+
+        await self.client.expire(key, self.ttl_seconds)
+
+        return preferences
+
+    async def update(
+        self,
+        session_id: str,
+        preferences: SessionPreferences,
+    ) -> SessionPreferences:
+        await self.client.set(
+            self._key(session_id),
+            preferences.model_dump_json(),
+            ex=self.ttl_seconds,
+        )
+
         return preferences

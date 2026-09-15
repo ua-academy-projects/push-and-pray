@@ -18,7 +18,14 @@ services:
       DATA_PROVIDER: oilpriceapi
 
       DATABASE_URL: postgres://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker?sslmode=disable
+
+      # pgmq publishes into the database above; amqp into the RabbitMQ of the
+      # managed profile in compose.database.yaml.
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-pgmq}
       PGMQ_QUEUE: price_observations
+      AMQP_URL: amqp://oil_tracker:${RABBITMQ_PASSWORD:-}@${DB_LAN_IP}:5672/oil_tracker
+      AMQP_EXCHANGE: oil.price.events
+      AMQP_ROUTING_KEY: prices.observed
 
       FETCH_CRON_HOURS: "0,6,12,18"
       FETCH_TIMEZONE: UTC

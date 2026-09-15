@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "Research application for collecting and visualizing daily oil and gasoline prices"
 requires-python = ">=3.12"
 dependencies = [
+    "aio-pika>=9.5,<10",
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",
     "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.9,<3",
     "python-json-logger>=3,<4",
+    "redis>=5.2,<7",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.34,<1",
 ]

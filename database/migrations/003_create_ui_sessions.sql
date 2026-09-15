@@ -1,8 +1,21 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS hstore;
+
+-- pg_cron only works when the server preloads it. The self-hosted image does;
+-- a managed PostgreSQL is not asked to, because sessions live in Redis there
+-- and nothing has to sweep this table. So the extension and the job that
+-- depends on it are created only where they can run.
+DO $$
+BEGIN
+    IF current_setting('shared_preload_libraries') LIKE '%pg_cron%' THEN
+        CREATE EXTENSION IF NOT EXISTS pg_cron;
+    ELSE
+        RAISE NOTICE 'pg_cron is not preloaded on this server; the session cleanup job is skipped';
+    END IF;
+END
+$$;
 
 CREATE OR REPLACE FUNCTION pg_temp.ui_session_preferences_to_hstore(preferences JSONB)
 RETURNS HSTORE
@@ -53,10 +66,16 @@ $$;
 CREATE INDEX IF NOT EXISTS ix_ui_sessions_expires_at
     ON ui_sessions (expires_at);
 
-SELECT cron.schedule(
-    'delete-expired-ui-sessions',
-    '* * * * *',
-    $$DELETE FROM public.ui_sessions WHERE expires_at <= CURRENT_TIMESTAMP$$
-);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.schedule(
+            'delete-expired-ui-sessions',
+            '* * * * *',
+            'DELETE FROM public.ui_sessions WHERE expires_at <= CURRENT_TIMESTAMP'
+        );
+    END IF;
+END
+$$;
 
 COMMIT;

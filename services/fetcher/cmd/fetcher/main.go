@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"oil-price-tracker/fetcher/internal/amqp"
 	"oil-price-tracker/fetcher/internal/config"
 	"oil-price-tracker/fetcher/internal/httplog"
 	"oil-price-tracker/fetcher/internal/pgmq"
@@ -61,10 +62,7 @@ func main() {
 
 	collector := service.New(
 		priceProvider,
-		pgmq.Publisher{
-			DB:        database,
-			QueueName: configuration.QueueName,
-		},
+		newPublisher(configuration, database),
 	)
 
 	ctx, stop := signal.NotifyContext(
@@ -146,8 +144,8 @@ func main() {
 				"status":   "ok",
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
-				"queue":    configuration.QueueName,
+				"delivery": configuration.QueueBackend,
+				"queue":    queueLabel(configuration),
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,
 					"timezone": configuration.Timezone.String(),
@@ -214,8 +212,10 @@ func main() {
 			configuration.ListenAddress,
 			"provider",
 			configuration.DataProvider,
+			"delivery",
+			configuration.QueueBackend,
 			"queue",
-			configuration.QueueName,
+			queueLabel(configuration),
 		)
 
 		if err := server.ListenAndServe(); err != nil &&
@@ -236,6 +236,33 @@ func main() {
 	if err := server.Shutdown(shutdownContext); err != nil {
 		slog.Error("HTTP shutdown failed", "error", err)
 	}
+}
+
+// newPublisher picks the queue backend. Both keep the event-key ledger in the
+// application database; they differ in where the message itself goes.
+func newPublisher(configuration config.Config, database *sql.DB) service.Publisher {
+	if configuration.QueueBackend == "amqp" {
+		return amqp.Publisher{
+			DB:         database,
+			URL:        configuration.AMQPURL,
+			Exchange:   configuration.AMQPExchange,
+			RoutingKey: configuration.AMQPRoutingKey,
+		}
+	}
+
+	return pgmq.Publisher{
+		DB:        database,
+		QueueName: configuration.QueueName,
+	}
+}
+
+// queueLabel names the destination the way an operator would look for it.
+func queueLabel(configuration config.Config) string {
+	if configuration.QueueBackend == "amqp" {
+		return configuration.AMQPExchange + "/" + configuration.AMQPRoutingKey
+	}
+
+	return configuration.QueueName
 }
 
 func writeJSON(

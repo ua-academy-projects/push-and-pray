@@ -8,10 +8,9 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from psycopg import Error as PostgreSQLError
 
 from .logging_config import configure_logging
-from .session_store import PostgreSQLSessionStore
+from .session_store import SESSION_STORE_ERRORS, create_session_store
 from .sessions import SessionPreferences, resolve_session_id
 
 configure_logging(os.getenv("LOG_LEVEL", "INFO"))
@@ -22,6 +21,10 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg://oil_tracker:change-me@localhost:5432/oil_tracker",
 )
+# Sessions live in PostgreSQL next to the data, or in Redis when the database
+# is a managed service. Both stores ship in the image; the deployment picks one.
+SESSION_BACKEND = os.getenv("SESSION_BACKEND", "postgres").lower()
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "petroscope_session")
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
@@ -41,7 +44,12 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
-app.state.session_store = PostgreSQLSessionStore(DATABASE_URL, SESSION_TTL_SECONDS)
+app.state.session_store = create_session_store(
+    SESSION_BACKEND,
+    database_url=DATABASE_URL,
+    redis_url=REDIS_URL,
+    ttl_seconds=SESSION_TTL_SECONDS,
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -70,16 +78,17 @@ async def health(request: Request) -> dict[str, str]:
         upstream.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="History Service is unavailable") from exc
+    store = request.app.state.session_store
     try:
-        sessions_ready = await request.app.state.session_store.is_ready()
-    except PostgreSQLError as exc:
+        sessions_ready = await store.is_ready()
+    except SESSION_STORE_ERRORS as exc:
         raise HTTPException(
             status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
+            detail="session persistence is unavailable",
         ) from exc
     if not sessions_ready:
-        raise HTTPException(status_code=503, detail="PostgreSQL session persistence is not ready")
-    return {"status": "ok", "history": "connected", "sessions": "postgresql"}
+        raise HTTPException(status_code=503, detail="session persistence is not ready")
+    return {"status": "ok", "history": "connected", "sessions": store.label}
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
@@ -103,10 +112,10 @@ async def get_session_preferences(request: Request, response: Response) -> Sessi
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
     try:
         preferences = await request.app.state.session_store.get(session_id)
-    except PostgreSQLError as exc:
+    except SESSION_STORE_ERRORS as exc:
         raise HTTPException(
             status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
+            detail="session persistence is unavailable",
         ) from exc
     _set_session_cookie(response, session_id)
     return preferences
@@ -125,10 +134,10 @@ async def update_session_preferences(
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
     try:
         await request.app.state.session_store.update(session_id, payload)
-    except PostgreSQLError as exc:
+    except SESSION_STORE_ERRORS as exc:
         raise HTTPException(
             status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
+            detail="session persistence is unavailable",
         ) from exc
     _set_session_cookie(response, session_id)
     return payload

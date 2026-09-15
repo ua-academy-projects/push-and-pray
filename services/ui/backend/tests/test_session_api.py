@@ -18,7 +18,7 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 pytestmark = pytest.mark.skipif(
     not TEST_DATABASE_URL,
-    reason="TEST_DATABASE_URL must point to a migrated PostgreSQL 18 test database",
+    reason="TEST_DATABASE_URL must point to a migrated PostgreSQL 17 test database",
 )
 
 

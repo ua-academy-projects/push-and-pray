@@ -3,13 +3,12 @@ package pgmq
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"oil-price-tracker/fetcher/internal/model"
 	"oil-price-tracker/fetcher/internal/provider"
+	"oil-price-tracker/fetcher/internal/queue"
 )
 
 type Publisher struct {
@@ -17,40 +16,13 @@ type Publisher struct {
 	QueueName string
 }
 
-type batchMessage struct {
-	SchemaVersion int                 `json:"schema_version"`
-	EventKey      string              `json:"event_key"`
-	Observations  []model.Observation `json:"observations"`
-}
-
 func (publisher Publisher) Publish(
 	ctx context.Context,
 	observations []model.Observation,
 ) error {
-	if len(observations) == 0 {
-		return fmt.Errorf(
-			"cannot publish an empty observation event",
-		)
-	}
-
-	eventKey := "oil-prices:" +
-		observations[0].
-			ScheduledFor.
-			UTC().
-			Format(time.RFC3339)
-
-	body, err := json.Marshal(
-		batchMessage{
-			SchemaVersion: 1,
-			EventKey:      eventKey,
-			Observations:  observations,
-		},
-	)
+	eventKey, body, err := queue.Encode(observations)
 	if err != nil {
-		return fmt.Errorf(
-			"encode observation event: %w",
-			err,
-		)
+		return err
 	}
 
 	return provider.Retry(
@@ -67,6 +39,8 @@ func (publisher Publisher) Publish(
 	)
 }
 
+// publishOnce claims the event key and sends the message in one transaction:
+// either both land or neither does, so a message is published exactly once.
 func (publisher Publisher) publishOnce(
 	ctx context.Context,
 	eventKey string,
@@ -84,22 +58,12 @@ func (publisher Publisher) publishOnce(
 		_ = tx.Rollback()
 	}()
 
-	var claimedEventKey string
+	claimed, err := queue.Claim(ctx, tx, eventKey)
+	if err != nil {
+		return err
+	}
 
-	err = tx.QueryRowContext(
-		ctx,
-		`
-		INSERT INTO published_queue_events (
-			event_key
-		)
-		VALUES ($1)
-		ON CONFLICT (event_key) DO NOTHING
-		RETURNING event_key
-		`,
-		eventKey,
-	).Scan(&claimedEventKey)
-
-	if errors.Is(err, sql.ErrNoRows) {
+	if !claimed {
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf(
 				"commit duplicate publish: %w",
@@ -108,13 +72,6 @@ func (publisher Publisher) publishOnce(
 		}
 
 		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf(
-			"claim event key: %w",
-			err,
-		)
 	}
 
 	var messageID int64

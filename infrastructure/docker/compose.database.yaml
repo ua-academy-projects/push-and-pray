@@ -7,14 +7,13 @@ services:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.database
       args:
-        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-ghcr.io/pgmq/pg18-pgmq:v1.12.0}
+        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-ghcr.io/pgmq/pg17-pgmq:v1.12.0}
     restart: unless-stopped
     environment:
       POSTGRES_DB: oil_tracker
       POSTGRES_USER: oil_tracker
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
-      PGDATA: /var/lib/postgresql/18/docker
       TZ: UTC
     command:
       - postgres
@@ -27,7 +26,7 @@ services:
     ports:
       - "${DB_LAN_IP:?DB_LAN_IP is required}:5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -40,6 +39,76 @@ services:
       options:
         tag: petroscope/postgres
 
+  # The managed profile stands in for a cloud deployment: PostgreSQL stays the
+  # store, but the queue moves to RabbitMQ and the UI sessions to Redis. Start
+  # it with `docker compose --profile managed up` and point the services at it
+  # with QUEUE_BACKEND=amqp and SESSION_BACKEND=redis. The passwords are not
+  # marked required because Compose interpolates inactive profiles too; both
+  # containers refuse to start with an empty one.
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.1.8}
+    profiles:
+      - managed
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: oil_tracker
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-}
+      RABBITMQ_DEFAULT_VHOST: oil_tracker
+      TZ: UTC
+    ports:
+      - "${DB_LAN_IP}:5672:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/rabbitmq
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.9-bookworm}
+    profiles:
+      - managed
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:-}
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "${DB_LAN_IP}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      TZ: UTC
+    stop_grace_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/redis
+
 volumes:
   postgres_data:
     name: petroscope-postgres-data
+  rabbitmq_data:
+    name: petroscope-rabbitmq-data
+  redis_data:
+    name: petroscope-redis-data

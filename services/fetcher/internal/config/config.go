@@ -13,7 +13,11 @@ type Config struct {
 	OilPriceAPIKey string
 	DataProvider   string
 	DatabaseURL    string
+	QueueBackend   string
 	QueueName      string
+	AMQPURL        string
+	AMQPExchange   string
+	AMQPRoutingKey string
 	CronHours      []int
 	Timezone       *time.Location
 	FetchOnStartup bool
@@ -40,6 +44,18 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("DATABASE_URL must not be empty")
 	}
 
+	// The queue is either PGMQ inside that same database or an AMQP broker
+	// beside it. Both drivers are compiled in; the deployment picks one.
+	queueBackend := strings.ToLower(env("QUEUE_BACKEND", "pgmq"))
+	if queueBackend != "pgmq" && queueBackend != "amqp" {
+		return Config{}, fmt.Errorf("QUEUE_BACKEND must be pgmq or amqp")
+	}
+
+	amqpURL := strings.TrimSpace(os.Getenv("AMQP_URL"))
+	if queueBackend == "amqp" && amqpURL == "" {
+		return Config{}, fmt.Errorf("AMQP_URL is required when QUEUE_BACKEND=amqp")
+	}
+
 	hours, err := ParseHours(env("FETCH_CRON_HOURS", "0,6,12,18"))
 	if err != nil {
 		return Config{}, err
@@ -64,7 +80,11 @@ func Load() (Config, error) {
 		OilPriceAPIKey: apiKey,
 		DataProvider:   provider,
 		DatabaseURL:    databaseURL,
+		QueueBackend:   queueBackend,
 		QueueName:      env("PGMQ_QUEUE", "price_observations"),
+		AMQPURL:        amqpURL,
+		AMQPExchange:   env("AMQP_EXCHANGE", "oil.price.events"),
+		AMQPRoutingKey: env("AMQP_ROUTING_KEY", "prices.observed"),
 		CronHours:      hours,
 		Timezone:       location,
 		FetchOnStartup: fetchOnStartup,

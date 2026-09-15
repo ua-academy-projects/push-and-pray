@@ -53,9 +53,9 @@ have already been persisted in PostgreSQL.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
-| Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| Messaging      | PGMQ (PostgreSQL extension) or RabbitMQ       |
+| Persistence    | PostgreSQL 17                                 |
+| UI sessions    | PostgreSQL 17 (hstore, pgcrypto, pg_cron) or Redis |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
@@ -193,8 +193,10 @@ or pass the token as a Docker build argument.
 
 ## Local development
 
-Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 18 with
-hstore, pgcrypto, pg_cron, and PGMQ.
+Local development requires Python 3.12+, uv, Go 1.24+, Node.js, PostgreSQL 17 with
+hstore, pgcrypto, pg_cron, and PGMQ. RabbitMQ and Redis are needed only to run
+the `amqp` and `redis` backends; `docker compose --profile managed` in
+`infrastructure/docker/compose.database.yaml` starts both.
 
 Install Python dependencies and build the frontend:
 
@@ -316,11 +318,19 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
 | `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
+| `QUEUE_BACKEND`                   | `pgmq`                  | `pgmq` (queue in PostgreSQL) or `amqp` (RabbitMQ) |
 | `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |
 | `PGMQ_MAX_ATTEMPTS`               | `5`                     | Maximum processing attempts              |
+| `AMQP_URL`                        | see `.env.example`      | RabbitMQ connection, `amqp` backend only |
+| `AMQP_EXCHANGE`                   | `oil.price.events`      | Topic exchange the fetcher publishes to  |
+| `AMQP_QUEUE`                      | `history.price-observations` | Quorum queue the history service consumes |
+| `AMQP_ROUTING_KEY`                | `prices.observed`       | Routing key binding the two              |
+| `AMQP_MAX_ATTEMPTS`               | `5`                     | Delivery limit before dead-lettering     |
 | `HISTORY_SERVICE_URL`             | `http://127.0.0.1:8001` | UI-to-History base URL                   |
+| `SESSION_BACKEND`                 | `postgres`              | `postgres` (sessions in PostgreSQL) or `redis` |
+| `REDIS_URL`                       | see `.env.example`      | Redis connection, `redis` backend only   |
 | `SESSION_TTL_SECONDS`             | `2592000`               | Sliding session TTL, 30 days             |
 | `SESSION_COOKIE_SECURE`           | `false`                 | Secure-cookie flag for HTTPS deployments |
 | `LISTEN_ADDRESS`                  | `:8002`                 | Fetcher diagnostic API address           |

@@ -103,43 +103,40 @@ jobs:
         run: go test ./...
 
   integration:
-    name: PostgreSQL Integration
+    name: Queue and session backends
     runs-on: ubuntu-latest
 
+    # One PostgreSQL carries both backends' data; RabbitMQ and Redis come from
+    # the managed profile, so the AMQP and Redis paths are exercised against
+    # the same containers a managed deployment runs.
     env:
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
-      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq:v1.12.0
+      RABBITMQ_PASSWORD: ci-validation
+      REDIS_PASSWORD: ci-validation
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg17-pgmq:v1.12.0
       PGMQ_TEST_DATABASE_URL: postgres://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker?sslmode=disable
       PGMQ_TEST_SQLALCHEMY_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
       TEST_DATABASE_URL: postgresql+psycopg://oil_tracker:ci-validation@127.0.0.1:5432/oil_tracker
+      AMQP_TEST_URL: amqp://oil_tracker:ci-validation@127.0.0.1:5672/oil_tracker
+      TEST_REDIS_URL: redis://:ci-validation@127.0.0.1:6379/0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start PostgreSQL with PGMQ and pg_cron
+      - name: Start PostgreSQL, RabbitMQ and Redis
         run: |
           docker compose \
             -f infrastructure/docker/compose.database.yaml \
-            up -d --build
-
-          for attempt in {1..30}; do
-            if docker compose \
+            --profile managed \
+            up -d --build --wait --wait-timeout 120 || {
+            docker compose \
               -f infrastructure/docker/compose.database.yaml \
-              exec -T postgres \
-              pg_isready -U oil_tracker -d oil_tracker; then
-              exit 0
-            fi
-
-            sleep 2
-          done
-
-          docker compose \
-            -f infrastructure/docker/compose.database.yaml \
-            logs postgres
-
-          exit 1
+              --profile managed \
+              logs
+            exit 1
+          }
 
       - name: Apply database migrations
         run: |
@@ -187,11 +184,15 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --frozen
 
-      - name: Run History PGMQ integration tests
+      - name: Run History PGMQ and AMQP integration tests
         run: uv run pytest services/history/tests/integration -v
 
-      - name: Run UI PostgreSQL session integration tests
-        run: uv run pytest services/ui/backend/tests/test_session_api.py -v
+      - name: Run UI PostgreSQL and Redis session integration tests
+        run: |
+          uv run pytest \
+            services/ui/backend/tests/test_session_api.py \
+            services/ui/backend/tests/test_session_api_redis.py \
+            -v
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -199,15 +200,16 @@ jobs:
           go-version-file: services/fetcher/go.mod
           cache-dependency-path: services/fetcher/go.sum
 
-      - name: Run Fetcher PGMQ integration tests
+      - name: Run Fetcher PGMQ and AMQP integration tests
         working-directory: services/fetcher
-        run: go test ./internal/pgmq -v
+        run: go test ./internal/pgmq ./internal/amqp -v
 
-      - name: Stop PostgreSQL
+      - name: Stop the backends
         if: always()
         run: |
           docker compose \
             -f infrastructure/docker/compose.database.yaml \
+            --profile managed \
             down -v
 
   frontend:
@@ -246,7 +248,7 @@ jobs:
       APP_IMAGE_TAG: f4bd2d001dd4ad7abcf04af967dca8e8a0f6d891
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
-      POSTGRES_IMAGE: ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+      POSTGRES_IMAGE: ghcr.io/pgmq/pg17-pgmq@sha256:a9769edc2a7270afae8d37510fc12ef1852f54eaeb8f97f0cd93e88f654b8e7e
       POSTGRES_PASSWORD: ci-validation
       OILPRICEAPI_KEY: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
