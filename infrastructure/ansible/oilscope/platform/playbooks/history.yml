@@ -33,3 +33,4 @@
     - role: oilscope.platform.history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        history_rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}"

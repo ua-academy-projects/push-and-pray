@@ -3,10 +3,7 @@ locals {
 
     ui_public_ports_str = [for port in var.config.network.ui_public_ports : tostring(port)]
 
-    selected_vms = {
-        for name, vm in var.config.vms : name => vm
-        if coalesce(try(vm.cloud, null), var.config.cloud) == "aws"
-    }
+    selected_vms = var.selected_vms
 
     bastion = try(local.selected_vms.bastion, null)
 

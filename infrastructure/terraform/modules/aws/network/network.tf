@@ -35,3 +35,18 @@ resource "aws_subnet" "workload" {
     }
 }
 
+data "aws_availability_zones" "available" {
+    state = "available"
+}
+
+resource "aws_subnet" "database" {
+    count = local.managed_db_enabled ? 2 : 0
+
+    vpc_id = aws_vpc.main[0].id
+    cidr_block = cidrsubnet(var.vpc_cidr_block, 12, 10 + count.index)
+    availability_zone = data.aws_availability_zones.available.names[count.index]
+
+    tags = {
+        Name = "${local.resource_prefix}-database-${count.index}"
+    }
+}

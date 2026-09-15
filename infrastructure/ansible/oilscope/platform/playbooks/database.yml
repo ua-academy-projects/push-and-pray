@@ -40,3 +40,5 @@
             ~ compose_project_config.registry.image_sha
           }}
         database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}"
+        database_redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD | default('') }}"

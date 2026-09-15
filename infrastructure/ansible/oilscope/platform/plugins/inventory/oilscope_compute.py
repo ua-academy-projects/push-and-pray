@@ -174,6 +174,60 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 except OSError as cleanup_error:
                     display.vvv(f"could not remove {generated}: {cleanup_error}")
 
+        self._apply_connection_settings(inventory, bastion_port)
+
+    def _ssh_base_args(self):
+        return "-o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes"
+
+    def _apply_connection_settings(self, inventory, bastion_port):
+        ssh_user = (
+            os.environ.get("OILSCOPE_SSH_USER")
+            or os.environ.get("USER")
+            or ""
+        )
+        ssh_key = os.environ.get("OILSCOPE_SSH_KEY") or os.path.join(
+            os.environ.get("HOME", ""), ".ssh", "google_compute_engine"
+        )
+        base_args = self._ssh_base_args()
+
+        bastion_role = plain(self.get_option("bastion_role"))
+        bastion_group = inventory.groups.get(bastion_role)
+        bastions_by_cloud = {}
+        bastion_names = set()
+
+        if bastion_group is not None:
+            for host in bastion_group.hosts:
+                bastion_names.add(host.name)
+                host_vars = inventory.get_host(host.name).get_vars()
+                cloud = host_vars.get("oilscope_cloud", "")
+                bastions_by_cloud.setdefault(cloud, {
+                    "address": host_vars.get("ansible_host", ""),
+                    "port": host_vars.get("ansible_port", bastion_port),
+                })
+
+        for name, host in inventory.hosts.items():
+            inventory.set_variable(name, "ansible_user", ssh_user)
+            inventory.set_variable(name, "ansible_ssh_private_key_file", ssh_key)
+
+            if name in bastion_names or not bastions_by_cloud:
+                inventory.set_variable(name, "ansible_ssh_common_args", base_args)
+                continue
+
+            host_vars = host.get_vars()
+            cloud = host_vars.get("oilscope_cloud", "")
+            bastion = bastions_by_cloud.get(cloud) or next(
+                iter(bastions_by_cloud.values())
+            )
+            proxy = (
+                f"ssh -W %h:%p -q -p {bastion['port']} -i {ssh_key} "
+                f"{base_args} {ssh_user}@{bastion['address']}"
+            )
+            inventory.set_variable(
+                name,
+                "ansible_ssh_common_args",
+                f'{base_args} -o ProxyCommand="{proxy}"',
+            )
+
     def _resolve_config_path(self, path):
         configured = plain(self.get_option("project_config_path"))
 
@@ -301,6 +355,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "public_ip": f"{public} if {has_public} else ''",
                 "ansible_host": f"{public} if {is_bastion} else {private}",
                 "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+                # The final bastion SSH port, needed by bootstrap_bastion.yml to
+                # probe/settle sshd. Formerly in group_vars/bastion.yml.
+                "bastion_ssh_port": f"{bastion_port}",
                 "oilscope_role": "labels.role | default('')",
                 "oilscope_cloud": "labels.cloud | default('')",
             },
@@ -331,6 +388,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "public_ip": "public_ip_address | default('', true)",
                 "ansible_host": f"public_ip_address if ({is_bastion}) else private_ip_address",
                 "ansible_port": f"{bastion_port} if ({is_bastion}) else {workload_port}",
+                # The final bastion SSH port, needed by bootstrap_bastion.yml to
+                # probe/settle sshd. Formerly in group_vars/bastion.yml.
+                "bastion_ssh_port": f"{bastion_port}",
                 "oilscope_role": "tags.Role | default('')",
                 "oilscope_cloud": "tags.Cloud | default('')",
             },

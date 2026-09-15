@@ -6,12 +6,27 @@ fetcher_compose_project_name: petroscope
 fetcher_service: fetcher
 fetcher_postgres_password: ""
 fetcher_oilpriceapi_key: ""
+fetcher_rabbitmq_password: ""
 fetcher_postgres_user: oil_tracker
 fetcher_postgres_name: oil_tracker
-fetcher_database_host: postgres
 fetcher_bind_address: 0.0.0.0
 fetcher_host_port: 8002
 fetcher_health_retries: 30
 fetcher_health_delay: 2
 fetcher_docker_config_dir: /run/oilscope/docker-auth
 fetcher_compose_environment: {}
+
+fetcher_managed_db_enabled: >-
+  {{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_db.enabled
+     | default(false) }}
+fetcher_infra_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+
+managed_db_host: "{{ managed_db_host_value | default('') }}"
+fetcher_database_host: >-
+  {{ managed_db_host if (fetcher_managed_db_enabled | bool) else fetcher_infra_host }}
+fetcher_database_sslmode: "{{ 'require' if (fetcher_managed_db_enabled | bool) else 'disable' }}"
+fetcher_queue_backend: "{{ 'rabbitmq' if (fetcher_managed_db_enabled | bool) else 'pgmq' }}"
+fetcher_rabbitmq_user: oil_tracker
+fetcher_rabbitmq_vhost: oil_tracker
+fetcher_rabbitmq_url: >-
+  amqp://{{ fetcher_rabbitmq_user }}:{{ fetcher_rabbitmq_password }}@{{ fetcher_infra_host }}:5672/{{ fetcher_rabbitmq_vhost }}

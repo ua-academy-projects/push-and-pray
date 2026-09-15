@@ -3,7 +3,6 @@
 database_compose_project_dir: /opt/oilscope/app
 database_compose_file: "{{ database_compose_project_dir }}/compose.yaml"
 database_compose_project_name: petroscope
-database_postgres_service: postgres
 database_migration_service: migrate
 database_postgres_image: ""
 database_postgres_password: ""
@@ -11,7 +10,24 @@ database_postgres_user: oil_tracker
 database_postgres_name: oil_tracker
 database_bind_address: 0.0.0.0
 database_host_port: 5432
-database_health_retries: 30
-database_health_delay: 2
 database_docker_config_dir: /run/oilscope/docker-auth
 database_compose_environment: {}
+
+database_managed_db_enabled: >-
+  {{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_db.enabled
+     | default(false) }}
+
+managed_db_host: "{{ managed_db_host_value | default('') }}"
+database_managed_db_host: "{{ managed_db_host }}"
+
+database_up_services: >-
+  {{ ['rabbitmq', 'redis'] if (database_managed_db_enabled | bool) else ['postgres'] }}
+
+database_migration_skip: >-
+  {{ '003_create_ui_sessions.sql 004_create_pgmq_queue.sql 005_create_published_queue_events.sql'
+     if (database_managed_db_enabled | bool) else '' }}
+
+database_rabbitmq_user: oil_tracker
+database_rabbitmq_password: ""
+database_rabbitmq_vhost: oil_tracker
+database_redis_password: ""

@@ -13,6 +13,8 @@ services:
       # yamllint disable rule:line-length
       DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-pgmq}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oil_tracker:change-me@localhost:5672/oil_tracker}
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}
       FETCH_TIMEZONE: ${FETCH_TIMEZONE:-UTC}

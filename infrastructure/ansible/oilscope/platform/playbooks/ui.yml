@@ -6,6 +6,10 @@
   gather_facts: true
   force_handlers: true
   any_errors_fatal: true
+  vars:
+    cloudflare_enabled: >-
+      {{ (lookup('ansible.builtin.file', project_config_path) | from_json).cloudflare.enabled
+         | default(false) }}
   roles:
     - role: oilscope.platform.host_baseline
 
@@ -41,3 +45,16 @@
     - role: oilscope.platform.ui
       vars:
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD | default('') }}"
+
+    - role: oilscope.platform.compose_project
+      vars:
+        compose_project_config_path: "{{ project_config_path }}"
+        compose_project_dir: /opt/oilscope/cloudflared
+        compose_project_workload: cloudflared
+      when: cloudflare_enabled | bool
+
+    - role: oilscope.platform.cloudflared
+      vars:
+        cloudflared_tunnel_token: "{{ cloudflared_tunnel_token_value | default('') }}"
+      when: cloudflare_enabled | bool

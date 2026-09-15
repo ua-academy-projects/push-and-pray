@@ -3,8 +3,32 @@
 history_compose_project_dir: /opt/oilscope/app
 history_compose_file: "{{ history_compose_project_dir }}/compose.yaml"
 history_compose_project_name: petroscope
-
-history_postgres_password: ""
+history_docker_config_dir: /run/oilscope/docker-auth
 history_health_retries: 30
 history_health_delay: 2
-history_docker_config_dir: /run/oilscope/docker-auth
+
+history_postgres_password: ""
+history_rabbitmq_password: ""
+
+history_managed_db_enabled: >-
+  {{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_db.enabled
+     | default(false) }}
+history_infra_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+
+managed_db_host: "{{ managed_db_host_value | default('') }}"
+history_database_host: >-
+  {{ managed_db_host if (history_managed_db_enabled | bool) else history_infra_host }}
+history_database_sslmode: "{{ 'require' if (history_managed_db_enabled | bool) else 'disable' }}"
+history_queue_backend: "{{ 'rabbitmq' if (history_managed_db_enabled | bool) else 'pgmq' }}"
+history_rabbitmq_user: oil_tracker
+history_rabbitmq_vhost: oil_tracker
+history_rabbitmq_url: >-
+  amqp://{{ history_rabbitmq_user }}:{{ history_rabbitmq_password }}@{{ history_infra_host }}:5672/{{ history_rabbitmq_vhost }}
+
+history_runtime_environment:
+  DOCKER_CONFIG: "{{ history_docker_config_dir }}"
+  POSTGRES_PASSWORD: "{{ history_postgres_password }}"
+  DATABASE_HOST: "{{ history_database_host }}"
+  DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+  QUEUE_BACKEND: "{{ history_queue_backend }}"
+  RABBITMQ_URL: "{{ history_rabbitmq_url }}"

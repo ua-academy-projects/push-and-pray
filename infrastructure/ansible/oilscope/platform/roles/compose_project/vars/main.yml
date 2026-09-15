@@ -6,3 +6,4 @@ compose_project_templates:
   fetcher: compose.fetcher.yaml.j2
   ui: compose.ui.yaml.j2
   proxy: compose.proxy.yaml.j2
+  cloudflared: compose.cloudflared.yaml.j2

@@ -52,6 +52,7 @@
     return_content: true
   register: resolve_secrets_accessed
   no_log: true
+  failed_when: false
   loop: "{{ resolve_secrets_mappings | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
@@ -64,7 +65,9 @@
            item.item.key: ((item.content | from_json).payload.data | b64decode)
          }) }}
   no_log: true
-  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop: >-
+    {{ resolve_secrets_accessed.results | default([])
+       | selectattr('status', 'defined') | selectattr('status', 'eq', 200) | list }}
   loop_control:
     label: "{{ item.item.key }}"
   when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'gcp'
@@ -108,6 +111,8 @@
   register: resolve_secrets_aws_accessed
   no_log: true
   changed_when: false
+
+  failed_when: false
   loop: "{{ resolve_secrets_mappings | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
@@ -120,7 +125,9 @@
            item.item.key: (item.stdout | trim)
          }) }}
   no_log: true
-  loop: "{{ resolve_secrets_aws_accessed.results | default([]) }}"
+  loop: >-
+    {{ resolve_secrets_aws_accessed.results | default([])
+       | selectattr('rc', 'defined') | selectattr('rc', 'eq', 0) | list }}
   loop_control:
     label: "{{ item.item.key }}"
   when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'aws'

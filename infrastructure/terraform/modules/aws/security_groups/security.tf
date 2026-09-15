@@ -115,6 +115,40 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
     ip_protocol = "tcp"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "rabbitmq" {
+    for_each = local.tag_present["infra"] ? {
+        for role in ["fetcher", "history", "ui"] : role => (
+            role == "fetcher" ? aws_security_group.fetcher[0].id :
+            role == "history" ? aws_security_group.history[0].id :
+            aws_security_group.ui[0].id
+        )
+        if local.tag_present[role]
+    } : {}
+
+    security_group_id            = aws_security_group.infra[0].id
+    referenced_security_group_id = each.value
+    from_port = 5672
+    to_port = 5672
+    ip_protocol = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis" {
+    for_each = local.tag_present["infra"] ? {
+        for role in ["fetcher", "history", "ui"] : role => (
+            role == "fetcher" ? aws_security_group.fetcher[0].id :
+            role == "history" ? aws_security_group.history[0].id :
+            aws_security_group.ui[0].id
+        )
+        if local.tag_present[role]
+    } : {}
+
+    security_group_id            = aws_security_group.infra[0].id
+    referenced_security_group_id = each.value
+    from_port = 6379
+    to_port = 6379
+    ip_protocol = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "bastion" {
     count = local.bastion != null ? 1 : 0
 

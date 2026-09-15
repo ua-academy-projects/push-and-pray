@@ -44,46 +44,14 @@
   when: not edge_proxy_acme_stat.stat.exists
 
 
-- name: Pull the Traefik image
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ edge_proxy_compose_project_name }}"
-      - --file
-      - "{{ edge_proxy_compose_file }}"
-      - pull
+- name: Bring up Traefik
+  community.docker.docker_compose_v2:
+    project_src: "{{ edge_proxy_dir }}"
+    files:
+      - compose.yaml
+    services:
       - traefik
-  args:
-    chdir: "{{ edge_proxy_dir }}"
-  register: edge_proxy_pull
-  changed_when: >-
-    'Downloaded newer image' in edge_proxy_pull.stdout or
-    'Pull complete' in edge_proxy_pull.stdout or
-    'Downloaded newer image' in edge_proxy_pull.stderr or
-    'Pull complete' in edge_proxy_pull.stderr
-
-
-- name: Start Traefik
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ edge_proxy_compose_project_name }}"
-      - --file
-      - "{{ edge_proxy_compose_file }}"
-      - up
-      - --detach
-      - --wait
-      - --wait-timeout
-      - "60"
-      - traefik
-  args:
-    chdir: "{{ edge_proxy_dir }}"
-  register: edge_proxy_up
-  changed_when: >-
-    'Created' in edge_proxy_up.stderr or
-    'Started' in edge_proxy_up.stderr or
-    'Recreated' in edge_proxy_up.stderr
+    state: present
+    pull: missing
+    wait: true
+    wait_timeout: 60

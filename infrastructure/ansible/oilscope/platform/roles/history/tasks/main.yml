@@ -1,52 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Deploy only History
-  environment:
-    DOCKER_CONFIG: "{{ history_docker_config_dir }}"
-    POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+- name: Bring up History
+  community.docker.docker_compose_v2:
+    project_src: "{{ history_compose_project_dir }}"
+    files:
+      - compose.yaml
+    services:
+      - history
+    state: present
+    pull: missing
+    wait: true
+    wait_timeout: 180
+  environment: "{{ history_runtime_environment }}"
   no_log: true
-  block:
-    - name: Pull the History image
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - --project-name
-          - "{{ history_compose_project_name }}"
-          - --file
-          - "{{ history_compose_file }}"
-          - pull
-          - history
-      args:
-        chdir: "{{ history_compose_project_dir }}"
-      register: history_compose_pull
-      changed_when: >-
-        'Downloaded newer image' in history_compose_pull.stdout or
-        'Downloaded newer image' in history_compose_pull.stderr or
-        'Pull complete' in history_compose_pull.stdout or
-        'Pull complete' in history_compose_pull.stderr
-
-    - name: Start only History
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - --project-name
-          - "{{ history_compose_project_name }}"
-          - --file
-          - "{{ history_compose_file }}"
-          - up
-          - --detach
-          - --no-deps
-          - history
-      args:
-        chdir: "{{ history_compose_project_dir }}"
-      register: history_compose_up
-      changed_when: >-
-        'Created' in history_compose_up.stderr or
-        'Started' in history_compose_up.stderr or
-        'Recreated' in history_compose_up.stderr
 
 - name: Wait for History to become healthy
   ansible.builtin.uri:
@@ -62,10 +28,4 @@
     - >-
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
-      (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
-    - >-
-      (history_health.json | default({})).get(
-        'pgmq_consumer', ''
-      ) == 'ready'
+      (history_health.json | default({})).get('consumer', '') == 'ready'

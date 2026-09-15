@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Bring up the cloudflared tunnel
+  community.docker.docker_compose_v2:
+    project_src: "{{ cloudflared_compose_project_dir }}"
+    files:
+      - compose.yaml
+    services:
+      - cloudflared
+    state: present
+    pull: missing
+    wait: true
+    wait_timeout: 120
+  environment: "{{ cloudflared_runtime_environment }}"
+  no_log: true

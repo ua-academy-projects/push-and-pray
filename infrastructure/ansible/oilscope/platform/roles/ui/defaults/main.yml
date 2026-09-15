@@ -3,8 +3,32 @@
 ui_compose_project_dir: /opt/oilscope/app
 ui_compose_file: "{{ ui_compose_project_dir }}/compose.yaml"
 ui_compose_project_name: petroscope
-
-ui_postgres_password: ""
+ui_docker_config_dir: /run/oilscope/docker-auth
 ui_health_retries: 30
 ui_health_delay: 2
-ui_docker_config_dir: /run/oilscope/docker-auth
+
+ui_postgres_password: ""
+ui_redis_password: ""
+
+ui_managed_db_enabled: >-
+  {{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_db.enabled
+     | default(false) }}
+ui_infra_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+ui_history_host: "{{ hostvars[groups['history'][0]].internal_ip }}"
+
+managed_db_host: "{{ managed_db_host_value | default('') }}"
+ui_database_host: >-
+  {{ managed_db_host if (ui_managed_db_enabled | bool) else ui_infra_host }}
+ui_database_sslmode: "{{ 'require' if (ui_managed_db_enabled | bool) else 'disable' }}"
+ui_session_backend: "{{ 'redis' if (ui_managed_db_enabled | bool) else 'postgres' }}"
+ui_redis_url: "redis://:{{ ui_redis_password }}@{{ ui_infra_host }}:6379/0"
+ui_history_service_url: "http://{{ ui_history_host }}:8001"
+
+ui_runtime_environment:
+  DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
+  POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
+  DATABASE_HOST: "{{ ui_database_host }}"
+  DATABASE_SSLMODE: "{{ ui_database_sslmode }}"
+  HISTORY_SERVICE_URL: "{{ ui_history_service_url }}"
+  SESSION_BACKEND: "{{ ui_session_backend }}"
+  REDIS_URL: "{{ ui_redis_url }}"

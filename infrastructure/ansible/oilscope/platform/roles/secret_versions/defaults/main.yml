@@ -14,5 +14,12 @@ secret_versions_aws_region: ""
 # Upload a subset. Entries match a container ID or a variable name.
 secret_versions_only: []
 
+
+secret_versions_terraform_owned_keys_always:
+  - RABBITMQ_PASSWORD
+  - REDIS_PASSWORD
+secret_versions_terraform_owned_keys_managed:
+  - POSTGRES_PASSWORD
+
 secret_versions_gcloud: gcloud
 secret_versions_aws_cli: aws

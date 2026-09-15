@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from psycopg import Error as PostgreSQLError
 
+from .redis_session_store import RedisSessionStore
 from .session_store import PostgreSQLSessionStore
 from .sessions import SessionPreferences, resolve_session_id
 
@@ -28,6 +29,8 @@ DATABASE_URL = os.getenv(
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "petroscope_session")
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+SESSION_BACKEND = os.getenv("SESSION_BACKEND", "postgres").lower()
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
 @asynccontextmanager
@@ -44,7 +47,10 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
-app.state.session_store = PostgreSQLSessionStore(DATABASE_URL, SESSION_TTL_SECONDS)
+if SESSION_BACKEND == "redis":
+    app.state.session_store = RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS)
+else:
+    app.state.session_store = PostgreSQLSessionStore(DATABASE_URL, SESSION_TTL_SECONDS)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

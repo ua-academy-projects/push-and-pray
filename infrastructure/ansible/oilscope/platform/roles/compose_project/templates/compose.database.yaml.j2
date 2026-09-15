@@ -1,6 +1,75 @@
 name: petroscope
 
 services:
+{% if managed_db_enabled | bool %}
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-docker.io/library/rabbitmq:4-management}
+    pull_policy: ${RABBITMQ_PULL_POLICY:-missing}
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-oil_tracker}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oil_tracker}
+      TZ: UTC
+    ports:
+      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:5672:5672"
+      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    stop_grace_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: ${REDIS_IMAGE:-docker.io/library/redis:7-alpine}
+    pull_policy: ${REDIS_PULL_POLICY:-missing}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - --save
+      - "60"
+      - "1"
+      - --appendonly
+      - "no"
+    ports:
+      - "${DATABASE_BIND_ADDRESS:-0.0.0.0}:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    platform: ${POSTGRES_PLATFORM:-linux/amd64}
+    pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    restart: "no"
+    command: ["petroscope-migrate"]
+    environment:
+      PGHOST: ${DATABASE_HOST:?DATABASE_HOST is required}
+      PGSSLMODE: ${DATABASE_SSLMODE:-require}
+      MIGRATION_SKIP: ${MIGRATION_SKIP:-}
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-oil_tracker}
+      PGDATABASE: ${POSTGRES_DB:-oil_tracker}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+{% else %}
   postgres:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
@@ -50,6 +119,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+{% endif %}
 
 volumes:
+{% if managed_db_enabled | bool %}
+  rabbitmq_data:
+  redis_data:
+{% else %}
   postgres_data:
+{% endif %}

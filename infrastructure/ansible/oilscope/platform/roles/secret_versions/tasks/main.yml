@@ -85,6 +85,33 @@
     loop_var: secret_versions_entry
     label: "{{ secret_versions_entry.0 }}"
 
+
+- name: Decide which passwords Terraform owns
+  ansible.builtin.set_fact:
+    secret_versions_terraform_owned_keys: >-
+      {{ secret_versions_terraform_owned_keys_always
+         + (secret_versions_terraform_owned_keys_managed
+            if (secret_versions_config.managed_db.enabled | default(false)) else []) }}
+
+- name: Collect the Terraform-owned container IDs
+  ansible.builtin.set_fact:
+    secret_versions_terraform_owned_ids: >-
+      {{ secret_versions_terraform_owned_ids | default([])
+         + (secret_versions_vm.value.secret_mappings | default({}) | dict2items
+            | selectattr('key', 'in', secret_versions_terraform_owned_keys)
+            | map(attribute='value') | list) }}
+  loop: "{{ secret_versions_config.vms | dict2items }}"
+  loop_control:
+    loop_var: secret_versions_vm
+    label: "{{ secret_versions_vm.key }}"
+
+- name: Drop the Terraform-owned containers from the catalog
+  ansible.builtin.set_fact:
+    secret_versions_catalog: >-
+      {{ secret_versions_catalog
+         | rejectattr('secret_id', 'in', (secret_versions_terraform_owned_ids | default([])))
+         | list }}
+
 - name: Keep only the requested containers
   ansible.builtin.set_fact:
     secret_versions_catalog: >-

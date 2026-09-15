@@ -1,7 +1,7 @@
 locals {
   all_workload_vms = {
     for name, vm in local.config.vms : name => vm
-    if vm.role != "bastion"
+    if vm.role != "bastion" && contains(keys(merge(module.gcp_vm.names, module.aws_vm.names)), name)
   }
 }
 
@@ -47,11 +47,11 @@ output "workload_network_tags" {
 }
 
 output "workload_service_account_emails" {
-  value       = module.gcp_vm.service_account_emails
+  value = module.gcp_vm.service_account_emails
 }
 
 output "workload_iam_role_arns" {
-  value       = module.aws_vm.iam_role_arns
+  value = module.aws_vm.iam_role_arns
 }
 
 output "secret_ids" {
@@ -69,4 +69,17 @@ output "workload_secret_access" {
     for name, workload in local.all_workload_vms :
     name => sort(distinct(values(workload.secret_mappings)))
   }
+}
+
+output "managed_db_private_ip" {
+  value = local.managed_db_private_ip != "" ? local.managed_db_private_ip : null
+}
+
+output "cloudflare_hostname" {
+  value = module.cloudflare.hostname
+}
+
+output "cloudflare_tunnel_token" {
+  value     = module.cloudflare.tunnel_token
+  sensitive = true
 }

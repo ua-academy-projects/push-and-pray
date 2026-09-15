@@ -9,3 +9,9 @@ module "aws_vm" {
 
   config = local.config
 }
+
+module "cloudflare" {
+  source = "./modules/cloudflare"
+
+  config = local.config
+}

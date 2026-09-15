@@ -11,6 +11,8 @@ services:
       # yamllint disable rule:line-length
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-pgmq}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oil_tracker:change-me@localhost:5672/oil_tracker}
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
       PGMQ_POLL_INTERVAL_SECONDS: ${PGMQ_POLL_INTERVAL_SECONDS:-1}
@@ -29,8 +31,7 @@ services:
           data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
           assert data["status"] == "ok";
           assert data["database"] == "connected";
-          assert data["pgmq_extension"] == "installed";
-          assert data["pgmq_consumer"] == "ready"
+          assert data["consumer"] == "ready"
       interval: 10s
       timeout: 5s
       retries: 20

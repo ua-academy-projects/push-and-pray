@@ -29,7 +29,7 @@ resource "google_compute_firewall" "workload_ssh" {
 }
 
 resource "google_compute_firewall" "ui_web" {
-  count = local.tag_present["ui"] ? 1 : 0
+  count   = local.tag_present["ui"] ? 1 : 0
   name    = "${local.resource_prefix}-allow-ui-web"
   network = var.network_id
 
@@ -43,7 +43,7 @@ resource "google_compute_firewall" "ui_web" {
 }
 
 resource "google_compute_firewall" "history_api" {
-  count = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0
+  count   = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0
   name    = "${local.resource_prefix}-allow-history-api"
   network = var.network_id
 
@@ -57,7 +57,7 @@ resource "google_compute_firewall" "history_api" {
 }
 
 resource "google_compute_firewall" "postgresql" {
-  count = local.tag_present["infra"] ? 1 : 0
+  count   = local.tag_present["infra"] ? 1 : 0
   name    = "${local.resource_prefix}-allow-postgresql"
   network = var.network_id
 
@@ -72,5 +72,43 @@ resource "google_compute_firewall" "postgresql" {
   allow {
     protocol = "tcp"
     ports    = [tostring(var.config.service_ports.postgresql)]
+  }
+}
+
+resource "google_compute_firewall" "rabbitmq" {
+  count   = local.tag_present["infra"] ? 1 : 0
+  name    = "${local.resource_prefix}-allow-rabbitmq"
+  network = var.network_id
+
+  source_tags = [
+    var.network_tags.fetcher,
+    var.network_tags.history,
+    var.network_tags.ui,
+  ]
+
+  target_tags = [var.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["5672"]
+  }
+}
+
+resource "google_compute_firewall" "redis" {
+  count   = local.tag_present["infra"] ? 1 : 0
+  name    = "${local.resource_prefix}-allow-redis"
+  network = var.network_id
+
+  source_tags = [
+    var.network_tags.fetcher,
+    var.network_tags.history,
+    var.network_tags.ui,
+  ]
+
+  target_tags = [var.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6379"]
   }
 }

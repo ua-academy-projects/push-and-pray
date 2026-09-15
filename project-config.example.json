@@ -5,12 +5,24 @@
   "region": "europe",
   "regions": {
     "europe": {
-      "gcp": { "region": "europe-west1", "zone": "europe-west1-b" },
-      "aws": { "region": "eu-central-1", "zone": "eu-central-1a" }
+      "gcp": {
+        "region": "europe-west1",
+        "zone": "europe-west1-b"
+      },
+      "aws": {
+        "region": "eu-central-1",
+        "zone": "eu-central-1a"
+      }
     },
     "us": {
-      "gcp": { "region": "us-east1", "zone": "us-east1-b" },
-      "aws": { "region": "us-east-1", "zone": "us-east-1a" }
+      "gcp": {
+        "region": "us-east1",
+        "zone": "us-east1-b"
+      },
+      "aws": {
+        "region": "us-east-1",
+        "zone": "us-east-1a"
+      }
     }
   },
   "image": "ubuntu",
@@ -21,13 +33,28 @@
     }
   },
   "machine_types": {
-    "micro": { "gcp": "e2-micro", "aws": "t3.micro" },
-    "small": { "gcp": "e2-small", "aws": "t3.small" }
+    "micro": {
+      "gcp": "e2-micro",
+      "aws": "t3.micro"
+    },
+    "small": {
+      "gcp": "e2-small",
+      "aws": "t3.small"
+    }
   },
   "disk_types": {
-    "economy": { "gcp": "pd-standard", "aws": "gp2" },
-    "balanced": { "gcp": "pd-balanced", "aws": "gp3" },
-    "performance": { "gcp": "pd-ssd", "aws": "io2" }
+    "economy": {
+      "gcp": "pd-standard",
+      "aws": "gp2"
+    },
+    "balanced": {
+      "gcp": "pd-balanced",
+      "aws": "gp3"
+    },
+    "performance": {
+      "gcp": "pd-ssd",
+      "aws": "io2"
+    }
   },
   "name_prefix": "oilscope",
   "common_labels": {
@@ -45,7 +72,10 @@
   "network": {
     "management_subnet_cidr": "10.0.0.0/28",
     "workload_subnet_cidr": "10.0.1.0/26",
-    "ui_public_ports": [80, 443]
+    "ui_public_ports": [
+      80,
+      443
+    ]
   },
   "service_ports": {
     "history_api": 8001,
@@ -56,40 +86,80 @@
     "budget_amount_usd": 1,
     "cpu_threshold_percent": 80
   },
+  "managed_db": {
+    "enabled": false,
+    "tier": {
+      "gcp": "db-f1-micro",
+      "aws": "db.t3.micro"
+    },
+    "version": {
+      "gcp": "POSTGRES_18",
+      "aws": "18"
+    },
+    "disk_size_gb": 10
+  },
+  "cloudflare": {
+    "enabled": false,
+    "account_id": "",
+    "zone": "example.com",
+    "record_name": "oilscope",
+    "tunnel_name": "oilscope",
+    "service": "http://ui:8080"
+  },
   "vms": {
     "bastion": {
       "role": "bastion",
       "machine_type": "micro",
       "internal_ip": "10.0.0.4",
-      "boot_disk": { "size_gb": 10, "type": "balanced" },
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "balanced"
+      },
       "assign_public_ip": true,
-      "network_tags": ["bastion"],
+      "network_tags": [
+        "bastion"
+      ],
       "secret_mappings": {},
       "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
+      "allowed_cidrs": [
+        "192.0.2.10/32"
+      ]
     },
     "infra": {
       "role": "database",
       "machine_type": "micro",
       "internal_ip": "10.0.1.4",
-      "boot_disk": { "size_gb": 10, "type": "balanced" },
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "balanced"
+      },
       "assign_public_ip": false,
-      "network_tags": ["infra"],
+      "network_tags": [
+        "infra"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
+        "GHCR_TOKEN": "example-ghcr-token",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
+        "REDIS_PASSWORD": "example-redis-password"
       }
     },
     "history": {
       "role": "history",
       "machine_type": "small",
       "internal_ip": "10.0.1.5",
-      "boot_disk": { "size_gb": 10, "type": "balanced" },
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "balanced"
+      },
       "assign_public_ip": false,
-      "network_tags": ["history"],
+      "network_tags": [
+        "history"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
+        "GHCR_TOKEN": "example-ghcr-token",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password"
       }
     },
     "fetcher": {
@@ -99,25 +169,37 @@
       "role": "fetcher",
       "machine_type": "micro",
       "internal_ip": "10.0.1.6",
-      "boot_disk": { "size_gb": 10, "type": "economy" },
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "economy"
+      },
       "assign_public_ip": false,
-      "network_tags": ["fetcher"],
+      "network_tags": [
+        "fetcher"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token"
+        "GHCR_TOKEN": "example-ghcr-token",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password"
       }
     },
     "ui": {
       "role": "ui",
       "machine_type": "micro",
       "internal_ip": "10.0.1.7",
-      "boot_disk": { "size_gb": 10, "type": "balanced" },
+      "boot_disk": {
+        "size_gb": 10,
+        "type": "balanced"
+      },
       "assign_public_ip": true,
-      "network_tags": ["ui"],
+      "network_tags": [
+        "ui"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
+        "GHCR_TOKEN": "example-ghcr-token",
+        "REDIS_PASSWORD": "example-redis-password"
       },
       "public_endpoint": {
         "hostname": "oilscope.example.com",
