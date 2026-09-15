@@ -4,10 +4,10 @@
 
 import json
 import os
+import shlex
 import tempfile
 
 import yaml
-
 from ansible.errors import AnsibleParserError
 from ansible.plugins.inventory import BaseInventoryPlugin
 from ansible.utils.display import Display
@@ -35,6 +35,22 @@ options:
     default: project-config.json
     env:
       - name: OILSCOPE_PROJECT_CONFIG
+  ssh_user:
+    description:
+      - SSH user used for every discovered host.
+      - Defaults to C(ubuntu) on AWS and the first configured SSH user on GCP.
+    type: str
+    default: ""
+    env:
+      - name: OILSCOPE_SSH_USER
+  ssh_private_key_file:
+    description:
+      - Optional SSH private key path.
+      - OpenSSH default identities and SSH agent configuration are used when omitted.
+    type: str
+    default: ""
+    env:
+      - name: OILSCOPE_SSH_KEY
 """
 
 EXAMPLES = r"""
@@ -65,15 +81,13 @@ class InventoryModule(BaseInventoryPlugin):
         virtual_machines = self._virtual_machines(config)
 
         for cloud in DELEGATES:
-            cloud_vms = {
-                name: vm for name, vm in virtual_machines.items() if vm["cloud"] == cloud
-            }
+            cloud_vms = {name: vm for name, vm in virtual_machines.items() if vm["cloud"] == cloud}
             if not cloud_vms:
                 continue
 
             settings = self._build_settings(cloud, config, cloud_vms)
             discovered = self._discover(cloud, loader, settings)
-            self._add_hosts(inventory, cloud, cloud_vms, discovered)
+            self._add_hosts(inventory, cloud, config, cloud_vms, discovered)
 
     def _resolve_config_path(self, inventory_path):
         configured = str(self.get_option("project_config_path"))
@@ -148,8 +162,10 @@ class InventoryModule(BaseInventoryPlugin):
                 )
 
             tags = vm.get("tags")
-            if not isinstance(tags, list) or not tags or not all(
-                isinstance(tag, str) and tag for tag in tags
+            if (
+                not isinstance(tags, list)
+                or not tags
+                or not all(isinstance(tag, str) and tag for tag in tags)
             ):
                 raise AnsibleParserError(f"VM {name!r} must define a non-empty 'tags' array")
 
@@ -184,9 +200,7 @@ class InventoryModule(BaseInventoryPlugin):
                 },
             }
 
-        regions = sorted(
-            {vm["provider_location"]["region"] for vm in virtual_machines.values()}
-        )
+        regions = sorted({vm["provider_location"]["region"] for vm in virtual_machines.values()})
         names = sorted(vm["resource_name"] for vm in virtual_machines.values())
         settings = {
             "plugin": DELEGATES[cloud],
@@ -197,9 +211,7 @@ class InventoryModule(BaseInventoryPlugin):
             },
             "hostnames": ["tag:Name"],
             "strict": False,
-            "compose": {
-                "oilscope_discovered_public_ip": "public_ip_address | default('')"
-            },
+            "compose": {"oilscope_discovered_public_ip": "public_ip_address | default('')"},
         }
 
         return settings
@@ -247,7 +259,110 @@ class InventoryModule(BaseInventoryPlugin):
 
         return discovered
 
-    def _add_hosts(self, inventory, cloud, virtual_machines, discovered):
+    def _ssh_user(self, cloud, config):
+        override = str(self.get_option("ssh_user") or "").strip()
+        if override:
+            return override
+
+        if cloud == "aws":
+            return "ubuntu"
+
+        ssh_users = config.get("ssh_users")
+        if not isinstance(ssh_users, dict) or not ssh_users:
+            raise AnsibleParserError("the project configuration must define at least one SSH user")
+
+        return sorted(ssh_users)[0]
+
+    @staticmethod
+    def _ssh_base_arguments(environment):
+        if environment == "dev":
+            host_key_arguments = [
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+            ]
+        else:
+            host_key_arguments = ["-o", "StrictHostKeyChecking=accept-new"]
+
+        return [*host_key_arguments, "-o", "IdentitiesOnly=yes"]
+
+    def _ssh_private_key_file(self):
+        configured = str(self.get_option("ssh_private_key_file") or "").strip()
+        if not configured:
+            return ""
+
+        return os.path.abspath(os.path.expanduser(configured))
+
+    def _connection_variables(
+        self,
+        cloud,
+        config,
+        virtual_machines,
+        discovered,
+        vm,
+        is_bastion,
+    ):
+        environment = self._required_string(config, "environment")
+        ssh_user = self._ssh_user(cloud, config)
+        private_key_file = self._ssh_private_key_file()
+        base_arguments = self._ssh_base_arguments(environment)
+        common_arguments = list(base_arguments)
+
+        if not is_bastion:
+            matching_bastions = [
+                candidate
+                for candidate in virtual_machines.values()
+                if "bastion" in candidate["tags"] and candidate["location"] == vm["location"]
+            ]
+            if len(matching_bastions) != 1:
+                raise AnsibleParserError(
+                    f"workload {vm['resource_name']!r} requires exactly one {cloud} "
+                    f"bastion in location {vm['location']!r}"
+                )
+
+            bastion = matching_bastions[0]
+            discovered_bastion = discovered.hosts.get(bastion["resource_name"])
+            if discovered_bastion is None:
+                raise AnsibleParserError(f"bastion {bastion['resource_name']!r} was not discovered")
+
+            bastion_address = discovered_bastion.vars.get("oilscope_discovered_public_ip") or ""
+            if not bastion_address:
+                raise AnsibleParserError(
+                    f"bastion {bastion['resource_name']!r} has no public IP address"
+                )
+
+            try:
+                bastion_port = int(bastion["ssh_port"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise AnsibleParserError(
+                    f"bastion {bastion['resource_name']!r} must define an integer ssh_port"
+                ) from error
+
+            proxy_command = [
+                "ssh",
+                "-W",
+                "%h:%p",
+                "-q",
+                "-p",
+                str(bastion_port),
+                *base_arguments,
+            ]
+            if private_key_file:
+                proxy_command.extend(["-i", private_key_file])
+            proxy_command.append(f"{ssh_user}@{bastion_address}")
+            common_arguments.extend(["-o", f"ProxyCommand={shlex.join(proxy_command)}"])
+
+        variables = {
+            "ansible_user": ssh_user,
+            "ansible_ssh_common_args": shlex.join(common_arguments),
+        }
+        if private_key_file:
+            variables["ansible_ssh_private_key_file"] = private_key_file
+
+        return variables
+
+    def _add_hosts(self, inventory, cloud, config, virtual_machines, discovered):
         inventory.add_group(cloud)
         inventory.add_group("workloads")
 
@@ -281,6 +396,14 @@ class InventoryModule(BaseInventoryPlugin):
                 "oilscope_location": vm["location"],
                 "oilscope_tags": vm["tags"],
                 "oilscope_vm_name": name,
+                **self._connection_variables(
+                    cloud,
+                    config,
+                    virtual_machines,
+                    discovered,
+                    vm,
+                    is_bastion,
+                ),
             }
 
             if is_bastion:

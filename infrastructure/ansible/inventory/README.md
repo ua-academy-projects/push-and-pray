@@ -89,7 +89,7 @@ ansible-inventory \
 
 Hosts appear only after `terraform apply`. A mixed-cloud test should show both
 the `aws` and `gcp` groups. Functional tags create groups such as `bastion`,
-`database`, `history`, `fetcher`, and `ui`; every non-bastion also joins
+`infrastructure`, `history`, `fetcher`, and `ui`; every non-bastion also joins
 `workloads`.
 
 ## Normalized host variables
@@ -104,6 +104,9 @@ Every discovered host receives:
 | `oilscope_location` | logical location key from the configuration |
 | `oilscope_tags` | functional tags from the VM definition |
 | `oilscope_vm_name` | VM key from the `vms` object |
+| `ansible_user` | provider-appropriate or explicitly overridden SSH user |
+| `ansible_ssh_common_args` | environment-specific host-key and bastion routing options |
+| `ansible_ssh_private_key_file` | optional key path from `OILSCOPE_SSH_KEY` |
 
 For a bastion, `ansible_host` is its public address and both `ansible_port` and
 `bastion_ssh_port` come from its VM definition. Other VMs use their internal
@@ -111,9 +114,14 @@ address and port 22.
 
 ## SSH routing
 
-The `aws` group connects as `ubuntu`, matching the configured Ubuntu AMIs. The
-`gcp` group uses the controller's `$USER`, matching the usernames in GCP SSH
-metadata. Override either default with `OILSCOPE_SSH_USER`.
+The inventory plugin emits SSH connection variables directly; no inventory
+`group_vars` files are required. AWS hosts connect as `ubuntu`, matching the
+configured Ubuntu AMIs. GCP hosts use the alphabetically first username from
+`ssh_users` in `project-config.json`. Override either default when necessary:
+
+```sh
+export OILSCOPE_SSH_USER=andri
+```
 
 Set `OILSCOPE_SSH_KEY` when the private key is not one of OpenSSH's default
 identities or available through `ssh-agent`. The same optional key is used for
@@ -127,6 +135,10 @@ Workload connections use the host in the `bastion` group as an SSH proxy.
 Terraform supplies cloud-init user data that configures the bastion's custom
 SSH port during its first boot, and the cloud firewall permits only that port.
 No separate bastion bootstrap playbook or temporary port override is required.
+
+Development hosts disable SSH host-key persistence because fixed internal
+addresses are recreated with new host keys. Other environments accept new host
+keys but reject changed keys. All connections use `IdentitiesOnly=yes`.
 
 Inventory discovery does not provide cross-cloud routing. For application
 deployment, the bastion and its private workloads must be mutually reachable.
