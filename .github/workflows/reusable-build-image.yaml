@@ -46,6 +46,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.image-name }}
+          flavor: |
+            latest=false
           tags: |
             type=raw,value=${{ github.sha }}
             type=ref,event=tag
