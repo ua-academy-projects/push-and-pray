@@ -8,6 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://oil_tracker:change-me@localhost:5432/oil_tracker"
 
+    messaging_backend: str = "pgmq"
+    rabbitmq_url: str = "amqp://oil_tracker:change-me@localhost:5672/oil_tracker"
+
     pgmq_queue: str = "price_observations"
     pgmq_visibility_timeout_seconds: int = 60
     pgmq_poll_interval_seconds: float = 1.0

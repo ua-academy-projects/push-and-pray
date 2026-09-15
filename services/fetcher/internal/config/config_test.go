@@ -63,6 +63,26 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRabbitMQConfigurationDoesNotRequireDatabase(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("MESSAGING_BACKEND", "rabbitmq")
+	t.Setenv("RABBITMQ_URL", "amqp://oil_tracker:test@localhost:5672/oil_tracker")
+	t.Setenv("DATABASE_URL", "")
+
+	configuration, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if configuration.MessagingBackend != "rabbitmq" {
+		t.Fatalf("unexpected messaging backend: %s", configuration.MessagingBackend)
+	}
+
+	if configuration.RabbitMQURL == "" {
+		t.Fatal("RABBITMQ_URL should not be empty")
+	}
+}
+
 func TestParseHoursRejectsInvalidValues(t *testing.T) {
 	for _, value := range []string{
 		"0,6,12",

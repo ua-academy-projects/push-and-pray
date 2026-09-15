@@ -10,15 +10,17 @@ import (
 )
 
 type Config struct {
-	OilPriceAPIKey string
-	DataProvider   string
-	DatabaseURL    string
-	QueueName      string
-	CronHours      []int
-	Timezone       *time.Location
-	FetchOnStartup bool
-	RequestTimeout time.Duration
-	ListenAddress  string
+	OilPriceAPIKey   string
+	DataProvider     string
+	DatabaseURL      string
+	MessagingBackend string
+	RabbitMQURL      string
+	QueueName        string
+	CronHours        []int
+	Timezone         *time.Location
+	FetchOnStartup   bool
+	RequestTimeout   time.Duration
+	ListenAddress    string
 }
 
 func Load() (Config, error) {
@@ -32,12 +34,22 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("OILPRICEAPI_KEY is required when DATA_PROVIDER=oilpriceapi")
 	}
 
+	messagingBackend := strings.ToLower(env("MESSAGING_BACKEND", "pgmq"))
+	if messagingBackend != "pgmq" && messagingBackend != "rabbitmq" {
+		return Config{}, fmt.Errorf("MESSAGING_BACKEND must be pgmq or rabbitmq")
+	}
+
 	databaseURL := strings.TrimSpace(env(
 		"DATABASE_URL",
 		"postgres://oil_tracker:change-me@localhost:5432/oil_tracker?sslmode=disable",
 	))
-	if databaseURL == "" {
+	if messagingBackend == "pgmq" && databaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL must not be empty")
+	}
+
+	rabbitMQURL := strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
+	if messagingBackend == "rabbitmq" && rabbitMQURL == "" {
+		return Config{}, fmt.Errorf("RABBITMQ_URL is required when MESSAGING_BACKEND=rabbitmq")
 	}
 
 	hours, err := ParseHours(env("FETCH_CRON_HOURS", "0,6,12,18"))
@@ -61,15 +73,17 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		OilPriceAPIKey: apiKey,
-		DataProvider:   provider,
-		DatabaseURL:    databaseURL,
-		QueueName:      env("PGMQ_QUEUE", "price_observations"),
-		CronHours:      hours,
-		Timezone:       location,
-		FetchOnStartup: fetchOnStartup,
-		RequestTimeout: time.Duration(timeoutSeconds) * time.Second,
-		ListenAddress:  env("LISTEN_ADDRESS", ":8002"),
+		OilPriceAPIKey:   apiKey,
+		DataProvider:     provider,
+		DatabaseURL:      databaseURL,
+		MessagingBackend: messagingBackend,
+		RabbitMQURL:      rabbitMQURL,
+		QueueName:        env("PGMQ_QUEUE", "price_observations"),
+		CronHours:        hours,
+		Timezone:         location,
+		FetchOnStartup:   fetchOnStartup,
+		RequestTimeout:   time.Duration(timeoutSeconds) * time.Second,
+		ListenAddress:    env("LISTEN_ADDRESS", ":8002"),
 	}, nil
 }
 
