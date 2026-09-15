@@ -48,6 +48,7 @@ jobs:
           images: ${{ inputs.image-name }}
           tags: |
             type=raw,value=${{ github.sha }}
+            type=ref,event=tag
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
