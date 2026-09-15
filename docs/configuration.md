@@ -1,13 +1,25 @@
 # Configuration ownership
 
+`project-config.example.json` is the only tracked configuration template. Copy it to the
+gitignored `project-config.json` (or another ignored local path) and pass that path as
+`project_config_path` to Terraform and Ansible. Production code does not select behavior
+from a provider- or mode-specific filename.
+
 Project JSON is a non-secret contract shared by Terraform and Ansible.
 Terraform reads it once at root and passes structured objects to children.
 Private keys, credentials and secret payloads do not belong in this file.
 
+The selectors are independent: `default_cloud` answers **where** the complete deployment
+runs (`aws` or `gcp`), while `database_mode` answers **how** persistence and messaging run
+(`self_hosted` or `managed`). Change those two values in the same config structure; do not
+maintain four schemas. All five VM roles must use `default_cloud`, because there is one
+bastion and no cross-cloud private routing.
+
 | Fields | Consumer and reason |
 | --- | --- |
 | `name_prefix`, `environment` | Terraform names/identity labels and inventory filters |
-| `default_cloud`, optional `vms.*.cloud` | Provider selection; overrides only when different |
+| `default_cloud` | Provider for the bastion and all workload VMs |
+| `database_mode` | Local PostgreSQL/PGMQ or managed PostgreSQL/RabbitMQ |
 | `default_region`, optional `vms.*.region` | Logical placement with inheritance |
 | `clouds.gcp.project_id` | GCP provider, APIs, inventory and secret resolution |
 | `clouds.aws` | AWS provider declaration; no unused account ID |

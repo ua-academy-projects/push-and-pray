@@ -485,25 +485,27 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "hostvars_prefix": "aws_",
             "keyed_groups": [
                 {
-                    "key": "tags.role",
+                    "key": "aws_tags.role",
                     "prefix": "",
                     "separator": "",
                 },
             ],
             "groups": {
-                "workloads": (f"tags.role is defined and tags.role != '{bastion_role}'"),
+                "workloads": (f"aws_tags.role is defined and aws_tags.role != '{bastion_role}'"),
                 "aws": "true",
             },
             "compose": {
-                "internal_ip": "private_ip_address",
-                "public_ip": "public_ip_address | default('')",
+                "internal_ip": "aws_private_ip_address",
+                "public_ip": "aws_public_ip_address | default('')",
                 "ansible_host": (
-                    f"public_ip_address if tags.role == '{bastion_role}' else private_ip_address"
+                    "aws_public_ip_address "
+                    f"if aws_tags.role == '{bastion_role}' "
+                    "else aws_private_ip_address"
                 ),
                 "ansible_port": (
-                    f"{bastion_port} if tags.role == '{bastion_role}' else {workload_port}"
+                    f"{bastion_port} if aws_tags.role == '{bastion_role}' else {workload_port}"
                 ),
-                "oilscope_role": "tags.role | default('')",
+                "oilscope_role": "aws_tags.role | default('')",
                 "oilscope_cloud": "'aws'",
                 "oilscope_region": repr(provider_region),
                 "project_config_path": repr(project_config_path),

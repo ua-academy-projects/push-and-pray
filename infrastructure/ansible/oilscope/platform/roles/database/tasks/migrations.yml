@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Apply database migrations
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          'docker',
+          'compose',
+          '--project-name', database_compose_project_name,
+          '--file', database_compose_file,
+          'run', '--rm', '--no-deps'
+        ]
+        + (
+          [
+            '--entrypoint', '/bin/sh', database_migration_service, '-c',
+            'mv /opt/petroscope/migrations/004_create_pgmq_queue.sql '
+            ~ '/tmp/004_create_pgmq_queue.sql && exec petroscope-migrate'
+          ]
+          if database_mode == 'managed'
+          else [database_migration_service]
+        )
+      }}
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  register: database_migrations
+  changed_when: false
+  no_log: true

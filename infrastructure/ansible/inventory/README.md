@@ -1,8 +1,8 @@
 # Multi-cloud dynamic inventory
 
 `oilscope.yml` uses `oilscope.platform.oilscope`, which reads the same project
-configuration as Terraform. It resolves `default_cloud`, per-VM `cloud`, and
-logical `region` values, then delegates live discovery only to providers that
+configuration as Terraform. It resolves `default_cloud` and logical `region` values,
+then delegates live discovery only to the provider used by the deployment:
 are actually used:
 
 - `google.cloud.gcp_compute` discovers GCP instances by `application`,
@@ -52,7 +52,7 @@ the assigned address, and inventory exposes the private address discovered
 from the provider as `internal_ip`. Existing GCP instances keep their current
 address while they exist; a replacement can receive a different address.
 
-`default_cloud` and an optional per-VM `cloud` select the provider. `clouds`
+`default_cloud` selects the provider for all five roles. `clouds`
 declares which providers may be used; `cloud_mappings` translates logical
 region, size, disk, and image names. Terraform hard-fails when an effective
 provider is undeclared, a mapping is missing, one provider resolves to more
@@ -78,16 +78,10 @@ variable, so deployment roles consume the same file used for discovery.
 
 ## Cross-cloud limitation
 
-Terraform provider dispatch and inventory discovery support GCP-only,
-AWS-only, and hybrid configurations. Application deployment supports only a
-topology where all five roles are in one cloud. The small `topology_guard`
-role checks discovered host cloud labels on the controller before gathering
-facts or opening workload SSH connections. It fails with an explicit message
-for a mixed application, without duplicating topology metadata in inventory.
-
-Cross-cloud private application networking is outside this project's scope.
-Keep all communicating roles in one cloud. Terraform provider assignment and
-discovery tests may still exercise per-VM overrides independently.
+One configuration selects one cloud. Terraform rejects a VM `cloud` override that does
+not match `default_cloud`, and the `topology_guard` repeats the invariant against live
+inventory before gathering facts or opening workload SSH connections. Cross-cloud private
+application networking and multiple bastions are outside scope.
 
 AWS private-subnet internet egress is disabled by default. Setting
 `network.aws_enable_nat_gateway` to `true` creates a paid NAT Gateway; review

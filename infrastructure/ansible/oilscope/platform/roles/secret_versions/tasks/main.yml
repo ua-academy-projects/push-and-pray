@@ -15,7 +15,11 @@
   ansible.builtin.set_fact:
     secret_versions_pairs: >-
       {{ secret_versions_pairs | default([])
-         + (secret_versions_config.application.secret_mappings[secret_versions_vm.value.role] | default({}) | dict2items
+         + ((secret_versions_config.application.secret_mappings[secret_versions_vm.value.role] | default({}) | dict2items
+            | rejectattr('key', 'in', ['POSTGRES_PASSWORD', 'REDIS_PASSWORD'])
+            | list
+            if (secret_versions_config.database_mode | default('self_hosted')) == 'managed'
+            else secret_versions_config.application.secret_mappings[secret_versions_vm.value.role] | default({}) | dict2items)
             | map(attribute='value') | unique | list
             | zip_longest([], fillvalue=secret_versions_vm.key) | list) }}
   loop: "{{ secret_versions_config.vms | dict2items }}"

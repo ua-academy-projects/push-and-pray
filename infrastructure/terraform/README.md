@@ -17,12 +17,14 @@ Children receive structured inputs and never reopen the JSON file.
 | `gcp_managed_database` | Private-IP Cloud SQL PostgreSQL and service networking |
 | `aws_managed_database` | Private RDS PostgreSQL, DB subnets and app-only security group |
 
-`database_mode` defaults to `self_hosted`, preserving PostgreSQL on the
-database VM and PGMQ. `managed` provisions the database in the selected cloud,
+`default_cloud` selects the provider for the complete deployment. `database_mode`
+selects the independent runtime model: `self_hosted` preserves PostgreSQL on the
+database VM and PGMQ; `managed` provisions PostgreSQL in the selected cloud,
 keeps the database VM as the private RabbitMQ, Redis, and migration host, and distributes
 generated credentials through the existing cloud secret stores. Self-hosted mode runs
-PostgreSQL, PGMQ, and Redis on that VM. Managed mode
-rejects mixed-cloud workloads because no private cross-cloud path exists.
+PostgreSQL, PGMQ, and Redis on that VM. All modes reject per-VM cloud overrides that do
+not match `default_cloud`, before resources are provisioned, because one bastion and the
+private service paths require a single cloud.
 
 VM modules are called once and iterate internally. Networks receive structured
 network configuration; policy modules receive a shared policy object. Root
@@ -80,10 +82,12 @@ input must not silently revoke existing access.
 
 ## State safety
 
-`migrations.tf` preserves the original network-count migration, 12 GCP VM
-objects and five extracted firewall rules. No AWS resources existed in the
-reviewed deployment. Review addresses and add corresponding moves before
-using this refactor with any unrelated existing AWS state.
+`migrations.tf` preserves the original network-count migration, GCP VM objects, and
+extracted firewall rules. The managed AWS deployment is already stateful and live; never
+remove state entries or accept replacements to conceal a migration mismatch. Mode-aware
+local PostgreSQL ingress uses `moved` blocks so existing self-hosted rule addresses can be
+adopted without recreation; in managed mode those unused infra-VM rules are intentionally
+absent because PostgreSQL is private RDS/Cloud SQL instead.
 
 Save a new plan and inspect it before applying:
 
@@ -128,8 +132,9 @@ zero AWS placements. Any AWS VM uses the normal real AWS credential chain.
 Networks and secret resources follow the same provider selection, so the
 placeholder branch cannot create AWS infrastructure.
 
-Terraform and inventory support both clouds. Deploy one communicating
-application in one cloud: cross-cloud private networking is outside scope.
+Terraform and inventory support either cloud. Each configuration deploys one
+communicating application in `default_cloud`: cross-cloud private networking is outside
+scope, and mixed placement is rejected during Terraform validation.
 Workloads use private SSH through the bastion. There is no direct public UI
 SSH exception, VPN or transit routing. AWS private egress is disabled in the
 example; the optional NAT Gateway is paid. Private application deployment

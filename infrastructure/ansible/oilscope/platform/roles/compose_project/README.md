@@ -3,7 +3,8 @@
 Installs the Compose definition for one OilScope workload VM. Each target gets
 only the services assigned to its role:
 
-- `database`: PostgreSQL and the one-shot migration service;
+- `database`: PostgreSQL plus Redis in `self_hosted`, or RabbitMQ plus Redis in
+  `managed`, with the one-shot migration service in both;
 - `history`: History only;
 - `fetcher`: Fetcher only;
 - `ui`: UI only.
@@ -43,8 +44,9 @@ registry authentication are not handled by this role.
 
 The installed file is `/opt/oilscope/app/compose.yaml`.
 
-`compose.deployment.yaml.j2` remains temporarily as input to the legacy
-Terraform cloud-init path. The Ansible role does not install it.
+`compose.deployment.yaml.j2` remains temporarily as input to the legacy Terraform
+cloud-init path. The Ansible role does not install it. Current mode selection is inside
+`compose.database.yaml.j2`; managed mode never renders a local PostgreSQL service.
 
 ## Test
 

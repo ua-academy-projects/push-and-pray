@@ -7,3 +7,8 @@ output "redis_ingress" {
     ports         = one(google_compute_firewall.redis.allow).ports
   }
 }
+
+output "postgresql_ingress_enabled" {
+  description = "Whether the infra VM accepts local PostgreSQL traffic."
+  value       = length(google_compute_firewall.postgresql) > 0
+}

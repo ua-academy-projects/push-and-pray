@@ -12,13 +12,14 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through PGMQ, a PostgreSQL extension-backed queue.
+- Asynchronous, durable delivery through PGMQ in self-hosted mode or RabbitMQ in
+  managed-database mode.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
 - Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
-- Passwordless project-specific SSH access and journald-based container logging.
+- Passwordless project-specific SSH access and provider-native monitoring/log shipping.
 
 ## Screenshots
 
@@ -52,47 +53,53 @@ have already been persisted in PostgreSQL.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, redis-py, uv     |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
-| Persistence    | PostgreSQL 18                                 |
+| Messaging      | PGMQ (self-hosted) or RabbitMQ 4 (managed)    |
+| Persistence    | PostgreSQL 18 (self-hosted), PostgreSQL 16 managed |
 | UI sessions    | Redis 8                                       |
 | Packaging      | Docker Engine and Docker Compose              |
 
 ## Architecture
 
-The runtime is divided into three application services and two infrastructure
-components.
+The deployment has two independent selectors. `default_cloud` chooses where the
+whole deployment runs (`gcp` or `aws`); `database_mode` chooses how messaging and
+PostgreSQL are provided (`self_hosted` or `managed`). One deployment uses one cloud.
+Private AWS-to-GCP application routing is outside scope.
 
 | Component       | Responsibility                                                                                    | Owns                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | Go Fetcher      | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events      | External API integration and collection schedule |
-| History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
+| History Service | Consumes queue events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
 | PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
+| RabbitMQ        | Provides durable Fetcher-to-History delivery in managed mode                                     | Managed-mode queue delivery                      |
 | PostgreSQL      | Stores persistent market observations and queue-publication records                               | Durable market data                              |
 | Redis           | Stores UI preferences with sliding expiration                                                      | Ephemeral session state                          |
 
-### Data flow
+### Runtime modes
 
-1. The Go Fetcher selects the current scheduled UTC slot.
-2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
-   configured instruments.
-3. The Fetcher publishes a versioned event to the PGMQ queue
-   `price_observations` in PostgreSQL.
-4. The Fetcher records each event key in `published_queue_events` in the same database
-   transaction, preventing duplicate publication of the same event.
-5. History reads messages using PGMQ visibility timeouts so concurrent workers cannot
-   process the same visible message at the same time.
-6. History validates and commits observations to PostgreSQL before archiving the message.
-7. Failed processing leaves the message available for retry after the visibility timeout.
-8. Permanently invalid messages and messages exceeding the retry limit are archived.
-9. The UI Service requests saved observations from History over HTTP.
-10. The browser receives only persisted data through the UI Service.
-11. UI preferences are stored separately in authenticated Redis with a sliding TTL.
+```text
+self_hosted                         managed
+Fetcher -> PGMQ -> History          Fetcher -> RabbitMQ -> History
+                 -> PostgreSQL                              -> RDS / Cloud SQL
+UI -> Redis                         UI -> Redis
+```
 
-PGMQ provides durable queue storage inside PostgreSQL. Messages are archived only after
-successful observation persistence. If processing fails before the archive operation, the
-visibility timeout makes the message available again. Database uniqueness on
-`(instrument_code, scheduled_for)` keeps redelivery idempotent.
+In `self_hosted`, the infra VM runs PostgreSQL 18 with PGMQ plus Redis. PGMQ
+messages are archived only after persistence, and the visibility timeout makes failed
+deliveries retryable. In `managed`, the infra VM runs RabbitMQ and Redis but no local
+PostgreSQL service; the migration runner and History connect with TLS to private
+PostgreSQL 16 in AWS RDS or GCP Cloud SQL. Migration `004_create_pgmq_queue.sql` is
+therefore skipped only in managed mode.
+
+In both modes, the browser reads persisted data through UI and History, UI preferences
+live only in authenticated Redis, and uniqueness on `(instrument_code, scheduled_for)`
+keeps redelivery idempotent.
+
+AWS deployments use EC2, security groups, Secrets Manager, and CloudWatch; managed
+mode adds private RDS PostgreSQL 16. GCP deployments use Compute Engine, firewall rules,
+Secret Manager, Cloud Logging, and Cloud Monitoring; managed mode adds private Cloud SQL
+PostgreSQL 16. Traefik JSON access logs feed each provider's logging service, HTTP 5xx
+metric, and alert path without replacing CPU, VM-health, or lifecycle monitoring.
 
 ## Tracked instruments
 
@@ -121,11 +128,12 @@ scientific data source.
 ├── infrastructure/
 │   ├── ansible/                    Multi-cloud deployment automation
 │   ├── docker/                     Dockerfiles and local Compose configuration
+│   ├── legacy/vagrant/             Archived earlier-sprint Vagrant deployment
 │   ├── ssh/                        SSH configuration example
 │   └── terraform/                  GCP and AWS infrastructure
 ├── services/
-│   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
-│   ├── history/                    Python History API and PGMQ consumer
+│   ├── fetcher/                    Go scheduler and PGMQ/RabbitMQ publisher
+│   ├── history/                    Python History API and PGMQ/RabbitMQ consumer
 │   └── ui/
 │       ├── backend/                Python UI gateway and Redis sessions
 │       └── frontend/               React and TypeScript application
@@ -235,7 +243,7 @@ run Python tools through `uv run`.
 
 | Method | Path                      | Purpose                           |
 | ------ | ------------------------- | --------------------------------- |
-| `GET`  | `/health`                 | PostgreSQL and PGMQ status        |
+| `GET`  | `/health`                 | PostgreSQL and selected messaging status |
 | `POST` | `/v1/observations/batch`  | Direct idempotent batch ingestion |
 | `GET`  | `/v1/observations`        | Filtered and paginated history    |
 | `GET`  | `/v1/observations/latest` | Latest observation per instrument |
@@ -279,6 +287,12 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 
 ## Configuration
 
+Copy the single tracked template `project-config.example.json` to the ignored local
+`project-config.json`. Terraform and Ansible receive that path through
+`project_config_path`; no provider- or mode-specific filename has special meaning. Change
+`default_cloud` to select AWS or GCP and `database_mode` to select `self_hosted` or
+`managed`. See [configuration ownership](docs/configuration.md).
+
 | Variable                          | Default                 | Purpose                                  |
 | --------------------------------- | ----------------------- | ---------------------------------------- |
 | `OILPRICEAPI_KEY`                 | none                    | OilPriceAPI token                        |
@@ -287,7 +301,9 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `FETCH_TIMEZONE`                  | `UTC`                   | Schedule timezone                        |
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
-| `DATABASE_URL`                    | see `.env.example`      | Fetcher and History PostgreSQL connection |
+| `DATABASE_URL`                    | see `.env.example`      | History, plus Fetcher only with PGMQ |
+| `MESSAGING_BACKEND`               | `pgmq`                  | `pgmq` or `rabbitmq` |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` | empty / `5672`          | Managed-mode broker endpoint |
 | `REDIS_URL`                       | `redis://localhost:6379/0` | UI session storage                     |
 | `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
@@ -373,5 +389,5 @@ uv run ruff check .
 - Reserve the VM addresses and restrict sensitive LAN ports at the router or firewall when
   the network is not trusted.
 - `SESSION_COOKIE_SECURE=false` is suitable only for local HTTP. Enable it behind HTTPS.
-- PostgreSQL is exposed to the configured LAN for this lab deployment; production
-  deployments should restrict its network exposure.
+- Self-hosted PostgreSQL is private to the workload network. Managed RDS and Cloud SQL
+  use private endpoints only; the infra VM does not publish PostgreSQL in managed mode.

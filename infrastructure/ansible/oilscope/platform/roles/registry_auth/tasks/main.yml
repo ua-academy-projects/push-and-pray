@@ -29,6 +29,7 @@
     owner: root
     group: root
     mode: "0700"
+  changed_when: false
 
 - name: Authenticate to the private container registry
   block:
@@ -46,9 +47,8 @@
         stdin_add_newline: false
       environment:
         DOCKER_CONFIG: "{{ registry_auth_docker_config_dir }}"
-      changed_when: true
+      changed_when: false
       no_log: true
-      notify: Remove transient Docker registry credentials
 
   rescue:
     - name: Remove credentials after a failed registry login

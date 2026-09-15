@@ -35,6 +35,7 @@ run "gcp_managed_database_is_private" {
       length(module.aws_managed_database) == 0 &&
       module.gcp_managed_database[0].public_ipv4_enabled == false &&
       module.gcp_managed_database[0].cron_database_name == "oil_tracker" &&
+      module.gcp_firewall[0].postgresql_ingress_enabled == false &&
       !contains(output.workload_secret_access.fetcher, "oilscope-dev-database-host") &&
       !contains(output.workload_secret_access.fetcher, "example-db-password") &&
       output.redis_network_policy.gcp.source_ranges == null &&
@@ -62,6 +63,7 @@ run "aws_managed_database_is_private" {
       module.aws_managed_database[0].private_route_association_count == 2 &&
       module.aws_managed_database[0].cron_database_name == "oil_tracker" &&
       module.aws_managed_database[0].ingress_rule_count == 2 &&
+      module.aws_security_groups[0].postgresql_ingress_enabled == false &&
       !contains(output.workload_secret_access.fetcher, "oilscope-dev-database-host") &&
       !contains(output.workload_secret_access.fetcher, "example-db-password") &&
       output.redis_network_policy.aws.cidr_ipv4 == null &&

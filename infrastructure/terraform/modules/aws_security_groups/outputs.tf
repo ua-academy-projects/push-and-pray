@@ -20,3 +20,11 @@ output "redis_ingress" {
     cidr_ipv4                = aws_vpc_security_group_ingress_rule.redis_from_ui.cidr_ipv4
   }
 }
+
+output "postgresql_ingress_enabled" {
+  description = "Whether the infra VM accepts local PostgreSQL traffic."
+  value = (
+    length(aws_vpc_security_group_ingress_rule.postgresql_from_history) > 0 &&
+    length(aws_vpc_security_group_ingress_rule.postgresql_from_fetcher) > 0
+  )
+}

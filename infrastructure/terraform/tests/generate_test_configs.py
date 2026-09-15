@@ -43,11 +43,11 @@ def main() -> None:
     monitoring_disabled["monitoring"]["enabled"] = False
     write_config("monitoring-disabled", monitoring_disabled)
 
-    hybrid = deepcopy(base)
-    hybrid["vms"]["ui"]["cloud"] = "aws"
-    write_config("hybrid", hybrid)
+    mixed_cloud = deepcopy(base)
+    mixed_cloud["vms"]["ui"]["cloud"] = "aws"
+    write_config("hybrid", mixed_cloud)
 
-    hybrid_managed = deepcopy(hybrid)
+    hybrid_managed = deepcopy(mixed_cloud)
     hybrid_managed["database_mode"] = "managed"
     write_config("hybrid-managed", hybrid_managed)
 
@@ -88,7 +88,7 @@ def main() -> None:
     reserved_label["common_labels"]["managed_by"] = "operator"
     write_config("invalid-reserved-label", reserved_label)
 
-    undeclared = deepcopy(hybrid)
+    undeclared = deepcopy(mixed_cloud)
     undeclared["clouds"].pop("aws", None)
     write_config("invalid-provider-declaration", undeclared)
 

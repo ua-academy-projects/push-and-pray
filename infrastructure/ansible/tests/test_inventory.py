@@ -73,15 +73,15 @@ class InventoryTests(unittest.TestCase):
         settings = self.plugin._build_aws_settings(self.config, self.aws_config_path)
         self.assertEqual(settings["regions"], ["eu-central-1"])
         self.assertEqual(settings["filters"]["tag:cloud"], "aws")
-        self.assertEqual(settings["keyed_groups"][0]["key"], "tags.role")
+        self.assertEqual(settings["keyed_groups"][0]["key"], "aws_tags.role")
         attributes = {
-            "tags": {"role": "bastion"},
-            "private_ip_address": "10.0.0.2",
-            "public_ip_address": "192.0.2.2",
+            "aws_tags": {"role": "bastion"},
+            "aws_private_ip_address": "10.0.0.2",
+            "aws_public_ip_address": "192.0.2.2",
         }
         result = self.evaluate(settings, attributes)
         self.assertEqual((result["ansible_host"], result["ansible_port"]), ("192.0.2.2", 8787))
-        attributes["tags"]["role"] = "ui"
+        attributes["aws_tags"]["role"] = "ui"
         result = self.evaluate(settings, attributes)
         self.assertEqual((result["ansible_host"], result["ansible_port"]), ("10.0.0.2", 22))
 

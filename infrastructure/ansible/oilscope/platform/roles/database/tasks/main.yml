@@ -5,97 +5,22 @@
     path: "{{ database_compose_file }}"
   register: database_compose_definition
 
-- name: Pull the exact PostgreSQL image
-  ansible.builtin.command:
-    argv:
-      - docker
-      - image
-      - pull
-      - "{{ database_postgres_image }}"
-  environment:
-    DOCKER_CONFIG: "{{ database_docker_config_dir }}"
-  register: database_image_pull
-  changed_when: >-
-    'Downloaded newer image' in database_image_pull.stdout or
-    'Pull complete' in database_image_pull.stdout
+- name: Validate the database deployment inputs
+  ansible.builtin.assert:
+    that:
+      - database_compose_definition.stat.exists
+      - database_mode in ['self_hosted', 'managed']
+      - database_postgres_image is match('^.+:[0-9a-f]{40}$')
+      - database_postgres_password | length > 0
+      - database_redis_password | length > 0
+      - database_mode != 'managed' or database_host | length > 0
+      - database_mode != 'managed' or database_rabbitmq_password | length > 0
+    fail_msg: >-
+      Database deployment inputs are incomplete for {{ database_mode }} mode.
+    quiet: true
 
-- name: Start the database infrastructure services
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ database_compose_project_name }}"
-      - --file
-      - "{{ database_compose_file }}"
-      - up
-      - --detach
-      - --no-deps
-      - "{{ item }}"
-  args:
-    chdir: "{{ database_compose_project_dir }}"
-  environment: "{{ database_runtime_environment }}"
-  register: database_compose_up
-  changed_when: >-
-    'Created' in database_compose_up.stderr or
-    'Started' in database_compose_up.stderr or
-    'Recreated' in database_compose_up.stderr
-  no_log: true
-  loop: "{{ database_runtime_services }}"
+- name: Reconcile the mode-specific runtime services
+  ansible.builtin.import_tasks: runtime.yml
 
-- name: Get the database infrastructure container IDs
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ database_compose_project_name }}"
-      - --file
-      - "{{ database_compose_file }}"
-      - ps
-      - --quiet
-      - "{{ item }}"
-  args:
-    chdir: "{{ database_compose_project_dir }}"
-  environment: "{{ database_runtime_environment }}"
-  register: database_containers
-  changed_when: false
-  failed_when: database_containers.stdout | trim | length == 0
-  no_log: true
-  loop: "{{ database_runtime_services }}"
-
-- name: Wait for the database infrastructure services to become healthy
-  ansible.builtin.command:
-    argv:
-      - docker
-      - inspect
-      - --format
-      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
-      - "{{ item.stdout | trim }}"
-  register: database_health
-  changed_when: false
-  retries: "{{ database_health_retries }}"
-  delay: "{{ database_health_delay }}"
-  until: database_health.stdout | trim == 'healthy'
-  loop: "{{ database_containers.results }}"
-  no_log: true
-
-- name: Apply database migrations
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ database_compose_project_name }}"
-      - --file
-      - "{{ database_compose_file }}"
-      - run
-      - --rm
-      - --no-deps
-      - "{{ database_migration_service }}"
-  args:
-    chdir: "{{ database_compose_project_dir }}"
-  environment: "{{ database_runtime_environment }}"
-  register: database_migrations
-  changed_when: "'Applying ' in database_migrations.stdout"
-  no_log: true
+- name: Apply the shared migration set
+  ansible.builtin.import_tasks: migrations.yml

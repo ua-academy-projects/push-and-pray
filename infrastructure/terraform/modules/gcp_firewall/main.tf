@@ -56,6 +56,8 @@ resource "google_compute_firewall" "history_api" {
 }
 
 resource "google_compute_firewall" "postgresql" {
+  count = var.policy.postgresql_enabled ? 1 : 0
+
   name    = "${var.resource_prefix}-allow-postgresql"
   network = var.network_id
 
@@ -70,6 +72,11 @@ resource "google_compute_firewall" "postgresql" {
     protocol = "tcp"
     ports    = [tostring(var.policy.postgresql_port)]
   }
+}
+
+moved {
+  from = google_compute_firewall.postgresql
+  to   = google_compute_firewall.postgresql[0]
 }
 
 resource "google_compute_firewall" "redis" {

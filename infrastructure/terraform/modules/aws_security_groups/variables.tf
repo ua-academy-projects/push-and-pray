@@ -26,6 +26,7 @@ variable "policy" {
     bastion_allowed_cidrs = list(string)
     history_api_port      = number
     postgresql_port       = number
+    postgresql_enabled    = bool
     rabbitmq_port         = number
     rabbitmq_enabled      = bool
     redis_port            = number

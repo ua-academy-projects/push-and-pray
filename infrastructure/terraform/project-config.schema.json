@@ -9,6 +9,7 @@
     "name_prefix",
     "default_cloud",
     "default_region",
+    "database_mode",
     "clouds",
     "cloud_mappings",
     "common_labels",
@@ -619,7 +620,8 @@
       ],
       "properties": {
         "cloud": {
-          "$ref": "#/$defs/cloud_name"
+          "$ref": "#/$defs/cloud_name",
+          "description": "Legacy-compatible explicit placement; when present it must match default_cloud."
         },
         "region": {
           "$ref": "#/$defs/logical_name"

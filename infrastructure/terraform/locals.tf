@@ -293,8 +293,12 @@ resource "terraform_data" "configuration_validation" {
     }
 
     precondition {
-      condition     = local.database_mode != "managed" || length(local.workload_clouds) == 1
-      error_message = "database_mode=managed requires all workload VMs to use one cloud because no private cross-cloud database path exists."
+      condition = length(distinct([
+        for vm in values(local.vms) : vm.cloud
+        ])) == 1 && alltrue([
+        for vm in values(local.vms) : vm.cloud == local.default_cloud
+      ])
+      error_message = "One deployment must place bastion and all workloads in default_cloud; mixed-cloud private routing is outside scope."
     }
 
     precondition {
@@ -348,6 +352,7 @@ locals {
     bastion_allowed_cidrs = local.bastion_vm.allowed_cidrs
     history_api_port      = local.config.service_ports.history_api
     postgresql_port       = local.config.service_ports.postgresql
+    postgresql_enabled    = local.database_mode == "self_hosted"
     rabbitmq_port         = local.rabbitmq_port
     rabbitmq_enabled      = local.database_mode == "managed"
     redis_port            = local.redis_port

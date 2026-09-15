@@ -129,37 +129,14 @@ run "aws_only" {
   }
 }
 
-run "hybrid" {
+run "mixed_cloud_placement_is_rejected" {
   command = plan
 
   variables {
     project_config_path = ".terraform/test-configs/hybrid.json"
   }
 
-  assert {
-    condition = (
-      output.resolved_vm_configuration.ui.cloud == "aws" &&
-      output.resolved_vm_configuration.ui.provider_size == "t3.micro" &&
-      output.resolved_vm_configuration.ui.provider_disk_type == "gp3" &&
-      output.resolved_vm_configuration.infra.role == "database" &&
-      output.resolved_vm_configuration.infra.cloud == "gcp" &&
-      output.resolved_vm_configuration.infra.provider_region == "europe-west1"
-    )
-    error_message = "A per-VM cloud override must resolve provider-specific values without changing other VMs."
-  }
-
-
-  assert {
-    condition = (
-      output.monitoring_status.gcp.enabled &&
-      output.monitoring_status.aws.enabled &&
-      !output.monitoring_status.gcp.http_5xx_enabled &&
-      output.monitoring_status.aws.http_5xx_enabled &&
-      toset(output.monitoring_status.gcp.vm_names) == toset(["oilscope-dev-bastion", "oilscope-dev-infra", "oilscope-dev-history", "oilscope-dev-fetcher"]) &&
-      toset(output.monitoring_status.aws.vm_names) == toset(["oilscope-dev-ui"])
-    )
-    error_message = "Hybrid monitoring must filter Terraform-managed VMs by provider."
-  }
+  expect_failures = [terraform_data.configuration_validation]
 }
 
 run "monitoring_disabled" {

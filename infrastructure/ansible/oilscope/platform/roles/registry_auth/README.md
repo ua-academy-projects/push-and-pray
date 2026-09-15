@@ -18,10 +18,11 @@ stores Docker's generated configuration only under `/run`.
 - Token-bearing tasks use `no_log: true`.
 - The token is sent to `docker login` with `--password-stdin`.
 - The transient directory is owned by root with mode `0700`.
-- A failed login removes the directory immediately.
-- A successful login notifies a cleanup handler. Deployment plays using this
-  role set `force_handlers: true`, so a later workload failure still removes
-  the credentials.
+- A failed login removes the directory immediately. After a successful login, each
+  workload role keeps the directory only through its private-image pull and removes it
+  from an `always` block before starting or health-checking containers.
+- Transient directory creation, login, and cleanup do not count as persistent Ansible
+  changes, which keeps second-run idempotency reports meaningful.
 - No registry token is written to project configuration, Ansible defaults,
   Compose templates, or Terraform state.
 

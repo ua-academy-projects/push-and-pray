@@ -1,7 +1,11 @@
 # Database role
 
-Pulls the immutable OilScope PostgreSQL image, starts the database service,
-waits for its Docker health check, and applies the bundled SQL migrations.
+Pulls the immutable OilScope database/migration image, reconciles the selected runtime
+services, waits for Docker health checks, and applies bundled SQL migrations.
+
+- `self_hosted`: local PostgreSQL with PGMQ plus Redis.
+- `managed`: RabbitMQ plus Redis; migrations target external PostgreSQL with TLS and no
+  local PostgreSQL service is started.
 
 ## Requirements
 
@@ -49,9 +53,10 @@ The database image must contain `petroscope-migrate` and the migrations under
         database_postgres_password: "{{ vault_database_password }}"
 ```
 
-Running the role again is safe: Compose reconciles the existing PostgreSQL
-container and the bundled migrations use idempotent SQL operations. The
-migration container is removed after every successful run.
+Running the role again is safe: Compose reconciles the mode-specific containers and the
+bundled migrations use idempotent SQL operations. Migration `004` runs only in
+self-hosted mode. The migration container is removed after every successful run, and its
+reconciliation command does not report a persistent configuration change.
 
 ## License
 

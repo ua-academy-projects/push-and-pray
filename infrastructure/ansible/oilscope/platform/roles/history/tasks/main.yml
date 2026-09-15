@@ -54,6 +54,12 @@
         'Created' in history_compose_up.stderr or
         'Started' in history_compose_up.stderr or
         'Recreated' in history_compose_up.stderr
+  always:
+    - name: Remove transient Docker registry credentials
+      ansible.builtin.file:
+        path: "{{ history_docker_config_dir }}"
+        state: absent
+      changed_when: false
 
 - name: Wait for History to become healthy
   ansible.builtin.uri:

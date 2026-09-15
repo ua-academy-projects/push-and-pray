@@ -31,10 +31,7 @@ ansible-playbook oilscope.platform.deploy_workloads \
 
 The deployment stops if a workload fails, preventing dependent workloads from being deployed.
 
-The inventory discovers both GCP and AWS according to `default_cloud` and
-per-VM `cloud` overrides. Terraform provisioning and inventory discovery may
-be hybrid, but application deployment currently requires all five roles to be
-in one cloud. Each workload play runs `topology_guard` on the controller before
-opening SSH connections and reports the missing private cross-cloud network.
-A public UI in a cloud different from the bastion can be managed directly, but
-that does not make its private database and history dependencies reachable.
+The inventory selects GCP or AWS from `default_cloud`. Terraform requires the bastion and
+all four workloads to use that provider. Each workload play also runs `topology_guard`
+before opening SSH connections, so stale or mixed live inventory fails explicitly.
+Cross-cloud private routing and multiple bastions are outside scope.

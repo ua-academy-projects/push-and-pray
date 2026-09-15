@@ -37,6 +37,10 @@ project-config.*.json
 infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/local.oilscope.yml
 
+# Archived Vagrant snapshot runtime files (the legacy implementation is not active).
+**/.vagrant/
+infrastructure/legacy/vagrant/config/vagrant.env
+
 # Legacy provider-specific local inventory name retained to prevent accidental
 # commits from pre-multi-cloud worktrees.
 *.local.gcp.yml

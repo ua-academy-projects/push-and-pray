@@ -19,6 +19,13 @@ identifiers; it never reports values.
 
 ## Uploading values
 
+In managed mode, Terraform creates the PostgreSQL, RabbitMQ, and Redis password versions
+and the managed database-host version. Do not overwrite them with the operator uploader.
+The GCP uploader automatically omits configured `POSTGRES_PASSWORD` and `REDIS_PASSWORD`
+mappings in managed mode; it continues to upload operator-owned values such as
+`GHCR_TOKEN` and `OILPRICEAPI_KEY`. In self-hosted mode those configured password mappings
+remain operator-owned and are uploaded normally.
+
 The existing `oilscope.platform.upload_secret_versions` play remains the safe
 bulk uploader for GCP. It reads values from the operator environment, passes
 them to `gcloud` on stdin, disables stdin newline insertion, and marks payload
@@ -30,7 +37,7 @@ payload on stdin rather than in the command line:
 ```sh
 printf '%s' "$SECRET_VALUE" | aws secretsmanager put-secret-value \
   --region eu-central-1 \
-  --secret-id example-db-password \
+  --secret-id example-ghcr-token \
   --secret-string file:///dev/stdin
 ```
 
@@ -54,6 +61,10 @@ from inventory's `oilscope_cloud`:
 - GCP obtains a metadata-server token and calls Secret Manager's REST API.
 - AWS uses boto3's instance-profile credential chain. `host_baseline` installs
   `python3-boto3` before resolution.
+
+Managed Fetcher resolves only RabbitMQ and application credentials, not PostgreSQL.
+Managed UI resolves only Redis and registry credentials. History resolves RabbitMQ and
+the managed PostgreSQL endpoint/password; the infra host resolves those plus Redis.
 
 Returned values exist only as `no_log` Ansible facts for the deployment play.
 They are not written to a project config or Terraform state.

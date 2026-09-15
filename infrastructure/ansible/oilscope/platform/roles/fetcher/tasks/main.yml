@@ -1,26 +1,34 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Pull the Fetcher image
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ fetcher_compose_project_name }}"
-      - --file
-      - "{{ fetcher_compose_file }}"
-      - pull
-      - "{{ fetcher_service }}"
-  args:
-    chdir: "{{ fetcher_compose_project_dir }}"
-  environment: "{{ fetcher_runtime_environment }}"
-  register: fetcher_image_pull
-  changed_when: >-
-    'Downloaded newer image' in fetcher_image_pull.stdout or
-    'Downloaded newer image' in fetcher_image_pull.stderr or
-    'Pull complete' in fetcher_image_pull.stdout or
-    'Pull complete' in fetcher_image_pull.stderr
+- name: Pull the Fetcher image with transient credentials
   no_log: true
+  block:
+    - name: Pull the Fetcher image
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ fetcher_compose_project_name }}"
+          - --file
+          - "{{ fetcher_compose_file }}"
+          - pull
+          - "{{ fetcher_service }}"
+      args:
+        chdir: "{{ fetcher_compose_project_dir }}"
+      environment: "{{ fetcher_runtime_environment }}"
+      register: fetcher_image_pull
+      changed_when: >-
+        'Downloaded newer image' in fetcher_image_pull.stdout or
+        'Downloaded newer image' in fetcher_image_pull.stderr or
+        'Pull complete' in fetcher_image_pull.stdout or
+        'Pull complete' in fetcher_image_pull.stderr
+  always:
+    - name: Remove transient Docker registry credentials
+      ansible.builtin.file:
+        path: "{{ fetcher_docker_config_dir }}"
+        state: absent
+      changed_when: false
 
 - name: Start the Fetcher service
   ansible.builtin.command:

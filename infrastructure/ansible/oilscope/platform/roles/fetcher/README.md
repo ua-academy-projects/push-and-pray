@@ -9,15 +9,13 @@ The target must have Docker with the Compose plugin installed. The supported
 Compose definition must already be installed on the target; use the
 `oilscope.platform.compose_project` role for that step.
 
-A reachable PostgreSQL instance is required: the Fetcher process pings it at
-startup and exits immediately if the connection fails, before its HTTP
-server (and therefore its health check) ever starts.
+In self-hosted mode, Fetcher publishes through PGMQ and requires PostgreSQL. In managed
+mode it publishes through RabbitMQ and receives no PostgreSQL endpoint or password.
 
 ## Required variables
 
-- `fetcher_postgres_password`: database password supplied by the deployment
-  secret mechanism. The role marks tasks receiving it with `no_log` and does
-  not write it to disk.
+- `fetcher_postgres_password`: self-hosted database password. It is empty and unused in
+  managed mode.
 - `fetcher_oilpriceapi_key`: price data provider API key supplied by the
   deployment secret mechanism. Same `no_log` handling as the password.
 
@@ -34,6 +32,9 @@ server (and therefore its health check) ever starts.
   `oil_tracker`.
 - `fetcher_database_host`: defaults to `postgres`; override to the database
   VM's address when Fetcher and the database run on separate hosts.
+- `fetcher_messaging_backend`: `pgmq` or `rabbitmq`.
+- `fetcher_rabbitmq_host`, `fetcher_rabbitmq_port`, and
+  `fetcher_rabbitmq_password`: managed-mode broker connection.
 - `fetcher_bind_address`: defaults to `0.0.0.0`.
 - `fetcher_host_port`: defaults to `8002`.
 - `fetcher_health_retries` and `fetcher_health_delay`: health polling

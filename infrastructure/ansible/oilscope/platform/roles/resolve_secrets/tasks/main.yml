@@ -18,15 +18,26 @@
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
       {{
-        (resolve_secrets_config.application.secret_mappings[oilscope_role]
-         | default({}))
+        (
+          (
+            resolve_secrets_config.application.secret_mappings[oilscope_role]
+            | default({})
+            | dict2items
+            | rejectattr('key', 'equalto', 'POSTGRES_PASSWORD')
+            | items2dict
+          )
+          if (resolve_secrets_config.database_mode | default('self_hosted')) == 'managed'
+             and oilscope_role == 'fetcher'
+          else (resolve_secrets_config.application.secret_mappings[oilscope_role]
+                | default({}))
+        )
         | combine(
             {
               'DATABASE_HOST': resolve_secrets_config.name_prefix ~ '-' ~
                 resolve_secrets_config.environment ~ '-database-host'
             }
             if (resolve_secrets_config.database_mode | default('self_hosted')) == 'managed'
-               and oilscope_role in ['database', 'history', 'fetcher', 'ui']
+               and oilscope_role in ['database', 'history']
             else {}
           )
         | combine(

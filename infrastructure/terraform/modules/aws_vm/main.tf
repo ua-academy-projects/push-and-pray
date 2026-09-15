@@ -133,7 +133,7 @@ resource "aws_instance" "workload" {
     runcmd = lookup(var.startup_scripts, each.key, "") == "" ? [] : [["/usr/local/sbin/oilscope-bootstrap"]]
   }))}"
 
-  associate_public_ip_address = false
+  associate_public_ip_address = contains(["bastion", "ui"], each.value.role)
 
   root_block_device {
     volume_size = each.value.boot_disk.size_gb

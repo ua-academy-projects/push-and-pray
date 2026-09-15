@@ -119,6 +119,8 @@ resource "aws_vpc_security_group_ingress_rule" "history_from_ui" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgresql_from_history" {
+  count = var.policy.postgresql_enabled ? 1 : 0
+
   security_group_id            = aws_security_group.database.id
   referenced_security_group_id = aws_security_group.history.id
   from_port                    = var.policy.postgresql_port
@@ -126,12 +128,24 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql_from_history" {
   ip_protocol                  = "tcp"
 }
 
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgresql_from_history
+  to   = aws_vpc_security_group_ingress_rule.postgresql_from_history[0]
+}
+
 resource "aws_vpc_security_group_ingress_rule" "postgresql_from_fetcher" {
+  count = var.policy.postgresql_enabled ? 1 : 0
+
   security_group_id            = aws_security_group.database.id
   referenced_security_group_id = aws_security_group.fetcher.id
   from_port                    = var.policy.postgresql_port
   to_port                      = var.policy.postgresql_port
   ip_protocol                  = "tcp"
+}
+
+moved {
+  from = aws_vpc_security_group_ingress_rule.postgresql_from_fetcher
+  to   = aws_vpc_security_group_ingress_rule.postgresql_from_fetcher[0]
 }
 
 resource "aws_vpc_security_group_ingress_rule" "redis_from_ui" {

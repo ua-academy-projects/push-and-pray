@@ -93,7 +93,7 @@ run "aws_resource_contract" {
       instance.root_block_device[0].volume_size == var.config.vms[name].boot_disk.size_gb &&
       instance.root_block_device[0].encrypted &&
       instance.metadata_options[0].http_tokens == "required" &&
-      !instance.associate_public_ip_address &&
+      instance.associate_public_ip_address == contains(["bastion", "ui"], name) &&
       toset(instance.vpc_security_group_ids) == toset([var.network.security_group_ids[var.config.vms[name].role]])
     ])
     error_message = "AWS names, subnet/security-group assignment, machine/disk mappings and instance security settings must be preserved."

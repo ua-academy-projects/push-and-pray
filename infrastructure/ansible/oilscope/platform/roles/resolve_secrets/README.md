@@ -5,9 +5,10 @@ VM's provider-native runtime identity rather than operator credentials. GCP
 uses the attached service account and metadata token. AWS uses boto3's normal
 instance-profile credential chain.
 
-Terraform creates containers without values and grants least-privilege read
-access. This role keeps returned values in Ansible facts under `no_log`; it
-does not write them to disk.
+Terraform creates containers and grants least-privilege read access. In managed mode it
+also creates versions for the generated PostgreSQL host/password, RabbitMQ password, and
+Redis password. This role keeps returned values in Ansible facts under `no_log`; it does
+not write them to disk.
 
 ## Requirements
 
@@ -19,8 +20,11 @@ does not write them to disk.
 - Inventory must expose `oilscope_region`; the AWS client uses it explicitly
   instead of relying on an ambient SDK default region.
 
-Mappings are selected by role, so `vms.infra` consumes the `database`
-application mapping without deriving a VM key from its hostname.
+Mappings are selected by role, so `vms.infra` consumes the `database` application mapping
+without deriving a VM key from its hostname. Managed mode removes Fetcher's configured
+`POSTGRES_PASSWORD`, adds `DATABASE_HOST` only to database and History, and adds
+`RABBITMQ_PASSWORD` only to database, History, and Fetcher. UI receives neither managed
+database nor RabbitMQ credentials.
 
 Optional GCP settings are `resolve_secrets_project_id`,
 `resolve_secrets_metadata_url`, and `resolve_secrets_secretmanager_url`.

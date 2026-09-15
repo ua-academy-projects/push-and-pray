@@ -7,12 +7,13 @@ local health endpoint.
 
 - Docker and the Compose plugin are installed.
 - `/opt/oilscope/app/compose.yaml` is installed.
-- The dynamic GCP inventory contains one host in the `database` group with an `internal_ip` variable.
+- The dynamic inventory contains one host in the `database` group with an `internal_ip` variable.
 - Database is healthy and migrated.
 
-The deployment workflow retrieves `POSTGRES_PASSWORD` from Secret Manager and
-passes it as `history_postgres_password`. This role does not retrieve or store
-secret values.
+History always receives PostgreSQL credentials. Self-hosted mode consumes PGMQ on the
+infra PostgreSQL instance. Managed mode consumes RabbitMQ on the infra VM and writes to
+private RDS or Cloud SQL with `sslmode=require`. The role does not retrieve or store
+secret values itself.
 
 ## Variables
 

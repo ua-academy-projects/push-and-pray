@@ -68,6 +68,12 @@
       register: ui_container
       changed_when: false
       failed_when: ui_container.stdout | trim | length == 0
+  always:
+    - name: Remove transient Docker registry credentials
+      ansible.builtin.file:
+        path: "{{ ui_docker_config_dir }}"
+        state: absent
+      changed_when: false
 
 - name: Wait for UI to become healthy
   ansible.builtin.command:
