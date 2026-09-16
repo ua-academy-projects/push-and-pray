@@ -76,10 +76,10 @@ module "aws_managed_database" {
 
   config  = local.config
   network = module.aws_network.networks[local.config.default_location]
-  client_security_group_ids = compact([
-    try(module.aws_security.security_group_ids[local.config.default_location].infrastructure, null),
-    try(module.aws_security.security_group_ids[local.config.default_location].history, null),
-  ])
+  client_security_group_ids = {
+    infrastructure = module.aws_security.security_group_ids[local.config.default_location].infrastructure
+    history        = module.aws_security.security_group_ids[local.config.default_location].history
+  }
   password = var.database_password
 }
 

@@ -9,8 +9,8 @@ variable "network" {
 }
 
 variable "client_security_group_ids" {
-  description = "Security groups permitted to connect to PostgreSQL."
-  type        = list(string)
+  description = "Security groups permitted to connect to PostgreSQL, keyed by workload."
+  type        = map(string)
 }
 
 variable "password" {

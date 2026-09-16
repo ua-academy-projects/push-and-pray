@@ -29,7 +29,7 @@ resource "aws_security_group" "postgresql" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "postgresql" {
-  for_each = toset(var.client_security_group_ids)
+  for_each = var.client_security_group_ids
 
   region                       = local.region
   security_group_id            = aws_security_group.postgresql.id
