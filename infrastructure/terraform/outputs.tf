@@ -78,7 +78,12 @@ output "gcp_database_connection" {
   value       = module.gcp.database_connection
 }
 
-output "gcp_messaging_connection" {
-  description = "Non-secret GCP Pub/Sub connection values for application workloads."
-  value       = module.gcp.messaging_connection
+output "messaging_connection" {
+  description = "Messaging connection values for the cloud selected by default_cloud."
+  value       = local.config.default_cloud == "aws" ? module.aws.messaging_connection : module.gcp.messaging_connection
+}
+
+output "session_connection" {
+  description = "UI session-store connection values for the cloud selected by default_cloud."
+  value       = local.config.default_cloud == "aws" ? module.aws.session_connection : module.gcp.session_connection
 }

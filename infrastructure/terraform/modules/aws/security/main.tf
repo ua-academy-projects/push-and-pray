@@ -128,6 +128,8 @@ resource "aws_vpc_security_group_ingress_rule" "allow_ui_to_history" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_fetcher_to_infra" {
+  count = var.managed_database_enabled ? 0 : 1
+
   security_group_id            = aws_security_group.infra.id
   referenced_security_group_id = aws_security_group.fetcher.id
 
@@ -137,6 +139,8 @@ resource "aws_vpc_security_group_ingress_rule" "allow_fetcher_to_infra" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_history_to_infra" {
+  count = var.managed_database_enabled ? 0 : 1
+
   security_group_id            = aws_security_group.infra.id
   referenced_security_group_id = aws_security_group.history.id
 
@@ -145,6 +149,8 @@ resource "aws_vpc_security_group_ingress_rule" "allow_history_to_infra" {
   to_port     = var.postgresql_port
 }
 resource "aws_vpc_security_group_ingress_rule" "allow_ui_to_infra" {
+  count = var.managed_database_enabled ? 0 : 1
+
   security_group_id            = aws_security_group.infra.id
   referenced_security_group_id = aws_security_group.ui.id
 
@@ -153,13 +159,41 @@ resource "aws_vpc_security_group_ingress_rule" "allow_ui_to_infra" {
   to_port     = var.postgresql_port
 }
 
-# The managed database has no public ingress. Only application workloads in
-# their individual security groups can open PostgreSQL connections.
+resource "aws_vpc_security_group_ingress_rule" "allow_fetcher_to_rabbitmq" {
+  count = var.managed_database_enabled ? 1 : 0
+
+  security_group_id            = aws_security_group.infra.id
+  referenced_security_group_id = aws_security_group.fetcher.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.rabbitmq_port
+  to_port                      = var.rabbitmq_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_history_to_rabbitmq" {
+  count = var.managed_database_enabled ? 1 : 0
+
+  security_group_id            = aws_security_group.infra.id
+  referenced_security_group_id = aws_security_group.history.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.rabbitmq_port
+  to_port                      = var.rabbitmq_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_ui_to_redis" {
+  count = var.managed_database_enabled ? 1 : 0
+
+  security_group_id            = aws_security_group.infra.id
+  referenced_security_group_id = aws_security_group.ui.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.redis_port
+  to_port                      = var.redis_port
+}
+
+# The managed database has no public ingress. Only History can open a
+# PostgreSQL connection; Fetcher uses RabbitMQ and UI uses History plus Redis.
 resource "aws_vpc_security_group_ingress_rule" "allow_workloads_to_managed_database" {
   for_each = var.managed_database_enabled ? {
     history = aws_security_group.history.id
-    fetcher = aws_security_group.fetcher.id
-    ui      = aws_security_group.ui.id
   } : {}
 
   security_group_id            = aws_security_group.managed_database[0].id

@@ -1,7 +1,3 @@
-locals {
-  engine_major = regex("^[0-9]+", var.managed_settings.engine_version)
-}
-
 resource "aws_db_subnet_group" "postgres" {
   name       = "${var.resource_prefix}-postgres"
   subnet_ids = values(var.database_subnet_ids)
@@ -16,25 +12,6 @@ resource "aws_db_subnet_group" "postgres" {
       error_message = "Managed RDS PostgreSQL requires at least two database subnets in distinct Availability Zones."
     }
   }
-}
-
-resource "aws_db_parameter_group" "postgres" {
-  name   = "${var.resource_prefix}-postgres${local.engine_major}"
-  family = "postgres${local.engine_major}"
-
-  parameter {
-    name         = "shared_preload_libraries"
-    value        = "pg_cron"
-    apply_method = "pending-reboot"
-  }
-
-  parameter {
-    name         = "cron.database_name"
-    value        = var.database.name
-    apply_method = "pending-reboot"
-  }
-
-  tags = var.tags
 }
 
 resource "aws_db_instance" "postgres" {
@@ -56,7 +33,6 @@ resource "aws_db_instance" "postgres" {
 
   db_subnet_group_name   = aws_db_subnet_group.postgres.name
   vpc_security_group_ids = [var.security_group_id]
-  parameter_group_name   = aws_db_parameter_group.postgres.name
   publicly_accessible    = false
 
   backup_retention_period      = 0

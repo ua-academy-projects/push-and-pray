@@ -71,6 +71,8 @@ resource "google_compute_firewall" "history_api" {
 }
 
 resource "google_compute_firewall" "postgresql" {
+  count = var.managed_mode ? 0 : 1
+
   name    = "${var.resource_prefix}-allow-postgresql"
   network = var.network_id
 
@@ -82,6 +84,60 @@ resource "google_compute_firewall" "postgresql" {
   target_tags = [local.network_tags.infra]
 
   allow {
+    protocol = "tcp"
+    ports    = [tostring(var.postgresql_port)]
+  }
+}
+
+resource "google_compute_firewall" "rabbitmq" {
+  count = var.managed_mode ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-rabbitmq"
+  network = var.network_id
+
+  source_tags = [local.network_tags.fetcher, local.network_tags.history]
+  target_tags = [local.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.rabbitmq_port)]
+  }
+}
+
+resource "google_compute_firewall" "redis" {
+  count = var.managed_mode ? 1 : 0
+
+  name    = "${var.resource_prefix}-allow-redis"
+  network = var.network_id
+
+  source_tags = [local.network_tags.ui]
+  target_tags = [local.network_tags.infra]
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.redis_port)]
+  }
+}
+
+# Only History owns PostgreSQL access in managed mode. Fetcher publishes to
+# RabbitMQ and UI stores sessions in Redis, so the remaining project VMs have
+# no reason to establish a TCP connection to Cloud SQL.
+resource "google_compute_firewall" "deny_non_history_to_managed_database" {
+  count = var.managed_mode && var.managed_database_host != null ? 1 : 0
+
+  name               = "${var.resource_prefix}-deny-managed-postgresql"
+  network            = var.network_id
+  direction          = "EGRESS"
+  priority           = 900
+  destination_ranges = ["${var.managed_database_host}/32"]
+  target_tags = [
+    local.network_tags.bastion,
+    local.network_tags.infra,
+    local.network_tags.fetcher,
+    local.network_tags.ui,
+  ]
+
+  deny {
     protocol = "tcp"
     ports    = [tostring(var.postgresql_port)]
   }

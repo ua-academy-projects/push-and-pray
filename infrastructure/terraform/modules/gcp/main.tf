@@ -12,7 +12,7 @@ module "network" {
 
 module "database" {
   source = "./database"
-  count  = local.database_mode == "managed" && local.has_vms ? 1 : 0
+  count  = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
 
   project_id = local.config.clouds.gcp.project_id
   region     = local.config.regions[local.config.default_region][local.cloud_key].region
@@ -30,7 +30,7 @@ module "database" {
 }
 
 resource "random_password" "managed_database" {
-  count = local.database_mode == "managed" && local.has_vms ? 1 : 0
+  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
 
   length  = 32
   special = true
@@ -47,17 +47,34 @@ resource "random_password" "managed_database" {
   }
 }
 
-module "messaging" {
-  source = "./messaging"
-  count  = local.has_vms ? 1 : 0
+resource "random_password" "rabbitmq" {
+  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
 
-  project_id      = local.config.clouds.gcp.project_id
-  resource_prefix = local.resource_prefix
-  labels          = local.common_labels
-  settings        = local.config.messaging
+  length           = 32
+  special          = true
+  override_special = "-_"
 
-  publisher_service_account_email = module.vm[0].service_account_emails[local.fetcher_vm_name]
-  consumer_service_account_email  = module.vm[0].service_account_emails[local.history_vm_name]
+  lifecycle {
+    precondition {
+      condition     = length(local.rabbitmq_secret_ids) > 0
+      error_message = "Managed mode requires RABBITMQ_PASSWORD secret mappings."
+    }
+  }
+}
+
+resource "random_password" "redis" {
+  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+
+  length           = 32
+  special          = true
+  override_special = "-_"
+
+  lifecycle {
+    precondition {
+      condition     = length(local.redis_secret_ids) > 0
+      error_message = "Managed mode requires REDIS_PASSWORD secret mappings."
+    }
+  }
 
 }
 
@@ -78,6 +95,14 @@ module "security" {
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
+  rabbitmq_port    = local.config.service_ports.rabbitmq
+  redis_port       = local.config.service_ports.redis
+  managed_mode     = local.database_mode == "managed"
+  managed_database_host = (
+    local.database_mode == "managed" && local.database_vm_name != null
+    ? module.database[0].host
+    : null
+  )
 
 }
 
@@ -112,10 +137,11 @@ module "secrets" {
   }
 
   secret_version_managers = var.secret_version_managers
-  secret_values = local.database_mode == "managed" ? {
-    for secret_id in local.managed_database_secret_ids :
-    secret_id => random_password.managed_database[0].result
-  } : {}
+  secret_values = local.database_mode == "managed" && local.database_vm_name != null ? merge(
+    { for secret_id in local.managed_database_secret_ids : secret_id => random_password.managed_database[0].result },
+    { for secret_id in local.rabbitmq_secret_ids : secret_id => random_password.rabbitmq[0].result },
+    { for secret_id in local.redis_secret_ids : secret_id => random_password.redis[0].result },
+  ) : {}
 
 }
 

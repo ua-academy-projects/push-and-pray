@@ -22,16 +22,6 @@ resource "google_sql_database_instance" "main" {
   settings {
     tier = var.managed_settings.tier
 
-    database_flags {
-      name  = "cloudsql.enable_pg_cron"
-      value = "on"
-    }
-
-    database_flags {
-      name  = "cron.database_name"
-      value = var.database.name
-    }
-
     ip_configuration {
       ipv4_enabled    = false
       private_network = var.network_id

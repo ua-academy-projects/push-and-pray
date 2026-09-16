@@ -37,3 +37,20 @@ variable "postgresql_port" {
   description = "TCP port used by workloads to access PostgreSQL."
   type        = number
 }
+
+variable "rabbitmq_port" {
+  type = number
+}
+
+variable "redis_port" {
+  type = number
+}
+
+variable "managed_mode" {
+  type = bool
+}
+
+variable "managed_database_host" {
+  type     = string
+  nullable = true
+}

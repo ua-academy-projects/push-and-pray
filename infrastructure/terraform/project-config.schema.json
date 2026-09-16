@@ -23,6 +23,7 @@
     "vms",
     "database",
     "messaging",
+    "sessions",
     "zone_id"
   ],
   "properties": {
@@ -268,7 +269,7 @@
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": ["history_api", "postgresql", "rabbitmq", "redis"],
       "properties": {
         "history_api": {
           "type": "integer",
@@ -276,6 +277,16 @@
           "maximum": 65535
         },
         "postgresql": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "rabbitmq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "redis": {
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
@@ -437,11 +448,32 @@
     "messaging": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["queue_name", "visibility_timeout_seconds", "max_delivery_attempts"],
+      "required": ["queue_name", "visibility_timeout_seconds", "max_delivery_attempts", "rabbitmq"],
       "properties": {
         "queue_name": { "type": "string", "minLength": 1 },
         "visibility_timeout_seconds": { "type": "integer", "minimum": 1 },
-        "max_delivery_attempts": { "type": "integer", "minimum": 1 }
+        "max_delivery_attempts": { "type": "integer", "minimum": 1 },
+        "rabbitmq": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["image", "username", "vhost", "exchange", "routing_key"],
+          "properties": {
+            "image": { "type": "string", "minLength": 1 },
+            "username": { "type": "string", "minLength": 1 },
+            "vhost": { "type": "string", "minLength": 1 },
+            "exchange": { "type": "string", "minLength": 1 },
+            "routing_key": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "sessions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ttl_seconds", "redis_image"],
+      "properties": {
+        "ttl_seconds": { "type": "integer", "minimum": 1 },
+        "redis_image": { "type": "string", "minLength": 1 }
       }
     },
     "zone_id": {

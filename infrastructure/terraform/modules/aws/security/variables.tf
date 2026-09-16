@@ -25,6 +25,12 @@ variable "history_api_port" {
 variable "postgresql_port" {
   type = number
 }
+variable "rabbitmq_port" {
+  type = number
+}
+variable "redis_port" {
+  type = number
+}
 variable "enable_bastion_ssh_bootstrap" {
   type = bool
 }

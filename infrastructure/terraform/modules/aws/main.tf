@@ -20,14 +20,15 @@ module "secrets" {
   source     = "./secrets"
   secret_ids = local.all_secret_ids
   tags       = local.common_labels
-  secret_values = local.database_mode == "managed" && local.has_vms ? {
-    for secret_id in local.managed_database_secret_ids :
-    secret_id => random_password.managed_database[0].result
-  } : {}
+  secret_values = local.database_mode == "managed" && local.database_vm_name != null ? merge(
+    { for secret_id in local.managed_database_secret_ids : secret_id => random_password.managed_database[0].result },
+    { for secret_id in local.rabbitmq_secret_ids : secret_id => random_password.rabbitmq[0].result },
+    { for secret_id in local.redis_secret_ids : secret_id => random_password.redis[0].result },
+  ) : {}
 }
 
 resource "random_password" "managed_database" {
-  count = local.database_mode == "managed" && local.has_vms ? 1 : 0
+  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
 
   length  = 32
   special = true
@@ -39,6 +40,36 @@ resource "random_password" "managed_database" {
     precondition {
       condition     = length(local.managed_database_secret_ids) > 0
       error_message = "Managed database mode requires at least one POSTGRES_PASSWORD entry in an AWS workload VM's secret_mappings."
+    }
+  }
+}
+
+resource "random_password" "rabbitmq" {
+  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+
+  length           = 32
+  special          = true
+  override_special = "-_"
+
+  lifecycle {
+    precondition {
+      condition     = length(local.rabbitmq_secret_ids) > 0
+      error_message = "Managed mode requires RABBITMQ_PASSWORD secret mappings."
+    }
+  }
+}
+
+resource "random_password" "redis" {
+  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+
+  length           = 32
+  special          = true
+  override_special = "-_"
+
+  lifecycle {
+    precondition {
+      condition     = length(local.redis_secret_ids) > 0
+      error_message = "Managed mode requires REDIS_PASSWORD secret mappings."
     }
   }
 }
@@ -77,14 +108,16 @@ module "security" {
 
   history_api_port = local.config.service_ports.history_api
   postgresql_port  = local.config.service_ports.postgresql
+  rabbitmq_port    = local.config.service_ports.rabbitmq
+  redis_port       = local.config.service_ports.redis
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-  managed_database_enabled     = local.database_mode == "managed"
+  managed_database_enabled     = local.database_mode == "managed" && local.database_vm_name != null
 }
 
 module "database" {
   source = "./database"
-  count  = local.database_mode == "managed" && local.has_vms ? 1 : 0
+  count  = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
 
   resource_prefix     = local.resource_prefix
   database            = local.config.database

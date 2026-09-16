@@ -26,13 +26,7 @@ locals {
   selected_raw_vms = {
     for name, vm in local.config.vms :
     name => vm
-    if(
-      local.effective_cloud_by_vm[name] == local.cloud_key &&
-      (
-        local.database_mode != "managed" ||
-        vm.role != "database"
-      )
-    )
+    if local.effective_cloud_by_vm[name] == local.cloud_key
   }
   resolved_vms = {
     for name, vm in local.selected_raw_vms :
@@ -83,15 +77,47 @@ locals {
     for vm in values(local.workload_vms) : values(vm.secret_mappings)
   ]))
 
+  inactive_secret_names_by_role = local.database_mode == "self_managed" ? {
+    for role in ["database", "history", "fetcher", "ui"] :
+    role => ["RABBITMQ_PASSWORD", "REDIS_PASSWORD"]
+    } : {
+    database = ["POSTGRES_PASSWORD"]
+    history  = ["REDIS_PASSWORD"]
+    fetcher  = ["POSTGRES_PASSWORD", "REDIS_PASSWORD"]
+    ui       = ["POSTGRES_PASSWORD", "RABBITMQ_PASSWORD"]
+  }
+
+  active_secret_mappings_by_vm = {
+    for name, workload in local.workload_vms : name => {
+      for environment_name, secret_id in workload.secret_mappings :
+      environment_name => secret_id
+      if !contains(local.inactive_secret_names_by_role[workload.role], environment_name)
+    }
+  }
+
   secret_ids_by_vm = {
-    for name, vm in local.workload_vms :
-    name => distinct(values(vm.secret_mappings))
+    for name, secret_mappings in local.active_secret_mappings_by_vm :
+    name => distinct(values(secret_mappings))
   }
 
   managed_database_secret_ids = toset(flatten([
-    for workload in values(local.workload_vms) : [
-      for environment_name, secret_id in workload.secret_mappings : secret_id
+    for secret_mappings in values(local.active_secret_mappings_by_vm) : [
+      for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "POSTGRES_PASSWORD"
+    ]
+  ]))
+
+  rabbitmq_secret_ids = toset(flatten([
+    for secret_mappings in values(local.active_secret_mappings_by_vm) : [
+      for environment_name, secret_id in secret_mappings : secret_id
+      if environment_name == "RABBITMQ_PASSWORD"
+    ]
+  ]))
+
+  redis_secret_ids = toset(flatten([
+    for secret_mappings in values(local.active_secret_mappings_by_vm) : [
+      for environment_name, secret_id in secret_mappings : secret_id
+      if environment_name == "REDIS_PASSWORD"
     ]
   ]))
 
@@ -107,10 +133,10 @@ locals {
 
   database_mode = local.config.database.mode
 
-  database_vm_name = local.database_mode == "self_managed" ? one([
+  database_vm_name = try(one([
     for name, vm in local.resolved_vms : name
     if vm.role == "database"
-  ]) : null
+  ]), null)
 
   ui_vm = one([
     for _, vm in local.resolved_vms : vm
