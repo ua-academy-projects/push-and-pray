@@ -64,15 +64,37 @@ the UI VM's configured cloud; no public IP is stored in the JSON configuration.
 
 Run from the repository root:
 
+The private `../terraform.env` file must contain a non-empty
+`CLOUDFLARE_API_TOKEN` assignment with your scoped API token. Terraform does not
+load this file itself. Sourcing bare assignments without `set -a` does not
+export new variables to Terraform or its provider processes; `set -a` exports
+them, but cannot supply a token missing from the file.
+
+The empty `provider "cloudflare" {}` block intentionally uses the provider's
+standard `CLOUDFLARE_API_TOKEN` environment variable. Do not add the token to
+Terraform variables or `project-config.json`.
+
 ```sh
-terraform -chdir=infrastructure/terraform init
+set -a
+source ../terraform.env
+set +a
+
+# Check presence without displaying the token.
+: "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN in ../terraform.env}"
+
+terraform -chdir=infrastructure/terraform validate
 
 terraform -chdir=infrastructure/terraform plan \
-  -var="project_config_path=../../project-config.json"
+  -var="project_config_path=../../project-config.json" \
+  -out=tfplan
 
-terraform -chdir=infrastructure/terraform apply \
-  -var="project_config_path=../../project-config.json"
+# After reviewing the saved plan, apply it explicitly in the same shell.
+terraform -chdir=infrastructure/terraform apply tfplan
 ```
+
+For a fresh checkout, run `terraform -chdir=infrastructure/terraform init`
+with the project's backend configuration before validation. If applying from
+a new shell, repeat the environment-loading commands first.
 
 Terraform creates `isopenkoandrii.pp.ua` as a proxied A record pointing to the
 UI public IP and sets the zone SSL mode to `strict`.

@@ -61,6 +61,7 @@
       - "{{ ui_compose_file }}"
       - up
       - --detach
+      - --wait
       - redis
   args:
     chdir: "{{ ui_compose_project_dir }}"

@@ -1,9 +1,6 @@
 locals {
-  enabled         = var.config.database_mode == "managed" && var.config.default_cloud == "gcp"
-  project_id      = var.config.clouds.gcp.project_id
-  region          = var.config.locations[var.config.default_location].gcp.region
-  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
-  labels          = merge(var.config.common_labels, { environment = var.config.environment })
+  enabled    = var.config.database_mode == "managed" && var.config.default_cloud == "gcp"
+  project_id = var.config.clouds.gcp.project_id
 }
 
 resource "terraform_data" "private_service_connection" {
@@ -15,8 +12,8 @@ resource "google_sql_database_instance" "postgres" {
   count = local.enabled ? 1 : 0
 
   project             = local.project_id
-  name                = "${local.resource_prefix}-postgres"
-  region              = local.region
+  name                = "${var.config.name_prefix}-${var.config.environment}-postgres"
+  region              = var.config.locations[var.config.default_location].gcp.region
   database_version    = "POSTGRES_${var.config.database.postgres_version}"
   deletion_protection = var.config.environment == "prod"
 
@@ -26,7 +23,7 @@ resource "google_sql_database_instance" "postgres" {
     disk_type         = "PD_SSD"
     disk_size         = var.config.database.storage_gb
     disk_autoresize   = true
-    user_labels       = local.labels
+    user_labels       = merge(var.config.common_labels, { environment = var.config.environment })
 
     backup_configuration {
       enabled                        = true

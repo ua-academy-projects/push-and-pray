@@ -20,7 +20,9 @@
   },
   "vm_defaults": {
     "image": "ubuntu-24.04",
-    "disk_type": "standard"
+    "disk_type": "standard",
+    "disk_size": 10,
+    "size": "micro"
   },
   "clouds": {
     "gcp": {
@@ -207,15 +209,7 @@
     "ui_public_ports": [80, 443]
   },
   "vms": {
-    "bastion": {
-      "role": "bastion",
-      "size": "micro",
-      "location": "europe",
-      "internal_ip": "10.0.0.4",
-      "assign_public_ip": true,
-      "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
-    },
+    "bastion": {},
     "infra": {
       "role": "database",
       "cloud": "gcp",
@@ -250,10 +244,7 @@
         }
       ],
       "bootstrap": {
-        "commands": [
-          "apt-get update",
-          "apt-get install -y htop"
-        ]
+        "commands": ["apt-get update", "apt-get install -y htop"]
       },
       "size": "micro",
       "location": "europe",

@@ -1,3 +1,17 @@
+locals {
+  cloudflare = merge({
+    enabled    = false
+    zone_id    = ""
+    hostname   = ""
+    proxied    = true
+    acme_email = ""
+  }, try(local.config.cloudflare, {}))
+
+  ui_public_ips = compact([
+    for vm in values(local.vm_outputs_by_name) : vm.public_ip if vm.role == "ui"
+  ])
+}
+
 resource "cloudflare_dns_record" "ui" {
   count = local.cloudflare.enabled ? 1 : 0
 

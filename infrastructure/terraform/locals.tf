@@ -1,11 +1,20 @@
 locals {
-  config = jsondecode(file(var.project_config_path))
+  project_config = jsondecode(file(var.project_config_path))
 
-  cloudflare = merge({
-    enabled    = false
-    zone_id    = ""
-    hostname   = ""
-    proxied    = true
-    acme_email = ""
-  }, try(local.config.cloudflare, {}))
+  config = merge(local.project_config, {
+    vms = merge(local.project_config.vms, {
+      bastion = merge(
+        local.project_config.vm_defaults,
+        {
+          cloud         = local.project_config.default_cloud
+          location      = local.project_config.default_location
+          internal_ip   = cidrhost(local.project_config.network.management_subnet_cidr, 4)
+          ssh_port      = 22
+          allowed_cidrs = ["0.0.0.0/0"]
+        },
+        try(local.project_config.vms.bastion, {}),
+        { role = "bastion", assign_public_ip = true },
+      )
+    })
+  })
 }

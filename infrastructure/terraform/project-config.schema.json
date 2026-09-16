@@ -191,15 +191,15 @@
             {
               "type": "object",
               "properties": {
-                "role": { "const": "bastion" }
-              },
-              "required": ["role"]
+                "role": { "const": "bastion" },
+                "assign_public_ip": { "const": true }
+              }
             }
           ]
         }
       },
       "additionalProperties": {
-        "$ref": "#/$defs/vm"
+        "$ref": "#/$defs/workload_vm"
       }
     }
   },
@@ -219,7 +219,7 @@
     "vm_defaults": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["image", "disk_type"],
+      "required": ["image", "disk_type", "disk_size", "size"],
       "properties": {
         "image": {
           "$ref": "#/$defs/logical_name"
@@ -227,6 +227,16 @@
         "disk_type": {
           "$ref": "#/$defs/disk_type",
           "description": "Default abstract disk type for VM boot disks."
+        },
+        "disk_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default VM boot disk size in GiB."
+        },
+        "size": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "description": "Default abstract instance size."
         }
       }
     },
@@ -536,12 +546,6 @@
     "vm": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "role",
-        "size",
-        "location",
-        "internal_ip"
-      ],
       "properties": {
         "role": {
           "type": "string",
@@ -621,8 +625,20 @@
             }
           }
         }
-      },
+      }
+    },
+    "workload_vm": {
       "allOf": [
+        { "$ref": "#/$defs/vm" },
+        {
+          "type": "object",
+          "required": [
+            "role",
+            "size",
+            "location",
+            "internal_ip"
+          ]
+        },
         {
           "if": {
             "properties": {

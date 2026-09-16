@@ -9,4 +9,4 @@
         bastion_ssh_port: >-
           {{ (lookup('ansible.builtin.file', playbook_dir
              ~ '/../../../../../../../project-config.example.json') | from_json)
-             .vms.bastion.ssh_port | int }}
+             .vms.bastion.ssh_port | default(22) | int }}

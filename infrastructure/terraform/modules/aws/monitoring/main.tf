@@ -106,8 +106,8 @@ resource "aws_cloudwatch_dashboard" "infrastructure" {
         type   = "metric"
         x      = 0
         y      = 0
-        width  = 24
-        height = 6
+        width  = 12
+        height = 5
         properties = {
           title  = "Instance Health"
           view   = "timeSeries"
@@ -130,10 +130,10 @@ resource "aws_cloudwatch_dashboard" "infrastructure" {
       },
       {
         type   = "metric"
-        x      = 0
-        y      = 6
-        width  = 24
-        height = 6
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 5
         properties = {
           title  = "CPU"
           view   = "timeSeries"
@@ -166,9 +166,9 @@ resource "aws_cloudwatch_dashboard" "infrastructure" {
       {
         type   = "metric"
         x      = 0
-        y      = 12
-        width  = 24
-        height = 6
+        y      = 5
+        width  = 12
+        height = 5
         properties = {
           title  = "Filesystem"
           view   = "timeSeries"
@@ -198,23 +198,12 @@ resource "aws_cloudwatch_dashboard" "infrastructure" {
           ]
         }
       },
-    ]
-  })
-}
-
-resource "aws_cloudwatch_dashboard" "budget" {
-  count = local.monitoring_enabled ? 1 : 0
-
-  region         = var.config.locations[var.config.default_location].aws.region
-  dashboard_name = "${var.config.name_prefix}-${var.config.environment}-budget"
-  dashboard_body = jsonencode({
-    widgets = [
       {
         type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 24
-        height = 6
+        x      = 12
+        y      = 5
+        width  = 12
+        height = 5
         properties = merge(
           {
             title  = "Estimated monthly AWS spend"

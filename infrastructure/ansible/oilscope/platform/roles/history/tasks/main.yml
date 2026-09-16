@@ -61,6 +61,7 @@
       - "{{ history_compose_file }}"
       - up
       - --detach
+      - --wait
       - rabbitmq
   args:
     chdir: "{{ history_compose_project_dir }}"

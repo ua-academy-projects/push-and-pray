@@ -5,6 +5,7 @@
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 
@@ -225,6 +226,17 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         if not isinstance(vms, dict):
             raise AnsibleParserError("the project configuration must define a 'vms' object")
 
+        vms = dict(vms)
+        vms["bastion"] = {
+            **config.get("vm_defaults", {}),
+            "cloud": default_cloud,
+            "location": config["default_location"],
+            "ssh_port": 22,
+            **vms.get("bastion", {}),
+            "role": bastion_role,
+            "assign_public_ip": True,
+        }
+
         selected = {cloud: {} for cloud in DELEGATES}
         for name, vm in vms.items():
             if not isinstance(vm, dict):
@@ -247,11 +259,13 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     def _set_host_context(self, config):
         prefix = f"{config['name_prefix']}-{config['environment']}-"
         bastion_role = self.get_option("bastion_role")
+        managed_hosts = []
         for cloud, vms in self._effective_vms(config).items():
             for name, vm in vms.items():
                 hostname = prefix + name
                 if hostname not in self.inventory.hosts:
                     continue
+                managed_hosts.append((hostname, vm["role"]))
                 location = config["locations"][vm["location"]][cloud]
                 bastions = [
                     prefix + key
@@ -280,8 +294,41 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     context["ansible_port"] = int(
                         os.environ.get("OILSCOPE_BASTION_CONNECT_PORT") or vm["ssh_port"]
                     )
+                # Bind known-host entries to VM identity, not a reusable IP.
+                # A replacement gets a new entry; key changes on the same VM fail.
+                host_vars = self.inventory.hosts[hostname].get_vars()
+                id_key = (
+                    plain(self.get_option("vars_prefix")) + "id"
+                    if cloud == "gcp" else "aws_instance_id"
+                )
+                instance_id = host_vars.get(id_key)
+                if not instance_id:
+                    raise AnsibleParserError(f"{hostname} is missing cloud instance ID {id_key}")
+                scope = context.get("oilscope_project_id", context["oilscope_region"])
+                alias = f"oilscope-{cloud}-{scope}-{instance_id}"
+                context["oilscope_ssh_base_args"] = (
+                    "-o StrictHostKeyChecking=accept-new -o "
+                    + shlex.quote(f"HostKeyAlias={alias}")
+                )
                 for key, value in context.items():
                     self.inventory.set_variable(hostname, key, value)
+
+        for hostname, role in managed_hosts:
+            host_vars = self.inventory.hosts[hostname].get_vars()
+            ssh_args = host_vars["oilscope_ssh_base_args"]
+            bastion_name = host_vars["oilscope_bastion_host"]
+            if role != bastion_role and bastion_name:
+                bastion = self.inventory.get_host(bastion_name)
+                if bastion is None:
+                    raise AnsibleParserError(f"{hostname} requires undiscovered bastion {bastion_name}")
+                jump = bastion.get_vars()
+                proxy = (
+                    f"ssh -W %h:%p -q -p {jump['bastion_ssh_port']} "
+                    f"{jump['oilscope_ssh_base_args']} "
+                    + shlex.quote(f"{jump['ansible_user']}@{jump['ansible_host']}")
+                )
+                ssh_args += " -o " + shlex.quote(f"ProxyCommand={proxy}")
+            self.inventory.set_variable(hostname, "ansible_ssh_common_args", ssh_args)
 
     def _resource_names(self, config, vms):
         prefix = self._require_string(config.get("name_prefix"), "name_prefix")
