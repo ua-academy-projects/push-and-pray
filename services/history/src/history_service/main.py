@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
+from .messaging import build_consumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,7 +36,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+queue_consumer = build_consumer(settings)
 
 
 @asynccontextmanager
@@ -45,12 +45,12 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
-    await pgmq_consumer.start()
+    await queue_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await queue_consumer.stop()
 
 
 app = FastAPI(
@@ -67,24 +67,26 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    queue_ready = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_name = 'observation_queue'
+    queue_ready = True
+    if settings.queue_backend == "postgres":
+        queue_ready = db.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name = 'observation_queue'
+                )
+                """
             )
-            """
-        )
-    ).scalar_one()
+        ).scalar_one()
 
     return {
         "status": "ok",
         "database": "connected",
-        "queue_backend": ("postgres" if queue_ready else "missing"),
-        "queue_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
+        "queue_backend": (settings.queue_backend if queue_ready else "missing"),
+        "queue_consumer": ("ready" if queue_consumer.is_ready else "not_ready"),
     }
 
 

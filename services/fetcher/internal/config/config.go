@@ -12,8 +12,12 @@ import (
 type Config struct {
 	OilPriceAPIKey string
 	DataProvider   string
+	QueueBackend   string
 	DatabaseURL    string
 	QueueName      string
+	RabbitMQURL    string
+	RabbitExchange string
+	RabbitRoute    string
 	CronHours      []int
 	Timezone       *time.Location
 	FetchOnStartup bool
@@ -40,6 +44,19 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("DATABASE_URL must not be empty")
 	}
 
+	queueBackend := strings.ToLower(env("QUEUE_BACKEND", "postgres"))
+	if queueBackend != "postgres" && queueBackend != "rabbitmq" {
+		return Config{}, fmt.Errorf("QUEUE_BACKEND must be postgres or rabbitmq")
+	}
+
+	rabbitMQURL := strings.TrimSpace(env(
+		"RABBITMQ_URL",
+		"amqp://oil_tracker:change-me@localhost:5672/oil_tracker",
+	))
+	if queueBackend == "rabbitmq" && rabbitMQURL == "" {
+		return Config{}, fmt.Errorf("RABBITMQ_URL must not be empty")
+	}
+
 	hours, err := ParseHours(env("FETCH_CRON_HOURS", "0,6,12,18"))
 	if err != nil {
 		return Config{}, err
@@ -63,8 +80,12 @@ func Load() (Config, error) {
 	return Config{
 		OilPriceAPIKey: apiKey,
 		DataProvider:   provider,
+		QueueBackend:   queueBackend,
 		DatabaseURL:    databaseURL,
-		QueueName:      env("PGMQ_QUEUE", "price_observations"),
+		QueueName:      env("QUEUE_NAME", env("PGMQ_QUEUE", "price_observations")),
+		RabbitMQURL:    rabbitMQURL,
+		RabbitExchange: env("RABBITMQ_EXCHANGE", "oil.price.events"),
+		RabbitRoute:    env("RABBITMQ_ROUTING_KEY", "prices.observed"),
 		CronHours:      hours,
 		Timezone:       location,
 		FetchOnStartup: fetchOnStartup,

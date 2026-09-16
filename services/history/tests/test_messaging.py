@@ -182,3 +182,11 @@ def test_consumer_archives_after_retry_limit(
     )
 
     assert archived == [999]
+
+
+def test_consumer_factory_selects_configured_backend() -> None:
+    postgres = messaging.build_consumer(Settings(queue_backend="postgres"))
+    rabbitmq = messaging.build_consumer(Settings(queue_backend="rabbitmq"))
+
+    assert isinstance(postgres, messaging.PGMQConsumer)
+    assert isinstance(rabbitmq, messaging.RabbitMQConsumer)

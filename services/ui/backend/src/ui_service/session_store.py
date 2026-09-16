@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
+from redis.asyncio import Redis
 
 from .sessions import SessionPreferences
 
@@ -115,3 +117,44 @@ class PostgreSQLSessionStore:
                     ),
                 )
         return preferences
+
+
+class RedisSessionStore:
+    def __init__(self, redis_url: str, ttl_seconds: int) -> None:
+        self.client = Redis.from_url(redis_url, decode_responses=True)
+        self.ttl_seconds = ttl_seconds
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        digest = hashlib.sha256(session_id.encode()).hexdigest()
+        return f"oilscope:session:{digest}"
+
+    async def is_ready(self) -> bool:
+        return bool(await self.client.ping())
+
+    async def get(self, session_id: str) -> SessionPreferences:
+        key = self._key(session_id)
+        stored = await self.client.get(key)
+        if stored is None:
+            return await self.update(session_id, SessionPreferences())
+
+        await self.client.expire(key, self.ttl_seconds)
+        try:
+            return SessionPreferences.model_validate_json(stored)
+        except (TypeError, ValueError, ValidationError):
+            return await self.update(session_id, SessionPreferences())
+
+    async def update(
+        self,
+        session_id: str,
+        preferences: SessionPreferences,
+    ) -> SessionPreferences:
+        await self.client.set(
+            self._key(session_id),
+            json.dumps(preferences.model_dump(mode="json"), separators=(",", ":")),
+            ex=self.ttl_seconds,
+        )
+        return preferences
+
+    async def close(self) -> None:
+        await self.client.aclose()

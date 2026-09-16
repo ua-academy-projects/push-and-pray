@@ -58,8 +58,31 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 		)
 	}
 
+	if configuration.QueueBackend != "postgres" {
+		t.Fatalf("unexpected queue backend: %s", configuration.QueueBackend)
+	}
+
 	if configuration.DatabaseURL == "" {
 		t.Fatal("DATABASE_URL should not be empty")
+	}
+}
+
+func TestLoadRabbitMQConfiguration(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("QUEUE_BACKEND", "rabbitmq")
+	t.Setenv("RABBITMQ_URL", "amqp://oil:test@rabbitmq:5672/oil_tracker")
+	t.Setenv("QUEUE_NAME", "history.price-observations")
+
+	configuration, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if configuration.QueueBackend != "rabbitmq" {
+		t.Fatalf("unexpected queue backend: %s", configuration.QueueBackend)
+	}
+	if configuration.QueueName != "history.price-observations" {
+		t.Fatalf("unexpected queue name: %s", configuration.QueueName)
 	}
 }
 
