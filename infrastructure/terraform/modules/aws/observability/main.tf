@@ -142,7 +142,7 @@ resource "aws_cloudwatch_metric_alarm" "http_5xx" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "database_cpu_high" {
-  count = var.database_identifier == null ? 0 : 1
+  count = var.database_enabled ? 1 : 0
 
   alarm_name          = "${var.resource_prefix}-aws-database-cpu-high"
   alarm_description   = "Kickoff: RDS CPU is above 80% for 5 minutes. Closure: CPU returned below threshold."
@@ -162,7 +162,7 @@ resource "aws_cloudwatch_metric_alarm" "database_cpu_high" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "database_storage_low" {
-  count = var.database_identifier == null ? 0 : 1
+  count = var.database_enabled ? 1 : 0
 
   alarm_name          = "${var.resource_prefix}-aws-database-storage-low"
   alarm_description   = "Kickoff: RDS free storage is below 2 GiB for 10 minutes. Closure: free storage recovered."

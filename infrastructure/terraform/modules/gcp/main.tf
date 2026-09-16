@@ -232,6 +232,7 @@ module "observability" {
   database_instance_id = (
     module.config.managed_database_enabled ? module.database[0].instance_name : null
   )
+  database_enabled = module.config.managed_database_enabled
   instances = {
     for name, vm in module.vm : name => {
       instance_id = vm.instance_id

@@ -162,7 +162,7 @@ resource "google_monitoring_alert_policy" "http_5xx" {
 }
 
 resource "google_monitoring_alert_policy" "database_cpu_high" {
-  count = var.database_instance_id == null ? 0 : 1
+  count = var.database_enabled ? 1 : 0
 
   display_name          = "${var.resource_prefix}-gcp-database-cpu-high"
   combiner              = "OR"
@@ -189,7 +189,7 @@ resource "google_monitoring_alert_policy" "database_cpu_high" {
 }
 
 resource "google_monitoring_alert_policy" "database_disk_high" {
-  count = var.database_instance_id == null ? 0 : 1
+  count = var.database_enabled ? 1 : 0
 
   display_name          = "${var.resource_prefix}-gcp-database-disk-high"
   combiner              = "OR"

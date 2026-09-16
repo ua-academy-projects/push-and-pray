@@ -242,6 +242,7 @@ module "observability" {
   log_retention_days  = try(module.config.config.observability.log_retention_days, 14)
   tags                = module.config.common_metadata
   database_identifier = module.config.managed_database_enabled ? module.database[0].identifier : null
+  database_enabled    = module.config.managed_database_enabled
   instances = {
     for name, vm in module.vm : name => {
       instance_id    = vm.instance_id

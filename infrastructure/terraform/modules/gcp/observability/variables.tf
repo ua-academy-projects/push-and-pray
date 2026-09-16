@@ -8,6 +8,11 @@ variable "database_instance_id" {
   default = null
 }
 
+variable "database_enabled" {
+  type    = bool
+  default = false
+}
+
 variable "instances" {
   type = map(object({
     instance_id = string
