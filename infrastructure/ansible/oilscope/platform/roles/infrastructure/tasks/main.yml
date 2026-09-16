@@ -95,6 +95,9 @@
   environment:
     DOCKER_CONFIG: "{{ infrastructure_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ infrastructure_postgres_password }}"
+    RABBITMQ_PASSWORD: "{{ infrastructure_rabbitmq_password }}"
+    REDIS_PASSWORD: "{{ infrastructure_redis_password }}"
+    INFRASTRUCTURE_BIND_ADDRESS: "{{ infrastructure_internal_ip }}"
     DATABASE_HOST: "{{ infrastructure_database_host }}"
     DATABASE_SSLMODE: "{{ infrastructure_database_sslmode }}"
     CLOUD_SQL_CONNECTION_NAME: "{{ infrastructure_cloud_sql_connection_name }}"
