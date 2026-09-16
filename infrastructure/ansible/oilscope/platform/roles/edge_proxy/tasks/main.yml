@@ -86,7 +86,7 @@
 - name: Configure the Amazon CloudWatch Agent for Traefik access logs
   ansible.builtin.template:
     src: amazon-cloudwatch-agent.json.j2
-    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    dest: "{{ edge_proxy_aws_agent_config_path }}"
     owner: root
     group: root
     mode: "0644"

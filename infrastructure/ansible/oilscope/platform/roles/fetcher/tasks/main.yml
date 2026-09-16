@@ -42,6 +42,8 @@
       - up
       - --detach
       - --no-deps
+      - --pull
+      - never
       - "{{ fetcher_service }}"
   args:
     chdir: "{{ fetcher_compose_project_dir }}"

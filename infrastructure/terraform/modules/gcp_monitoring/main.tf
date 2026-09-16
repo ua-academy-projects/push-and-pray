@@ -40,6 +40,8 @@ resource "google_monitoring_dashboard" "cpu" {
       tiles = concat(local.cpu_enabled ? [{
         width  = 12
         height = 8
+        xPos   = 0
+        yPos   = 0
         widget = {
           title = "Compute Engine CPU utilization"
           xyChart = {
@@ -64,6 +66,8 @@ resource "google_monitoring_dashboard" "cpu" {
         }] : [], local.http_5xx_enabled ? [{
         width  = 12
         height = 8
+        xPos   = 0
+        yPos   = local.cpu_enabled ? 8 : 0
         widget = {
           title = "Traefik HTTP 5xx responses"
           xyChart = {
@@ -125,8 +129,8 @@ resource "google_monitoring_alert_policy" "http_5xx" {
 
     condition_threshold {
       filter          = "resource.type=\"gce_instance\" AND metric.type=\"logging.googleapis.com/user/${google_logging_metric.http_5xx[each.key].name}\" AND resource.labels.instance_id=\"${each.value.instance_id}\""
-      comparison      = "COMPARISON_GE"
-      threshold_value = var.monitoring.http_5xx.threshold_count
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.monitoring.http_5xx.threshold_count - 1
       duration        = "0s"
 
       aggregations {

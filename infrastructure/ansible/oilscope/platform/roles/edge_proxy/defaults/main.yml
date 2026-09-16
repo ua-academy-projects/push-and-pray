@@ -17,5 +17,6 @@ edge_proxy_http_5xx_enabled: >-
 edge_proxy_gcp_agent_installer_path: >-
   /usr/local/sbin/add-google-cloud-ops-agent-repo.sh
 edge_proxy_aws_agent_package_path: /var/tmp/amazon-cloudwatch-agent.deb
+edge_proxy_aws_agent_config_path: "{{ edge_proxy_dir }}/amazon-cloudwatch-agent.json"
 edge_proxy_aws_log_group_name: >-
   {{ compose_project_config.name_prefix }}-{{ compose_project_config.environment }}-traefik-access

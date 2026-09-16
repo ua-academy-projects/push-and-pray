@@ -42,6 +42,8 @@
           - up
           - --detach
           - --no-deps
+          - --pull
+          - never
           - ui
       args:
         chdir: "{{ ui_compose_project_dir }}"

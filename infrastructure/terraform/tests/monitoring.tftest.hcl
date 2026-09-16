@@ -269,7 +269,7 @@ run "gcp_http_5xx_monitoring" {
     monitoring = {
       enabled            = true
       notification_email = "alerts@example.com"
-      cpu                = { enabled = false, threshold_percent = 80, duration_minutes = 5 }
+      cpu                = { enabled = true, threshold_percent = 80, duration_minutes = 5 }
       http_5xx           = { enabled = true, threshold_count = 7, duration_minutes = 4 }
     }
     vms = {
@@ -301,7 +301,10 @@ run "gcp_http_5xx_monitoring" {
       strcontains(google_logging_metric.http_5xx["ui"].filter, "jsonPayload.DownstreamStatus >= 500") &&
       strcontains(google_logging_metric.http_5xx["ui"].filter, "jsonPayload.DownstreamStatus < 600") &&
       strcontains(google_monitoring_dashboard.cpu[0].dashboard_json, "Traefik HTTP 5xx responses") &&
-      google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].threshold_value == 7 &&
+      jsondecode(google_monitoring_dashboard.cpu[0].dashboard_json).mosaicLayout.tiles[0].yPos == 0 &&
+      jsondecode(google_monitoring_dashboard.cpu[0].dashboard_json).mosaicLayout.tiles[1].yPos == 8 &&
+      google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].comparison == "COMPARISON_GT" &&
+      google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].threshold_value == 6 &&
       google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].aggregations[0].alignment_period == "240s" &&
       google_monitoring_alert_policy.http_5xx["ui"].conditions[0].condition_threshold[0].duration == "0s"
     )

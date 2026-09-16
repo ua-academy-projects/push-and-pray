@@ -11,6 +11,14 @@ output "instance_name" {
   value = google_sql_database_instance.this.name
 }
 
+output "edition" {
+  value = google_sql_database_instance.this.settings[0].edition
+}
+
+output "deletion_protection" {
+  value = google_sql_database_instance.this.deletion_protection
+}
+
 output "public_ipv4_enabled" {
   value = google_sql_database_instance.this.settings[0].ip_configuration[0].ipv4_enabled
 }

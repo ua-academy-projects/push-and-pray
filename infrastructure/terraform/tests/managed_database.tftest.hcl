@@ -34,6 +34,8 @@ run "gcp_managed_database_is_private" {
       length(module.gcp_managed_database) == 1 &&
       length(module.aws_managed_database) == 0 &&
       module.gcp_managed_database[0].public_ipv4_enabled == false &&
+      module.gcp_managed_database[0].edition == "ENTERPRISE" &&
+      module.gcp_managed_database[0].deletion_protection == true &&
       module.gcp_managed_database[0].cron_database_name == "oil_tracker" &&
       module.gcp_firewall[0].postgresql_ingress_enabled == false &&
       !contains(output.workload_secret_access.fetcher, "oilscope-dev-database-host") &&

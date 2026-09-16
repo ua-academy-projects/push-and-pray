@@ -18,10 +18,11 @@ resource "google_sql_database_instance" "this" {
   name                = "${var.resource_prefix}-postgres"
   region              = var.region
   database_version    = "POSTGRES_16"
-  deletion_protection = false
+  deletion_protection = true
 
   settings {
     tier              = "db-f1-micro"
+    edition           = "ENTERPRISE"
     availability_type = "ZONAL"
     disk_type         = "PD_SSD"
     disk_size         = 10

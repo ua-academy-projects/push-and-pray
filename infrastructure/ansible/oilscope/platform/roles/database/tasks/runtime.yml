@@ -36,6 +36,7 @@
       - up
       - --detach
       - --no-deps
+      - --remove-orphans
       - "{{ item }}"
   args:
     chdir: "{{ database_compose_project_dir }}"

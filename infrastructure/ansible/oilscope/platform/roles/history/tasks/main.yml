@@ -46,6 +46,8 @@
           - up
           - --detach
           - --no-deps
+          - --pull
+          - never
           - history
       args:
         chdir: "{{ history_compose_project_dir }}"

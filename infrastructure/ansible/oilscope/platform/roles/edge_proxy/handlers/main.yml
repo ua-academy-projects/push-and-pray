@@ -15,5 +15,5 @@
       - ec2
       - -s
       - -c
-      - file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+      - "file:{{ edge_proxy_aws_agent_config_path }}"
   changed_when: true
