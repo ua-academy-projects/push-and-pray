@@ -28,7 +28,7 @@ resource "aws_cloudwatch_log_metric_filter" "http_requests" {
 
   region         = each.key
   name           = "${local.resource_prefix}-http-requests"
-  pattern        = "%RequestMethod% -\"/health\""
+  pattern        = "%RequestMethod%"
   log_group_name = aws_cloudwatch_log_group.docker[each.key].name
 
   metric_transformation {

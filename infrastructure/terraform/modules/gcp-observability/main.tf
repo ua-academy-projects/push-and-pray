@@ -12,7 +12,7 @@ resource "google_logging_metric" "http_requests" {
   project     = var.config.cloud_settings.gcp.project_id
   name        = "${local.resource_prefix}-http-requests"
   description = "Count of external HTTP requests handled by Traefik."
-  filter      = "resource.type=\"gce_instance\" AND (${local.logging_instance_filter}) AND log_id(\"docker_json\") AND jsonPayload.log =~ \"RequestMethod\" AND NOT jsonPayload.log : \"/health\""
+  filter      = "resource.type=\"gce_instance\" AND (${local.logging_instance_filter}) AND log_id(\"docker_json\") AND jsonPayload.log =~ \"RequestMethod\""
 
   metric_descriptor {
     display_name = "OilScope HTTP requests"
@@ -128,7 +128,7 @@ resource "google_monitoring_alert_policy" "http_5xx" {
 
   alert_strategy {
     auto_close           = "1800s"
-    notification_prompts = ["OPENED", "CLOSED"]
+    notification_prompts = ["OPENED"]
 
     notification_rate_limit {
       period = "300s"
