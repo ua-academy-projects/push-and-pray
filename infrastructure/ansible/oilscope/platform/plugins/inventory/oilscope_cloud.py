@@ -276,12 +276,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
     @staticmethod
     def _write_settings(cloud, settings):
-        digest = hashlib.sha256(
-            json.dumps(settings, sort_keys=True).encode("utf-8")
-        ).hexdigest()
-        generated = os.path.join(
-            tempfile.gettempdir(), f"oilscope-{digest[:16]}.{cloud}.yml"
-        )
+        digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
+        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.{cloud}.yml")
         try:
             with open(generated, "w", encoding="utf-8") as handle:
                 yaml.safe_dump(settings, handle, default_flow_style=False)

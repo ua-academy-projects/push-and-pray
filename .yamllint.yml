@@ -8,6 +8,7 @@ extends: default
 
 ignore: |
   .venv/
+  .oilscope-deploy/
   node_modules/
   services/ui/frontend/node_modules/
 
