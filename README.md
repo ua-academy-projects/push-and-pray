@@ -12,11 +12,11 @@ have already been persisted in PostgreSQL.
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through PGMQ, a PostgreSQL extension-backed queue.
+- Mode-aware durable delivery through RabbitMQ or PostgreSQL-backed PGMQ.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
-- PostgreSQL-backed UI preferences with a sliding 30-day TTL.
+- Redis- or PostgreSQL-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Passwordless project-specific SSH access and journald-based container logging.
@@ -53,9 +53,9 @@ have already been persisted in PostgreSQL.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PGMQ (PostgreSQL extension)                   |
+| Messaging      | RabbitMQ (managed DB) or PGMQ (self-managed)  |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL 18, hstore, pgcrypto, pg_cron      |
+| UI sessions    | Redis (managed DB) or PostgreSQL extensions   |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
@@ -67,33 +67,38 @@ components.
 | Component       | Responsibility                                                                                    | Owns                                             |
 | --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | Go Fetcher      | Runs the UTC schedule, calls OilPriceAPI, validates the response, and publishes price events      | External API integration and collection schedule |
-| History Service | Consumes PGMQ events, validates batches, persists observations, and exposes read endpoints        | Market history and PostgreSQL access             |
+| History Service | Consumes queue events, validates batches, persists observations, and exposes read endpoints       | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
-| PGMQ            | Provides a durable PostgreSQL-backed queue between Fetcher and History                            | Queue visibility, retries, and message archiving |
-| PostgreSQL      | Stores observations and hashed UI sessions; expires sessions through pg_cron                      | Durable market data and session state            |
+| RabbitMQ/PGMQ   | Provides durable delivery between Fetcher and History according to database mode                  | Queue visibility, retries, and dead letters      |
+| PostgreSQL      | Stores observations and, in self-managed mode, hashed UI sessions                                | Durable market data                              |
 
 ### Data flow
 
 1. The Go Fetcher selects the current scheduled UTC slot.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
-3. The Fetcher publishes a versioned event to the PGMQ queue
-   `price_observations` in PostgreSQL.
-4. The Fetcher records each event key in `published_queue_events` in the same database
-   transaction, preventing duplicate publication of the same event.
-5. History reads messages using PGMQ visibility timeouts so concurrent workers cannot
-   process the same visible message at the same time.
-6. History validates and commits observations to PostgreSQL before archiving the message.
-7. Failed processing leaves the message available for retry after the visibility timeout.
-8. Permanently invalid messages and messages exceeding the retry limit are archived.
+3. The Fetcher publishes a versioned event to RabbitMQ in managed mode or to
+   `price_observations` in PGMQ in self-managed mode.
+4. In self-managed mode, the Fetcher records each event key in
+   `published_queue_events` in the same transaction as the PGMQ publish.
+5. History consumes from the selected durable queue with explicit acknowledgement.
+6. History validates and commits observations to PostgreSQL before acknowledging or
+   archiving the message.
+7. Failed processing leaves the message available for retry.
+8. Permanently invalid messages and exhausted retries are archived or dead-lettered.
 9. The UI Service requests saved observations from History over HTTP.
 10. The browser receives only persisted data through the UI Service.
-11. UI preferences are stored in PostgreSQL.
+11. UI preferences are stored in Redis in managed mode or PostgreSQL in self-managed mode.
 
-PGMQ provides durable queue storage inside PostgreSQL. Messages are archived only after
-successful observation persistence. If processing fails before the archive operation, the
-visibility timeout makes the message available again. Database uniqueness on
+Both queue implementations acknowledge messages only after successful observation
+persistence. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
+
+In managed mode, History is the only application VM granted the managed PostgreSQL
+credential and network path. Fetcher reaches RabbitMQ, UI reaches History and Redis,
+and neither needs a direct managed-database connection. In self-managed mode, the
+Fetcher, History, and UI VMs can reach PostgreSQL on the infra VM because PGMQ and
+PostgreSQL-backed sessions require it.
 
 ## Tracked instruments
 
@@ -126,10 +131,10 @@ scientific data source.
 │       ├── config/                 Vagrant configuration template
 │       └── provisioning/           Idempotent guest provisioning scripts
 ├── services/
-│   ├── fetcher/                    Go scheduler, provider, and PGMQ publisher
-│   ├── history/                    Python History API and PGMQ consumer
+│   ├── fetcher/                    Go scheduler, provider, and queue publishers
+│   ├── history/                    Python History API and queue consumers
 │   └── ui/
-│       ├── backend/                Python UI gateway and PostgreSQL sessions
+│       ├── backend/                Python UI gateway and pluggable sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
 ├── pyproject.toml                  Python dependencies and tooling
@@ -139,10 +144,9 @@ scientific data source.
 
 ## Vagrant deployment
 
-Legacy Vagrant provisioning files remain in the repository, but they are not part of the
-currently supported PGMQ deployment path. The current application architecture is
-validated through Docker and cloud-oriented deployments using PostgreSQL with the PGMQ
-extension.
+Legacy Vagrant provisioning files remain in the repository, but cloud deployment is the
+supported mode-aware path. Self-managed deployments use PGMQ; managed database
+deployments use RabbitMQ and Redis on the infra VM.
 
 ## Docker deployment details
 
@@ -257,7 +261,7 @@ run Python tools through `uv run`.
 
 | Method | Path                      | Purpose                           |
 | ------ | ------------------------- | --------------------------------- |
-| `GET`  | `/health`                 | PostgreSQL and PGMQ status        |
+| `GET`  | `/health`                 | PostgreSQL and selected queue status |
 | `POST` | `/v1/observations/batch`  | Direct idempotent batch ingestion |
 | `GET`  | `/v1/observations`        | Filtered and paginated history    |
 | `GET`  | `/v1/observations/latest` | Latest observation per instrument |
@@ -269,7 +273,7 @@ run Python tools through `uv run`.
 | Method | Path                       | Purpose                                           |
 | ------ | -------------------------- | ------------------------------------------------- |
 | `GET`  | `/`                        | React application                                 |
-| `GET`  | `/health`                  | History and PostgreSQL session-persistence status |
+| `GET`  | `/health`                  | History and selected session-store status          |
 | `GET`  | `/api/observations`        | Read-only proxy to persisted history              |
 | `GET`  | `/api/latest`              | Read-only proxy to latest persisted values        |
 | `GET`  | `/api/instruments`         | Read-only proxy to instruments                    |
@@ -292,14 +296,16 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
-The `ui_sessions` table stores validated preferences in an hstore column, a 30-day
+In self-managed mode, the `ui_sessions` table stores validated preferences in an hstore column, a 30-day
 expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
 value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
 strings retain the existing API representation. The digest is calculated inside PostgreSQL
 by pgcrypto for every lookup and write. Atomic UPSERTs refresh the expiration on reads and
 updates, while expired rows are replaced with defaults immediately. The pg_cron background
 worker deletes expired rows every minute; its named job and the hstore, pgcrypto, and pg_cron
-extensions are created idempotently by migration `003_create_ui_sessions.sql`.
+extensions are created idempotently by migration `003_create_ui_sessions.sql`. In managed
+mode, the same validated preference document and sliding TTL are stored in Redis instead;
+the managed PostgreSQL database receives only the extension-free core migrations.
 
 ## Configuration
 
@@ -312,11 +318,19 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
 | `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
+| `MESSAGING_PROVIDER`              | `pgmq`                  | `pgmq` or `rabbitmq` queue implementation |
+| `RABBITMQ_URL`                    | none                    | RabbitMQ AMQP URL in managed mode        |
+| `RABBITMQ_EXCHANGE`               | `oil.price.events`      | Durable direct exchange                  |
+| `RABBITMQ_QUEUE`                  | `price_observations`    | RabbitMQ queue consumed by History       |
+| `RABBITMQ_ROUTING_KEY`            | `prices.observed`       | RabbitMQ routing key                     |
+| `RABBITMQ_MAX_ATTEMPTS`           | `5`                     | RabbitMQ processing attempts             |
 | `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |
 | `PGMQ_MAX_ATTEMPTS`               | `5`                     | Maximum processing attempts              |
 | `HISTORY_SERVICE_URL`             | `http://127.0.0.1:8001` | UI-to-History base URL                   |
+| `SESSION_PROVIDER`                | `postgresql`            | `postgresql` or `redis` session store    |
+| `REDIS_URL`                       | none                    | Redis URL in managed mode                |
 | `SESSION_TTL_SECONDS`             | `2592000`               | Sliding session TTL, 30 days             |
 | `SESSION_COOKIE_SECURE`           | `false`                 | Secure-cookie flag for HTTPS deployments |
 | `LISTEN_ADDRESS`                  | `:8002`                 | Fetcher diagnostic API address           |

@@ -9,9 +9,15 @@ services:
     init: true
     environment:
       HISTORY_SERVICE_URL: ${HISTORY_SERVICE_URL:?HISTORY_SERVICE_URL is required}
+{% if compose_project_config.database.mode == 'self_managed' %}
       # yamllint disable rule:line-length
       DATABASE_URL: postgresql://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+{% else %}
+      DATABASE_URL: ""
+{% endif %}
+      SESSION_PROVIDER: ${SESSION_PROVIDER:-postgresql}
+      REDIS_URL: ${REDIS_URL:-}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
       SESSION_COOKIE_SECURE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

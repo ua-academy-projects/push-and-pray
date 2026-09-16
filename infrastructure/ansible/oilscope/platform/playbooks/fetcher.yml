@@ -37,5 +37,8 @@
         fetcher_database_port: "{{ database_connection.port | string }}"
         fetcher_postgres_user: "{{ database_connection.username }}"
         fetcher_postgres_name: "{{ database_connection.database_name }}"
-        fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        fetcher_postgres_password: >-
+          {{ resolve_secrets_result.POSTGRES_PASSWORD | default('') }}
+        fetcher_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

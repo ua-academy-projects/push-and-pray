@@ -10,9 +10,23 @@ fetcher_runtime_environment: >-
       'POSTGRES_DB': fetcher_postgres_name,
       'DATABASE_HOST': fetcher_database_host,
       'DATABASE_PORT': fetcher_database_port | string,
+      'DATABASE_URL': (
+        'postgres://' ~ fetcher_postgres_user ~ ':' ~ fetcher_postgres_password
+        ~ '@' ~ fetcher_database_host ~ ':' ~ (fetcher_database_port | string)
+        ~ '/' ~ fetcher_postgres_name ~ '?sslmode=disable'
+        if messaging_connection.provider == 'pgmq' else ''
+      ),
       'MESSAGING_PROVIDER': messaging_connection.provider,
-      'PUBSUB_PROJECT_ID': messaging_connection.project_id | default(''),
-      'PUBSUB_TOPIC_ID': messaging_connection.topic_id | default(''),
+      'RABBITMQ_URL': (
+        'amqp://' ~ messaging_connection.username ~ ':' ~ fetcher_rabbitmq_password
+        ~ '@' ~ messaging_connection.host ~ ':' ~ (messaging_connection.port | string)
+        ~ '/' ~ messaging_connection.vhost
+        if messaging_connection.provider == 'rabbitmq' else ''
+      ),
+      'RABBITMQ_EXCHANGE': messaging_connection.exchange | default('', true),
+      'RABBITMQ_QUEUE': messaging_connection.queue,
+      'RABBITMQ_ROUTING_KEY': messaging_connection.routing_key | default('', true),
+      'PGMQ_QUEUE': messaging_connection.queue,
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string

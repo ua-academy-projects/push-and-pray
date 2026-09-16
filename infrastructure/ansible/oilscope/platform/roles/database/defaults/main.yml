@@ -7,6 +7,9 @@ database_postgres_service: postgres
 database_migration_service: migrate
 database_postgres_image: ""
 database_postgres_password: ""
+database_rabbitmq_password: ""
+database_redis_password: ""
+database_mode: self_managed
 database_postgres_user: oil_tracker
 database_postgres_name: oil_tracker
 database_bind_address: 0.0.0.0

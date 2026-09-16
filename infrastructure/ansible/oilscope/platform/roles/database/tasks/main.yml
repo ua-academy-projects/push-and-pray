@@ -1,33 +1,50 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Check the Compose definition
-  ansible.builtin.stat:
-    path: "{{ database_compose_file }}"
-  register: database_compose_definition
+- name: Select infrastructure services for the database mode
+  ansible.builtin.set_fact:
+    database_active_services: >-
+      {{ ['postgres'] if database_mode == 'self_managed' else ['rabbitmq', 'redis'] }}
+    database_runtime_environment: >-
+      {{
+        database_compose_environment
+        | combine({
+            'POSTGRES_PASSWORD': database_postgres_password,
+            'POSTGRES_USER': database_postgres_user,
+            'POSTGRES_DB': database_postgres_name,
+            'RABBITMQ_PASSWORD': database_rabbitmq_password,
+            'REDIS_PASSWORD': database_redis_password
+          })
+      }}
+  no_log: true
 
-- name: Pull the exact PostgreSQL image
+- name: Pull infrastructure service images
   community.docker.docker_compose_v2_pull:
     project_src: "{{ database_compose_project_dir }}"
     files: ["{{ database_compose_file | basename }}"]
     project_name: "{{ database_compose_project_name }}"
-    services: ["{{ database_postgres_service }}"]
+    services: "{{ database_active_services }}"
     policy: always
   environment:
     DOCKER_CONFIG: "{{ database_docker_config_dir }}"
+    POSTGRES_PASSWORD: "{{ database_postgres_password }}"
+    RABBITMQ_PASSWORD: "{{ database_rabbitmq_password }}"
+    REDIS_PASSWORD: "{{ database_redis_password }}"
+  no_log: true
 
-- name: Start the PostgreSQL service
+- name: Converge infrastructure services and remove previous-mode containers
   community.docker.docker_compose_v2:
     project_src: "{{ database_compose_project_dir }}"
     files: ["{{ database_compose_file | basename }}"]
     project_name: "{{ database_compose_project_name }}"
-    services: ["{{ database_postgres_service }}"]
+    services: "{{ database_active_services }}"
     dependencies: false
     pull: never
+    remove_orphans: true
     state: present
   environment: "{{ database_runtime_environment }}"
   no_log: true
 
-- name: Get the PostgreSQL container ID
+- name: Wait for active infrastructure services to become healthy
   ansible.builtin.command:
     argv:
       - docker
@@ -37,31 +54,44 @@
       - --file
       - "{{ database_compose_file }}"
       - ps
-      - --quiet
-      - "{{ database_postgres_service }}"
+      - --format
+      - "{{ '{{' }}.Health{{ '}}' }}"
+      - "{{ item }}"
   args:
     chdir: "{{ database_compose_project_dir }}"
   environment: "{{ database_runtime_environment }}"
-  register: database_container
-  changed_when: false
-  failed_when: database_container.stdout | trim | length == 0
-  no_log: true
-
-- name: Wait for PostgreSQL to become healthy
-  ansible.builtin.command:
-    argv:
-      - docker
-      - inspect
-      - --format
-      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
-      - "{{ database_container.stdout | trim }}"
-  register: database_health
+  register: database_service_health
   changed_when: false
   retries: "{{ database_health_retries }}"
   delay: "{{ database_health_delay }}"
-  until: database_health.stdout | trim == 'healthy'
+  until: database_service_health.stdout | trim == 'healthy'
+  loop: "{{ database_active_services }}"
+  no_log: true
 
-- name: Apply database migrations
+- name: Reconcile the RabbitMQ application password with Secret Manager
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ database_compose_project_name }}"
+      - --file
+      - "{{ database_compose_file }}"
+      - exec
+      - --no-TTY
+      - rabbitmq
+      - rabbitmqctl
+      - change_password
+      - "{{ compose_project_config.messaging.rabbitmq.username }}"
+      - "{{ database_rabbitmq_password }}"
+  args:
+    chdir: "{{ database_compose_project_dir }}"
+  environment: "{{ database_runtime_environment }}"
+  changed_when: false
+  when: database_mode == 'managed'
+  no_log: true
+
+- name: Apply self-managed database migrations
   ansible.builtin.command:
     argv:
       - docker
@@ -79,4 +109,5 @@
   environment: "{{ database_runtime_environment }}"
   register: database_migrations
   changed_when: "'Applying ' in database_migrations.stdout"
+  when: database_mode == 'self_managed'
   no_log: true

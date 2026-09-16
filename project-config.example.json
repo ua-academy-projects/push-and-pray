@@ -75,7 +75,9 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
   },
   "monitoring": {
     "enabled": true,
@@ -122,9 +124,20 @@
     }
   },
   "messaging": {
-    "queue_name": "price-observations",
+    "queue_name": "price_observations",
     "visibility_timeout_seconds": 60,
-    "max_delivery_attempts": 5
+    "max_delivery_attempts": 5,
+    "rabbitmq": {
+      "image": "rabbitmq:4.3.4-management",
+      "username": "oil_tracker",
+      "vhost": "oil_tracker",
+      "exchange": "oil.price.events",
+      "routing_key": "prices.observed"
+    }
+  },
+  "sessions": {
+    "ttl_seconds": 2592000,
+    "redis_image": "redis:8.2.8-bookworm"
   },
   "vms": {
     "bastion": {
@@ -158,6 +171,8 @@
       "network_tags": ["infra"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -175,6 +190,7 @@
       "network_tags": ["history"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -192,6 +208,7 @@
       "network_tags": ["fetcher"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "OILPRICEAPI_KEY": "example-api-key",
         "GHCR_TOKEN": "example-ghcr-token"
       }
@@ -210,6 +227,7 @@
       "network_tags": ["ui"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "public_endpoint": {

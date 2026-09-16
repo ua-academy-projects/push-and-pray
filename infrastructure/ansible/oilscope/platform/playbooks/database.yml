@@ -33,10 +33,16 @@
 
     - role: oilscope.platform.database
       vars:
+        database_mode: "{{ database_connection.mode }}"
         database_postgres_image: >-
           {{
             compose_project_config.registry.repository
             ~ '/database:'
             ~ compose_project_config.registry.image_tag
           }}
-        database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        database_postgres_password: >-
+          {{ resolve_secrets_result.POSTGRES_PASSWORD | default('') }}
+        database_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}
+        database_redis_password: >-
+          {{ resolve_secrets_result.REDIS_PASSWORD | default('') }}

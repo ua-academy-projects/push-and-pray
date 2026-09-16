@@ -5,6 +5,7 @@ fetcher_compose_file: "{{ fetcher_compose_project_dir }}/compose.yaml"
 fetcher_compose_project_name: petroscope
 fetcher_service: fetcher
 fetcher_postgres_password: ""
+fetcher_rabbitmq_password: ""
 fetcher_oilpriceapi_key: ""
 fetcher_postgres_user: oil_tracker
 fetcher_postgres_name: oil_tracker

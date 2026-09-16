@@ -103,7 +103,7 @@ jobs:
         run: go test ./...
 
   integration:
-    name: PostgreSQL Integration
+    name: Self-managed PostgreSQL Integration
     runs-on: ubuntu-latest
 
     env:
@@ -124,7 +124,7 @@ jobs:
             -f infrastructure/docker/compose.database.yaml \
             up -d --build
 
-          for attempt in {1..30}; do
+          for _ in {1..30}; do
             if docker compose \
               -f infrastructure/docker/compose.database.yaml \
               exec -T postgres \
@@ -209,6 +209,80 @@ jobs:
           docker compose \
             -f infrastructure/docker/compose.database.yaml \
             down -v
+
+  managed-database:
+    name: Managed-mode PostgreSQL Integration
+    runs-on: ubuntu-latest
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: oil_tracker
+      PGDATABASE: oil_tracker
+      PGPASSWORD: ci-validation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start vanilla PostgreSQL
+        run: |
+          docker run --detach \
+            --name oilscope-managed-postgres \
+            --env POSTGRES_USER="${PGUSER}" \
+            --env POSTGRES_PASSWORD="${PGPASSWORD}" \
+            --env POSTGRES_DB="${PGDATABASE}" \
+            --publish 5432:5432 \
+            postgres:18
+
+          for _ in {1..30}; do
+            if docker exec oilscope-managed-postgres \
+              pg_isready -U "${PGUSER}" -d "${PGDATABASE}"; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs oilscope-managed-postgres
+          exit 1
+
+      - name: Build the migration image
+        run: |
+          docker build \
+            --file infrastructure/docker/Dockerfile.database \
+            --tag oilscope-database:managed-test \
+            .
+
+      - name: Apply the managed migration profile
+        run: |
+          docker run --rm \
+            --network host \
+            --env PGHOST \
+            --env PGPORT \
+            --env PGUSER \
+            --env PGDATABASE \
+            --env PGPASSWORD \
+            --env MIGRATION_PROFILE=managed \
+            oilscope-database:managed-test \
+            petroscope-migrate
+
+      - name: Verify the schema is extension-free
+        run: |
+          docker exec oilscope-managed-postgres \
+            psql -v ON_ERROR_STOP=1 -U "${PGUSER}" -d "${PGDATABASE}" \
+            -c "SELECT to_regclass('public.price_observations') IS NOT NULL AS core_schema_ready;"
+
+          test "$(docker exec oilscope-managed-postgres \
+            psql -At -U "${PGUSER}" -d "${PGDATABASE}" \
+            -c "SELECT count(*) FROM pg_extension WHERE extname IN ('pgmq', 'pg_cron', 'hstore', 'pgcrypto');")" = "0"
+
+          test "$(docker exec oilscope-managed-postgres \
+            psql -At -U "${PGUSER}" -d "${PGDATABASE}" \
+            -c "SELECT count(*) FROM pg_class WHERE relname IN ('ui_sessions', 'published_queue_events');")" = "0"
+
+      - name: Stop vanilla PostgreSQL
+        if: always()
+        run: docker rm --force oilscope-managed-postgres
 
   frontend:
     name: Frontend

@@ -19,18 +19,17 @@ database connection from the Terraform state as an Ansible extra-vars file:
 
 ```bash
 terraform -chdir=infrastructure/terraform output -json \
-  | jq '{database_connection: .database_connection.value, messaging_connection: .gcp_messaging_connection.value}' \
+  | jq '{database_connection: .database_connection.value, messaging_connection: .messaging_connection.value, session_connection: .session_connection.value}' \
   > /tmp/oilscope-database-connection.json
 ```
 
-The generated file contains the non-secret `mode`, private `host`, `port`,
-`database_name`, and `username`. It does not contain the database password.
+The generated file contains non-secret database, queue, and session-store connection
+metadata, including the selected providers and private hosts. It contains no passwords.
 
 Then run the deployment:
 
-- `self_managed`: Database, History, Fetcher, UI
-- `managed`: History, Fetcher, UI; the Database playbook is skipped because
-  Terraform creates Cloud SQL.
+- `self_managed`: the infra VM runs PostgreSQL with PGMQ and PostgreSQL-backed sessions.
+- `managed`: Cloud SQL/RDS stores application data while the infra VM runs RabbitMQ and Redis.
 
 Run from the repository root:
 

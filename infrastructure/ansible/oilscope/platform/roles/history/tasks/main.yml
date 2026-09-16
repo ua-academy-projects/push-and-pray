@@ -8,9 +8,21 @@
     POSTGRES_DB: "{{ database_connection.database_name }}"
     DATABASE_HOST: "{{ database_connection.host }}"
     DATABASE_PORT: "{{ database_connection.port | string }}"
+    DATABASE_SSLMODE: "{{ database_connection.sslmode }}"
     MESSAGING_PROVIDER: "{{ messaging_connection.provider }}"
-    PUBSUB_PROJECT_ID: "{{ messaging_connection.project_id | default('') }}"
-    PUBSUB_SUBSCRIPTION_ID: "{{ messaging_connection.subscription_id | default('') }}"
+    RABBITMQ_URL: >-
+      {{
+        'amqp://' ~ messaging_connection.username ~ ':' ~ history_rabbitmq_password
+        ~ '@' ~ messaging_connection.host ~ ':' ~ (messaging_connection.port | string)
+        ~ '/' ~ messaging_connection.vhost
+        if messaging_connection.provider == 'rabbitmq' else ''
+      }}
+    RABBITMQ_EXCHANGE: "{{ messaging_connection.exchange | default('', true) }}"
+    RABBITMQ_QUEUE: "{{ messaging_connection.queue }}"
+    RABBITMQ_ROUTING_KEY: >-
+      {{ messaging_connection.routing_key | default('', true) }}
+    RABBITMQ_MAX_ATTEMPTS: "{{ messaging_connection.max_attempts | string }}"
+    PGMQ_QUEUE: "{{ messaging_connection.queue }}"
   no_log: true
   block:
     - name: Pull the History image

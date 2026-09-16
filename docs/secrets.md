@@ -33,6 +33,12 @@ container, the grant and the environment-variable name all follow from it.
 The same derivation is what makes the access rule enforceable: a workload can
 only be granted a secret that is written next to its own name.
 
+The effective grants are also mode-aware. In managed mode, only History receives
+the PostgreSQL credential, while RabbitMQ is granted to the infra, Fetcher, and
+History VMs and Redis to the infra and UI VMs. In self-managed mode, inactive
+RabbitMQ and Redis mappings are ignored. The secret containers remain stable in
+the catalog, but inactive workloads receive neither IAM access nor a resolved value.
+
 ## What Terraform does, and what it deliberately does not
 
 | Terraform | |
@@ -40,7 +46,7 @@ only be granted a secret that is written next to its own name.
 | creates | `google_secret_manager_secret` — the container, automatic replication, project labels |
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretAccessor` binding per (workload, secret) pair |
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretVersionAdder` binding per configured version manager |
-| creates when `database.mode = "managed"` | one Google Secret Manager or AWS Secrets Manager secret version for every `POSTGRES_PASSWORD` mapping, containing the generated managed-PostgreSQL user password |
+| creates when `database.mode = "managed"` | generated secret versions for every `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD`, and `REDIS_PASSWORD` mapping |
 | never creates otherwise | `google_secret_manager_secret_version` — the payload |
 
 For ordinary secrets, the last row is the whole point. A secret value passed
@@ -48,13 +54,10 @@ into Terraform ends up in places that need protection, especially the state
 file. Therefore versions for ordinary credentials are added out of band and
 Terraform is told nothing about them.
 
-In managed mode, `random_password.managed_database` generates a 32-character,
-URI-safe password. Terraform gives that value to the Cloud SQL or RDS application user
-and publishes the same value to every Secret Manager ID whose mapping key is
-`POSTGRES_PASSWORD`. The random resource and secret version mean the password
-is held in Terraform state; secure the remote state bucket and never publish a
-plan or state file. The configuration is rejected if managed mode has no such
-mapping.
+In managed mode, Terraform generates separate 32-character URI-safe passwords for
+Cloud SQL/RDS, RabbitMQ, and Redis. Each value is published only to secret IDs mapped
+under the corresponding environment name. These values are held in Terraform state;
+secure the remote state bucket and never publish a plan or state file.
 
 `google_secret_manager_secret_iam_member` is used rather than
 `..._iam_binding`. The `_binding` form is authoritative for the whole role on

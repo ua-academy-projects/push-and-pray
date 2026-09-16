@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PubSubConsumer
+from .messaging import PGMQConsumer, RabbitMQConsumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,7 +36,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-messaging_consumer = PubSubConsumer(settings)
+messaging_consumer = (
+    RabbitMQConsumer(settings)
+    if settings.messaging_provider == "rabbitmq"
+    else PGMQConsumer(settings)
+)
 
 
 @asynccontextmanager

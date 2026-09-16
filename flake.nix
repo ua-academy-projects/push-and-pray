@@ -43,7 +43,6 @@
                 export GOOGLE_APPLICATION_CREDENTIALS="''${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcp/oil-project/terraform-sa.json}"
                 export AWS_PROFILE="''${AWS_PROFILE:-terraform}"
                 export OILSCOPE_SSH_KEY="''${OILSCOPE_SSH_KEY:-$HOME/.ssh/gcp_academy}"
-                export OILSCOPE_BASTION_CONNECT_PORT="''${OILSCOPE_BASTION_CONNECT_PORT:-22}"
                 if [[ -z "''${OILSCOPE_SSH_USER:-}" && -f "$OILSCOPE_PROJECT_CONFIG" ]]; then
                   export OILSCOPE_SSH_USER="$(jq -r '.ssh_users | keys[0]' "$OILSCOPE_PROJECT_CONFIG")"
                 fi

@@ -32,6 +32,8 @@ collect_diagnostics() {
 
   # These commands deliberately always finish with success: a second broken
   # host must not hide logs from the first one that failed.
+  # The single-quoted script is evaluated by each remote shell, not locally.
+  # shellcheck disable=SC2016
   ansible all -i "$INVENTORY_FILE" \
     -e "project_config_path=$PROJECT_CONFIG" \
     --become -m ansible.builtin.shell -a '
@@ -41,14 +43,17 @@ collect_diagnostics() {
     systemctl status oilscope-deploy.service --no-pager || true
     echo "===== oilscope deploy journal (last 100 lines) ====="
     journalctl -u oilscope-deploy.service -n 100 --no-pager || true
-    echo "===== workload compose status ====="
-    docker compose -f /opt/oilscope/app/compose.yaml ps || true
-    echo "===== workload compose logs (last 100 lines) ====="
-    docker compose -f /opt/oilscope/app/compose.yaml logs --tail=100 || true
-    echo "===== proxy compose status ====="
-    docker compose -f /opt/oilscope/proxy/compose.yaml ps || true
-    echo "===== proxy compose logs (last 100 lines) ====="
-    docker compose -f /opt/oilscope/proxy/compose.yaml logs --tail=100 || true
+    if command -v docker >/dev/null 2>&1; then
+      echo "===== Compose containers ====="
+      docker ps -a --filter label=com.docker.compose.project || true
+      echo "===== Compose container logs (last 100 lines) ====="
+      for container in $(docker ps -aq --filter label=com.docker.compose.project); do
+        echo "===== container $container ====="
+        docker logs --tail=100 "$container" 2>&1 || true
+      done
+    else
+      echo "Docker is not installed on this host."
+    fi
     exit 0
   ' || true
 }
@@ -106,7 +111,8 @@ log "Reading non-secret Terraform connection outputs"
 terraform -chdir="$TERRAFORM_DIR" output -json \
   | jq -e '{
       database_connection: .database_connection.value,
-      messaging_connection: .gcp_messaging_connection.value
+      messaging_connection: .messaging_connection.value,
+      session_connection: .session_connection.value
     }' > "$CONNECTION_FILE"
 
 DATABASE_MODE="$(jq -r '.database_connection.mode' "$CONNECTION_FILE")"

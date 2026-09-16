@@ -15,7 +15,7 @@ import (
 	"oil-price-tracker/fetcher/internal/config"
 	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
-	pubsubpublisher "oil-price-tracker/fetcher/internal/pubsub"
+	"oil-price-tracker/fetcher/internal/rabbitmq"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
 )
@@ -41,8 +41,13 @@ func main() {
 	}
 
 	var publisher service.Publisher
-	if configuration.MessagingProvider == "pubsub" {
-		publisher, err = pubsubpublisher.New(configuration.PubSubProjectID, configuration.PubSubTopicID)
+	if configuration.MessagingProvider == "rabbitmq" {
+		publisher = rabbitmq.Publisher{
+			URL:        configuration.RabbitMQURL,
+			Exchange:   configuration.RabbitExchange,
+			Queue:      configuration.QueueName,
+			RoutingKey: configuration.RabbitRoutingKey,
+		}
 	} else {
 		publisher, err = pgmq.New(configuration.DatabaseURL, configuration.QueueName)
 	}

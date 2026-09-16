@@ -2,12 +2,63 @@ from __future__ import annotations
 
 import json
 
+import redis.asyncio as redis
 from psycopg import AsyncConnection, ProgrammingError
 from psycopg.types import TypeInfo
 from psycopg.types.hstore import register_hstore
 from pydantic import ValidationError
 
 from .sessions import SessionPreferences
+
+
+class RedisSessionStore:
+    def __init__(self, redis_url: str, ttl_seconds: int) -> None:
+        self.ttl_seconds = ttl_seconds
+        self.client = redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            health_check_interval=30,
+        )
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return f"ui:session:{session_id}"
+
+    async def close(self) -> None:
+        await self.client.aclose()
+
+    async def is_ready(self) -> bool:
+        return bool(await self.client.ping())
+
+    async def get(self, session_id: str) -> SessionPreferences:
+        key = self._key(session_id)
+        stored = await self.client.get(key)
+        if stored is None:
+            preferences = SessionPreferences()
+            await self.client.set(key, preferences.model_dump_json(), ex=self.ttl_seconds)
+            return preferences
+        try:
+            preferences = SessionPreferences.model_validate_json(stored)
+        except ValidationError:
+            preferences = SessionPreferences()
+            await self.client.set(key, preferences.model_dump_json(), ex=self.ttl_seconds)
+        else:
+            await self.client.expire(key, self.ttl_seconds)
+        return preferences
+
+    async def update(
+        self,
+        session_id: str,
+        preferences: SessionPreferences,
+    ) -> SessionPreferences:
+        await self.client.set(
+            self._key(session_id),
+            preferences.model_dump_json(),
+            ex=self.ttl_seconds,
+        )
+        return preferences
 
 
 class PostgreSQLSessionStore:

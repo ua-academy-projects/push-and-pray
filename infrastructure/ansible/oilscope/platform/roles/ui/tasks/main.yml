@@ -8,8 +8,17 @@
     POSTGRES_DB: "{{ database_connection.database_name }}"
     DATABASE_HOST: "{{ database_connection.host }}"
     DATABASE_PORT: "{{ database_connection.port | string }}"
+    DATABASE_SSLMODE: "{{ database_connection.sslmode }}"
     HISTORY_SERVICE_URL: >-
       http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
+    SESSION_PROVIDER: "{{ session_connection.provider }}"
+    REDIS_URL: >-
+      {{
+        'redis://:' ~ ui_redis_password ~ '@' ~ session_connection.host
+        ~ ':' ~ (session_connection.port | string) ~ '/0'
+        if session_connection.provider == 'redis' else ''
+      }}
+    SESSION_TTL_SECONDS: "{{ compose_project_config.sessions.ttl_seconds | string }}"
   no_log: true
   block:
     - name: Pull the UI image

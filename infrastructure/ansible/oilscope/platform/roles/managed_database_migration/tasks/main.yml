@@ -16,6 +16,8 @@
       PGUSER={{ managed_database_migration_connection.username }}
       PGDATABASE={{ managed_database_migration_connection.database_name }}
       PGPASSWORD={{ managed_database_migration_password }}
+      PGSSLMODE={{ managed_database_migration_connection.sslmode }}
+      MIGRATION_PROFILE=managed
   when: managed_database_migration_enabled | bool
   no_log: true
 
@@ -25,16 +27,26 @@
       - docker
       - run
       - --rm
+      - --pull
+      - always
       - --network
       - host
       - --env-file
       - "{{ managed_database_migration_env_file.path }}"
       - "{{ managed_database_migration_image }}"
-      - petroscope-migrate
+      - sh
+      - -ec
+      - |
+        if ! grep -q MIGRATION_PROFILE /usr/local/bin/petroscope-migrate; then
+          echo "Database image does not support managed migrations; publish the current revision first." >&2
+          exit 64
+        fi
+        exec petroscope-migrate
   when: managed_database_migration_enabled | bool
   environment:
     DOCKER_CONFIG: "{{ managed_database_migration_docker_config_dir }}"
   register: managed_database_migration_result
+  changed_when: "'Applying ' in managed_database_migration_result.stdout"
   failed_when: false
 
 - name: Remove the managed database migration environment file

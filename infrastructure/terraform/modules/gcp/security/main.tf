@@ -123,7 +123,7 @@ resource "google_compute_firewall" "redis" {
 # RabbitMQ and UI stores sessions in Redis, so the remaining project VMs have
 # no reason to establish a TCP connection to Cloud SQL.
 resource "google_compute_firewall" "deny_non_history_to_managed_database" {
-  count = var.managed_mode && var.managed_database_host != null ? 1 : 0
+  count = var.managed_mode ? 1 : 0
 
   name               = "${var.resource_prefix}-deny-managed-postgresql"
   network            = var.network_id

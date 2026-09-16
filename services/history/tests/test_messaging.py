@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 from history_service import messaging
 from history_service.config import Settings
 
@@ -182,3 +185,78 @@ def test_consumer_archives_after_retry_limit(
     )
 
     assert archived == [999]
+
+
+class FakeRabbitMessage:
+    def __init__(self, body: bytes, headers: dict | None = None) -> None:
+        self.body = body
+        self.headers = headers or {}
+        self.content_type = "application/json"
+        self.message_id = "oil-prices:2026-07-27T06:00:00Z"
+        self.type = "prices.observed.v1"
+        self.acked = False
+        self.rejected = False
+        self.requeued = False
+
+    async def ack(self) -> None:
+        self.acked = True
+
+    async def reject(self, *, requeue: bool) -> None:
+        self.rejected = True
+        self.requeued = requeue
+
+    async def nack(self, *, requeue: bool) -> None:
+        self.requeued = requeue
+
+
+class FakeRabbitExchange:
+    def __init__(self) -> None:
+        self.published = []
+
+    async def publish(self, message, *, routing_key: str, mandatory: bool) -> None:
+        self.published.append((message, routing_key, mandatory))
+
+
+def test_rabbit_consumer_acknowledges_after_persistence(monkeypatch) -> None:
+    monkeypatch.setattr(messaging, "_persist_event", lambda event: (1, 0))
+    message = FakeRabbitMessage(json.dumps(valid_event()).encode())
+    consumer = messaging.RabbitMQConsumer(Settings())
+
+    asyncio.run(consumer._handle(message))
+
+    assert message.acked is True
+    assert message.rejected is False
+
+
+def test_rabbit_consumer_dead_letters_invalid_event() -> None:
+    payload = valid_event()
+    payload["schema_version"] = 99
+    message = FakeRabbitMessage(json.dumps(payload).encode())
+    consumer = messaging.RabbitMQConsumer(Settings())
+
+    asyncio.run(consumer._handle(message))
+
+    assert message.acked is False
+    assert message.rejected is True
+    assert message.requeued is False
+
+
+def test_rabbit_consumer_republishes_transient_failure(monkeypatch) -> None:
+    def fail_persistence(event):
+        raise RuntimeError("database is temporarily unavailable")
+
+    monkeypatch.setattr(messaging, "_persist_event", fail_persistence)
+    message = FakeRabbitMessage(json.dumps(valid_event()).encode(), headers={"x-retry-count": 1})
+    exchange = FakeRabbitExchange()
+    consumer = messaging.RabbitMQConsumer(Settings(rabbitmq_max_attempts=5))
+    consumer.exchange = exchange
+
+    asyncio.run(consumer._handle(message))
+
+    assert message.acked is True
+    assert message.rejected is False
+    assert len(exchange.published) == 1
+    retried, routing_key, mandatory = exchange.published[0]
+    assert retried.headers["x-retry-count"] == 2
+    assert routing_key == "prices.observed"
+    assert mandatory is True

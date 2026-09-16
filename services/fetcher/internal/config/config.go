@@ -14,8 +14,9 @@ type Config struct {
 	DataProvider      string
 	DatabaseURL       string
 	MessagingProvider string
-	PubSubProjectID   string
-	PubSubTopicID     string
+	RabbitMQURL       string
+	RabbitExchange    string
+	RabbitRoutingKey  string
 	QueueName         string
 	CronHours         []int
 	Timezone          *time.Location
@@ -44,11 +45,16 @@ func Load() (Config, error) {
 	}
 
 	messagingProvider := strings.ToLower(env("MESSAGING_PROVIDER", "pgmq"))
-	if messagingProvider != "pubsub" && messagingProvider != "pgmq" {
-		return Config{}, fmt.Errorf("MESSAGING_PROVIDER must be pubsub or pgmq")
+	if messagingProvider != "rabbitmq" && messagingProvider != "pgmq" {
+		return Config{}, fmt.Errorf("MESSAGING_PROVIDER must be rabbitmq or pgmq")
 	}
-	if messagingProvider == "pubsub" && (env("PUBSUB_PROJECT_ID", "") == "" || env("PUBSUB_TOPIC_ID", "") == "") {
-		return Config{}, fmt.Errorf("PUBSUB_PROJECT_ID and PUBSUB_TOPIC_ID are required for Pub/Sub")
+	rabbitMQURL := strings.TrimSpace(env("RABBITMQ_URL", ""))
+	if messagingProvider == "rabbitmq" && rabbitMQURL == "" {
+		return Config{}, fmt.Errorf("RABBITMQ_URL is required for RabbitMQ")
+	}
+	queueName := env("PGMQ_QUEUE", "price_observations")
+	if messagingProvider == "rabbitmq" {
+		queueName = env("RABBITMQ_QUEUE", "price_observations")
 	}
 
 	hours, err := ParseHours(env("FETCH_CRON_HOURS", "0,6,12,18"))
@@ -76,9 +82,10 @@ func Load() (Config, error) {
 		DataProvider:      provider,
 		DatabaseURL:       databaseURL,
 		MessagingProvider: messagingProvider,
-		PubSubProjectID:   env("PUBSUB_PROJECT_ID", ""),
-		PubSubTopicID:     env("PUBSUB_TOPIC_ID", ""),
-		QueueName:         env("PGMQ_QUEUE", "price_observations"),
+		RabbitMQURL:       rabbitMQURL,
+		RabbitExchange:    env("RABBITMQ_EXCHANGE", "oil.price.events"),
+		RabbitRoutingKey:  env("RABBITMQ_ROUTING_KEY", "prices.observed"),
+		QueueName:         queueName,
 		CronHours:         hours,
 		Timezone:          location,
 		FetchOnStartup:    fetchOnStartup,

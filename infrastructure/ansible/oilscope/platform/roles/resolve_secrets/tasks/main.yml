@@ -22,10 +22,31 @@
                                  ~ '-') | regex_escape, '') }}
 
 - name: Select the host's secret mappings
+  vars:
+    resolve_secrets_inactive_names: >-
+      {{
+        ['RABBITMQ_PASSWORD', 'REDIS_PASSWORD']
+        if resolve_secrets_config.database.mode == 'self_managed'
+        else {
+          'database': ['POSTGRES_PASSWORD'],
+          'history': ['REDIS_PASSWORD'],
+          'fetcher': ['POSTGRES_PASSWORD', 'REDIS_PASSWORD'],
+          'ui': ['POSTGRES_PASSWORD', 'RABBITMQ_PASSWORD']
+        }[resolve_secrets_config.vms[resolve_secrets_vm_key].role]
+      }}
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
-      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
-         | default({}) }}
+      {{
+        resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
+        | default({})
+        | dict2items
+        | rejectattr(
+            'key',
+            'in',
+            resolve_secrets_inactive_names
+          )
+        | items2dict
+      }}
 
 - name: Fetch an access token from the instance metadata server
   ansible.builtin.uri:
@@ -35,14 +56,18 @@
     return_content: true
   register: resolve_secrets_token
   no_log: true
-  when: resolve_secrets_mappings | length > 0
+  when:
+    - oilscope_cloud | default('gcp') == 'gcp'
+    - resolve_secrets_mappings | length > 0
 
 - name: Extract the access token
   ansible.builtin.set_fact:
     resolve_secrets_access_token: >-
       {{ (resolve_secrets_token.content | from_json).access_token }}
   no_log: true
-  when: resolve_secrets_mappings | length > 0
+  when:
+    - oilscope_cloud | default('gcp') == 'gcp'
+    - resolve_secrets_mappings | length > 0
 
 - name: Access each mapped secret's latest version
   ansible.builtin.uri:
@@ -56,7 +81,9 @@
   loop: "{{ resolve_secrets_mappings | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
-  when: resolve_secrets_mappings | length > 0
+  when:
+    - oilscope_cloud | default('gcp') == 'gcp'
+    - resolve_secrets_mappings | length > 0
 
 - name: Build the resolved secrets mapping
   ansible.builtin.set_fact:
@@ -68,7 +95,68 @@
   loop: "{{ resolve_secrets_accessed.results | default([]) }}"
   loop_control:
     label: "{{ item.item.key }}"
-  when: resolve_secrets_mappings | length > 0
+  when:
+    - oilscope_cloud | default('gcp') == 'gcp'
+    - resolve_secrets_mappings | length > 0
+
+- name: Install AWS CLI for instance-role secret resolution
+  become: true
+  ansible.builtin.apt:
+    name: awscli
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+  when:
+    - oilscope_cloud | default('') == 'aws'
+    - resolve_secrets_mappings | length > 0
+
+- name: Derive the AWS region for this workload
+  ansible.builtin.set_fact:
+    resolve_secrets_aws_region: >-
+      {{ resolve_secrets_config.regions[
+           resolve_secrets_config.vms[resolve_secrets_vm_key].region
+         ].aws.region }}
+  when:
+    - oilscope_cloud | default('') == 'aws'
+    - resolve_secrets_mappings | length > 0
+
+- name: Access each mapped AWS secret with the instance role
+  ansible.builtin.command:
+    argv:
+      - aws
+      - secretsmanager
+      - get-secret-value
+      - --region
+      - "{{ resolve_secrets_aws_region }}"
+      - --secret-id
+      - "{{ item.value }}"
+      - --query
+      - SecretString
+      - --output
+      - text
+  register: resolve_secrets_aws_accessed
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - oilscope_cloud | default('') == 'aws'
+    - resolve_secrets_mappings | length > 0
+
+- name: Build the resolved AWS secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: item.stdout
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_aws_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - oilscope_cloud | default('') == 'aws'
+    - resolve_secrets_mappings | length > 0
 
 - name: Default to an empty result when there is nothing to resolve
   ansible.builtin.set_fact:

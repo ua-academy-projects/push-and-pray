@@ -97,7 +97,9 @@ module "security" {
   postgresql_port  = local.config.service_ports.postgresql
   rabbitmq_port    = local.config.service_ports.rabbitmq
   redis_port       = local.config.service_ports.redis
-  managed_mode     = local.database_mode == "managed"
+  managed_mode = (
+    local.database_mode == "managed" && local.database_vm_name != null
+  )
   managed_database_host = (
     local.database_mode == "managed" && local.database_vm_name != null
     ? module.database[0].host

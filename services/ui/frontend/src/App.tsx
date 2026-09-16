@@ -224,7 +224,7 @@ function App() {
           <span><i className={loadState === "ready" ? "online" : "pending"} />History / PostgreSQL</span>
           <span>
             {sessionState === "saved" ? <Check size={13} /> : sessionState === "local" ? <CloudOff size={13} /> : <Activity size={13} />}
-            {sessionState === "saved" ? "PostgreSQL session saved" : sessionState === "local" ? "Local defaults" : "Saving session"}
+            {sessionState === "saved" ? "Session saved" : sessionState === "local" ? "Local defaults" : "Saving session"}
           </span>
           <time>{lastRead ? `${formatDateTime(lastRead)} UTC` : "Waiting for data"}</time>
         </div>
@@ -252,7 +252,7 @@ function App() {
               <span>00:00 · 06:00 · 12:00 · 18:00 UTC</span>
             </div>
             <div className="protocol-flow">
-              {["API", "AMQP", "DB", "UI"].map((step, index) => (
+              {["API", "QUEUE", "DB", "UI"].map((step, index) => (
                 <span key={step}><b>{String(index + 1).padStart(2, "0")}</b>{step}</span>
               ))}
             </div>
@@ -478,7 +478,7 @@ function App() {
 
       <footer className="site-footer">
         <div><Database size={15} /><span>PostgreSQL is the market-data source of truth</span></div>
-        <span>OilPriceAPI → Go Fetcher → PGMQ → History → PostgreSQL → UI</span>
+        <span>OilPriceAPI → Go Fetcher → Queue → History → PostgreSQL → UI</span>
         <b>PS / 03</b>
       </footer>
     </div>

@@ -78,3 +78,24 @@ func TestParseHoursRejectsInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRabbitMQConfiguration(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("MESSAGING_PROVIDER", "rabbitmq")
+	t.Setenv("RABBITMQ_URL", "amqp://oil_tracker:test@infra:5672/oil_tracker")
+	t.Setenv("RABBITMQ_QUEUE", "managed_prices")
+
+	configuration, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if configuration.MessagingProvider != "rabbitmq" {
+		t.Fatalf("unexpected messaging provider: %s", configuration.MessagingProvider)
+	}
+	if configuration.RabbitMQURL == "" {
+		t.Fatal("RABBITMQ_URL should not be empty")
+	}
+	if configuration.QueueName != "managed_prices" {
+		t.Fatalf("unexpected RabbitMQ queue: %s", configuration.QueueName)
+	}
+}

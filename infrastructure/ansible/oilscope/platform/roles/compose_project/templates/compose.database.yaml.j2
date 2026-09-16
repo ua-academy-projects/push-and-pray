@@ -1,6 +1,7 @@
 name: petroscope
 
 services:
+{% if compose_project_config.database.mode == 'self_managed' %}
   postgres:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_tag }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
@@ -26,9 +27,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -40,16 +39,70 @@ services:
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
     pull_policy: ${POSTGRES_PULL_POLICY:-always}
     restart: "no"
-    command: ["petroscope-migrate"]
+    command: [petroscope-migrate]
     environment:
       PGHOST: postgres
       PGPORT: 5432
       PGUSER: ${POSTGRES_USER:-oil_tracker}
       PGDATABASE: ${POSTGRES_DB:-oil_tracker}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      MIGRATION_PROFILE: self_managed
+      PGMQ_QUEUE: "{{ compose_project_config.messaging.queue_name }}"
     depends_on:
       postgres:
         condition: service_healthy
+{% else %}
+  rabbitmq:
+    image: "{{ compose_project_config.messaging.rabbitmq.image }}"
+    restart: unless-stopped
+    hostname: oilscope-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: "{{ compose_project_config.messaging.rabbitmq.username }}"
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: "{{ compose_project_config.messaging.rabbitmq.vhost }}"
+      TZ: UTC
+    ports:
+      - "${INFRA_BIND_ADDRESS:-0.0.0.0}:{{ compose_project_config.service_ports.rabbitmq }}:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    stop_grace_period: 30s
+
+  redis:
+    image: "{{ compose_project_config.sessions.redis_image }}"
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      TZ: UTC
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    ports:
+      - "${INFRA_BIND_ADDRESS:-0.0.0.0}:{{ compose_project_config.service_ports.redis }}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD-SHELL, 'redis-cli --no-auth-warning -a "$${REDIS_PASSWORD}" ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 20s
+{% endif %}
 
 volumes:
   postgres_data:
+  rabbitmq_data:
+  redis_data:

@@ -40,4 +40,6 @@
 
     - role: oilscope.platform.ui
       vars:
-        ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_postgres_password: >-
+          {{ resolve_secrets_result.POSTGRES_PASSWORD | default('') }}
+        ui_redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD | default('') }}"
