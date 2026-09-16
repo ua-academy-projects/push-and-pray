@@ -281,10 +281,11 @@
     "managed_services": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rabbitmq_username", "rabbitmq_vhost", "redis", "rabbitmq"],
+      "required": ["rabbitmq_username", "rabbitmq_vhost", "rabbitmq_queue", "redis", "rabbitmq"],
       "properties": {
         "rabbitmq_username": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
         "rabbitmq_vhost": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "rabbitmq_queue": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
         "redis": { "$ref": "#/$defs/mirrored_image" },
         "rabbitmq": { "$ref": "#/$defs/mirrored_image" }
       }

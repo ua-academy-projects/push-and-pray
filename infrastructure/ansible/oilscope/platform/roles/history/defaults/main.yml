@@ -16,6 +16,7 @@ history_rabbitmq_host: localhost
 history_rabbitmq_port: 5672
 history_rabbitmq_username: oil_tracker
 history_rabbitmq_vhost: oil_tracker
+history_rabbitmq_queue: history.price-observations
 history_redis_password: ""
 history_health_retries: 30
 history_health_delay: 2

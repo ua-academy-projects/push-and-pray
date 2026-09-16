@@ -46,6 +46,8 @@
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"
         fetcher_queue_backend: >-
           {{ 'rabbitmq' if compose_project_config.manage_db | bool else 'postgres' }}
+        fetcher_queue_name: >-
+          {{ compose_project_config.get('managed_services', {}).get('rabbitmq_queue', 'price_observations') }}
         fetcher_rabbitmq_password: >-
           {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}
         fetcher_rabbitmq_host: "{{ hostvars[groups['history'][0]].internal_ip }}"

@@ -245,6 +245,7 @@
   "managed_services": {
     "rabbitmq_username": "oil_tracker",
     "rabbitmq_vhost": "oil_tracker",
+    "rabbitmq_queue": "history.price-observations",
     "redis": {
       "source_image": "redis:7-alpine",
       "target_tag": "7-alpine"

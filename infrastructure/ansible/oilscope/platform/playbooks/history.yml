@@ -75,5 +75,7 @@
           {{ compose_project_config.get('managed_services', {}).get('rabbitmq_username', 'oil_tracker') }}
         history_rabbitmq_vhost: >-
           {{ compose_project_config.get('managed_services', {}).get('rabbitmq_vhost', 'oil_tracker') }}
+        history_rabbitmq_queue: >-
+          {{ compose_project_config.get('managed_services', {}).get('rabbitmq_queue', 'history.price-observations') }}
         history_redis_password: >-
           {{ resolve_secrets_result.REDIS_PASSWORD | default('') }}

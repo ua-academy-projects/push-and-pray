@@ -12,6 +12,7 @@ fetcher_runtime_environment: >-
       'DATABASE_PORT': fetcher_database_port | string,
       'DATABASE_SSLMODE': fetcher_database_sslmode,
       'QUEUE_BACKEND': fetcher_queue_backend,
+      'QUEUE_NAME': fetcher_queue_name,
       'RABBITMQ_URL': 'amqp://' ~ fetcher_rabbitmq_username ~ ':' ~
         (fetcher_rabbitmq_password | urlencode) ~ '@' ~ fetcher_rabbitmq_host ~ ':' ~
         (fetcher_rabbitmq_port | string) ~ '/' ~ (fetcher_rabbitmq_vhost | urlencode),

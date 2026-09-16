@@ -13,6 +13,7 @@
     RABBITMQ_URL: >-
       amqp://{{ history_rabbitmq_username }}:{{ history_rabbitmq_password | urlencode }}@{{ history_rabbitmq_host }}:{{ history_rabbitmq_port }}/{{ history_rabbitmq_vhost | urlencode }}
     RABBITMQ_PASSWORD: "{{ history_rabbitmq_password }}"
+    RABBITMQ_QUEUE: "{{ history_rabbitmq_queue }}"
     REDIS_PASSWORD: "{{ history_redis_password }}"
   no_log: true
   block:
