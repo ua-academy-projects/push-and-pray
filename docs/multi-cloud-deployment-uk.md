@@ -14,7 +14,8 @@ provider values у спільному `modules/config`.
 
 ## Команди
 
-Після заміни example project ID, AMI, SSH key, email і secret IDs запускайте:
+Після перевірки account/project, AMI, SSH key, email і створення всіх secret IDs
+запускайте:
 
     ./scripts/deploy-cloud.sh aws
     ./scripts/deploy-cloud.sh gcp
@@ -30,15 +31,39 @@ state зберігається окремо в
 `infrastructure/terraform/.state/<profile>.tfstate`. Для production замініть
 local backend на окремі remote backend keys.
 
-## Managed або self-managed PostgreSQL
+## Два режими даних, черги та сесій
 
 `manage_db=false` залишає VM з `role=database` і контейнерним PostgreSQL.
+Образ PostgreSQL/migrations береться з GitHub Container Registry (GHCR).
+Черга подій і UI-сесії також зберігаються у PostgreSQL, тому Redis та RabbitMQ
+у цьому режимі не запускаються.
+
 `manage_db=true` прибирає database VM та створює RDS або Cloud SQL відповідно
-до `database.cloud`.
+до `database.cloud`. У цьому режимі History VM додатково запускає RabbitMQ для
+черги та Redis для UI-сесій. Їхні persistent Docker volumes залишаються на
+History VM.
 
 Ansible отримує provider-neutral output `managed_database`, перевіряє TCP
 доступ з workload VM і запускає міграції з History VM. `DATABASE_HOST`, port,
 name, user та sslmode більше не залежать від inventory group `database`.
+
+## Redis і RabbitMQ у cloud registry
+
+Для `manage_db=true` Terraform створює окремі приватні repositories:
+
+- AWS Elastic Container Registry для AWS workloads;
+- GCP Artifact Registry для GCP workloads.
+
+`deploy-cloud.sh` бере upstream-образи з `managed_services`, копіює їхні
+multi-architecture manifests через `docker buildx imagetools create` у registry
+кожної задіяної хмари, а History VM завантажує їх через власну IAM role або
+service account. Паролі `RABBITMQ_PASSWORD` і `REDIS_PASSWORD` надходять лише із
+SSM Parameter Store або Secret Manager. Для mirroring локально потрібні Docker
+Buildx і відповідно `aws` та/або `gcloud` з активною автентифікацією.
+
+RabbitMQ (`5672`) дозволений тільки від Fetcher, Redis (`6379`) — від UI;
+у mixed-профілі доступ із другої хмари йде приватним VPN-маршрутом. Порти не
+публікуються через public security/firewall rules.
 
 Початкові dev-профілі мають:
 
@@ -62,7 +87,24 @@ producer range, а не звичайна VM subnet.
 
 Mixed profile має різні AWS/GCP VPC CIDR. Terraform створює AWS Virtual Private
 Gateway, Customer Gateway, Site-to-Site VPN, GCP Classic VPN tunnel і тільки
-private routes. Cloud SQL peering імпортує та експортує custom routes.
+private routes. Cloud SQL peering імпортує та експортує custom routes. Для RDS
+database subnets мають окрему private route table з маршрутом назад до GCP через
+Virtual Private Gateway. Жоден managed database не має public IP.
+
+## Моніторинг і поштові сповіщення
+
+Коли `observability.enabled=true`, AWS створює CloudWatch dashboard, EC2/RDS
+alarms, log metric для HTTP 500, synthetic HTTPS check, SNS topic і budget
+notifications. GCP створює Monitoring dashboard, VM/Cloud SQL alert policies,
+uptime check, logs-based HTTP 500 metric і email notification channel. Агенти на
+VM читають `/var/lib/docker/containers/*/*.log`, тобто саме application logs, а
+не лише журнал Docker daemon.
+
+У готових cloud-профілях одержувач — `o.m.zakip@gmail.com`. Після першого AWS
+apply потрібно підтвердити SNS email subscription; до підтвердження CloudWatch
+alarms не надсилатимуть листи. Terraform-тести перевіряють конфігурацію, але
+фактичну доставку листа можна підтвердити тільки після live deployment і
+навмисно згенерованої тестової 500-відповіді.
 
 Поточний mixed VPN має один IPsec tunnel і не є HA. Для production додайте
 другий tunnel та dynamic routing через Cloud Router/BGP або GCP HA VPN.

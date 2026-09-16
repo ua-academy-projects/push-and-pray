@@ -15,11 +15,11 @@ Deployment can target GCP or AWS from one JSON contract. See the
 
 - Scheduled collection at `00:00`, `06:00`, `12:00`, and `18:00` UTC.
 - One OilPriceAPI batch request for WTI, Brent, and RBOB per collection slot.
-- Asynchronous, durable delivery through a portable PostgreSQL table queue.
+- Asynchronous, durable delivery through PostgreSQL or RabbitMQ.
 - Idempotent PostgreSQL persistence with source and collection timestamps.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
-- PostgreSQL-backed UI preferences with a sliding 30-day TTL.
+- PostgreSQL- or Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and one Docker Compose project per VM.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Passwordless project-specific SSH access and journald-based container logging.
@@ -56,15 +56,15 @@ Deployment can target GCP or AWS from one JSON contract. See the
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | PostgreSQL queue with `FOR UPDATE SKIP LOCKED` |
+| Messaging      | PostgreSQL queue or RabbitMQ                   |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | PostgreSQL JSONB                              |
+| UI sessions    | PostgreSQL JSONB or Redis                     |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
 
-The runtime is divided into three application services and two infrastructure
+The runtime is divided into three application services and selectable data
 components.
 
 | Component       | Responsibility                                                                                    | Owns                                             |
@@ -73,9 +73,14 @@ components.
 | History Service | Consumes queue events, validates batches, persists observations, and exposes read endpoints       | Market history and PostgreSQL access             |
 | UI Service      | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
 | PostgreSQL queue | Provides durable delivery without provider-specific extensions                                  | Queue visibility, retries, and message archiving |
+| RabbitMQ        | Provides the queue when RDS or Cloud SQL is selected                                             | Durable event delivery                           |
+| Redis           | Stores UI sessions when RDS or Cloud SQL is selected                                           | Expiring session state                           |
 | PostgreSQL      | Stores observations, queue messages, and hashed UI sessions                                       | Durable market data and session state            |
 
 ### Data flow
+
+With `manage_db=false`, PostgreSQL runs from the project image in GHCR and the
+flow is:
 
 1. The Go Fetcher selects the current scheduled UTC slot.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
@@ -97,6 +102,11 @@ The portable queue provides durable storage inside PostgreSQL. Messages are arch
 successful observation persistence. If processing fails before the archive operation, the
 visibility timeout makes the message available again. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
+
+With `manage_db=true`, RDS or private-IP Cloud SQL stores observations,
+RabbitMQ replaces the PostgreSQL queue, and Redis replaces the PostgreSQL UI
+session store. Redis and RabbitMQ images are mirrored to ECR or Artifact
+Registry before Ansible starts them on the History VM.
 
 ## Tracked instruments
 
@@ -314,12 +324,19 @@ update removes expired rows in the same transaction. Migration
 | `FETCH_ON_STARTUP`                | `true`                  | Collect the latest slot after startup    |
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                    | External HTTP timeout                    |
 | `DATABASE_URL`                    | see `.env.example`      | History and UI PostgreSQL connection     |
+| `QUEUE_BACKEND`                   | `postgres`              | `postgres` or `rabbitmq`                 |
+| `RABBITMQ_URL`                    | local development URL   | AMQP connection used by Fetcher/History  |
+| `RABBITMQ_EXCHANGE`               | `oil.price.events`      | Durable topic exchange                   |
+| `RABBITMQ_QUEUE`                  | `history.price-observations` | History durable queue                |
+| `RABBITMQ_ROUTING_KEY`            | `prices.observed`       | Event routing key                        |
 | `PGMQ_QUEUE`                      | `price_observations`    | PostgreSQL queue name                    |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                    | Message visibility timeout               |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                     | Consumer polling interval                |
 | `PGMQ_MAX_ATTEMPTS`               | `5`                     | Maximum processing attempts              |
 | `HISTORY_SERVICE_URL`             | `http://127.0.0.1:8001` | UI-to-History base URL                   |
 | `SESSION_TTL_SECONDS`             | `2592000`               | Sliding session TTL, 30 days             |
+| `SESSION_BACKEND`                 | `postgres`              | `postgres` or `redis`                    |
+| `REDIS_URL`                       | local development URL   | Redis connection for UI sessions         |
 | `SESSION_COOKIE_SECURE`           | `false`                 | Secure-cookie flag for HTTPS deployments |
 | `LISTEN_ADDRESS`                  | `:8002`                 | Fetcher diagnostic API address           |
 | `LOG_LEVEL`                       | `INFO`                  | Python service log level                 |
