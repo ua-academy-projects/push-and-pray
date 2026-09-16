@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Test the secret upload plan
+  hosts: localhost
+  gather_facts: false
+  vars:
+    oilscope_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+  roles:
+    - secret_versions

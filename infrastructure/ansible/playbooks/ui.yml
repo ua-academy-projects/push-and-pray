@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy UI
+  hosts: ui
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+  vars:
+    ui_vm_configs: >-
+      {{ oilscope_config.vms
+         | dict2items
+         | selectattr('value.role', 'equalto', 'ui')
+         | map(attribute='value')
+         | list }}
+    ui_vm_config: "{{ ui_vm_configs | first }}"
+  pre_tasks:
+    - name: Validate the UI VM configuration
+      ansible.builtin.assert:
+        that:
+          - ui_vm_configs | length == 1
+          - ui_vm_config.public_endpoint is defined
+        fail_msg: >-
+          Project configuration must contain exactly one UI VM with a public
+          endpoint.
+  roles:
+    - role: host_baseline
+
+    - role: docker_engine
+
+    - role: compose_project
+      vars:
+        compose_project_workload: "{{ oilscope_role }}"
+
+    - role: resolve_secrets
+
+    - role: registry_auth
+      vars:
+        registry_auth_registry: >-
+          {{ oilscope_config.registry.repository
+             | regex_replace('/.*$', '') }}
+        registry_auth_username: >-
+          {{ oilscope_config.registry.username | default('') }}
+        registry_auth_token: >-
+          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
+
+    - role: compose_project
+      vars:
+        compose_project_dir: /opt/oilscope/proxy
+        compose_project_workload: proxy
+        compose_project_public_endpoint: "{{ ui_vm_config.public_endpoint }}"
+
+    - role: edge_proxy
+      vars:
+        edge_proxy_public_endpoint: "{{ ui_vm_config.public_endpoint }}"
+
+    - role: ui
+      vars:
+        ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"

@@ -75,6 +75,9 @@
   "ssh_users": {
     "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
   },
+  "ansible": {
+    "ssh_user": "example-operator"
+  },
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "username": "example-operator",

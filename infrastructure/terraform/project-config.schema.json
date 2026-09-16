@@ -18,6 +18,7 @@
     "name_prefix",
     "common_labels",
     "ssh_users",
+    "ansible",
     "registry",
     "network",
     "service_ports",
@@ -83,6 +84,9 @@
     },
     "ssh_users": {
       "$ref": "#/$defs/ssh_users"
+    },
+    "ansible": {
+      "$ref": "#/$defs/ansible_settings"
     },
     "registry": {
       "type": "object",
@@ -308,6 +312,18 @@
       "additionalProperties": {
         "type": "string",
         "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
+      }
+    },
+    "ansible_settings": {
+      "$comment": "Selects the Linux account Ansible uses from the accounts declared in ssh_users.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ssh_user"],
+      "properties": {
+        "ssh_user": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        }
       }
     },
     "vm_network_tags": {

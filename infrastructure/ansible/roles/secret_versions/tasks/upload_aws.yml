@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Add AWS secret versions
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_aws_cli }}"
+      - secretsmanager
+      - put-secret-value
+      - --secret-id
+      - "{{ item.secret_id }}"
+      - --secret-string
+      - file:///dev/stdin
+      - --region
+      - "{{ oilscope_config.regions[oilscope_config.location].aws }}"
+      - --query
+      - VersionId
+      - --output
+      - text
+      - --no-cli-pager
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_aws_added
+  changed_when: true
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - "'aws' in item.clouds"
+
+- name: Report new AWS secret versions
+  ansible.builtin.debug:
+    msg: >-
+      aws: {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      (version {{ item.stdout | trim }})
+  loop: "{{ secret_versions_aws_added.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.secret_id }}"
+  when:
+    - not ansible_check_mode
+    - not (item.skipped | default(false))

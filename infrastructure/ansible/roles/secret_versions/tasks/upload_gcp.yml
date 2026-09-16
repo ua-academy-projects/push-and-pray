@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Add GCP secret versions
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_gcloud }}"
+      - secrets
+      - versions
+      - add
+      - "{{ item.secret_id }}"
+      - "--project={{ oilscope_config.gcp.project_id }}"
+      - --data-file=-
+      - --format=value(name)
+    stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    stdin_add_newline: false
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_gcp_added
+  changed_when: true
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - "'gcp' in item.clouds"
+
+- name: Report new GCP secret versions
+  ansible.builtin.debug:
+    msg: >-
+      gcp: {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      (version {{ item.stdout | trim | regex_replace('^.*/', '') }})
+  loop: "{{ secret_versions_gcp_added.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.secret_id }}"
+  when:
+    - not ansible_check_mode
+    - not (item.skipped | default(false))

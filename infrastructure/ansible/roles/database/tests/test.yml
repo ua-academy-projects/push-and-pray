@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the database role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Mutable image references should be rejected
+      block:
+        - name: Include the role with a mutable image reference
+          ansible.builtin.include_role:
+            name: database
+          vars:
+            database_compose_file: "{{ playbook_dir }}/test.yml"
+            database_postgres_image: postgres:18
+            database_postgres_password: test-only
+
+        - name: Fail if the role accepted the mutable image reference
+          ansible.builtin.fail:
+            msg: database unexpectedly accepted a mutable image reference.
+      rescue:
+        - name: Confirm the mutable image reference was rejected
+          ansible.builtin.debug:
+            msg: Correctly rejected a mutable database image reference.

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Upload a subset. Entries match a container ID or a variable name.
+secret_versions_only: []
+
+secret_versions_gcloud: gcloud
+secret_versions_aws_cli: aws

@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+bastion_sshd_drop_in_path: /etc/ssh/sshd_config.d/00-oilscope-bastion.conf

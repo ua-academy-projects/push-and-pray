@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install the AWS Python SDK
+  become: true
+  ansible.builtin.apt:
+    name: "{{ resolve_secrets_aws_boto3_package }}"
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+
+- name: Read each mapped AWS secret with the instance profile
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_python }}"
+      - -c
+      - >-
+        import boto3, sys;
+        print(boto3.client('secretsmanager', region_name=sys.argv[1])
+        .get_secret_value(SecretId=sys.argv[2])['SecretString'], end='')
+      - "{{ oilscope_config.regions[oilscope_config.location].aws }}"
+      - "{{ item.value }}"
+  register: resolve_secrets_aws_accessed
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Build the resolved AWS secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | combine({item.item.key: item.stdout}) }}
+  no_log: true
+  loop: "{{ resolve_secrets_aws_accessed.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

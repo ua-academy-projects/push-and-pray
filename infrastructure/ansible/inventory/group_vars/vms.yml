@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+oilscope_bastion_host: "{{ hostvars[groups['bastion'][0]].ansible_host }}"
+oilscope_bastion_ssh_port: >-
+  {{ oilscope_config.vms.bastion.ssh_port | int }}
+
+ansible_ssh_common_args: >-
+  {{ oilscope_ssh_base_args }}
+  -o ProxyJump={{ ansible_user }}@{{ oilscope_bastion_host }}:{{ oilscope_bastion_ssh_port }}

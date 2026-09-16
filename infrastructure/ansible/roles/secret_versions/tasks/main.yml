@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Initialize the secret upload catalog
+  ansible.builtin.set_fact:
+    secret_versions_pairs: []
+    secret_versions_catalog: []
+    secret_versions_absent: []
+
+- name: Collect secret assignments from every VM
+  ansible.builtin.include_tasks: collect_vm.yml
+  loop: "{{ oilscope_config.vms | dict2items }}"
+  loop_control:
+    loop_var: secret_versions_vm
+    label: "{{ secret_versions_vm.key }}"
+
+- name: Derive secret IDs and their environment-variable prefix
+  ansible.builtin.set_fact:
+    secret_versions_ids: >-
+      {{ secret_versions_pairs
+         | map(attribute='secret_id') | unique | sort | list }}
+    secret_versions_prefix: >-
+      {{ oilscope_config.name_prefix }}-{{ oilscope_config.environment }}-
+
+- name: Prepare short and fully qualified variable names
+  ansible.builtin.set_fact:
+    secret_versions_short_names: >-
+      {{ secret_versions_ids
+         | map('regex_replace', '^' ~ (secret_versions_prefix | regex_escape), '')
+         | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
+    secret_versions_full_names: >-
+      {{ secret_versions_ids
+         | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
+
+- name: Choose unambiguous environment-variable names
+  ansible.builtin.set_fact:
+    secret_versions_variables: >-
+      {{ secret_versions_short_names
+         if (secret_versions_short_names | unique | length)
+            == (secret_versions_short_names | length)
+         else secret_versions_full_names }}
+
+- name: Build the secret upload catalog
+  ansible.builtin.set_fact:
+    secret_versions_catalog: >-
+      {{ secret_versions_catalog + [{
+           'secret_id': secret_versions_entry.0,
+           'variable': secret_versions_entry.1,
+           'read_by': secret_versions_pairs
+                      | selectattr('secret_id', 'equalto', secret_versions_entry.0)
+                      | map(attribute='vm') | unique | sort | list,
+           'clouds': secret_versions_pairs
+                     | selectattr('secret_id', 'equalto', secret_versions_entry.0)
+                     | map(attribute='cloud') | unique | sort | list
+         }] }}
+  loop: "{{ secret_versions_ids | zip(secret_versions_variables) | list }}"
+  loop_control:
+    loop_var: secret_versions_entry
+    label: "{{ secret_versions_entry.0 }}"
+
+- name: Keep only requested secrets
+  ansible.builtin.set_fact:
+    secret_versions_catalog: >-
+      {{ secret_versions_catalog
+         | selectattr('secret_id', 'in', secret_versions_only) | list
+         + (secret_versions_catalog
+            | rejectattr('secret_id', 'in', secret_versions_only)
+            | selectattr('variable', 'in', secret_versions_only) | list) }}
+  when: secret_versions_only | length > 0
+
+- name: Validate the requested secret selection
+  ansible.builtin.assert:
+    that:
+      - secret_versions_catalog | length > 0
+    fail_msg: >-
+      secret_versions_only did not match any secret ID or source variable.
+  when: secret_versions_only | length > 0
+
+- name: Show the secret upload plan
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.variable }} -> {{ item.secret_id }}
+      in {{ item.clouds | join(', ') }}
+      (read by {{ item.read_by | join(', ') }})
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+
+- name: Find missing secret source variables
+  ansible.builtin.set_fact:
+    secret_versions_absent: >-
+      {{ secret_versions_absent
+         + ([item.variable]
+            if lookup('ansible.builtin.env', item.variable) | length == 0
+            else []) }}
+  loop: "{{ secret_versions_catalog }}"
+  loop_control:
+    label: "{{ item.variable }}"
+
+- name: Refuse an incomplete secret upload
+  ansible.builtin.fail:
+    msg: >-
+      Required secret source variables are missing or empty:
+      {{ secret_versions_absent | join(', ') }}
+  when: secret_versions_absent | length > 0
+
+- name: Upload GCP secret versions
+  ansible.builtin.include_tasks: upload_gcp.yml
+
+- name: Upload AWS secret versions
+  ansible.builtin.include_tasks: upload_aws.yml

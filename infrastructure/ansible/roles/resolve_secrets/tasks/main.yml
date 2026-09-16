@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Derive this VM's configuration key
+  ansible.builtin.set_fact:
+    resolve_secrets_vm_key: >-
+      {{ inventory_hostname
+         | regex_replace('^' ~ (oilscope_config.name_prefix
+                                 ~ '-' ~ oilscope_config.environment
+                                 ~ '-') | regex_escape, '') }}
+
+- name: Validate the derived VM key
+  ansible.builtin.assert:
+    that:
+      - resolve_secrets_vm_key in oilscope_config.vms
+    fail_msg: >-
+      Could not match inventory host {{ inventory_hostname }} to a VM entry in
+      the project configuration.
+
+- name: Select the host's cloud and secret mappings
+  ansible.builtin.set_fact:
+    resolve_secrets_cloud: >-
+      {{ oilscope_config.vms[resolve_secrets_vm_key].cloud
+         | default(oilscope_config.default_cloud) }}
+    resolve_secrets_mappings: >-
+      {{ oilscope_config.vms[resolve_secrets_vm_key].secret_mappings
+         | default({}) }}
+    resolve_secrets_result: {}
+
+- name: Resolve mapped secrets through the VM's cloud identity
+  ansible.builtin.include_tasks: "{{ resolve_secrets_cloud }}.yml"
+  when: resolve_secrets_mappings | length > 0

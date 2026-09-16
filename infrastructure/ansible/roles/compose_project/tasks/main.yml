@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Validate the requested Compose workload
+  ansible.builtin.assert:
+    that:
+      - compose_project_workload in compose_project_templates
+    fail_msg: >-
+      compose_project_workload must be one of:
+      {{ compose_project_templates.keys() | join(', ') }}
+
+- name: Validate the proxy public endpoint
+  ansible.builtin.assert:
+    that:
+      - compose_project_public_endpoint.hostname | default('') | length > 0
+      - compose_project_public_endpoint.acme_email | default('') | length > 0
+    fail_msg: >-
+      The proxy Compose workload requires the UI hostname and ACME email
+      address.
+  when: compose_project_workload == 'proxy'
+
+- name: Create application directory
+  ansible.builtin.file:
+    path: "{{ compose_project_dir }}"
+    state: directory
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0750"
+
+- name: Install Compose definition
+  ansible.builtin.template:
+    src: "{{ compose_project_templates[compose_project_workload] }}"
+    dest: "{{ compose_project_dir }}/compose.yaml"
+    owner: "{{ compose_project_owner }}"
+    group: "{{ compose_project_group }}"
+    mode: "0644"

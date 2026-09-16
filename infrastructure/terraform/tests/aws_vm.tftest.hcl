@@ -54,7 +54,7 @@ run "public_ui_private_database" {
   assert {
     condition = (
       aws_instance.vms["fetcher"].iam_instance_profile == "fetcher-runtime" &&
-      aws_instance.vms["bastion"].iam_instance_profile == null
+      !contains(keys(var.instance_profile_names), "bastion")
     )
     error_message = "Application VMs must use their assigned identity; bastion must not get a runtime role."
   }

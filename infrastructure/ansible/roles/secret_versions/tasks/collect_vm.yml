@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Record the VM's secret assignments
+  ansible.builtin.set_fact:
+    secret_versions_pairs: >-
+      {{ secret_versions_pairs + [{
+           'secret_id': secret_versions_mapping.value,
+           'vm': secret_versions_vm.key,
+           'cloud': secret_versions_vm.value.cloud
+                    | default(oilscope_config.default_cloud)
+         }] }}
+  loop: >-
+    {{ secret_versions_vm.value.secret_mappings | default({}) | dict2items }}
+  loop_control:
+    loop_var: secret_versions_mapping
+    label: "{{ secret_versions_mapping.key }}"

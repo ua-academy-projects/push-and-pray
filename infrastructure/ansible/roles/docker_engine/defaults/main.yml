@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Packages provided by Docker's official stable apt repository.
+docker_engine_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+docker_engine_conflicting_packages:
+  - docker.io
+  - docker-compose
+  - docker-compose-v2
+  - docker-doc
+  - docker-buildx
+  - podman-docker
+  - containerd
+  - runc
+
+# Repository and signing key.
+docker_engine_keyring_path: /etc/apt/keyrings/docker.asc
+docker_engine_gpg_url: https://download.docker.com/linux/ubuntu/gpg
+docker_engine_repository_url: https://download.docker.com/linux/ubuntu
+docker_engine_repository_component: stable
+docker_engine_repository_path: /etc/apt/sources.list.d/docker.sources
+
+# Service management.
+docker_engine_service: docker
+docker_engine_service_enabled: true
+docker_engine_service_state: started
+
+# Accounts granted access to the Docker socket. Members that do not exist on
+# the target are skipped rather than created; host_baseline owns the deploy
+# account itself.
+docker_engine_group: docker
+docker_engine_group_members:
+  - deploy

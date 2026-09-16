@@ -1,0 +1,15 @@
+http:
+  routers:
+    ui:
+      rule: "Host(`{{ edge_proxy_public_endpoint.hostname }}`)"
+      entryPoints:
+        - websecure
+      service: ui
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    ui:
+      loadBalancer:
+        servers:
+          - url: "http://ui:8080"
