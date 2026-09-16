@@ -43,7 +43,7 @@ resource "google_service_networking_connection" "private" {
   network                 = var.network_id
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_service_access.name]
-  deletion_policy         = var.config.environment == "dev" ? "REMOVE_PEERING" : "DELETE"
+  deletion_policy         = "DELETE"
 }
 
 resource "google_sql_database_instance" "this" {
@@ -82,17 +82,21 @@ resource "google_sql_database_instance" "this" {
   ]
 }
 
+# The parent instance removes its databases and users during teardown. Abandoning
+# the child resources avoids separate API deletions racing sessions and ownership.
 resource "google_sql_database" "this" {
-  project  = local.project
-  name     = "oil_tracker"
-  instance = google_sql_database_instance.this.name
+  project         = local.project
+  name            = "oil_tracker"
+  instance        = google_sql_database_instance.this.name
+  deletion_policy = "ABANDON"
 }
 
 resource "google_sql_user" "application" {
-  project     = local.project
-  name        = "oil_tracker"
-  instance    = google_sql_database_instance.this.name
-  password_wo = var.password
+  project         = local.project
+  name            = "oil_tracker"
+  instance        = google_sql_database_instance.this.name
+  password_wo     = var.password
+  deletion_policy = "ABANDON"
   # The provider requires a version alongside password_wo. This deployment
   # applies one initial password and recreates the database for password changes.
   password_wo_version = 1
