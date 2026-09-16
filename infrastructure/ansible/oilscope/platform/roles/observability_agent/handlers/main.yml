@@ -5,3 +5,17 @@
     name: google-cloud-ops-agent
     state: restarted
   listen: Restart the Google Cloud Ops Agent
+
+- name: Restart the Amazon CloudWatch Agent
+  ansible.builtin.command:
+    argv:
+      - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+      - -a
+      - fetch-config
+      - -m
+      - ec2
+      - -s
+      - -c
+      - "file:{{ observability_agent_aws_config_path }}"
+  changed_when: true
+  listen: Restart the Amazon CloudWatch Agent

@@ -1,48 +1,25 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 - name: Pull the Fetcher image
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ fetcher_compose_project_name }}"
-      - --file
-      - "{{ fetcher_compose_file }}"
-      - pull
-      - "{{ fetcher_service }}"
-  args:
-    chdir: "{{ fetcher_compose_project_dir }}"
+  community.docker.docker_compose_v2_pull:
+    project_src: "{{ fetcher_compose_project_dir }}"
+    files: ["{{ fetcher_compose_file | basename }}"]
+    project_name: "{{ fetcher_compose_project_name }}"
+    services: ["{{ fetcher_service }}"]
+    policy: always
   environment: "{{ fetcher_runtime_environment }}"
-  register: fetcher_image_pull
-  changed_when: >-
-    'Downloaded newer image' in fetcher_image_pull.stdout or
-    'Downloaded newer image' in fetcher_image_pull.stderr or
-    'Pull complete' in fetcher_image_pull.stdout or
-    'Pull complete' in fetcher_image_pull.stderr
   no_log: true
 
 - name: Start the Fetcher service
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ fetcher_compose_project_name }}"
-      - --file
-      - "{{ fetcher_compose_file }}"
-      - up
-      - --detach
-      - --no-deps
-      - "{{ fetcher_service }}"
-  args:
-    chdir: "{{ fetcher_compose_project_dir }}"
+  community.docker.docker_compose_v2:
+    project_src: "{{ fetcher_compose_project_dir }}"
+    files: ["{{ fetcher_compose_file | basename }}"]
+    project_name: "{{ fetcher_compose_project_name }}"
+    services: ["{{ fetcher_service }}"]
+    dependencies: false
+    pull: never
+    state: present
   environment: "{{ fetcher_runtime_environment }}"
-  register: fetcher_compose_up
-  changed_when: >-
-    'Created' in fetcher_compose_up.stderr or
-    'Started' in fetcher_compose_up.stderr or
-    'Recreated' in fetcher_compose_up.stderr
   no_log: true
 
 - name: Get the Fetcher container ID

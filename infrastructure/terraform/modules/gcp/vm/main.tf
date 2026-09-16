@@ -26,6 +26,13 @@ resource "google_compute_instance" "workload" {
   zone                      = each.value.location.zone
   allow_stopping_for_update = true
 
+  # Unlike ordinary metadata, changing this startup script replaces the VM.
+  # That prevents a firewall/sshd port mismatch after changing ssh_port.
+  metadata_startup_script = each.value.role == "bastion" ? templatefile(
+    "${path.module}/templates/bastion-startup.sh.tftpl",
+    { ssh_port = var.bastion_ssh_port },
+  ) : null
+
   tags   = local.network_tags_by_vm[each.key]
   labels = local.labels_by_vm[each.key]
 

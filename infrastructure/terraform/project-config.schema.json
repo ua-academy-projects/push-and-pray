@@ -195,7 +195,7 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "username", "image_sha"],
+      "required": ["repository", "username", "image_tag"],
       "properties": {
         "repository": {
           "type": "string",
@@ -205,9 +205,9 @@
           "type": "string",
           "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
         },
-        "image_sha": {
+        "image_tag": {
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$"
         }
       }
     },
@@ -232,6 +232,26 @@
         "workload_subnet_cidr": {
           "type": "string",
           "minLength": 1
+        },
+        "database_subnets": {
+          "$comment": "Required when database.mode is managed and workloads run on AWS. RDS needs subnets in at least two Availability Zones.",
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cidr", "availability_zone"],
+            "properties": {
+              "cidr": {
+                "type": "string",
+                "minLength": 1
+              },
+              "availability_zone": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         },
         "ui_public_ports": {
           "type": "array",

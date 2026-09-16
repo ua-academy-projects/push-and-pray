@@ -179,13 +179,9 @@ GitHub Actions builds and publishes every application image to GitHub Container 
 | UI          | `ghcr.io/<owner>/push-and-pray/ui`      |
 
 Replace `<owner>` with the lowercase GitHub account or organization that owns the
-repository. Every published image receives the full commit SHA as an immutable tag.
-Additional moving tags identify the delivery channel:
-
-- pushes to `develop`: `develop` and `integration`;
-- pushes to `main`: `main` and `latest`;
-- release tags matching `v*`: the Git tag and, for semantic versions, normalized version
-  and `major.minor` tags (for example `v1.4.2`, `1.4.2`, and `1.4`).
+repository. Every published image is tagged `xintaro`; this is a moving tag and
+is replaced by the next successful CI run. The commit SHA remains in the OCI
+revision label for tracing a published image back to its source revision.
 
 Images are pushed only after a successful Buildx build. The registry login uses the
 workflow-scoped `GITHUB_TOKEN`, which GitHub Actions masks in logs; workflows do not print

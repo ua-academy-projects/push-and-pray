@@ -38,6 +38,9 @@ output "workload_private_ips" {
   description = "GCP workload private IPs, excluding the bastion."
   value = local.has_vms ? {
     for name, vm in local.workload_vms : name => module.vm[0].private_ips[name]
+    # Imports can temporarily populate only a subset of the VM for_each map.
+    # Do not make output evaluation block importing the remaining instances.
+    if can(module.vm[0].private_ips[name])
   } : {}
 }
 
@@ -85,19 +88,21 @@ output "monitoring" {
 output "database_connection" {
   description = "Database connection values resolved from self-managed PostgreSQL or managed Cloud SQL."
 
-  value = local.database_mode == "managed" ? {
-    mode          = local.database_mode
-    host          = module.database[0].host
-    port          = module.database[0].port
-    database_name = module.database[0].database_name
-    username      = module.database[0].username
-    } : {
-    mode          = local.database_mode
-    host          = module.vm[0].private_ips[local.database_vm_name]
-    port          = local.config.database.port
-    database_name = local.config.database.name
-    username      = local.config.database.user
-  }
+  value = local.has_vms ? (
+    local.database_mode == "managed" ? {
+      mode          = local.database_mode
+      host          = module.database[0].host
+      port          = module.database[0].port
+      database_name = module.database[0].database_name
+      username      = module.database[0].username
+      } : {
+      mode          = local.database_mode
+      host          = module.vm[0].private_ips[local.database_vm_name]
+      port          = local.config.database.port
+      database_name = local.config.database.name
+      username      = local.config.database.user
+    }
+  ) : null
 }
 
 output "messaging_connection" {

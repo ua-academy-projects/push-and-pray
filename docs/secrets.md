@@ -1,8 +1,9 @@
 # Secrets
 
-Deployment credentials live in Google Secret Manager. Terraform creates the
-containers and decides who may read them; it never sees, stores or transports a
-value.
+Deployment credentials live in the selected cloud's secret service: Google
+Secret Manager on GCP and AWS Secrets Manager on AWS. Terraform creates the
+containers and decides who may read them. Most payloads are added outside
+Terraform; the managed PostgreSQL password is the deliberate exception.
 
 ## Where the catalog comes from
 
@@ -39,13 +40,21 @@ only be granted a secret that is written next to its own name.
 | creates | `google_secret_manager_secret` — the container, automatic replication, project labels |
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretAccessor` binding per (workload, secret) pair |
 | creates | `google_secret_manager_secret_iam_member` — one `roles/secretmanager.secretVersionAdder` binding per configured version manager |
-| never creates | `google_secret_manager_secret_version` — the payload |
+| creates when `database.mode = "managed"` | one Google Secret Manager or AWS Secrets Manager secret version for every `POSTGRES_PASSWORD` mapping, containing the generated managed-PostgreSQL user password |
+| never creates otherwise | `google_secret_manager_secret_version` — the payload |
 
-The last row is the whole point. A secret value passed into Terraform ends up in
-three places you cannot fully control: the configuration file, the plan file, and
-the state file. State lives in a bucket, plans get attached to pull requests, and
-neither is a place for a credential. So versions are added out of band and
+For ordinary secrets, the last row is the whole point. A secret value passed
+into Terraform ends up in places that need protection, especially the state
+file. Therefore versions for ordinary credentials are added out of band and
 Terraform is told nothing about them.
+
+In managed mode, `random_password.managed_database` generates a 32-character,
+URI-safe password. Terraform gives that value to the Cloud SQL or RDS application user
+and publishes the same value to every Secret Manager ID whose mapping key is
+`POSTGRES_PASSWORD`. The random resource and secret version mean the password
+is held in Terraform state; secure the remote state bucket and never publish a
+plan or state file. The configuration is rejected if managed mode has no such
+mapping.
 
 `google_secret_manager_secret_iam_member` is used rather than
 `..._iam_binding`. The `_binding` form is authoritative for the whole role on
@@ -97,9 +106,10 @@ remember: it is the key side of `secret_mappings`. It is scoped to one VM
 though, so it is not the variable you export when uploading — see
 [Uploading every value at once](#uploading-every-value-at-once).
 
-Generate database passwords with `openssl rand -hex 32`. `-hex` rather than
-`-base64`, because base64 contains `+` and `/`, which have to be percent-encoded
-inside a `postgres://` URL and break it if they are not.
+For a self-managed database, generate a password with `openssl rand -hex 32`.
+`-hex` rather than `-base64`, because base64 contains `+` and `/`, which have to
+be percent-encoded inside a `postgres://` URL and break it if they are not. A
+managed database password is generated and uploaded by Terraform instead.
 
 Adding versions requires `roles/secretmanager.secretVersionAdder`. That grant is
 made by Terraform from the `secret_version_managers` variable:

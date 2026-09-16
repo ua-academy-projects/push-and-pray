@@ -22,3 +22,10 @@ variable "secret_version_managers" {
   description = "IAM members permitted to add secret versions."
   type        = list(string)
 }
+
+variable "secret_values" {
+  description = "Sensitive values Terraform must publish as managed secret versions, keyed by Secret Manager ID."
+  type        = map(string)
+  sensitive   = true
+  default     = {}
+}

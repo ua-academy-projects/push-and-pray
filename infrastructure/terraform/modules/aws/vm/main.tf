@@ -28,14 +28,23 @@ resource "aws_iam_instance_profile" "workload_profile" {
   role = aws_iam_role.workload_instance_role[each.key].name
 }
 
+# The CloudWatch Agent runs under the instance profile and uses IMDS
+# credentials; no static AWS key is placed on a VM.
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
+  for_each = var.vms
+
+  role       = aws_iam_role.workload_instance_role[each.key].name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 # An instance receives only the secret ARNs declared by its own
 # vms.<name>.secret_mappings entry. Bastion has no mappings and therefore no
 # Secrets Manager read policy.
 resource "aws_iam_role_policy" "secret_read" {
   for_each = {
-    for name, secret_arns in var.secret_arns_by_vm :
-    name => secret_arns
-    if length(secret_arns) > 0
+    for name, secret_ids in var.secret_ids_by_vm :
+    name => var.secret_arns_by_vm[name]
+    if length(secret_ids) > 0
   }
 
   name = "${local.vm_names[each.key]}-secrets-read"
@@ -85,6 +94,15 @@ resource "aws_instance" "workload" {
   private_ip = each.value.internal_ip
 
   associate_public_ip_address = each.value.assign_public_ip
+
+  # EC2 user data is consumed by cloud-init on the first boot. Replacing the
+  # instance when the script changes keeps the SSH listener aligned with the
+  # security group after a bastion port change.
+  user_data = each.value.role == "bastion" ? templatefile(
+    "${path.module}/templates/bastion-user-data.sh.tftpl",
+    { ssh_port = var.bastion_ssh_port },
+  ) : null
+  user_data_replace_on_change = each.value.role == "bastion"
 
   # One-minute EC2 metrics allow CloudWatch alarms to honor the monitoring
   # configuration's minute-based durations.

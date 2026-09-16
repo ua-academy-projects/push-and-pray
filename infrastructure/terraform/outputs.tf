@@ -68,8 +68,13 @@ output "aws_monitoring" {
   value       = module.aws.monitoring_summary
 }
 
+output "database_connection" {
+  description = "Database connection values for the cloud selected by default_cloud."
+  value       = local.config.default_cloud == "aws" ? module.aws.database_connection : module.gcp.database_connection
+}
+
 output "gcp_database_connection" {
-  description = "GCP database connection values for the selected database mode."
+  description = "Deprecated compatibility output. Use database_connection."
   value       = module.gcp.database_connection
 }
 

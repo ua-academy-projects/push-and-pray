@@ -29,6 +29,12 @@ variable "enable_bastion_ssh_bootstrap" {
   type = bool
 }
 
+variable "managed_database_enabled" {
+  description = "Whether to create the security group used only by a private RDS instance."
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   type = map(string)
 }

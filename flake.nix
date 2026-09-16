@@ -44,21 +44,6 @@
                 export AWS_PROFILE="''${AWS_PROFILE:-terraform}"
                 export OILSCOPE_SSH_KEY="''${OILSCOPE_SSH_KEY:-$HOME/.ssh/gcp_academy}"
                 export OILSCOPE_BASTION_CONNECT_PORT="''${OILSCOPE_BASTION_CONNECT_PORT:-22}"
-                export TF_VAR_managed_database_password_version="''${TF_VAR_managed_database_password_version:-1}"
-
-                if [[ -z "''${TF_VAR_managed_database_password:-}" ]]; then
-                  export OILSCOPE_DATABASE_PASSWORD_FILE="''${OILSCOPE_DATABASE_PASSWORD_FILE:-$HOME/.config/gcp/oil-project/managed_database_password}"
-
-                  if [[ ! -f "$OILSCOPE_DATABASE_PASSWORD_FILE" ]]; then
-                    mkdir -p "$(dirname "$OILSCOPE_DATABASE_PASSWORD_FILE")"
-                    umask 077
-                    openssl rand -hex 32 > "$OILSCOPE_DATABASE_PASSWORD_FILE"
-                    chmod 600 "$OILSCOPE_DATABASE_PASSWORD_FILE"
-                  fi
-
-                  export TF_VAR_managed_database_password="$(<"$OILSCOPE_DATABASE_PASSWORD_FILE")"
-                fi
-
                 if [[ -z "''${OILSCOPE_SSH_USER:-}" && -f "$OILSCOPE_PROJECT_CONFIG" ]]; then
                   export OILSCOPE_SSH_USER="$(jq -r '.ssh_users | keys[0]' "$OILSCOPE_PROJECT_CONFIG")"
                 fi

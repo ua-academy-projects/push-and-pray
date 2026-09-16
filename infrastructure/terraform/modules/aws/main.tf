@@ -10,6 +10,8 @@ module "network" {
 
   workload_subnet_cidr = local.config.network.workload_subnet_cidr
 
+  database_subnets = lookup(local.config.network, "database_subnets", [])
+
   availability_zone = local.config.regions[local.config.default_region][local.cloud_key].availability_zone
 
 }
@@ -18,6 +20,27 @@ module "secrets" {
   source     = "./secrets"
   secret_ids = local.all_secret_ids
   tags       = local.common_labels
+  secret_values = local.database_mode == "managed" && local.has_vms ? {
+    for secret_id in local.managed_database_secret_ids :
+    secret_id => random_password.managed_database[0].result
+  } : {}
+}
+
+resource "random_password" "managed_database" {
+  count = local.database_mode == "managed" && local.has_vms ? 1 : 0
+
+  length  = 32
+  special = true
+
+  # The workload templates interpolate this value in PostgreSQL URLs.
+  override_special = "-_"
+
+  lifecycle {
+    precondition {
+      condition     = length(local.managed_database_secret_ids) > 0
+      error_message = "Managed database mode requires at least one POSTGRES_PASSWORD entry in an AWS workload VM's secret_mappings."
+    }
+  }
 }
 
 module "operator_key" {
@@ -56,6 +79,20 @@ module "security" {
   postgresql_port  = local.config.service_ports.postgresql
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+  managed_database_enabled     = local.database_mode == "managed"
+}
+
+module "database" {
+  source = "./database"
+  count  = local.database_mode == "managed" && local.has_vms ? 1 : 0
+
+  resource_prefix     = local.resource_prefix
+  database            = local.config.database
+  managed_settings    = local.config.database.managed.aws
+  database_subnet_ids = module.network[0].database_subnet_ids
+  security_group_id   = module.security[0].managed_database_security_group_id
+  password            = random_password.managed_database[0].result
+  tags                = local.common_labels
 }
 
 module "vm" {
@@ -68,6 +105,10 @@ module "vm" {
 
   common_labels = local.common_labels
 
+  # Configure the SSH daemon before the bastion is reachable from the
+  # Internet, so only bastion.ssh_port needs a public security-group rule.
+  bastion_ssh_port = local.bastion_vm.ssh_port
+
   key_name = module.operator_key[0].key_name
 
   management_subnet_id = module.network[0].management_subnet_id
@@ -77,15 +118,18 @@ module "vm" {
   security_group_ids = module.security[0].security_group_ids
 
   secret_arns_by_vm = local.secret_arns_by_vm
+  secret_ids_by_vm  = local.secret_ids_by_vm
 }
 
 module "monitoring" {
   source = "./monitoring"
   count  = local.monitoring_enabled ? 1 : 0
 
-  resource_prefix    = local.resource_prefix
-  tags               = local.common_labels
-  notification_email = local.monitoring_settings.notification_email
-  cpu                = local.monitoring_settings.cpu
-  instance_ids       = module.vm[0].instance_ids
+  resource_prefix              = local.resource_prefix
+  tags                         = local.common_labels
+  settings                     = local.monitoring_settings
+  instance_ids                 = module.vm[0].instance_ids
+  managed_database_enabled     = local.database_mode == "managed"
+  database_instance_identifier = local.database_mode == "managed" ? module.database[0].instance_identifier : null
+  uptime_hostname              = try(local.ui_vm.public_endpoint.hostname, null)
 }

@@ -28,6 +28,23 @@ variable "workload_subnet_cidr" {
   }
 }
 
+variable "database_subnets" {
+  description = "Private subnets available to RDS, each in a distinct Availability Zone. Empty unless managed AWS database mode is used."
+  type = list(object({
+    cidr              = string
+    availability_zone = string
+  }))
+  default = []
+
+  validation {
+    condition = (
+      alltrue([for subnet in var.database_subnets : can(cidrhost(subnet.cidr, 0))]) &&
+      length(distinct([for subnet in var.database_subnets : subnet.availability_zone])) == length(var.database_subnets)
+    )
+    error_message = "Every database subnet must have a valid CIDR and a distinct availability_zone."
+  }
+}
+
 variable "vpc_cidr" {
   description = "vpc cidr"
   type        = string

@@ -59,6 +59,22 @@ locals {
       { threshold_percent = 80, duration_seconds = 300 },
       lookup(local.monitoring_config, "cpu", {}),
     )
+    disk = merge(
+      { threshold_percent = 85, duration_seconds = 600 },
+      lookup(local.monitoring_config, "disk", {}),
+    )
+    uptime = merge(
+      { enabled = false, path = "/", period_seconds = 60, timeout_seconds = 10 },
+      lookup(local.monitoring_config, "uptime", {}),
+    )
+    logs = merge(
+      { enabled = false, error_pattern = "ERROR" },
+      lookup(local.monitoring_config, "logs", {}),
+    )
+    budget = merge(
+      { enabled = false, amount = 0, currency = "USD", thresholds = [] },
+      lookup(local.monitoring_config, "budget", {}),
+    )
   }
 
   # Secret mappings are cloud-neutral configuration. This AWS wrapper turns
@@ -72,15 +88,32 @@ locals {
     name => distinct(values(vm.secret_mappings))
   }
 
+  managed_database_secret_ids = toset(flatten([
+    for workload in values(local.workload_vms) : [
+      for environment_name, secret_id in workload.secret_mappings : secret_id
+      if environment_name == "POSTGRES_PASSWORD"
+    ]
+  ]))
+
   # Keys are stable VM names from the JSON. The ARN values become known after
   # the Secret Manager resources are created, which is safe for IAM policies.
   secret_arns_by_vm = {
     for name, secret_ids in local.secret_ids_by_vm :
-    name => [
+    name => compact([
       for secret_id in secret_ids :
-      module.secrets.secret_arns[secret_id]
-    ]
+      try(module.secrets.secret_arns[secret_id], null)
+    ])
   }
 
   database_mode = local.config.database.mode
+
+  database_vm_name = local.database_mode == "self_managed" ? one([
+    for name, vm in local.resolved_vms : name
+    if vm.role == "database"
+  ]) : null
+
+  ui_vm = one([
+    for _, vm in local.resolved_vms : vm
+    if vm.role == "ui"
+  ])
 }

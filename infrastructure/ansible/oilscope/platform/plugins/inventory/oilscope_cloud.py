@@ -68,6 +68,14 @@ options:
       - Value of C(role) identifying the bastion.
     type: str
     default: bastion
+  bastion_connect_port:
+    description:
+      - Temporary SSH port used by the controller to reach a new bastion.
+      - When omitted, the bastion's configured final SSH port is used.
+    type: int
+    required: false
+    env:
+      - name: OILSCOPE_BASTION_CONNECT_PORT
   auth_kind:
     description:
       - Authentication mode passed to C(google.cloud.gcp_compute).
@@ -129,6 +137,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             raise AnsibleParserError("the oilscope inventory plugin requires PyYAML")
 
         config = self._load_project_config(path)
+        common = self._common_values(config)
         settings_by_cloud = self._build_settings(config)
         generated_files = []
 
@@ -137,6 +146,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 generated = self._write_settings(cloud, settings)
                 generated_files.append(generated)
                 self._delegate(cloud, inventory, loader, generated, cache)
+
+            self._configure_ssh_connections(inventory, settings_by_cloud, common)
         finally:
             for generated in generated_files:
                 try:
@@ -262,13 +273,78 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             ) from port_error
 
     def _common_values(self, config):
+        bastion_port = self._bastion_ssh_port(config)
+        connect_port = self.get_option("bastion_connect_port")
+
         return {
             "name_prefix": self._require_string(config, "name_prefix"),
             "environment": self._require_string(config, "environment"),
             "bastion_role": plain(self.get_option("bastion_role")),
-            "bastion_port": self._bastion_ssh_port(config),
+            "bastion_port": bastion_port,
+            "bastion_connect_port": int(connect_port or bastion_port),
             "workload_port": int(self.get_option("workload_ssh_port")),
         }
+
+    def _controller_ssh_settings(self):
+        user = os.environ.get("OILSCOPE_SSH_USER") or os.environ.get("USER")
+        key_file = os.environ.get("OILSCOPE_SSH_KEY") or os.path.join(
+            os.path.expanduser("~"), ".ssh", "google_compute_engine"
+        )
+
+        if not user:
+            raise AnsibleParserError(
+                "set OILSCOPE_SSH_USER or USER so the inventory can configure SSH"
+            )
+
+        return {"user": user, "key_file": key_file}
+
+    def _configure_ssh_connections(self, inventory, settings_by_cloud, common):
+        if not settings_by_cloud:
+            return
+
+        bastion_group = inventory.groups.get(common["bastion_role"])
+        workload_group = inventory.groups.get("workloads")
+
+        if bastion_group is None or len(bastion_group.hosts) != 1:
+            count = 0 if bastion_group is None else len(bastion_group.hosts)
+            raise AnsibleParserError(
+                f"expected exactly one discovered bastion host, found {count}"
+            )
+
+        if workload_group is None:
+            raise AnsibleParserError("the inventory plugin did not create the workloads group")
+
+        controller = self._controller_ssh_settings()
+        bastion = bastion_group.hosts[0]
+        bastion_address = bastion.vars.get("ansible_host")
+
+        if not bastion_address:
+            raise AnsibleParserError("the discovered bastion has no ansible_host")
+
+        for host in inventory.hosts.values():
+            inventory.set_variable(host.name, "ansible_user", controller["user"])
+            inventory.set_variable(
+                host.name, "ansible_ssh_private_key_file", controller["key_file"]
+            )
+
+        inventory.set_variable(bastion.name, "ansible_port", common["bastion_connect_port"])
+        inventory.set_variable(bastion.name, "bastion_ssh_port", common["bastion_port"])
+
+        proxy_command = (
+            'ssh -W %h:%p -q '
+            f'-p {common["bastion_connect_port"]} '
+            f'-i {controller["key_file"]} '
+            '-o StrictHostKeyChecking=no '
+            '-o UserKnownHostsFile=/dev/null '
+            '-o IdentitiesOnly=yes '
+            f'{controller["user"]}@{bastion_address}'
+        )
+
+        for host in workload_group.hosts:
+            inventory.set_variable(host.name, "ansible_port", common["workload_port"])
+            inventory.set_variable(
+                host.name, "ansible_ssh_common_args", f'-o ProxyCommand="{proxy_command}"'
+            )
 
     def _build_gcp_settings(self, config, selected_vms, common):
         clouds = self._require_mapping(config, "clouds")

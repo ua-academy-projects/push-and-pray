@@ -24,6 +24,11 @@ variable "common_labels" {
   type = map(string)
 }
 
+variable "bastion_ssh_port" {
+  description = "SSH port configured on the bastion before it accepts public connections."
+  type        = number
+}
+
 variable "key_name" {
   type = string
 }
@@ -42,6 +47,12 @@ variable "security_group_ids" {
 
 variable "secret_arns_by_vm" {
   description = "AWS Secrets Manager ARNs each workload instance role may read, keyed by VM name."
+  type        = map(list(string))
+  default     = {}
+}
+
+variable "secret_ids_by_vm" {
+  description = "Non-secret secret IDs each workload may read, keyed by VM name. Used only for stable Terraform resource addresses."
   type        = map(list(string))
   default     = {}
 }

@@ -13,45 +13,22 @@
   no_log: true
   block:
     - name: Pull the UI image
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - --project-name
-          - "{{ ui_compose_project_name }}"
-          - --file
-          - "{{ ui_compose_file }}"
-          - pull
-          - ui
-      args:
-        chdir: "{{ ui_compose_project_dir }}"
-      register: ui_compose_pull
-      changed_when: >-
-        'Downloaded newer image' in ui_compose_pull.stdout or
-        'Downloaded newer image' in ui_compose_pull.stderr or
-        'Pull complete' in ui_compose_pull.stdout or
-        'Pull complete' in ui_compose_pull.stderr
+      community.docker.docker_compose_v2_pull:
+        project_src: "{{ ui_compose_project_dir }}"
+        files: ["{{ ui_compose_file | basename }}"]
+        project_name: "{{ ui_compose_project_name }}"
+        services: [ui]
+        policy: always
 
     - name: Start only UI
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - --project-name
-          - "{{ ui_compose_project_name }}"
-          - --file
-          - "{{ ui_compose_file }}"
-          - up
-          - --detach
-          - --no-deps
-          - ui
-      args:
-        chdir: "{{ ui_compose_project_dir }}"
-      register: ui_compose_up
-      changed_when: >-
-        'Created' in ui_compose_up.stderr or
-        'Started' in ui_compose_up.stderr or
-        'Recreated' in ui_compose_up.stderr
+      community.docker.docker_compose_v2:
+        project_src: "{{ ui_compose_project_dir }}"
+        files: ["{{ ui_compose_file | basename }}"]
+        project_name: "{{ ui_compose_project_name }}"
+        services: [ui]
+        dependencies: false
+        pull: never
+        state: present
 
     - name: Get the UI container ID
       ansible.builtin.command:

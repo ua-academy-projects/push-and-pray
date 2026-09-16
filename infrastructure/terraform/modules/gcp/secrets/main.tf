@@ -26,3 +26,13 @@ resource "google_secret_manager_secret_iam_member" "version_adder" {
   role      = "roles/secretmanager.secretVersionAdder"
   member    = each.value.member
 }
+
+resource "google_secret_manager_secret_version" "managed" {
+  # Secret IDs are configuration, not credentials. Only expose them to
+  # for_each; index the original sensitive map below to keep the payload
+  # sensitive in plans and state output.
+  for_each = toset(nonsensitive(keys(var.secret_values)))
+
+  secret      = google_secret_manager_secret.this[each.key].id
+  secret_data = var.secret_values[each.key]
+}

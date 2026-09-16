@@ -11,3 +11,6 @@ collections:
   # Provides the aws_ec2 delegate used by the same multi-cloud wrapper.
   - name: amazon.aws
     version: ">=11.2.0"
+  # Declarative management of Docker networks and Compose v2 projects.
+  - name: community.docker
+    version: ">=5.0.0,<6.0.0"

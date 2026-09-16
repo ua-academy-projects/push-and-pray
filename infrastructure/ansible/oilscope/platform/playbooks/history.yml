@@ -35,7 +35,7 @@
         managed_database_migration_enabled: >-
           {{ database_connection.mode == 'managed' }}
         managed_database_migration_image: >-
-          {{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}
+          {{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_tag }}
         managed_database_migration_connection: "{{ database_connection }}"
         managed_database_migration_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
 

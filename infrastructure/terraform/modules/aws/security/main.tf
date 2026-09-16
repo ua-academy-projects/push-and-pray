@@ -60,6 +60,17 @@ resource "aws_security_group" "infra" {
   })
 
 }
+
+resource "aws_security_group" "managed_database" {
+  count = var.managed_database_enabled ? 1 : 0
+
+  name   = "${var.resource_prefix}-managed-postgres-security-group"
+  vpc_id = var.vpc_id
+
+  tags = merge(var.tags, {
+    Name = "managed-postgres"
+  })
+}
 resource "aws_security_group" "history" {
   name   = "${var.resource_prefix}-history-security-group"
   vpc_id = var.vpc_id
@@ -140,6 +151,22 @@ resource "aws_vpc_security_group_ingress_rule" "allow_ui_to_infra" {
   ip_protocol = "tcp"
   from_port   = var.postgresql_port
   to_port     = var.postgresql_port
+}
+
+# The managed database has no public ingress. Only application workloads in
+# their individual security groups can open PostgreSQL connections.
+resource "aws_vpc_security_group_ingress_rule" "allow_workloads_to_managed_database" {
+  for_each = var.managed_database_enabled ? {
+    history = aws_security_group.history.id
+    fetcher = aws_security_group.fetcher.id
+    ui      = aws_security_group.ui.id
+  } : {}
+
+  security_group_id            = aws_security_group.managed_database[0].id
+  referenced_security_group_id = each.value
+  ip_protocol                  = "tcp"
+  from_port                    = var.postgresql_port
+  to_port                      = var.postgresql_port
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_bootstrap_ssh_to_bastion" {

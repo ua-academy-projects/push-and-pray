@@ -14,45 +14,22 @@
   no_log: true
   block:
     - name: Pull the History image
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - --project-name
-          - "{{ history_compose_project_name }}"
-          - --file
-          - "{{ history_compose_file }}"
-          - pull
-          - history
-      args:
-        chdir: "{{ history_compose_project_dir }}"
-      register: history_compose_pull
-      changed_when: >-
-        'Downloaded newer image' in history_compose_pull.stdout or
-        'Downloaded newer image' in history_compose_pull.stderr or
-        'Pull complete' in history_compose_pull.stdout or
-        'Pull complete' in history_compose_pull.stderr
+      community.docker.docker_compose_v2_pull:
+        project_src: "{{ history_compose_project_dir }}"
+        files: ["{{ history_compose_file | basename }}"]
+        project_name: "{{ history_compose_project_name }}"
+        services: [history]
+        policy: always
 
     - name: Start only History
-      ansible.builtin.command:
-        argv:
-          - docker
-          - compose
-          - --project-name
-          - "{{ history_compose_project_name }}"
-          - --file
-          - "{{ history_compose_file }}"
-          - up
-          - --detach
-          - --no-deps
-          - history
-      args:
-        chdir: "{{ history_compose_project_dir }}"
-      register: history_compose_up
-      changed_when: >-
-        'Created' in history_compose_up.stderr or
-        'Started' in history_compose_up.stderr or
-        'Recreated' in history_compose_up.stderr
+      community.docker.docker_compose_v2:
+        project_src: "{{ history_compose_project_dir }}"
+        files: ["{{ history_compose_file | basename }}"]
+        project_name: "{{ history_compose_project_name }}"
+        services: [history]
+        dependencies: false
+        pull: never
+        state: present
 
 - name: Wait for History to become healthy
   ansible.builtin.uri:

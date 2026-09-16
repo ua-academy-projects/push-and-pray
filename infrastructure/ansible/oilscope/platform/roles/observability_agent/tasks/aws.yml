@@ -1,0 +1,34 @@
+---
+- name: Read the project configuration for the CloudWatch Agent
+  ansible.builtin.include_vars:
+    file: "{{ project_config_path }}"
+    name: observability_agent_project_config
+
+- name: Download the Amazon CloudWatch Agent package
+  ansible.builtin.get_url:
+    url: "{{ observability_agent_aws_package_url }}"
+    dest: "{{ observability_agent_aws_package_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Amazon CloudWatch Agent package
+  ansible.builtin.apt:
+    deb: "{{ observability_agent_aws_package_path }}"
+    state: present
+
+- name: Install the Amazon CloudWatch Agent configuration
+  ansible.builtin.template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: "{{ observability_agent_aws_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the Amazon CloudWatch Agent
+
+- name: Enable and start the Amazon CloudWatch Agent
+  ansible.builtin.systemd_service:
+    name: amazon-cloudwatch-agent
+    enabled: true
+    state: started
+    daemon_reload: true

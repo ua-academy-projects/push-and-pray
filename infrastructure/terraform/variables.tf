@@ -10,7 +10,7 @@ variable "project_config_path" {
 }
 
 variable "enable_bastion_ssh_bootstrap" {
-  description = "Temporarily allow direct bastion SSH on port 22 while Ansible configures the final SSH port. Disable after bootstrap."
+  description = "Legacy migration switch that temporarily allows bastion SSH on port 22. New bastions configure ssh_port at first boot and do not require it."
   type        = bool
   default     = false
 }
@@ -27,18 +27,4 @@ variable "secret_version_managers" {
     ])
     error_message = "Each entry must be a fully qualified IAM member, for example user:name@example.com."
   }
-}
-
-variable "managed_database_password" {
-  description = "Password for the managed PostgreSQL application user. Supply it only when database.mode is managed."
-  type        = string
-  sensitive   = true
-  default     = null
-  nullable    = true
-}
-
-variable "managed_database_password_version" {
-  description = "Non-secret version incremented whenever managed_database_password is rotated."
-  type        = number
-  default     = 1
 }

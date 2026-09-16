@@ -55,12 +55,22 @@
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "username": "example-operator",
-    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+    "image_tag": "xintaro"
   },
   "network": {
     "vpc_cidr": "10.0.0.0/23",
     "management_subnet_cidr": "10.0.0.0/29",
     "workload_subnet_cidr": "10.0.1.0/26",
+    "database_subnets": [
+      {
+        "cidr": "10.0.0.64/26",
+        "availability_zone": "example-a"
+      },
+      {
+        "cidr": "10.0.0.128/26",
+        "availability_zone": "example-b"
+      }
+    ],
     "ui_public_ports": [443]
   },
   "service_ports": {

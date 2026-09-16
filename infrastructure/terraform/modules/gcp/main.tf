@@ -12,7 +12,7 @@ module "network" {
 
 module "database" {
   source = "./database"
-  count  = local.database_mode == "managed" ? 1 : 0
+  count  = local.database_mode == "managed" && local.has_vms ? 1 : 0
 
   project_id = local.config.clouds.gcp.project_id
   region     = local.config.regions[local.config.default_region][local.cloud_key].region
@@ -25,8 +25,26 @@ module "database" {
 
   database                          = local.config.database
   managed_settings                  = local.config.database.managed.gcp
-  managed_database_password         = var.managed_database_password
-  managed_database_password_version = var.managed_database_password_version
+  managed_database_password         = random_password.managed_database[0].result
+  managed_database_password_version = parseint(substr(sha256(random_password.managed_database[0].result), 0, 8), 16)
+}
+
+resource "random_password" "managed_database" {
+  count = local.database_mode == "managed" && local.has_vms ? 1 : 0
+
+  length  = 32
+  special = true
+
+  # This password is interpolated into PostgreSQL connection URLs by the
+  # workload templates, so restrict special characters to URI-safe values.
+  override_special = "-_"
+
+  lifecycle {
+    precondition {
+      condition     = length(local.managed_database_secret_ids) > 0
+      error_message = "Managed database mode requires at least one POSTGRES_PASSWORD entry in a workload VM's secret_mappings."
+    }
+  }
 }
 
 module "messaging" {
@@ -72,6 +90,10 @@ module "vm" {
   common_labels   = local.common_labels
   ssh_users       = local.config.ssh_users
 
+  # Configure the SSH daemon before the bastion is reachable from the
+  # Internet, so only bastion.ssh_port needs a public firewall rule.
+  bastion_ssh_port = local.bastion_vm.ssh_port
+
   management_subnet_id = module.network[0].management_subnet_id
   workload_subnet_id   = module.network[0].workload_subnet_id
 
@@ -90,6 +112,10 @@ module "secrets" {
   }
 
   secret_version_managers = var.secret_version_managers
+  secret_values = local.database_mode == "managed" ? {
+    for secret_id in local.managed_database_secret_ids :
+    secret_id => random_password.managed_database[0].result
+  } : {}
 
 }
 

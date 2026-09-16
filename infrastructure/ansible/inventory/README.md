@@ -108,18 +108,41 @@ Both providers expose the same normalized variables:
 - `oilscope_role`
 - `oilscope_cloud`
 
-The bastion uses its public address and `vms.bastion.ssh_port`. Workloads use
-their private addresses on port 22 through the existing SSH `ProxyCommand`.
+The inventory plugin returns the complete SSH connection data. The bastion uses
+its public address and `vms.bastion.ssh_port`; workloads use their private
+addresses on port 22 through a generated SSH `ProxyCommand`. It also reads
+`OILSCOPE_SSH_USER`, `OILSCOPE_SSH_KEY`, and, only during bootstrap,
+`OILSCOPE_BASTION_CONNECT_PORT`. Therefore no `group_vars` files are needed to
+re-read configuration JSON, look up another host, or assemble SSH arguments.
 Raw GCP fields retain the `gcp_` prefix; AWS provider fields remain available
 under the names exposed by `amazon.aws.aws_ec2`.
+
+## SSH host keys in development
+
+`ansible.cfg` disables SSH host-key checking for this project. Development VMs
+are routinely recreated at the same address, so their SSH host fingerprints
+change by design. The setting applies both to Ansible's direct SSH connection
+and to the nested SSH command used by the workload `ProxyCommand`; it is not a
+property of an inventory group or of the bastion itself.
+
+Do not use this policy for production infrastructure. There, retain host-key
+checking and update `known_hosts` through a controlled process after replacing a
+VM.
 
 Hosts appear only after `terraform apply`, because this inventory reports live
 cloud resources rather than the desired JSON entries.
 
 ## Bastion bootstrap
 
-A new bastion initially listens on port 22. Enable the temporary ingress rule,
-run the bootstrap playbook through port 22, then apply again without the flag:
+A new bastion configures `sshd` for `vms.bastion.ssh_port` through its Terraform
+startup configuration. Terraform opens only that port to
+`vms.bastion.allowed_cidrs`; port 22 is not publicly reachable. Connect using
+the configured port after `terraform apply`.
+
+`enable_bastion_ssh_bootstrap` and the `bootstrap_bastion` playbook are retained
+only to migrate bastions created before this behavior existed. For such an
+existing bastion, enable the temporary ingress rule, run the playbook through
+port 22, then apply again without the flag:
 
 ```sh
 terraform -chdir=infrastructure/terraform apply \

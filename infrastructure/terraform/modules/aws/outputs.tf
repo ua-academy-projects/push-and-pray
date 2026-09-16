@@ -51,3 +51,20 @@ output "monitoring_summary" {
   description = "AWS CloudWatch and SNS resources created for monitoring."
   value       = local.monitoring_enabled ? module.monitoring[0].summary : null
 }
+
+output "database_connection" {
+  description = "Database connection values resolved from self-managed PostgreSQL or private managed RDS."
+  value = local.database_mode == "managed" && local.has_vms ? {
+    mode          = local.database_mode
+    host          = module.database[0].host
+    port          = module.database[0].port
+    database_name = module.database[0].database_name
+    username      = module.database[0].username
+    } : {
+    mode          = local.database_mode
+    host          = local.has_vms ? module.vm[0].private_ips[local.database_vm_name] : null
+    port          = local.config.database.port
+    database_name = local.config.database.name
+    username      = local.config.database.user
+  }
+}

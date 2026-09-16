@@ -1,9 +1,10 @@
 # Observability agent
 
-Installs Google Cloud Ops Agent on GCP inventory hosts. The agent keeps its
-built-in host-metrics pipeline and adds a file receiver for Docker's JSON log
-files under `/var/lib/docker/containers`.
+Installs the cloud-native observability agent selected by inventory: Google
+Cloud Ops Agent on GCP and Amazon CloudWatch Agent on AWS. Both agents collect
+host metrics and Docker JSON logs under `/var/lib/docker/containers`.
 
 The role is selected from the neutral `oilscope_cloud` inventory variable. It
-currently skips non-GCP hosts; a provider-specific task file can be added for
-AWS without changing workload roles.
+On AWS, the role uses the instance profile and requires the
+`CloudWatchAgentServerPolicy` managed policy. Terraform attaches it to every
+workload instance role; no AWS access keys are stored on a VM.

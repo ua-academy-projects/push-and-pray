@@ -6,3 +6,7 @@ observability_agent_ops_install_script_path: /tmp/add-google-cloud-ops-agent-rep
 observability_agent_ops_config_path: /etc/google-cloud-ops-agent/config.yaml
 observability_agent_docker_log_paths:
   - /var/lib/docker/containers/*/*.log
+observability_agent_aws_package_url: >-
+  https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+observability_agent_aws_package_path: /tmp/amazon-cloudwatch-agent.deb
+observability_agent_aws_config_path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json

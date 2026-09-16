@@ -28,6 +28,23 @@ resource "aws_subnet" "workload" {
   }
 
 }
+
+# RDS DB subnet groups must span at least two Availability Zones. These subnets
+# deliberately have no default route to the internet; the VPC-local route is
+# enough for workload instances to reach the database.
+resource "aws_subnet" "database" {
+  for_each = {
+    for subnet in var.database_subnets : subnet.availability_zone => subnet
+  }
+
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = each.value.cidr
+  availability_zone = each.value.availability_zone
+
+  tags = {
+    Name = "${var.resource_prefix}-database-${each.key}"
+  }
+}
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
 

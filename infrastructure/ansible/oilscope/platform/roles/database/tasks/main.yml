@@ -6,40 +6,25 @@
   register: database_compose_definition
 
 - name: Pull the exact PostgreSQL image
-  ansible.builtin.command:
-    argv:
-      - docker
-      - image
-      - pull
-      - "{{ database_postgres_image }}"
+  community.docker.docker_compose_v2_pull:
+    project_src: "{{ database_compose_project_dir }}"
+    files: ["{{ database_compose_file | basename }}"]
+    project_name: "{{ database_compose_project_name }}"
+    services: ["{{ database_postgres_service }}"]
+    policy: always
   environment:
     DOCKER_CONFIG: "{{ database_docker_config_dir }}"
-  register: database_image_pull
-  changed_when: >-
-    'Downloaded newer image' in database_image_pull.stdout or
-    'Pull complete' in database_image_pull.stdout
 
 - name: Start the PostgreSQL service
-  ansible.builtin.command:
-    argv:
-      - docker
-      - compose
-      - --project-name
-      - "{{ database_compose_project_name }}"
-      - --file
-      - "{{ database_compose_file }}"
-      - up
-      - --detach
-      - --no-deps
-      - "{{ database_postgres_service }}"
-  args:
-    chdir: "{{ database_compose_project_dir }}"
+  community.docker.docker_compose_v2:
+    project_src: "{{ database_compose_project_dir }}"
+    files: ["{{ database_compose_file | basename }}"]
+    project_name: "{{ database_compose_project_name }}"
+    services: ["{{ database_postgres_service }}"]
+    dependencies: false
+    pull: never
+    state: present
   environment: "{{ database_runtime_environment }}"
-  register: database_compose_up
-  changed_when: >-
-    'Created' in database_compose_up.stderr or
-    'Started' in database_compose_up.stderr or
-    'Recreated' in database_compose_up.stderr
   no_log: true
 
 - name: Get the PostgreSQL container ID

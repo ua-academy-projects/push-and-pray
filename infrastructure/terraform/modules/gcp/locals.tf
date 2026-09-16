@@ -92,6 +92,13 @@ locals {
     name => distinct(values(workload.secret_mappings))
   }
 
+  managed_database_secret_ids = toset(flatten([
+    for workload in values(local.workload_vms) : [
+      for environment_name, secret_id in workload.secret_mappings : secret_id
+      if environment_name == "POSTGRES_PASSWORD"
+    ]
+  ]))
+
   has_vms    = length(local.resolved_vms) > 0
   bastion_vm = local.config.vms.bastion
 

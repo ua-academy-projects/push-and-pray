@@ -15,11 +15,11 @@ uvx check-jsonschema \
 ## Deploy all workloads
 
 Deploy the application workloads in dependency order. First, export the selected
-GCP database connection from the Terraform state as an Ansible extra-vars file:
+database connection from the Terraform state as an Ansible extra-vars file:
 
 ```bash
 terraform -chdir=infrastructure/terraform output -json \
-  | jq '{database_connection: .gcp_database_connection.value, messaging_connection: .gcp_messaging_connection.value}' \
+  | jq '{database_connection: .database_connection.value, messaging_connection: .gcp_messaging_connection.value}' \
   > /tmp/oilscope-database-connection.json
 ```
 

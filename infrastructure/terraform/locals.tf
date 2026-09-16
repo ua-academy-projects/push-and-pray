@@ -2,8 +2,8 @@ locals {
   config = jsondecode(file(var.project_config_path))
 
   all_workload_roles = merge(
-     module.gcp.workload_roles,
-     module.aws.workload_roles,
+    module.gcp.workload_roles,
+    module.aws.workload_roles,
   )
   all_public_ips = merge(
     module.gcp.public_ips,

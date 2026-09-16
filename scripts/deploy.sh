@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export ANSIBLE_CONFIG="$ROOT_DIR/ansible.cfg"
 INVENTORY_FILE="$ROOT_DIR/infrastructure/ansible/inventory/oilscope.yml"
 TERRAFORM_DIR="$ROOT_DIR/infrastructure/terraform"
 SCHEMA_FILE="$TERRAFORM_DIR/project-config.schema.json"
@@ -104,7 +105,7 @@ CONNECTION_FILE="$(mktemp "${TMPDIR:-/tmp}/oilscope-connections.XXXXXX.json")"
 log "Reading non-secret Terraform connection outputs"
 terraform -chdir="$TERRAFORM_DIR" output -json \
   | jq -e '{
-      database_connection: .gcp_database_connection.value,
+      database_connection: .database_connection.value,
       messaging_connection: .gcp_messaging_connection.value
     }' > "$CONNECTION_FILE"
 
