@@ -25,7 +25,7 @@
           ansible.builtin.include_role:
             name: monitoring_agent
           vars:
-            monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
+            terraform_outputs_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
 
         - name: Fail if the role did not reject the unsupported cloud
           ansible.builtin.fail:
@@ -48,7 +48,7 @@
       ansible.builtin.include_role:
         name: monitoring_agent
       vars:
-        monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
+        terraform_outputs_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Confirm the configured AWS VM was recognized
@@ -80,7 +80,7 @@
       ansible.builtin.include_role:
         name: monitoring_agent
       vars:
-        monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/gcp_monitoring.json"
+        terraform_outputs_path: "{{ playbook_dir }}/fixtures/gcp_monitoring.json"
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Confirm the configured GCP VM was recognized
@@ -109,7 +109,7 @@
       ansible.builtin.include_role:
         name: monitoring_agent
       vars:
-        monitoring_agent_config_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
+        terraform_outputs_path: "{{ playbook_dir }}/fixtures/aws_monitoring.json"
 
     - name: Confirm the unconfigured VM key was recognized as not configured
       ansible.builtin.assert:

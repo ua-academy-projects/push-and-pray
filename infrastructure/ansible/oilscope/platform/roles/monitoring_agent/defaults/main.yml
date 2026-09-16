@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Path to the JSON file produced by `terraform output -json aws_monitoring`
-# or `terraform output -json gcp_monitoring` (whichever matches this run's
-# single cloud - see preflight.yml, which refuses a mixed-cloud inventory).
-# Empty by default so a missing value fails with a clear "no such file"
-# error from the lookup in tasks/main.yml, rather than silently reading
-# nothing - same reasoning as resolve_secrets_config_path.
-monitoring_agent_config_path: ""
-
 # Shared by both clouds' task files - a VM only ever runs one cloud's agent,
 # never both, so there's no collision risk in reusing one path.
 monitoring_agent_work_dir: /opt/oilscope/monitoring

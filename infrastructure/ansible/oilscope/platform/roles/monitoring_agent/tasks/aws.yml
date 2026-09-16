@@ -71,7 +71,7 @@
     cache_valid_time: 3600
     install_recommends: false
 
-# Pure format conversion (armored -> binary keybox), not a keyring-management
+# Pure format conversion (armored -> binary OpenPGP keyring), not a keyring-management
 # operation - unaffected by keyboxd, confirmed directly alongside the gpgv
 # verification below.
 - name: Convert the public key into a keyring gpgv can read
@@ -79,6 +79,9 @@
   ansible.builtin.command:
     argv:
       - gpg
+      - --batch
+      - --yes
+      - --no-tty
       - --dearmor
       - --output
       - "{{ monitoring_agent_work_dir }}/keyring.gpg"
@@ -92,6 +95,8 @@
   ansible.builtin.command:
     argv:
       - gpg
+      - --batch
+      - --no-tty
       - --with-colons
       - --import-options
       - show-only

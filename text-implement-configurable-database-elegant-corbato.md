@@ -2018,15 +2018,276 @@ and [manual workflow requirements](https://docs.github.com/en/actions/how-tos/ma
 Repository evidence: `publish-images.yaml`, `reusable-build-image.yaml`, and
 `infrastructure/docker/Dockerfile.ui`.
 
-**Status:** publishing approach resolved and documented; actual tag push,
-GitHub build, image publication, and real JSON update are not performed by
-this change. This is a subtask of Step 17, not a ninth remaining step. The
-publishing route can be used earlier when a reviewed source revision is ready.
+**Status (updated 2026-09-15):** image publication completed; real JSON update
+and deployment-identity pull verification remain the next preparation work.
+This is a subtask of Step 17, not a ninth remaining step.
+
+The clean `monitoring` branch commit
+`42e84f633f10101aaf3f2fa2aa18932faadb183c` was tagged with the new annotated
+tag `v-pavlo-20260915-1` and pushed without pushing `main`, `develop`, or the
+working branch. GitHub Actions run `34956386777` completed successfully and
+all four independent build-and-publish jobs succeeded. The workflow published
+the full commit SHA as the deployment image tag under the shared organization
+GHCR namespace. Recorded manifest digests:
+
+```text
+fetcher  sha256:a60a637b45b5bbe7b68df3c4717fb980ccfbbb9520c269f54e3498b715e1f166
+history  sha256:ef2dddc648b59ca5808f4c8b795e016a8fb704f273672d285ae94646f5557b92
+ui       sha256:42793f38ab0a041a55b914ae3cdcdbe2ace9843d52a9a1464a6eb9b49477ed4d
+database sha256:3054116b5d4d6604410e68772577ddb06853e269a5341b3ea976b1f7866b596e
+```
+
+Evidence was read from the completed GitHub run and its Buildx manifest-push
+log lines. The tag resolves locally to the same commit. No image was pulled and
+no VM identity was used yet, so GHCR read access from the deployment remains
+unverified. The real Desktop configuration still points to the older
+`7075d461...` image tag and must be updated explicitly in the next step; the
+Git preview tag itself must not be used as `registry.image_sha`.
+
+**Deployment JSON update (completed 2026-09-15):** the user updated the
+existing `/Users/pavlo/Desktop/project-config.new.json` in place; no second
+deployment JSON is used. `registry.repository` remains
+`ghcr.io/ua-academy-projects/push-and-pray` and `registry.image_sha` now equals
+the published full commit SHA
+`42e84f633f10101aaf3f2fa2aa18932faadb183c`. The selected first deployment is
+`environment=prod`, `default_cloud=aws`, `default_db=cloud`, so this run targets
+AWS with managed RDS rather than the application PostgreSQL VM. Validation
+against `project-config.schema.json` passed with `jsonschema` Draft 2020-12.
+The documented `uvx check-jsonschema` wrapper was unavailable in the current
+shell, so the installed `.venv-ansible` Python environment performed the same
+schema evaluation directly. No secret value was read and no cloud operation
+was performed during this check.
+
+**AWS preflight checkpoint (2026-09-15, incomplete):** the local Terraform
+state is not empty. State lineage `1755ab10-5074-d60e-d633-7cf9fb77b2ce`,
+serial 256, still tracks the AWS VPC, public/private routing, NAT/EIPs, five EC2
+instances (including the application-mode `infra` database VM), their IAM
+roles/profiles and the synthetic-canary S3 bucket. This conflicts with treating
+the next run as a fresh deployment and also conflicts with the JSON's new
+cloud/RDS selection. No state entry was removed and no resource was changed.
+
+A read-only `aws sts get-caller-identity` check from the Codex tool process
+failed with `InvalidClientTokenId`; `aws configure list` there showed an older
+key from the shared credentials file and region `eu-central-1`. The user's
+interactive shell later supplied valid session credentials and successfully
+refreshed/planned the state. Credentials exported in that terminal are not
+inherited by the separate Codex tool process, so its authentication failure is
+not evidence that the user's terminal session expired.
+
+**AWS plan review (2026-09-15, apply not authorized):** after credentials were
+refreshed, Terraform successfully refreshed the tracked resources in AWS account
+`441955873558` and produced a plan of 53 additions, 2 in-place changes, and 3
+destroys. This proves the state is active rather than merely an unreadable stale
+file. The action set structurally matches an application-to-cloud database
+transition: create private PostgreSQL 18 RDS (`db.t4g.micro`, 20 GiB `gp2`,
+Single-AZ, encrypted, AWS-managed administrator password), its parameter/subnet/
+security groups and second-AZ subnet; create the configured secrets and new
+monitoring stack; add RabbitMQ TLS ingress from Fetcher; remove UI from the old
+database security-group ingress; and destroy only the stopped `infra` EC2
+database VM plus its instance profile and IAM role. The existing `infra` root
+volume is configured `delete_on_termination=true`, so applying the plan destroys
+that database storage. This is a real destructive mode switch, not a fresh
+deployment or routine redeploy. No saved plan file was produced (`-out` was not
+used), and nothing was applied.
+
+One blocking credential-design issue was found before apply. The real cloud-mode
+JSON maps both Fetcher and History `POSTGRES_PASSWORD` to the same
+`oilscope-db-password` secret. The migration role creates predictable separate
+SQL usernames (`oil_tracker_fetcher` and `oil_tracker_history`) using that same
+password. A compromised workload could therefore use the shared password with
+the other workload's username and bypass the intended table-level separation.
+Before replanning, use separate secret IDs and values for Fetcher and History;
+Terraform should then create two runtime secret containers instead of the shared
+database-password container. Secret containers will initially have no values,
+so versions must still be uploaded after apply and before workload deployment.
+The plan's monitoring alarms and synthetic canary will also begin evaluating
+before agents/workloads are deployed, so temporary missing-data/health alarms
+are expected during bootstrap. These observations do not authorize apply.
+
+**Revised saved-plan review (2026-09-15):** the user replaced the shared
+runtime mapping with `oilscope-prod-db-password-fetcher` and
+`oilscope-prod-db-password-history`, then created
+`/tmp/oilscope-prod-aws.tfplan`. The plan now contains 54 additions, 2 in-place
+changes, and the same 3 destroys. Full `terraform show -json` inspection
+confirmed separate secret containers and workload IAM policies; the retained
+Bastion, Fetcher, History, and UI EC2 instances, EIPs, VPC, NAT and existing
+routes are all `no-op`. The only deletes remain the old `infra` EC2 instance,
+its instance profile, and its IAM role. The only updates remain removal of UI
+from old PostgreSQL security-group ingress and addition of RabbitMQ TLS ingress
+from Fetcher to History. RDS and the second-AZ subnet, monitoring resources,
+six workload secret containers, three secret-access policies, and four agent
+publishing policies are creates. This is the expected action shape.
+
+The saved plan was concrete but could not be applied safely without an
+explicit decision about the old database: deleting `infra` also deletes its
+50 GiB root EBS volume (`delete_on_termination=true`), with no database export,
+snapshot, or data transfer in this procedure. Subsequent read-only EC2/RDS
+queries from the Codex process still used its older credentials; they did not
+invalidate the user's authenticated saved plan. At this review point no apply
+had been attempted. The plan file was under `/tmp`, outside the repository.
+
+**Destructive transition authorization (2026-09-15):** the operator renewed
+AWS credentials and `sts get-caller-identity` resolved to IAM user
+`arn:aws:iam::441955873558:user/oilscope-admin` in the same account used by the
+saved plan. A read-only instance query confirmed Bastion, Fetcher, History, UI,
+and the old `infra` database VM are all stopped. The user then explicitly
+authorized permanent deletion of the old database VM and its EBS data without
+backup or migration. This satisfies the shutdown/data-loss decision required
+before applying the saved mode-switch plan; it does not change the recorded
+decision that queued/session state is not transferred. Apply result, RDS
+readiness, output export, secret versions, workload deployment, and runtime
+verification remain pending and must be recorded separately.
+
+**Terraform apply result (2026-09-15):** the user applied the exact saved plan.
+Terraform state advanced from serial 256 to 319. State now records RDS instance
+`db-P5C7UVVPGGI3PEPTUA4QH6ZRTQ` as `available`, PostgreSQL actual version 18.3,
+`db.t4g.micro`, 20 GiB `gp2`, encrypted, private, Single-AZ, with an active
+AWS-managed administrator secret. The endpoint output is
+`oilscope-prod-database.c5q000geouyp.eu-central-1.rds.amazonaws.com:5432` with
+database `oil_tracker` and `sslmode=verify-full`. The old `infra` instance is
+absent from state. All six intended workload secret containers, monitoring
+resources and policies are present in state, and outputs contain only the four
+retained VMs.
+
+This verification used the post-apply Terraform state and outputs. Direct AWS
+API checks from the separate Codex process still cannot use the session
+credentials exported in the user's shell, so cloud-side status is not claimed
+independently beyond Terraform's successful provider result. No secret value
+was read. Output export, secret-version upload, host startup/deployment, DNS and
+runtime verification remain pending.
+
+**EC2 power-state clarification (2026-09-15):** the four retained instances
+remain stopped because they were stopped before the mode-switch plan and the
+AWS VM module manages `aws_instance` configuration without an
+`aws_ec2_instance_state` resource. Terraform therefore treated them as `no-op`
+and did not assert `running`. Keep them stopped while secret versions are being
+prepared: starting them early could boot old workload configuration against the
+now-removed application database. The chosen order is upload secrets first,
+then explicitly start Bastion/Fetcher/History/UI, wait for EC2 status checks,
+and immediately run the Ansible deployment so the current RDS/RabbitMQ/Redis
+configuration replaces the old workload configuration.
+
+**Workload secret upload (completed 2026-09-16):** the user ran the uploader
+in check mode successfully (`changed=0`, `failed=0`), then uploaded all six
+versions from the same terminal environment. Actual upload recap:
+`ok=39 changed=14 unreachable=0 failed=0`. The private payload file was removed
+by the role's cleanup task. Recorded non-secret version IDs:
+
+```text
+oilscope-ghcr-token                 a8c08566-bcc1-427b-b431-e3e071878f61
+oilscope-oilpriceapi-key             3811e90e-0246-43bc-9547-5dea52f1e383
+oilscope-prod-db-password-fetcher    9d90d200-e2b8-4a82-939d-3f1de7990800
+oilscope-prod-db-password-history    168fc758-d07e-43b3-ac19-5e6bd07fd1a1
+oilscope-prod-rabbitmq-password      d42acf42-6316-46ef-94d3-af4de6048b9c
+oilscope-prod-redis-password         35103d9d-48a3-4f99-9176-e0181baee28c
+```
+
+Evidence is the user's successful Ansible output; no secret values were read
+or displayed. RDS's administrator secret remains AWS-managed and was not
+uploaded manually. Upload success establishes stored versions, not token/API
+validity or VM read access; image pulls, runtime grants, and application
+connectivity remain deployment checks. Next: explicitly start the four retained
+EC2 instances, wait for status checks, then verify SSH/inventory and deploy the
+current workloads.
 
 ### Step 18 — Deploy the selected mode and verify ordinary operation
 
-**Status:** not implemented or verified for this revision; awaiting completion
-of Step 17 and explicit deployment authorization.
+**Status:** in progress (2026-09-16) for the authorized AWS cloud-database
+deployment. Images were published, the reviewed Terraform plan was applied,
+fresh outputs were exported, and workload secret versions were uploaded.
+Host configuration and live application verification remain pending.
+
+**Host startup and SSH decision (2026-09-16):** the user reported completing
+the explicit start/wait commands for the four retained EC2 instances. No
+status table was supplied, so this records user-reported completion rather
+than an independent live AWS check. Next, verify dynamic inventory and SSH
+before running workload deployment. Use the existing real config at
+`/Users/pavlo/Desktop/project-config.new.json`, SSH user `operator`, and
+`/Users/pavlo/.ssh/petroscope_gcp_ed25519`: its corresponding public key
+matches the configured operator key (no private-key contents were read).
+The configured bastion port is already `22`; no temporary port override or
+security-group bootstrap rule is required. Workload SSH uses the bastion
+proxy configured in inventory group variables. Set `OILSCOPE_PROJECT_CONFIG`
+for inventory discovery and pass the same path as `project_config_path`
+for playbook/group-variable use.
+
+**Inventory and SSH verification (completed 2026-09-16):** the user's
+inventory graph contains exactly the retained bastion, Fetcher, History,
+and UI hosts, with the expected workload groups. All four returned
+`SUCCESS` and `ping: pong`; workload access through the bastion and remote
+Python execution are confirmed. Ansible reported the deprecated/reserved
+`tags` host variable and interpreter-discovery warnings (`python3.14`);
+these did not prevent connectivity. Proceed with the existing
+`deploy_workloads` wrapper using the real config and
+`/Users/pavlo/Desktop/terraform-outputs.aws.json`. In cloud mode the local
+database play skips, followed by managed migrations from History, RabbitMQ,
+History, Fetcher, and UI (including Redis). This order prepares the database
+and broker before their application clients. Deployment success and live
+application checks remain pending; SSH success alone does not prove them.
+
+**Deployment correction (2026-09-16):** the first workload deployment stopped
+in History's monitoring role with recursive templating of
+`monitoring_agent_config_path`. Recap: History `ok=142`, `changed=21`,
+`failed=1`; other hosts had no failures or unreachable results. This was a
+partial deployment, not application readiness verification. Removed the
+self-referencing role parameter from Database, History, Fetcher, and UI;
+the role now inherits the explicitly supplied variable. The earlier command
+also omitted this required path. Monitoring now selects the current cloud's
+output from the existing full Terraform output file, retaining compatibility
+with a single-output wrapper. Updated the role documentation and comments.
+Decision: reuse `/Users/pavlo/Desktop/terraform-outputs.aws.json` for both
+`terraform_outputs_path` and `monitoring_agent_config_path`, with no extra
+JSON export. Rerun the full deployment with both arguments so all plays can
+converge after the partial run. The installed collection is a symlink to
+the repository, so these Ansible changes take effect immediately without
+collection reinstallation or application image rebuilding. No automated
+tests or live deployment were run by the assistant for this correction.
+
+**Single Terraform output argument (2026-09-16):** at the user's request,
+replaced the monitoring role's `monitoring_agent_config_path` input with
+`terraform_outputs_path` directly. Both database connection and monitoring
+now read the explicitly provided path; no path default or duplicate argument
+is needed. This supersedes the two-argument command above. Monitoring still
+requires this argument in application database mode. Updated role docs,
+playbook comments, collection changelog, and existing role fixture invocations
+to match the renamed input; no new tests were added or run. Changed YAML
+was checked for parsing and whitespace errors. Next command:
+
+```bash
+infrastructure/ansible/deploy.sh oilscope.platform.deploy_workloads \
+  -i infrastructure/ansible/inventory/oilscope-aws.yml \
+  -e project_config_path="$OILSCOPE_PROJECT_CONFIG" \
+  -e terraform_outputs_path=/Users/pavlo/Desktop/terraform-outputs.aws.json
+```
+
+**GPG conversion correction (2026-09-16):** the user reported the deployment
+appearing stuck at the CloudWatch public-key conversion task. The command
+used `gpg --dearmor --output keyring.gpg` without unattended/overwrite flags;
+on a rerun with an existing keyring it can prompt for overwrite. This is a
+code-level explanation, not a confirmed remote process diagnosis. Added
+`--batch --yes --no-tty` to conversion, and `--batch --no-tty` to fingerprint
+inspection. Conversion continues to run on every deployment so a refreshed
+downloaded public key is reflected in the verification keyring. Fingerprint
+pinning and package signature verification remain in place. Corrected the
+conversion comment to describe a binary OpenPGP keyring rather than a keybox.
+Decision: interrupt the current deployment and rerun the same single-output
+argument command; repository edits do not change an already running task.
+YAML parsing and whitespace checks passed; no automated tests or remote
+process inspection were performed. Live deployment remains in progress.
+
+**Manual RDS access decision (2026-09-16):** the administrator login is
+`oil_tracker_admin`, created by Terraform/RDS, with its generated password
+in the AWS-managed Secrets Manager secret referenced by
+`aws_database_connection.value.admin_secret_arn`. Migrations create the
+restricted `oil_tracker_fetcher` and `oil_tracker_history` logins from their
+respective workload password secrets; no UI PostgreSQL login is created.
+Their creation has not been independently inspected during the partial run.
+For manual laptop access, tunnel through the bastion to History, then forward
+to the private RDS endpoint: the RDS security group permits History/Fetcher,
+not direct bastion or public laptop connections. Preserve `verify-full`
+using the real RDS hostname and AWS CA bundle; with psql, use `host` for
+the RDS name and `hostaddr=127.0.0.1` for the local tunnel. No credentials
+were retrieved and no manual database connection was made by the assistant.
 
 **Work after authorization:**
 - Apply the reviewed plan, export fresh outputs, make required secret versions
@@ -2200,7 +2461,7 @@ decision. No implementation or deployment was performed in this update.
 ## Execution boundaries and documentation
 
 Credential clarification (2026-09-14): inspected only non-secret fields in the
-real Desktop JSON. It currently selects AWS/application mode; `infra`,
+real Desktop JSON. At that time it selected AWS/application mode; `infra`,
 `history`, and `fetcher` map `POSTGRES_PASSWORD` to `oilscope-db-password`.
 With the configured `oilscope-prod-` prefix, the upload variable resolves to
 `OILSCOPE_DB_PASSWORD`. Documented initial upload, VM-identity retrieval,
@@ -2212,7 +2473,8 @@ needs a SQL login update as well as a secret version and client restart;
 application-mode automation does not currently perform that SQL update.
 No secret values were read, generated, uploaded, or changed. No VM/DB actions
 were performed. Step 12 still includes reconciliation of older generic secret
-examples with the current architecture.
+examples with the current architecture. The 2026-09-15 deployment JSON update
+above supersedes the mode observation: the file now selects AWS/cloud mode.
 
 This implementation remains local: no Terraform apply, cloud deployment,
 live database switch, live data transfer, or live queue/session reset without

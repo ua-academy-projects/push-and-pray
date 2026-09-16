@@ -2,8 +2,8 @@
 ---
 - name: Read the project configuration
   ansible.builtin.set_fact:
-    monitoring_agent_config: >-
-      {{ lookup('ansible.builtin.file', monitoring_agent_config_path) | from_json }}
+    monitoring_agent_outputs: >-
+      {{ lookup('ansible.builtin.file', terraform_outputs_path) | from_json }}
 
 - name: Require a known cloud
   ansible.builtin.fail:
@@ -11,6 +11,12 @@
       oilscope_cloud '{{ oilscope_cloud | default('') }}' is not gcp or
       aws
   when: (oilscope_cloud | default('')) not in ['gcp', 'aws']
+
+- name: Select the current cloud's monitoring output
+  ansible.builtin.set_fact:
+    monitoring_agent_config: >-
+      {{ monitoring_agent_outputs[oilscope_cloud ~ '_monitoring']
+         | default(monitoring_agent_outputs) }}
 
 - name: Determine whether this VM has an agent configuration
   ansible.builtin.set_fact:

@@ -13,14 +13,11 @@
   roles:
     - role: oilscope.platform.host_baseline
 
-    # monitoring_agent_config_path comes from `terraform output -json
-    # aws_monitoring`/`gcp_monitoring` (whichever cloud this run targets),
+    # terraform_outputs_path comes from `terraform output -json`,
     # passed in via -e the same way project_config_path is - see
     # roles/monitoring_agent/README.md. A VM with no entry in that output's
     # agent_configurations is a no-op here, not a failure.
     - role: oilscope.platform.monitoring_agent
-      vars:
-        monitoring_agent_config_path: "{{ monitoring_agent_config_path }}"
 
     - role: oilscope.platform.docker_engine
 

@@ -52,10 +52,12 @@ service account. This role does not grant any cloud permissions itself.
 
 ## Required variables
 
-- `monitoring_agent_config_path`: path to the JSON file produced by
-  `terraform output -json aws_monitoring` or
-  `terraform output -json gcp_monitoring` - whichever matches this run's
-  cloud (a run only ever targets one cloud; see `preflight.yml`).
+- `terraform_outputs_path`: path to the complete JSON file produced by
+  `terraform output -json`. The role selects `aws_monitoring` or `gcp_monitoring`
+  for the inventory's cloud. This is the same input used by the database
+  connection role; no additional argument or export is needed. Supply it
+  explicitly in both application and cloud database modes. A legacy file containing only the selected
+  output's `value`/`type`/`sensitive` wrapper is also accepted.
 - `oilscope_vm_key`, `oilscope_cloud`: normally inherited automatically from
   the dynamic inventory (`oilscope_gcp` / `oilscope_aws`); only need setting
   by hand outside of it, such as in a role test against a static inventory.

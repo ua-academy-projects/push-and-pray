@@ -6,6 +6,11 @@ This project follows [semantic versioning](https://semver.org/).
 
 ## Unreleased
 
+- Unified monitoring and database connection inputs under the required
+  `terraform_outputs_path` argument. Monitoring selects the current cloud's
+  output from the complete Terraform outputs file. Removed self-referencing
+  monitoring role parameters from workload playbooks.
+
 - Added the managed migration playbook/role before History, controller-side
   administrator-secret retrieval, per-VM runtime logins and table grants,
   deployment-time access verification, and password URL encoding.
