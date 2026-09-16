@@ -106,3 +106,23 @@ resource "google_compute_firewall" "postgresql" {
     ports    = [tostring(var.postgresql_port)]
   }
 }
+
+resource "google_compute_firewall" "managed_services" {
+  name    = "${var.resource_prefix}-allow-managed-services"
+  network = google_compute_network.main.id
+
+  source_tags = [
+    local.network_tags.fetcher,
+    local.network_tags.ui,
+  ]
+  source_ranges = sort(tolist(var.remote_workload_cidrs))
+  target_tags   = [local.network_tags.history]
+
+  allow {
+    protocol = "tcp"
+    ports = [
+      tostring(var.rabbitmq_port),
+      tostring(var.redis_port),
+    ]
+  }
+}

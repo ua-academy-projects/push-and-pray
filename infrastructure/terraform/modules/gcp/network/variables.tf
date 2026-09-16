@@ -90,6 +90,14 @@ variable "postgresql_port" {
   }
 }
 
+variable "rabbitmq_port" {
+  type = number
+}
+
+variable "redis_port" {
+  type = number
+}
+
 variable "remote_workload_cidrs" {
   type    = set(string)
   default = []

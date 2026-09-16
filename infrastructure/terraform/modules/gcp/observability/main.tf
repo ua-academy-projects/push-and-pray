@@ -1,5 +1,8 @@
 locals {
   synthetic_host = trimsuffix(trimprefix(var.synthetic_url, "https://"), "/")
+  database_id = (
+    var.database_instance_id == null ? null : "${var.project_id}:${var.database_instance_id}"
+  )
   notification_channels = [
     google_monitoring_notification_channel.email.name
   ]
@@ -148,6 +151,60 @@ resource "google_monitoring_alert_policy" "http_5xx" {
         alignment_period     = "300s"
         per_series_aligner   = "ALIGN_DELTA"
         cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  alert_strategy {
+    auto_close           = "1800s"
+    notification_prompts = ["OPENED", "CLOSED"]
+  }
+}
+
+resource "google_monitoring_alert_policy" "database_cpu_high" {
+  count = var.database_instance_id == null ? 0 : 1
+
+  display_name          = "${var.resource_prefix}-gcp-database-cpu-high"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+
+  conditions {
+    display_name = "Cloud SQL CPU above 80% for 5 minutes"
+    condition_threshold {
+      filter          = "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"${local.database_id}\" AND metric.type = \"cloudsql.googleapis.com/database/cpu/utilization\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0.8
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_MEAN"
+      }
+    }
+  }
+
+  alert_strategy {
+    auto_close           = "1800s"
+    notification_prompts = ["OPENED", "CLOSED"]
+  }
+}
+
+resource "google_monitoring_alert_policy" "database_disk_high" {
+  count = var.database_instance_id == null ? 0 : 1
+
+  display_name          = "${var.resource_prefix}-gcp-database-disk-high"
+  combiner              = "OR"
+  notification_channels = local.notification_channels
+
+  conditions {
+    display_name = "Cloud SQL disk above 80% for 10 minutes"
+    condition_threshold {
+      filter          = "resource.type = \"cloudsql_database\" AND resource.label.database_id = \"${local.database_id}\" AND metric.type = \"cloudsql.googleapis.com/database/disk/utilization\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0.8
+      duration        = "600s"
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_MEAN"
       }
     }
   }

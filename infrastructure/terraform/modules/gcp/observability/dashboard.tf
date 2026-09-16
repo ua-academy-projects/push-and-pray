@@ -13,6 +13,12 @@ locals {
     { title = "Disk read bytes", metric = "compute.googleapis.com/instance/disk/read_bytes_count", aligner = "ALIGN_RATE" },
     { title = "Disk write bytes", metric = "compute.googleapis.com/instance/disk/write_bytes_count", aligner = "ALIGN_RATE" },
   ]
+
+  database_charts = var.database_instance_id == null ? [] : [
+    { title = "Cloud SQL CPU utilization", metric = "cloudsql.googleapis.com/database/cpu/utilization" },
+    { title = "Cloud SQL memory utilization", metric = "cloudsql.googleapis.com/database/memory/utilization" },
+    { title = "Cloud SQL disk utilization", metric = "cloudsql.googleapis.com/database/disk/utilization" },
+  ]
 }
 
 resource "google_monitoring_dashboard" "main" {
@@ -41,6 +47,30 @@ resource "google_monitoring_dashboard" "main" {
                     aggregation = {
                       alignmentPeriod  = "60s"
                       perSeriesAligner = chart.aligner
+                    }
+                  }
+                }
+              }]
+              yAxis = { scale = "LINEAR" }
+            }
+          }
+        }],
+        [for index, chart in local.database_charts : {
+          xPos   = index % 2 == 0 ? 0 : 24
+          yPos   = 84 + floor(index / 2) * 16
+          width  = 24
+          height = 16
+          widget = {
+            title = chart.title
+            xyChart = {
+              dataSets = [{
+                plotType = "LINE"
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"${chart.metric}\" AND resource.type=\"cloudsql_database\" AND resource.label.database_id=\"${var.project_id}:${var.database_instance_id}\""
+                    aggregation = {
+                      alignmentPeriod  = "60s"
+                      perSeriesAligner = "ALIGN_MEAN"
                     }
                   }
                 }

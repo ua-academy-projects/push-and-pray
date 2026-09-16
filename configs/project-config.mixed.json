@@ -118,7 +118,9 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
   },
   "secrets_by_role": {
     "database": {
@@ -127,15 +129,19 @@
     },
     "history": {
       "POSTGRES_PASSWORD": "db-password",
+      "RABBITMQ_PASSWORD": "rabbitmq-password",
+      "REDIS_PASSWORD": "redis-password",
       "GHCR_TOKEN": "ghcr-token"
     },
     "fetcher": {
       "POSTGRES_PASSWORD": "db-password",
+      "RABBITMQ_PASSWORD": "rabbitmq-password",
       "OILPRICEAPI_KEY": "oilpriceapi-key",
       "GHCR_TOKEN": "ghcr-token"
     },
     "ui": {
       "POSTGRES_PASSWORD": "db-password",
+      "REDIS_PASSWORD": "redis-password",
       "GHCR_TOKEN": "ghcr-token"
     }
   },
@@ -234,6 +240,18 @@
       "tier": "db-f1-micro",
       "disk_size_gb": 10,
       "availability_type": "ZONAL"
+    }
+  },
+  "managed_services": {
+    "rabbitmq_username": "oil_tracker",
+    "rabbitmq_vhost": "oil_tracker",
+    "redis": {
+      "source_image": "redis:7-alpine",
+      "target_tag": "7-alpine"
+    },
+    "rabbitmq": {
+      "source_image": "rabbitmq:4-management-alpine",
+      "target_tag": "4-management-alpine"
     }
   }
 }

@@ -6,3 +6,7 @@ output "connection" {
     user = var.username
   }
 }
+
+output "identifier" {
+  value = aws_db_instance.this.identifier
+}

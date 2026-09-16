@@ -22,6 +22,7 @@ resource "google_project_service" "required" {
     module.config.configuration_valid
     ) ? toset([
       "compute.googleapis.com",
+      "artifactregistry.googleapis.com",
       "iam.googleapis.com",
       "logging.googleapis.com",
       "monitoring.googleapis.com",
@@ -57,6 +58,8 @@ module "network" {
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
   history_api_port             = module.config.config.service_ports.history_api
   postgresql_port              = module.config.config.service_ports.postgresql
+  rabbitmq_port                = module.config.config.service_ports.rabbitmq
+  redis_port                   = module.config.config.service_ports.redis
   remote_workload_cidrs = toset(
     try(module.config.config.mixed_network.enabled, false) ? try([
       module.config.config.clouds.aws.network.vpc_cidr
@@ -88,6 +91,29 @@ module "database" {
   deletion_protection  = module.config.database.deletion_protection
   backup_run_id        = try(module.config.database.restore.gcp_backup_run_id, null)
   labels               = module.config.common_metadata
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_artifact_registry_repository" "managed_services" {
+  count = module.config.manage_db && module.config.selected_count > 0 ? 1 : 0
+
+  project       = module.config.cloud_config.project_id
+  location      = module.config.location.region
+  repository_id = "${module.config.resource_prefix}-managed-services"
+  description   = "Mirrored Redis and RabbitMQ images for private OilScope workloads"
+  format        = "DOCKER"
+  labels        = module.config.common_metadata
+
+  cleanup_policy_dry_run = false
+
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 10
+    }
+  }
 
   depends_on = [google_project_service.required]
 }
@@ -132,6 +158,19 @@ resource "google_project_iam_member" "ops_agent_metric_writer" {
   project = module.config.cloud_config.project_id
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${each.value.service_account_email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "managed_service_pull" {
+  for_each = {
+    for name, vm in module.vm : name => vm
+    if module.config.manage_db
+  }
+
+  project    = module.config.cloud_config.project_id
+  location   = module.config.location.region
+  repository = google_artifact_registry_repository.managed_services[0].name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${each.value.service_account_email}"
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -190,6 +229,9 @@ module "observability" {
   resource_prefix = module.config.resource_prefix
   alert_email     = module.config.config.observability.alert_email
   synthetic_url   = module.config.config.observability.synthetic_url
+  database_instance_id = (
+    module.config.managed_database_enabled ? module.database[0].instance_name : null
+  )
   instances = {
     for name, vm in module.vm : name => {
       instance_id = vm.instance_id

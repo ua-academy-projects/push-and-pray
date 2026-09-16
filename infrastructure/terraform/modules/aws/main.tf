@@ -56,6 +56,8 @@ module "security" {
   ui_public_ports       = module.config.network.ui_public_ports
   history_api_port      = module.config.config.service_ports.history_api
   postgresql_port       = module.config.config.service_ports.postgresql
+  rabbitmq_port         = module.config.config.service_ports.rabbitmq
+  redis_port            = module.config.config.service_ports.redis
   remote_workload_cidrs = toset(
     try(module.config.config.mixed_network.enabled, false) ? try([
       module.config.config.clouds.gcp.network.vpc_cidr
@@ -95,6 +97,28 @@ module "database" {
       module.config.config.clouds.gcp.network.vpc_cidr
     ], []) : []
   )
+  tags = module.config.common_metadata
+}
+
+resource "aws_ecr_repository" "managed_service" {
+  for_each = (
+    module.config.manage_db &&
+    module.config.selected_count > 0 &&
+    module.config.configuration_valid
+  ) ? toset(["redis", "rabbitmq"]) : toset([])
+
+  name                 = "${module.config.resource_prefix}/${each.value}"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
   tags = module.config.common_metadata
 }
 
@@ -173,6 +197,35 @@ resource "aws_iam_role_policy" "workload_secret_access" {
   })
 }
 
+resource "aws_iam_role_policy" "managed_service_registry_pull" {
+  for_each = {
+    for name, vm in module.config.workload_vms : name => vm
+    if module.config.manage_db
+  }
+
+  name = "${module.config.resource_prefix}-managed-service-registry-pull"
+  role = module.vm[each.key].iam_role_name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+        ]
+        Resource = [for repository in aws_ecr_repository.managed_service : repository.arn]
+      },
+    ]
+  })
+}
+
 module "observability" {
   source = "./observability"
   count = (
@@ -181,12 +234,14 @@ module "observability" {
     try(module.config.config.observability.enabled, false)
   ) ? 1 : 0
 
-  resource_prefix    = module.config.resource_prefix
-  alert_email        = module.config.config.observability.alert_email
-  monthly_budget_usd = module.config.config.observability.monthly_budget_usd
-  synthetic_url      = module.config.config.observability.synthetic_url
-  log_retention_days = try(module.config.config.observability.log_retention_days, 14)
-  tags               = module.config.common_metadata
+  resource_prefix     = module.config.resource_prefix
+  region              = module.config.location.region
+  alert_email         = module.config.config.observability.alert_email
+  monthly_budget_usd  = module.config.config.observability.monthly_budget_usd
+  synthetic_url       = module.config.config.observability.synthetic_url
+  log_retention_days  = try(module.config.config.observability.log_retention_days, 14)
+  tags                = module.config.common_metadata
+  database_identifier = module.config.managed_database_enabled ? module.database[0].identifier : null
   instances = {
     for name, vm in module.vm : name => {
       instance_id    = vm.instance_id

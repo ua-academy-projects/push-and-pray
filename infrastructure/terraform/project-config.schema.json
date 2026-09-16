@@ -23,6 +23,7 @@
     "default_cloud": { "$ref": "#/$defs/cloud_name" },
     "manage_db": { "type": "boolean" },
     "database": { "$ref": "#/$defs/database" },
+    "managed_services": { "$ref": "#/$defs/managed_services" },
     "mixed_network": {
       "type": "object",
       "additionalProperties": false,
@@ -150,10 +151,12 @@
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": ["history_api", "postgresql", "rabbitmq", "redis"],
       "properties": {
         "history_api": { "$ref": "#/$defs/port" },
-        "postgresql": { "$ref": "#/$defs/port" }
+        "postgresql": { "$ref": "#/$defs/port" },
+        "rabbitmq": { "$ref": "#/$defs/port" },
+        "redis": { "$ref": "#/$defs/port" }
       }
     },
     "secrets_by_role": {
@@ -192,8 +195,13 @@
         "properties": { "manage_db": { "const": true } },
         "required": ["manage_db"]
       },
-      "then": { "required": ["database"] },
-      "else": { "not": { "required": ["database"] } }
+      "then": { "required": ["database", "managed_services"] },
+      "else": {
+        "allOf": [
+          { "not": { "required": ["database"] } },
+          { "not": { "required": ["managed_services"] } }
+        ]
+      }
     }
   ],
   "$defs": {
@@ -268,6 +276,26 @@
             "availability_type": { "type": "string", "enum": ["ZONAL", "REGIONAL"] }
           }
         }
+      }
+    },
+    "managed_services": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rabbitmq_username", "rabbitmq_vhost", "redis", "rabbitmq"],
+      "properties": {
+        "rabbitmq_username": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "rabbitmq_vhost": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "redis": { "$ref": "#/$defs/mirrored_image" },
+        "rabbitmq": { "$ref": "#/$defs/mirrored_image" }
+      }
+    },
+    "mirrored_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_image", "target_tag"],
+      "properties": {
+        "source_image": { "type": "string", "minLength": 1 },
+        "target_tag": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" }
       }
     },
     "observability": {

@@ -50,3 +50,12 @@ output "network" {
     region     = module.config.location.region
   }, null)
 }
+
+output "managed_service_images" {
+  value = try(module.config.manage_db ? {
+    cloud    = "gcp"
+    registry = "${module.config.location.region}-docker.pkg.dev"
+    redis    = "${module.config.location.region}-docker.pkg.dev/${module.config.cloud_config.project_id}/${google_artifact_registry_repository.managed_services[0].repository_id}/redis:${module.config.config.managed_services.redis.target_tag}"
+    rabbitmq = "${module.config.location.region}-docker.pkg.dev/${module.config.cloud_config.project_id}/${google_artifact_registry_repository.managed_services[0].repository_id}/rabbitmq:${module.config.config.managed_services.rabbitmq.target_tag}"
+  } : null, null)
+}

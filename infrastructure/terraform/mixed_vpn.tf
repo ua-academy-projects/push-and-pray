@@ -9,6 +9,11 @@ locals {
     local.root_config.network,
     try(local.root_config.clouds.gcp.network, {}),
   ).database_private_service_cidr : null
+  mixed_aws_database_enabled = (
+    local.mixed_network_enabled &&
+    local.manage_db &&
+    lower(local.root_config.database.cloud) == "aws"
+  )
 
   aws_vpn_destinations = local.mixed_network_enabled ? merge(
     { gcp_vpc = local.mixed_gcp_cidr },
@@ -119,6 +124,32 @@ resource "aws_route" "gcp" {
 
   route_table_id         = each.value.route_table_id
   destination_cidr_block = each.value.destination
+  gateway_id             = aws_vpn_gateway.mixed[0].id
+}
+
+resource "aws_route_table" "mixed_database" {
+  count = local.mixed_aws_database_enabled ? 1 : 0
+
+  vpc_id = module.aws.network.vpc_id
+  tags = {
+    Name = "${local.root_config.name_prefix}-${local.root_config.environment}-database-private"
+  }
+}
+
+resource "aws_route_table_association" "mixed_database" {
+  for_each = local.mixed_aws_database_enabled ? {
+    for index, subnet_id in module.aws.network.database_subnet_ids : tostring(index) => subnet_id
+  } : {}
+
+  subnet_id      = each.value
+  route_table_id = aws_route_table.mixed_database[0].id
+}
+
+resource "aws_route" "mixed_database_to_gcp" {
+  count = local.mixed_aws_database_enabled ? 1 : 0
+
+  route_table_id         = aws_route_table.mixed_database[0].id
+  destination_cidr_block = local.mixed_gcp_cidr
   gateway_id             = aws_vpn_gateway.mixed[0].id
 }
 

@@ -30,7 +30,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "EC2 availability — status checks"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Maximum"
           period = 60
           metrics = [
@@ -48,7 +48,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "CPU utilization"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Average"
           period = 60
           yAxis  = { left = { min = 0, max = 100 } }
@@ -70,7 +70,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "Memory used"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Average"
           period = 60
           yAxis  = { left = { min = 0, max = 100 } }
@@ -92,7 +92,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "Root disk used"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Average"
           period = 60
           yAxis  = { left = { min = 0, max = 100 } }
@@ -114,7 +114,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title   = "Application HTTP 5xx"
           view    = "timeSeries"
-          region  = "eu-west-1"
+          region  = var.region
           stat    = "Sum"
           period  = 300
           metrics = [["OilScope/Application", "HTTP5xxCount", { label = "5xx count" }]]
@@ -129,7 +129,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title   = "Synthetic success"
           view    = "timeSeries"
-          region  = "eu-west-1"
+          region  = var.region
           stat    = "Average"
           period  = 300
           yAxis   = { left = { min = 0, max = 100 } }
@@ -144,7 +144,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         height = 6
         properties = {
           title  = "Recent application errors"
-          region = "eu-west-1"
+          region = var.region
           view   = "table"
           query  = "SOURCE '${aws_cloudwatch_log_group.application.name}' | fields @timestamp, @message | filter @message like /ERROR|HTTP\\/[0-9.]+\\\" 5[0-9][0-9]/ | sort @timestamp desc | limit 50"
         }
@@ -158,7 +158,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "EC2 instance and system status checks"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Maximum"
           period = 60
           metrics = concat(
@@ -180,7 +180,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "Network traffic"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Sum"
           period = 300
           metrics = concat(
@@ -202,7 +202,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "EBS root volume throughput"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Sum"
           period = 300
           metrics = concat(
@@ -224,7 +224,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "EBS queue length"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Average"
           period = 300
           metrics = [for name, volume_id in local.volume_metrics :
@@ -241,7 +241,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "T-series CPU credit balance"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Minimum"
           period = 300
           metrics = [for name, instance_id in local.instance_metrics :
@@ -258,11 +258,29 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "Synthetic failures and duration"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           period = 300
           metrics = [
             ["CloudWatchSynthetics", "Failed", "CanaryName", aws_synthetics_canary.api.name, { label = "failed", stat = "Sum", yAxis = "left" }],
             ["CloudWatchSynthetics", "Duration", "CanaryName", aws_synthetics_canary.api.name, { label = "duration ms", stat = "Average", yAxis = "right" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 49
+        width  = 24
+        height = 6
+        properties = {
+          title  = var.database_identifier == null ? "RDS monitoring disabled" : "RDS CPU, connections, and free storage"
+          view   = "timeSeries"
+          region = var.region
+          period = 300
+          metrics = [
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", coalesce(var.database_identifier, "not-enabled"), { label = "CPU %", stat = "Average" }],
+            ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", coalesce(var.database_identifier, "not-enabled"), { label = "connections", stat = "Average" }],
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", coalesce(var.database_identifier, "not-enabled"), { label = "free bytes", stat = "Minimum", yAxis = "right" }],
           ]
         }
       },
@@ -275,7 +293,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         properties = {
           title  = "CloudWatch Logs ingestion"
           view   = "timeSeries"
-          region = "eu-west-1"
+          region = var.region
           stat   = "Sum"
           period = 300
           metrics = [

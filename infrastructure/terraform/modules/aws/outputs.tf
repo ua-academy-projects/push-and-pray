@@ -45,8 +45,18 @@ output "managed_database" {
 
 output "network" {
   value = try({
-    vpc_id          = module.network[0].vpc_id
-    route_table_ids = module.routing[0].route_table_ids
-    vpc_cidr        = module.config.network.vpc_cidr
+    vpc_id              = module.network[0].vpc_id
+    route_table_ids     = module.routing[0].route_table_ids
+    database_subnet_ids = module.network[0].database_subnet_ids
+    vpc_cidr            = module.config.network.vpc_cidr
   }, null)
+}
+
+output "managed_service_images" {
+  value = try(module.config.manage_db ? {
+    cloud    = "aws"
+    registry = split("/", aws_ecr_repository.managed_service["redis"].repository_url)[0]
+    redis    = "${aws_ecr_repository.managed_service["redis"].repository_url}:${module.config.config.managed_services.redis.target_tag}"
+    rabbitmq = "${aws_ecr_repository.managed_service["rabbitmq"].repository_url}:${module.config.config.managed_services.rabbitmq.target_tag}"
+  } : null, null)
 }

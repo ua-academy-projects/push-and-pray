@@ -94,3 +94,38 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
   to_port                      = var.postgresql_port
   ip_protocol                  = "tcp"
 }
+
+resource "aws_vpc_security_group_ingress_rule" "rabbitmq" {
+  security_group_id            = aws_security_group.role["history"].id
+  referenced_security_group_id = aws_security_group.role["fetcher"].id
+  from_port                    = var.rabbitmq_port
+  to_port                      = var.rabbitmq_port
+  ip_protocol                  = "tcp"
+  description                  = "RabbitMQ from Fetcher"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis" {
+  security_group_id            = aws_security_group.role["history"].id
+  referenced_security_group_id = aws_security_group.role["ui"].id
+  from_port                    = var.redis_port
+  to_port                      = var.redis_port
+  ip_protocol                  = "tcp"
+  description                  = "Redis from UI"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "managed_services_remote" {
+  for_each = {
+    for pair in setproduct(var.remote_workload_cidrs, toset(["rabbitmq", "redis"])) : "${pair[0]}-${pair[1]}" => {
+      cidr = pair[0]
+      name = pair[1]
+      port = pair[1] == "rabbitmq" ? var.rabbitmq_port : var.redis_port
+    }
+  }
+
+  security_group_id = aws_security_group.role["history"].id
+  cidr_ipv4         = each.value.cidr
+  from_port         = each.value.port
+  to_port           = each.value.port
+  ip_protocol       = "tcp"
+  description       = "${each.value.name} from private cross-cloud workloads"
+}

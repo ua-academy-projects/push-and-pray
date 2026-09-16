@@ -141,6 +141,46 @@ resource "aws_cloudwatch_metric_alarm" "http_5xx" {
   depends_on = [aws_cloudwatch_log_metric_filter.http_5xx]
 }
 
+resource "aws_cloudwatch_metric_alarm" "database_cpu_high" {
+  count = var.database_identifier == null ? 0 : 1
+
+  alarm_name          = "${var.resource_prefix}-aws-database-cpu-high"
+  alarm_description   = "Kickoff: RDS CPU is above 80% for 5 minutes. Closure: CPU returned below threshold."
+  namespace           = "AWS/RDS"
+  metric_name         = "CPUUtilization"
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+  dimensions          = { DBInstanceIdentifier = var.database_identifier }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = var.tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "database_storage_low" {
+  count = var.database_identifier == null ? 0 : 1
+
+  alarm_name          = "${var.resource_prefix}-aws-database-storage-low"
+  alarm_description   = "Kickoff: RDS free storage is below 2 GiB for 10 minutes. Closure: free storage recovered."
+  namespace           = "AWS/RDS"
+  metric_name         = "FreeStorageSpace"
+  statistic           = "Minimum"
+  period              = 60
+  evaluation_periods  = 10
+  datapoints_to_alarm = 10
+  threshold           = 2147483648
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "missing"
+  dimensions          = { DBInstanceIdentifier = var.database_identifier }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  tags                = var.tags
+}
+
 resource "aws_budgets_budget" "monthly" {
   name         = "${var.resource_prefix}-monthly"
   budget_type  = "COST"

@@ -46,7 +46,7 @@
         "ssd": "io2"
       },
       "images": {
-        "ubuntu": "ami-0123456789abcdef0"
+        "ubuntu": "ami-0526a6499f6470118"
       },
       "bastion_nat": true,
       "free_tier_guardrails": true
@@ -58,8 +58,15 @@
     "project": "example-oil-price-tracker",
     "team": "example-team"
   },
+  "observability": {
+    "enabled": true,
+    "alert_email": "o.m.zakip@gmail.com",
+    "monthly_budget_usd": 20,
+    "synthetic_url": "https://shiphappens.pp.ua",
+    "log_retention_days": 14
+  },
   "ssh_users": {
-    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+    "ubuntu": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOuHUOVp9DXJqpuqtPrw012XyiKWhMpJmZ5ZU8Fadmmd dadayaalex@gmail.com"
   },
   "registry": {
     "repository": "ghcr.io/ua-academy-projects/push-and-pray",
@@ -87,7 +94,9 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
   },
   "secrets_by_role": {
     "database": {
@@ -96,15 +105,19 @@
     },
     "history": {
       "POSTGRES_PASSWORD": "example-db-password",
+      "RABBITMQ_PASSWORD": "rabbitmq-password",
+      "REDIS_PASSWORD": "redis-password",
       "GHCR_TOKEN": "example-ghcr-token"
     },
     "fetcher": {
       "POSTGRES_PASSWORD": "example-db-password",
+      "RABBITMQ_PASSWORD": "rabbitmq-password",
       "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b",
       "GHCR_TOKEN": "example-ghcr-token"
     },
     "ui": {
       "POSTGRES_PASSWORD": "example-db-password",
+      "REDIS_PASSWORD": "redis-password",
       "GHCR_TOKEN": "example-ghcr-token"
     }
   },
@@ -159,7 +172,7 @@
       ],
       "public_endpoint": {
         "hostname": "shiphappens.pp.ua",
-        "acme_email": "example-operator@example.com"
+        "acme_email": "o.m.zakip@gmail.com"
       }
     }
   },
@@ -185,6 +198,18 @@
       "tier": "db-f1-micro",
       "disk_size_gb": 10,
       "availability_type": "ZONAL"
+    }
+  },
+  "managed_services": {
+    "rabbitmq_username": "oil_tracker",
+    "rabbitmq_vhost": "oil_tracker",
+    "redis": {
+      "source_image": "redis:7-alpine",
+      "target_tag": "7-alpine"
+    },
+    "rabbitmq": {
+      "source_image": "rabbitmq:4-management-alpine",
+      "target_tag": "4-management-alpine"
     }
   }
 }

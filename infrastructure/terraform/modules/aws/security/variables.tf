@@ -9,6 +9,8 @@ variable "enable_bastion_ssh_bootstrap" { type = bool }
 variable "ui_public_ports" { type = list(number) }
 variable "history_api_port" { type = number }
 variable "postgresql_port" { type = number }
+variable "rabbitmq_port" { type = number }
+variable "redis_port" { type = number }
 variable "remote_workload_cidrs" {
   type    = set(string)
   default = []

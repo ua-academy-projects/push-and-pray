@@ -111,3 +111,13 @@ output "managed_database" {
     },
   )
 }
+
+output "managed_service_images" {
+  description = "Per-cloud private registry locations for mirrored Redis and RabbitMQ images."
+  value = {
+    for cloud, images in {
+      aws = module.aws.managed_service_images
+      gcp = module.gcp.managed_service_images
+    } : cloud => images if images != null
+  }
+}
