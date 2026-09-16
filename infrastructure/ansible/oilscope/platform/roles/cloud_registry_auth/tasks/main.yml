@@ -1,0 +1,55 @@
+---
+- name: Validate private registry configuration
+  ansible.builtin.assert:
+    that:
+      - oilscope_cloud in ['aws', 'gcp']
+      - cloud_registry_auth_registry | length > 0
+
+- name: Read AWS ECR authorization password
+  ansible.builtin.command:
+    argv:
+      - "{{ cloud_registry_auth_aws_cli_path }}"
+      - ecr
+      - get-login-password
+      - --region
+      - "{{ compose_project_config.clouds.aws.locations[compose_project_config.defaults.location_profile].region }}"
+  register: cloud_registry_auth_password
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'aws'
+
+- name: Read GCP registry authorization token
+  ansible.builtin.uri:
+    url: "{{ cloud_registry_auth_gcp_metadata_url }}"
+    headers:
+      Metadata-Flavor: Google
+    return_content: true
+  register: cloud_registry_auth_gcp_token
+  no_log: true
+  when: oilscope_cloud == 'gcp'
+
+- name: Select private registry credentials
+  ansible.builtin.set_fact:
+    cloud_registry_auth_username: >-
+      {{ 'AWS' if oilscope_cloud == 'aws' else 'oauth2accesstoken' }}
+    cloud_registry_auth_secret: >-
+      {{ cloud_registry_auth_password.stdout
+         if oilscope_cloud == 'aws'
+         else (cloud_registry_auth_gcp_token.content | from_json).access_token }}
+  no_log: true
+
+- name: Authenticate Docker to the private registry
+  ansible.builtin.command:
+    argv:
+      - docker
+      - --config
+      - "{{ cloud_registry_auth_docker_config_dir }}"
+      - login
+      - --username
+      - "{{ cloud_registry_auth_username }}"
+      - --password-stdin
+      - "{{ cloud_registry_auth_registry }}"
+    stdin: "{{ cloud_registry_auth_secret }}"
+  register: cloud_registry_auth_login
+  changed_when: "'Login Succeeded' in cloud_registry_auth_login.stdout"
+  no_log: true

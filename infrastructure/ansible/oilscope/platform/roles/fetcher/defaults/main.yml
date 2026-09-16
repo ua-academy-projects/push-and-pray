@@ -11,6 +11,12 @@ fetcher_postgres_name: oil_tracker
 fetcher_database_host: postgres
 fetcher_database_port: 5432
 fetcher_database_sslmode: disable
+fetcher_queue_backend: postgres
+fetcher_rabbitmq_password: ""
+fetcher_rabbitmq_host: localhost
+fetcher_rabbitmq_port: 5672
+fetcher_rabbitmq_username: oil_tracker
+fetcher_rabbitmq_vhost: oil_tracker
 fetcher_bind_address: 0.0.0.0
 fetcher_host_port: 8002
 fetcher_health_retries: 30

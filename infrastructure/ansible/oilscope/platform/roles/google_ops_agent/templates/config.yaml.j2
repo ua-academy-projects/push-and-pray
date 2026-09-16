@@ -1,15 +1,21 @@
 logging:
   receivers:
     oilscope_application:
+      type: files
+      include_paths:
+        - /var/lib/docker/containers/*/*.log
+    oilscope_deploy:
       type: systemd_journald
       include_units:
-        - docker.service
         - oilscope-deploy.service
   service:
     pipelines:
       oilscope_application:
         receivers:
           - oilscope_application
+      oilscope_deploy:
+        receivers:
+          - oilscope_deploy
 metrics:
   receivers:
     hostmetrics:

@@ -34,6 +34,12 @@
         registry_auth_token: >-
           {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
+    - role: oilscope.platform.cloud_registry_auth
+      when: compose_project_config.manage_db | bool
+      vars:
+        cloud_registry_auth_registry: >-
+          {{ managed_service_images[oilscope_cloud].registry }}
+
     - role: oilscope.platform.database_migrations
       when: oilscope_database_connection.managed | bool
       vars:
@@ -58,3 +64,16 @@
         history_postgres_user: "{{ oilscope_database_connection.user }}"
         history_postgres_name: "{{ oilscope_database_connection.name }}"
         history_database_sslmode: "{{ oilscope_database_connection.sslmode }}"
+        history_queue_backend: >-
+          {{ 'rabbitmq' if compose_project_config.manage_db | bool else 'postgres' }}
+        history_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}
+        history_rabbitmq_host: "{{ internal_ip }}"
+        history_rabbitmq_port: >-
+          {{ compose_project_config.service_ports.rabbitmq | default(5672) }}
+        history_rabbitmq_username: >-
+          {{ compose_project_config.get('managed_services', {}).get('rabbitmq_username', 'oil_tracker') }}
+        history_rabbitmq_vhost: >-
+          {{ compose_project_config.get('managed_services', {}).get('rabbitmq_vhost', 'oil_tracker') }}
+        history_redis_password: >-
+          {{ resolve_secrets_result.REDIS_PASSWORD | default('') }}

@@ -9,6 +9,9 @@
     DATABASE_HOST: "{{ ui_database_host }}"
     DATABASE_PORT: "{{ ui_database_port | string }}"
     DATABASE_SSLMODE: "{{ ui_database_sslmode }}"
+    SESSION_BACKEND: "{{ ui_session_backend }}"
+    REDIS_URL: >-
+      redis://:{{ ui_redis_password | urlencode }}@{{ ui_redis_host }}:{{ ui_redis_port }}/0
     HISTORY_SERVICE_URL: >-
       http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
   no_log: true

@@ -44,3 +44,14 @@
         fetcher_database_sslmode: "{{ oilscope_database_connection.sslmode }}"
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"
+        fetcher_queue_backend: >-
+          {{ 'rabbitmq' if compose_project_config.manage_db | bool else 'postgres' }}
+        fetcher_rabbitmq_password: >-
+          {{ resolve_secrets_result.RABBITMQ_PASSWORD | default('') }}
+        fetcher_rabbitmq_host: "{{ hostvars[groups['history'][0]].internal_ip }}"
+        fetcher_rabbitmq_port: >-
+          {{ compose_project_config.service_ports.rabbitmq | default(5672) }}
+        fetcher_rabbitmq_username: >-
+          {{ compose_project_config.get('managed_services', {}).get('rabbitmq_username', 'oil_tracker') }}
+        fetcher_rabbitmq_vhost: >-
+          {{ compose_project_config.get('managed_services', {}).get('rabbitmq_vhost', 'oil_tracker') }}

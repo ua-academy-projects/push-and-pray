@@ -52,3 +52,10 @@
         ui_postgres_user: "{{ oilscope_database_connection.user }}"
         ui_postgres_name: "{{ oilscope_database_connection.name }}"
         ui_database_sslmode: "{{ oilscope_database_connection.sslmode }}"
+        ui_session_backend: >-
+          {{ 'redis' if compose_project_config.manage_db | bool else 'postgres' }}
+        ui_redis_password: >-
+          {{ resolve_secrets_result.REDIS_PASSWORD | default('') }}
+        ui_redis_host: "{{ hostvars[groups['history'][0]].internal_ip }}"
+        ui_redis_port: >-
+          {{ compose_project_config.service_ports.redis | default(6379) }}

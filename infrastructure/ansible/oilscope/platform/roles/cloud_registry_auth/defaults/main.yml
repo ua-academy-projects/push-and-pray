@@ -1,0 +1,6 @@
+---
+cloud_registry_auth_registry: ""
+cloud_registry_auth_docker_config_dir: /run/oilscope/docker-auth
+cloud_registry_auth_aws_cli_path: /usr/local/bin/aws
+cloud_registry_auth_gcp_metadata_url: >-
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token

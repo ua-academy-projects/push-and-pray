@@ -11,10 +11,15 @@ services:
       # yamllint disable rule:line-length
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-postgres}
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
       PGMQ_POLL_INTERVAL_SECONDS: ${PGMQ_POLL_INTERVAL_SECONDS:-1}
       PGMQ_MAX_ATTEMPTS: ${PGMQ_MAX_ATTEMPTS:-5}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://oil_tracker:change-me@localhost:5672/oil_tracker}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-oil.price.events}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-history.price-observations}
+      RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-prices.observed}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: UTC
     ports:
@@ -29,7 +34,7 @@ services:
           data = json.load(urllib.request.urlopen("http://127.0.0.1:8001/health", timeout=3));
           assert data["status"] == "ok";
           assert data["database"] == "connected";
-          assert data["queue_backend"] == "postgres";
+          assert data["queue_backend"] == "${QUEUE_BACKEND:-postgres}";
           assert data["queue_consumer"] == "ready"
       interval: 10s
       timeout: 5s
@@ -38,3 +43,50 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+{% if compose_project_config.manage_db | bool %}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    image: "{{ managed_service_images[oilscope_cloud].rabbitmq }}"
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: "{{ compose_project_config.managed_services.rabbitmq_username }}"
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: "{{ compose_project_config.managed_services.rabbitmq_vhost }}"
+    ports:
+      - "{{ internal_ip }}:{{ compose_project_config.service_ports.rabbitmq }}:5672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: "{{ managed_service_images[oilscope_cloud].redis }}"
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+    ports:
+      - "{{ internal_ip }}:{{ compose_project_config.service_ports.redis }}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  rabbitmq_data:
+  redis_data:
+{% endif %}

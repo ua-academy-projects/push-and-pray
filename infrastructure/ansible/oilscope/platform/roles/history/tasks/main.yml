@@ -9,6 +9,11 @@
     DATABASE_HOST: "{{ history_database_host }}"
     DATABASE_PORT: "{{ history_database_port | string }}"
     DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+    QUEUE_BACKEND: "{{ history_queue_backend }}"
+    RABBITMQ_URL: >-
+      amqp://{{ history_rabbitmq_username }}:{{ history_rabbitmq_password | urlencode }}@{{ history_rabbitmq_host }}:{{ history_rabbitmq_port }}/{{ history_rabbitmq_vhost | urlencode }}
+    RABBITMQ_PASSWORD: "{{ history_rabbitmq_password }}"
+    REDIS_PASSWORD: "{{ history_redis_password }}"
   no_log: true
   block:
     - name: Pull the History image
@@ -31,6 +36,50 @@
         'Pull complete' in history_compose_pull.stdout or
         'Pull complete' in history_compose_pull.stderr
 
+    - name: Pull managed RabbitMQ and Redis images
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ history_compose_project_name }}"
+          - --file
+          - "{{ history_compose_file }}"
+          - pull
+          - rabbitmq
+          - redis
+      args:
+        chdir: "{{ history_compose_project_dir }}"
+      register: history_managed_services_pull
+      changed_when: >-
+        'Downloaded newer image' in history_managed_services_pull.stdout or
+        'Downloaded newer image' in history_managed_services_pull.stderr or
+        'Pull complete' in history_managed_services_pull.stdout or
+        'Pull complete' in history_managed_services_pull.stderr
+      when: history_queue_backend == 'rabbitmq'
+
+    - name: Start managed RabbitMQ and Redis services
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-name
+          - "{{ history_compose_project_name }}"
+          - --file
+          - "{{ history_compose_file }}"
+          - up
+          - --detach
+          - rabbitmq
+          - redis
+      args:
+        chdir: "{{ history_compose_project_dir }}"
+      register: history_managed_services_up
+      changed_when: >-
+        'Created' in history_managed_services_up.stderr or
+        'Started' in history_managed_services_up.stderr or
+        'Recreated' in history_managed_services_up.stderr
+      when: history_queue_backend == 'rabbitmq'
+
     - name: Start only History
       ansible.builtin.command:
         argv:
@@ -42,7 +91,6 @@
           - "{{ history_compose_file }}"
           - up
           - --detach
-          - --no-deps
           - history
       args:
         chdir: "{{ history_compose_project_dir }}"
@@ -66,7 +114,7 @@
     - >-
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
-      (history_health.json | default({})).get('queue_backend', '') == 'postgres'
+      (history_health.json | default({})).get('queue_backend', '') == history_queue_backend
     - >-
       (history_health.json | default({})).get(
         'queue_consumer', ''

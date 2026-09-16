@@ -174,6 +174,10 @@ USED_CLOUDS="$(jq -r '
 ' "${CONFIG}")"
 
 MANAGE_DB="$(jq -r '.manage_db' "${CONFIG}")"
+if [[ "${MANAGE_DB}" == true ]]; then
+  require_command docker
+  docker buildx version >/dev/null || fail "Docker Buildx is required to mirror managed-service images."
+fi
 required_roles=(history fetcher ui)
 if [[ "${MANAGE_DB}" == false ]]; then
   required_roles=(database "${required_roles[@]}")
@@ -379,6 +383,18 @@ terraform -chdir="${TF_RUN_DIR}" output -json managed_database | \
   jq '{managed_database: .}' > "${DATABASE_VARS_FILE}"
 chmod 0600 "${DATABASE_VARS_FILE}"
 
+MANAGED_SERVICES_VARS_FILE="${COLLECTION_BUILD_DIR}/managed-service-images.json"
+terraform -chdir="${TF_RUN_DIR}" output -json managed_service_images |
+  jq '{managed_service_images: .}' > "${MANAGED_SERVICES_VARS_FILE}"
+chmod 0600 "${MANAGED_SERVICES_VARS_FILE}"
+
+if [[ "${MANAGE_DB}" == true ]]; then
+  step "Mirroring Redis and RabbitMQ images to cloud registries"
+  "${SCRIPT_DIR}/mirror-managed-images.sh" \
+    "${CONFIG}" \
+    <(jq '.managed_service_images' "${MANAGED_SERVICES_VARS_FILE}")
+fi
+
 UI_IP="$(terraform -chdir="${TF_RUN_DIR}" output -json workload_external_ips | jq -r '.ui // empty')"
 [[ "${UI_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   fail "Terraform did not return a public IPv4 address for the ui VM."
@@ -486,7 +502,8 @@ step "Deploying database, history, fetcher, UI, and HTTPS proxy"
 "${ANSIBLE_PLAYBOOK}" oilscope.platform.deploy_workloads \
   -i "${INVENTORY}" \
   -e "project_config_path=${CONFIG}" \
-  -e "@${DATABASE_VARS_FILE}"
+  -e "@${DATABASE_VARS_FILE}" \
+  -e "@${MANAGED_SERVICES_VARS_FILE}"
 
 if jq -e '.observability.enabled == true' "${CONFIG}" >/dev/null 2>&1; then
   step "Configuring AWS and GCP monitoring agents"

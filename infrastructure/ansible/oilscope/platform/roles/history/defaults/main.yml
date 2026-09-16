@@ -10,6 +10,13 @@ history_postgres_name: oil_tracker
 history_database_host: postgres
 history_database_port: 5432
 history_database_sslmode: disable
+history_queue_backend: postgres
+history_rabbitmq_password: ""
+history_rabbitmq_host: localhost
+history_rabbitmq_port: 5672
+history_rabbitmq_username: oil_tracker
+history_rabbitmq_vhost: oil_tracker
+history_redis_password: ""
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth
