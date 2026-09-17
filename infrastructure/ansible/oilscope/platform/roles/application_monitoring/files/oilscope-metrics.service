@@ -1,0 +1,15 @@
+[Unit]
+Description=OilScope read-only workload metrics
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/oilscope/monitoring/collect.py /opt/oilscope/monitoring/collector.json
+TimeoutStartSec=75
+User=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/oilscope

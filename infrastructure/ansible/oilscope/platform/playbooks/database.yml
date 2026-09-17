@@ -50,3 +50,5 @@
             ~ compose_project_config.registry.image_sha
           }}
         database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+
+    - role: oilscope.platform.application_monitoring

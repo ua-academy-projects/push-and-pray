@@ -1,5 +1,5 @@
 locals {
-  dashboard_vm_names = sort(keys(var.vms))
+  dashboard_vm_names = sort(keys(local.workload_vms))
   dashboard_colors = [
     "#1f77b4",
     "#ff7f0e",
@@ -26,13 +26,13 @@ locals {
     memory = "VM memory used (%)"
     disk   = "VM root disk used (%)"
   }
-  dashboard_charts = concat(
+  dashboard_charts = [for chart in concat(
     [for signal_name in local.dashboard_signal_order : {
       title = local.dashboard_signal_titles[signal_name]
       metrics = [for name in local.dashboard_vm_names : concat(
         [local.signals[signal_name].namespace, local.signals[signal_name].metric],
         flatten([for dimension_name, dimension_value in merge(
-          { InstanceId = var.vms[name].instance_id },
+          { InstanceId = local.workload_vms[name].instance_id },
           signal_name == "disk" ? { path = "/", fstype = local.settings.disk_fstype } : {}
         ) : [dimension_name, dimension_value]]),
         [{ label = name, color = local.dashboard_vm_colors[name] }]
@@ -43,7 +43,7 @@ locals {
     [for metric in ["NetworkIn", "NetworkOut"] : {
       title = "VM ${metric == "NetworkIn" ? "network received" : "network sent"} (bytes/5 min)"
       metrics = [for name in local.dashboard_vm_names : [
-        "AWS/EC2", metric, "InstanceId", var.vms[name].instance_id,
+        "AWS/EC2", metric, "InstanceId", local.workload_vms[name].instance_id,
         { label = name, color = local.dashboard_vm_colors[name] }
       ]]
       stat   = "Sum"
@@ -58,6 +58,18 @@ locals {
       stat   = "Sum"
       period = 300
     }] : [],
+    local.application_enabled ? [for metric in keys(local.application_catalog) : {
+      title   = metric
+      metrics = [for key, signal in local.application_signals : [local.application_namespace, metric, "VMKey", signal.name] if signal.metric == metric]
+      stat    = "Maximum"
+      period  = 300
+    } if anytrue([for signal in values(local.application_signals) : signal.metric == metric])] : [],
+    local.database_enabled ? [for metric in ["CPUUtilization", "FreeStorageSpace", "DatabaseConnections", "ReadLatency", "WriteLatency", "ReadIOPS", "WriteIOPS"] : {
+      title   = "RDS ${metric}"
+      metrics = [["AWS/RDS", metric, "DBInstanceIdentifier", var.database.id]]
+      stat    = "Average"
+      period  = 300
+    }] : [],
     local.synthetics_enabled ? [for metric in ["SuccessPercent", "Duration"] : {
       title = "HTTPS ${metric}"
       metrics = [[
@@ -67,7 +79,7 @@ locals {
       stat   = "Average"
       period = local.settings.synthetics.period_minutes * 60
     }] : []
-  )
+  ) : chart if length(chart.metrics) > 0]
 }
 
 resource "aws_cloudwatch_dashboard" "operations" {
@@ -89,7 +101,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
       height = 6
       properties = {
         title  = "Operational alarms"
-        alarms = concat([for a in aws_cloudwatch_metric_alarm.vm : a.arn], [for a in aws_cloudwatch_metric_alarm.http : a.arn], aws_cloudwatch_metric_alarm.synthetic[*].arn)
+        alarms = concat([for a in aws_cloudwatch_metric_alarm.vm : a.arn], [for a in aws_cloudwatch_metric_alarm.http : a.arn], aws_cloudwatch_metric_alarm.synthetic[*].arn, [for a in aws_cloudwatch_metric_alarm.application : a.arn], [for a in aws_cloudwatch_metric_alarm.database : a.arn])
       }
     }] : [])
   })

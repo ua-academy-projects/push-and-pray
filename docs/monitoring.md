@@ -1,97 +1,202 @@
-# Monitoring RabbitMQ, Redis, and the durable outbox
+# Monitoring and budgets
 
-This documents what's collected automatically for the RabbitMQ/Redis/outbox
-path introduced by the database-mode migration, what appears on the cloud
-dashboards, and what still requires an operator to run an explicit inspection
-command. No new monitoring platform was introduced; the implementation reuses
-the existing CloudWatch/Ops Agent host-metrics convention and the existing
-`/health` JSON-endpoint convention.
+Terraform defines the cloud resources; Ansible installs the agents and a small
+Python collector on workload VMs. **Bastion is excluded** from dashboards,
+alarms, agent publisher permissions, application collection and EC2 detailed
+monitoring. No additional credentials are stored in collector configuration.
 
-## Cloud dashboard layout
+## Enable the features
 
-Each provider module creates one operational dashboard for its environment.
-The dashboards compare hosts by signal instead of creating a CPU, memory,
-disk, uptime/status, or network widget for every individual VM:
+Merge these settings into your existing project JSON, replacing the email and
+hostname. The checked-in examples keep the new paid features disabled.
 
-- A CPU widget contains one line for every EC2/GCE VM.
-- Memory and disk widgets do the same when agent metrics are enabled.
-- AWS status-check failures and GCP uptime each have one cross-VM widget.
-- Received and sent network traffic use separate widgets because direction is
-  operationally meaningful; each widget compares all VMs.
-- Legends use the stable configuration/workload names such as `fetcher`,
-  `history`, `ui`, `database`, and `bastion`. AWS assigns each name a stable
-  explicit color across host charts. GCP uses one labelled data set per VM, so
-  Cloud Monitoring renders distinct series colors in each comparison chart.
-- HTTP 500 and all-5xx counters share one count widget. Synthetic success and
-  duration remain separate because percentages and milliseconds should not
-  share an axis.
-
-The alert resources remain per VM and signal. Consolidating charts changes how
-operators compare hosts; it does not merge alerts or make one VM's threshold
-depend on another VM.
-
-Managed PostgreSQL, RabbitMQ, Redis, and outbox health are not charted by this
-change. The monitoring modules currently receive VM IDs and host/log metrics,
-but no RDS/Cloud SQL identifiers or time-series feed for the application-level
-RabbitMQ, Redis, or outbox fields. Their implemented visibility remains the
-health and manual inspection paths below. Adding dashboard panels for them
-requires collection first; putting unrelated placeholder or mixed-unit series
-on the host charts would imply monitoring that does not exist.
-
-## Automatically collected
-
-**Outbox backlog** (Fetcher's `/health`, field `outbox`): `pending_count` and
-`oldest_pending_seconds`, from a direct `COUNT(*)`/`MIN(created_at)` query
-against `published_queue_events WHERE status = 'pending'` — the same table
-and partial index (`ix_published_queue_events_pending`) the outbox dispatcher
-itself uses. A growing `pending_count` or a large `oldest_pending_seconds`
-means RabbitMQ publishing is falling behind (broker unreachable, publisher
-confirms timing out, or the broker rejecting as unroutable). The field is
-included in both `200` ready and `503` broker-not-ready responses. Fetcher's
-readiness reflects the latest outbox publish or broker probe; the outbox query
-itself is diagnostic and does not change that status. Its duration is bounded
-by the configured RabbitMQ timeout. A query failure is logged with details and
-reported as `{"outbox": {"error": "unavailable"}}`, without exposing a raw
-database error in the HTTP response.
-
-**Redis memory and persistence** (UI's `/health`, field `redis`):
-`used_memory`/`used_memory_human`/`maxmemory`/`maxmemory_policy` from
-`INFO memory`, and `aof_enabled`/`aof_last_write_status`/
-`aof_last_bgrewrite_status`/`rdb_last_bgsave_status` from `INFO persistence`.
-`aof_last_write_status`/`aof_last_bgrewrite_status` are the fields to watch —
-anything other than `ok` means the last AOF write or background rewrite
-failed, which `PING` (what `is_ready()` already checks) does not catch:
-a Redis instance can answer `PING` successfully while its AOF is silently
-failing to persist. Like the outbox field, a failed `INFO` call is reported
-as `{"redis": {"error": "..."}}` rather than failing the health check —
-readiness is still governed solely by `PING`.
-
-Both fields are **pull-based JSON, not pushed metrics**: nothing currently
-polls them on a schedule, graphs them, or alarms on a threshold. An operator
-(or the existing smoke test / a manual `curl`) sees them on every `/health`
-call. Wiring them into CloudWatch/Ops Agent as real collected metrics with
-configurable alarm thresholds is deferred — see "Deliberately deferred"
-below.
-
-## Manual inspection only
-
-**RabbitMQ queue depth and unacknowledged messages** — not automated.
-Inspect directly on the VM configured as `rabbitmq.host_vm`:
-
-```sh
-docker compose --file /opt/oilscope/rabbitmq/compose.yaml exec rabbitmq \
-  rabbitmqctl list_queues --vhost oilscope name messages_ready messages_unacknowledged
+```json
+{
+  "monitoring": {
+    "enabled": true,
+    "email_recipients": ["ops@example.com"],
+    "logs_enabled": true,
+    "service_logs_enabled": true,
+    "agent_metrics_enabled": true,
+    "application_metrics_enabled": true,
+    "database_metrics_enabled": true,
+    "detailed_monitoring_enabled": true,
+    "alarms_enabled": true,
+    "dashboard_enabled": true,
+    "log_retention_days": 7,
+    "synthetics": {
+      "enabled": true,
+      "clouds": ["aws", "gcp"],
+      "hostname": "your-site.pp.ua",
+      "path": "/health",
+      "period_minutes": 5,
+      "browser_enabled": true
+    }
+  },
+  "budgets": {
+    "aws": {
+      "enabled": true,
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [50, 100],
+      "email_recipients": ["billing@example.com"]
+    },
+    "gcp": {
+      "enabled": true,
+      "billing_account_id": "000000-111111-222222",
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [50, 100],
+      "email_recipients": ["billing@example.com"]
+    }
+  }
+}
 ```
 
-Substitute the deployment's actual `rabbitmq.vhost`. This lists all three
-application queues (main, `.retry`, `.dead` — see
-[`database-modes.md`](database-modes.md#4-reset-rabbitmq-and-redis--scoped-never-blanket)
-for why those three exist) in one call. A growing `messages_ready` on the
-main queue means History's consumer isn't keeping up or is down; a nonzero
-`.dead` count means messages have exhausted `rabbitmq.max_attempts` and need
-operator attention (they are not automatically replayed — see
-"Distinguishing failure modes" below); a `.retry` count is normal and
-expected to drain on its own as each message's TTL expires.
+Enable only the clouds you use for budgets/probes. GCP needs an actual
+`clouds.gcp.project_id`; its budget also needs the billing account ID and
+permission to manage that account's budgets. Currency must match that account.
+Budget recipients are independent of `monitoring.email_recipients`.
+
+`synthetics.clouds` chooses **where probes run**, not where the application is
+hosted. Null/omitted preserves selection based on workload VM presence. Explicit
+`["aws"]` can run an AWS browser probe against a GCP-only deployment; explicit
+`["gcp"]` can run GCP uptime checks against an AWS-only deployment. Both probe the
+same configured public hostname. GCP uses native HTTPS/dependency uptime checks;
+the optional browser journey runs in AWS, so `browser_enabled=true` requires AWS
+probe selection and a period of at least three minutes. The default is five.
+
+The AWS browser checks HTTPS health, a rendered chart with observations, the
+Clear control, persistence after reload through Redis, and Select all. Each run
+uses its own anonymous session. Cloudflare must allow the probes to reach the
+application; a challenge page will correctly fail the journey.
+
+## Signals and defaults
+
+Host charts compare workload VMs by CPU, memory, disk, network and status/uptime.
+Guest metrics use CloudWatch Agent/Ops Agent. Native database metrics require
+`database.mode=cloud` and `database_metrics_enabled`; they do not depend on a
+self-hosted database VM.
+
+| Signal | Source | Default alert threshold |
+| --- | --- | --- |
+| Collector failed / service unhealthy | Minute collector; workload health/readiness | 1 |
+| Outbox pending events | Fetcher `/health`, including 503 diagnostics | 100 |
+| Oldest pending outbox event | Fetcher `/health` | 600 seconds |
+| RabbitMQ ready + retry messages | Local `rabbitmqctl`, read-only | 1,000 |
+| RabbitMQ unacknowledged messages | Main + retry queues | 100 |
+| RabbitMQ dead messages | Dead queue, ready + unacknowledged | 1 |
+| Redis memory | `INFO`, used_memory / maxmemory | 85% |
+| Redis persistence failed | AOF enabled, write/rewrite and RDB status | 1 |
+| Persisted data age | Oldest latest `fetched_at` across WTI, Brent, RBOB | 28,800 seconds |
+| RDS / Cloud SQL CPU | Provider-native metrics | 80% |
+| RDS free storage | Provider-native metric | Below 1 GiB |
+| Cloud SQL disk utilization | Provider-native metric | 85% |
+| Database connections | RDS / Cloud SQL PostgreSQL metrics | 80 |
+
+Threshold settings are listed in `project-config.example.json` and the JSON
+schema. Freshness measures ingestion, not the market's source observation time;
+tune it to your fetch schedule. RDS charts also show read/write latency and IOPS;
+Cloud SQL charts show read/write operation rates. These are operational metrics,
+not query-level profiling or a database backup monitor.
+
+Application alarms require sustained threshold breaches (roughly 5–10 minutes).
+AWS treats missing application samples as breaching. GCP adds a 10-minute
+collector-absence policy and marks missing established application/database
+series active. GCP absence policies need previously observed data: verify initial
+samples after deployment instead of treating an empty dashboard as healthy.
+A failed diagnostic emits `CollectionFailed=1`; unavailable values are omitted,
+never replaced with healthy zeroes. Missing instruments fail collection.
+
+The collector runs as a root systemd oneshot (`oilscope-metrics.timer`) because
+local Docker diagnostics require access to the daemon. It reads existing
+container credentials internally for Redis, never exports them, and logs only
+failed probe names. On AWS it writes bounded, rotated EMF events to
+`/var/log/oilscope/application-metrics.jsonl`, shipped by CloudWatch Agent. On GCP
+it publishes custom GAUGE metrics using the VM service account metadata token.
+No inbound monitoring ports are opened. RabbitMQ resides on History and Redis
+on UI, matching the existing deployment topology.
+
+## Central logs
+
+`logs_enabled` retains existing Traefik JSON access logs and HTTP 500/5xx metrics.
+`service_logs_enabled` independently collects Docker stdout/stderr for UI,
+History, Fetcher, PostgreSQL (application mode), RabbitMQ, Redis and Traefik.
+Compose explicitly selects `json-file`, with three 10 MB local files per
+container. Ansible creates explicit per-service symlinks for CloudWatch Agent
+rather than relying on a wildcard that might follow only one container log.
+GCP Ops Agent reads the Docker JSON files directly.
+
+AWS sends these to `/<project>/<environment>/application`; metric events use
+separate streams from service logs. GCP routes them into a dedicated application
+Logging bucket and excludes that stream from `_Default` after the sink exists.
+Both destinations use `log_retention_days`. Logs include container output, not
+container environment dumps. Do not make application code log secret values.
+
+## Budgets
+
+AWS's budget covers the **whole AWS account**. GCP's budget covers the configured
+**project** within its billing account. They each default to 100 currency units
+per month, with actual-spend notifications at fixed amounts — $50 and $100 by
+default — rather than percentages of the budget: `actual_thresholds` is a list
+of absolute currency amounts (in the budget's own `currency`) to notify at, not
+fractions of `monthly_amount`. AWS supports this natively (`threshold_type =
+"ABSOLUTE_VALUE"`); GCP's API only accepts a percentage, so its module converts
+each configured amount into `amount / monthly_amount` internally — set GCP's own
+`monthly_amount` accordingly if you want its notifications to land on the same
+dollar figures as AWS's. They are independent budgets, not a combined $100
+multicloud cap, and remain available with `monitoring.enabled=false` or no
+workload VMs. Billing data and notifications can be delayed; these are alerts,
+not hard spending limits or automatic shutdowns. Credits/refunds can reduce the
+spend tracked by these budgets.
+
+Find them in AWS **Billing and Cost Management → Budgets**, and GCP **Billing →
+Budgets & alerts**. Confirm requested email subscriptions/channels and check
+recipient delivery. `terraform output -json budgets` reports their identities,
+scopes, configured amounts and thresholds without exposing credentials.
+
+## Deploy and verify
+
+1. Set real configuration values and valid AWS/GCP credentials. Run `terraform
+   init`, then `terraform plan` using `-var=project_config_path=/absolute/path/config.json`.
+   Review the resource changes, then apply the plan. Existing deployments may
+   need imports if matching budget/log resources were created manually.
+2. Export fresh outputs: `terraform -chdir=infrastructure/terraform output -json
+   > /absolute/path/terraform-outputs.json`. Rebuild/install the Ansible collection
+   as described in its README and run the workload deployment with your usual
+   inventory, `project_config_path` and `terraform_outputs_path`.
+3. Verify agents, `systemctl status oilscope-metrics.timer` and
+   `journalctl -u oilscope-metrics.service` on workloads. Confirm fresh custom
+   metrics and every service log stream in both cloud consoles. Verify no bastion
+   appears on operational dashboards.
+4. Confirm budget recipients and operational SNS/channel subscriptions. Check
+   browser canary runs and the expected database dimensions. In a test deployment,
+   induce and restore a controlled failure to verify alert delivery/recovery.
+
+Disabling application metrics stops its timer on the next Ansible run. Disabling
+Terraform flags alone removes cloud resources/permissions; run Ansible too.
+Docker log links are refreshed after service redeployments. New features add
+potential log ingestion, custom-metric, alarm, dashboard, detailed EC2 metric and
+synthetic costs; enabling a budget does not enable those features automatically.
+
+## Local validation
+
+```sh
+terraform -chdir=infrastructure/terraform init -backend=false
+terraform -chdir=infrastructure/terraform validate
+terraform -chdir=infrastructure/terraform test
+uv run pytest infrastructure/monitoring/tests
+node --test infrastructure/terraform/modules/aws/monitoring/canary/health.test.js
+```
+
+Terraform tests use mocked providers and never create live resources. Collector
+tests cover unavailable diagnostics, backlog, persistence failure, stale/missing
+data, and cloud payload contracts. Browser runtime, cloud IAM propagation and
+actual email delivery additionally require deployment verification.
+
+Implementation references: [AWS embedded metrics](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format_Specification.html),
+[GCP time-series writes](https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/create),
+[AWS Synthetics browser API](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Synthetics_Canaries_Library_Nodejs.html).
 
 ## Distinguishing failure modes
 
@@ -141,38 +246,3 @@ read-only inspection. Do not run the RabbitMQ/Redis reset commands from
 `database-modes.md` in response to any of the above; those are for a
 database-mode switch or first cutover only, never for diagnosing a routine
 failure.
-
-## Deliberately deferred
-
-Automated, alarmed collection of outbox backlog, RabbitMQ queue depth, and
-Redis memory/persistence status through CloudWatch/Ops Agent (with
-configurable thresholds in the `monitoring` JSON block, matching how
-`cpu_threshold_percent`/`memory_threshold_percent`/`http_error_threshold`
-already work) was **not** built in this pass. Reasons:
-
-- No custom-application-metric convention exists anywhere in this repository
-  today — `infrastructure/terraform/modules/{aws,gcp}/monitoring/agent.tf`
-  only ever generates host `hostmetrics`/CloudWatch-Agent CPU/memory/disk
-  metrics and tails one log file (`traefik-access.log`, UI VMs only).
-  Building this properly means a new per-service log-shipping or
-  metrics-push mechanism (a periodic script writing structured output that
-  the agent tails, plus matching `agent.tf`/`alarms.tf`/`dashboard.tf`
-  additions in *both* AWS and GCP monitoring modules, plus new
-  `project-config.schema.json` threshold fields) — real, separate,
-  cross-cloud infrastructure work, not a documentation or health-endpoint
-  change.
-- The pull-based `/health` fields added here already satisfy this step's own
-  completion bar ("every listed signal has an implemented collection path or
-  an explicit manual inspection command") without that additional
-  infrastructure surface or its cost/complexity.
-- Adding it would touch both AWS and GCP Terraform in a step that is
-  otherwise local/documentation-only; per the project's execution
-  boundaries, infrastructure changes of that size are better scoped and
-  reviewed on their own rather than folded into an operational-visibility
-  documentation pass.
-
-If this is wanted later: extend `agent.tf` in both monitoring modules with a
-role-keyed conditional for `rabbitmq.host_vm`/`redis.host_vm` (mirroring the
-existing `ui_vms` pattern used for `traefik-access.log`), point it at a new
-periodic script's output file, and add matching alarm/dashboard entries and
-schema threshold fields.

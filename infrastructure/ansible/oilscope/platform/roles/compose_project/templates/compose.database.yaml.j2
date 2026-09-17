@@ -5,6 +5,11 @@ services:
     image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
     pull_policy: ${POSTGRES_PULL_POLICY:-always}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-oil_tracker}

@@ -1,0 +1,153 @@
+---
+- name: Read deployment monitoring settings
+  ansible.builtin.set_fact:
+    application_monitoring_project: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
+    application_monitoring_outputs: "{{ lookup('ansible.builtin.file', terraform_outputs_path) | from_json }}"
+
+- name: Select collector configuration for this workload
+  ansible.builtin.set_fact:
+    application_monitoring_config: >-
+      {{ application_monitoring_outputs[oilscope_cloud ~ '_monitoring'].value
+         .collector_configurations | default({}) }}
+
+- name: Expose each Docker service log to CloudWatch Agent
+  when:
+    - oilscope_cloud == 'aws'
+    - oilscope_role != 'bastion'
+    - application_monitoring_project.monitoring.enabled | default(true) | bool
+    - application_monitoring_project.monitoring.service_logs_enabled | default(false) | bool
+  block:
+    - name: Create service log directory
+      ansible.builtin.file:
+        path: /var/log/oilscope
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Discover containers for this workload
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --filter
+          - "label=com.docker.compose.service={{ item }}"
+          - --format
+          - "{% raw %}{{.ID}}{% endraw %}"
+      loop: "{{ {'ui': ['ui', 'traefik', 'redis'], 'history': ['history', 'rabbitmq'], 'fetcher': ['fetcher'], 'database': ['postgres']}[oilscope_role] }}"
+      register: application_monitoring_containers
+      changed_when: false
+
+    - name: Require exactly one container per expected service
+      ansible.builtin.assert:
+        that: item.stdout_lines | length == 1
+        fail_msg: "Expected exactly one running {{ item.item }} container for centralized logging."
+      loop: "{{ application_monitoring_containers.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Discover each container log path
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{.LogPath}}{% endraw %}"
+          - "{{ item.stdout }}"
+      loop: "{{ application_monitoring_containers.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: application_monitoring_log_paths
+      changed_when: false
+
+    - name: Link explicit service log files
+      ansible.builtin.file:
+        src: "{{ item.stdout }}"
+        dest: "/var/log/oilscope/docker-{{ item.item.item }}.log"
+        state: link
+        force: true
+        owner: root
+        group: root
+      loop: "{{ application_monitoring_log_paths.results }}"
+      loop_control:
+        label: "{{ item.item.item }}"
+
+- name: Install the workload collector
+  when:
+    - oilscope_role != 'bastion'
+    - oilscope_vm_key in application_monitoring_config
+  block:
+    - name: Create collector directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - /opt/oilscope/monitoring
+        - /var/log/oilscope
+
+    - name: Install collector
+      ansible.builtin.copy:
+        src: collect.py
+        dest: /opt/oilscope/monitoring/collect.py
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Write non-secret collector configuration
+      ansible.builtin.copy:
+        dest: /opt/oilscope/monitoring/collector.json
+        owner: root
+        group: root
+        mode: "0640"
+        content: >-
+          {{ application_monitoring_config[oilscope_vm_key] | combine({
+            'role': oilscope_role,
+            'history_port': application_monitoring_project.service_ports.history_api,
+            'rabbitmq_vhost': application_monitoring_project.rabbitmq.vhost,
+            'rabbitmq_queue': application_monitoring_project.rabbitmq.queue
+          }) | to_nice_json }}
+
+    - name: Install collector systemd units
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - oilscope-metrics.service
+        - oilscope-metrics.timer
+      register: application_monitoring_units
+
+    - name: Rotate application metric events
+      ansible.builtin.copy:
+        src: application-metrics.logrotate
+        dest: /etc/logrotate.d/oilscope-application-metrics
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable minute-level collection
+      ansible.builtin.systemd_service:
+        name: oilscope-metrics.timer
+        enabled: true
+        state: started
+        daemon_reload: "{{ application_monitoring_units.changed }}"
+
+- name: Check for a previously installed collector
+  ansible.builtin.stat:
+    path: /etc/systemd/system/oilscope-metrics.timer
+  register: application_monitoring_previous
+  when: oilscope_vm_key not in application_monitoring_config
+
+- name: Stop collection when disabled
+  ansible.builtin.systemd_service:
+    name: oilscope-metrics.timer
+    enabled: false
+    state: stopped
+  when:
+    - oilscope_vm_key not in application_monitoring_config
+    - application_monitoring_previous.stat.exists | default(false)

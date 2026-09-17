@@ -1,0 +1,5 @@
+---
+- name: Update test
+  ansible.builtin.include_tasks: update.yml
+- name: Generated tests
+  ansible.builtin.include_tasks: autogen.yml

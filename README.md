@@ -289,7 +289,7 @@ run Python tools through `uv run`.
 | `GET`  | `/api/session/preferences` | Read or create UI preferences                     |
 | `PUT`  | `/api/session/preferences` | Update UI preferences                             |
 
-See [docs/monitoring.md](docs/monitoring.md) for what each `/health` field
+See [docs/monitoring.md](docs/monitoring.md) for cloud metrics, service logs, browser journeys, independent budgets, and what each `/health` field
 means operationally, what's collected automatically versus requires manual
 inspection, and how to distinguish a broker outage from a database outage
 from a delayed backlog.

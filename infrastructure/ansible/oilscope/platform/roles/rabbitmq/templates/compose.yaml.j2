@@ -3,6 +3,11 @@ services:
   rabbitmq:
     image: "{{ broker_config.rabbitmq.image }}"
     hostname: oilscope-rabbitmq
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     mem_limit: "{{ broker_config.rabbitmq.memory_mb }}m"
     labels:

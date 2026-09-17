@@ -35,6 +35,7 @@ resource "aws_instance" "workload" {
 
   ami           = data.aws_ssm_parameter.ami[each.key].value
   instance_type = each.value.native_vm_type
+  monitoring    = each.value.role != "bastion" && try(var.config.monitoring.enabled, true) && try(var.config.monitoring.detailed_monitoring_enabled, false)
 
   subnet_id              = local.subnet_ids[each.key]
   private_ip             = each.value.internal_ip

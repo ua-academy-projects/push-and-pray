@@ -2,6 +2,11 @@ name: oilscope-redis
 services:
   redis:
     image: "{{ redis_config.redis.image }}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     mem_limit: "{{ redis_config.redis.memory_mb }}m"
     environment:

@@ -1,0 +1,77 @@
+{
+  "CollectionFailed": {
+    "roles": [
+      "fetcher",
+      "history",
+      "ui",
+      "database"
+    ],
+    "threshold": 1,
+    "unit": "Count"
+  },
+  "HealthFailed": {
+    "roles": [
+      "fetcher",
+      "history",
+      "ui"
+    ],
+    "threshold": 1,
+    "unit": "Count"
+  },
+  "OutboxPending": {
+    "roles": [
+      "fetcher"
+    ],
+    "setting": "outbox_count_threshold",
+    "unit": "Count"
+  },
+  "OutboxOldestSeconds": {
+    "roles": [
+      "fetcher"
+    ],
+    "setting": "outbox_age_seconds",
+    "unit": "Seconds"
+  },
+  "DataAgeSeconds": {
+    "roles": [
+      "history"
+    ],
+    "setting": "freshness_seconds",
+    "unit": "Seconds"
+  },
+  "RabbitReady": {
+    "roles": [
+      "history"
+    ],
+    "setting": "rabbitmq_queue_threshold",
+    "unit": "Count"
+  },
+  "RabbitUnacked": {
+    "roles": [
+      "history"
+    ],
+    "setting": "rabbitmq_unacked_threshold",
+    "unit": "Count"
+  },
+  "RabbitDead": {
+    "roles": [
+      "history"
+    ],
+    "setting": "rabbitmq_dead_threshold",
+    "unit": "Count"
+  },
+  "RedisMemoryPercent": {
+    "roles": [
+      "ui"
+    ],
+    "setting": "redis_memory_threshold_percent",
+    "unit": "Percent"
+  },
+  "RedisPersistenceFailed": {
+    "roles": [
+      "ui"
+    ],
+    "threshold": 1,
+    "unit": "Count"
+  }
+}

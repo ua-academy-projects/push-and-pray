@@ -46,23 +46,41 @@ module "aws_secrets" {
   vms    = module.aws_vm.vms
 }
 
-module "aws_monitoring" {
-  source = "./modules/aws/monitoring"
-
-  config = local.config
-  vms    = module.aws_vm.vms
-}
-
-module "gcp_monitoring" {
-  source = "./modules/gcp/monitoring"
-
-  config = local.config
-  vms    = module.gcp_vm.vms
-}
-
 module "aws_database" {
   source = "./modules/aws/database"
 
   config  = local.config
   network = module.aws_network
 }
+
+module "aws_budget" {
+  source = "./modules/aws/budget"
+
+  name     = "${local.config.name_prefix}-${local.config.environment}-account-monthly"
+  settings = try(local.raw_config.budgets.aws, {})
+}
+
+module "gcp_budget" {
+  source     = "./modules/gcp/budget"
+  name       = "${local.config.name_prefix}-${local.config.environment}-project-monthly"
+  settings   = try(local.raw_config.budgets.gcp, {})
+  project_id = try(local.config.clouds.gcp.project_id, null)
+  depends_on = [module.gcp_monitoring]
+}
+
+module "aws_monitoring" {
+  source = "./modules/aws/monitoring"
+
+  config   = local.config
+  vms      = module.aws_vm.vms
+  database = module.aws_database.monitoring
+}
+
+module "gcp_monitoring" {
+  source = "./modules/gcp/monitoring"
+
+  config   = local.config
+  vms      = module.gcp_vm.vms
+  database = module.gcp_database.monitoring
+}
+

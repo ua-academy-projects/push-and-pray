@@ -50,3 +50,5 @@
     - role: oilscope.platform.ui
       vars:
         ui_history_port: "{{ compose_project_config.service_ports.history_api }}"
+
+    - role: oilscope.platform.application_monitoring

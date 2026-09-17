@@ -45,3 +45,5 @@
       vars:
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"
+
+    - role: oilscope.platform.application_monitoring

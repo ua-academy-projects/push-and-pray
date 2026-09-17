@@ -34,3 +34,21 @@
   when:
     - monitoring_agent_configured
     - oilscope_cloud == 'gcp'
+
+- name: Locate a previously installed monitoring agent
+  ansible.builtin.stat:
+    path: >-
+      {{ '/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl'
+         if oilscope_cloud == 'aws' else '/lib/systemd/system/google-cloud-ops-agent.service' }}
+  register: monitoring_agent_previous
+  when: not monitoring_agent_configured
+
+- name: Stop an agent when this VM no longer has monitoring configuration
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ 'amazon-cloudwatch-agent' if oilscope_cloud == 'aws' else monitoring_agent_gcp_service }}"
+    enabled: false
+    state: stopped
+  when:
+    - not monitoring_agent_configured
+    - monitoring_agent_previous.stat.exists | default(false)

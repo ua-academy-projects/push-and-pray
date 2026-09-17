@@ -1,0 +1,2 @@
+---
+resource_name: "{{ gcp_project }}-ansible-test-bucket"

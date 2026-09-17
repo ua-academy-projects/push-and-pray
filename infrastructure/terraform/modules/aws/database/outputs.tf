@@ -10,3 +10,9 @@ output "connection" {
     ca_bundle_url    = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem"
   } : null
 }
+
+output "monitoring" {
+  value = local.enabled ? {
+    id = aws_db_instance.this[0].identifier
+  } : null
+}

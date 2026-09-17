@@ -36,3 +36,30 @@ resource "google_logging_metric" "http" {
   }
   depends_on = [google_project_service.monitoring]
 }
+
+locals {
+  service_filter = "resource.type=\"gce_instance\" AND log_id(\"oilscope_services\") AND (${length(local.workload_vms) > 0 ? join(" OR ", [for vm in values(local.workload_vms) : "resource.labels.instance_id=\"${vm.instance_id}\""]) : "FALSE"})"
+}
+resource "google_logging_project_bucket_config" "application" {
+  count          = local.service_logs_enabled ? 1 : 0
+  project        = local.project_id
+  location       = "global"
+  bucket_id      = "${local.resource_prefix}-application"
+  retention_days = local.settings.log_retention_days
+  depends_on     = [google_project_service.monitoring]
+}
+resource "google_logging_project_sink" "application" {
+  count                  = local.service_logs_enabled ? 1 : 0
+  project                = local.project_id
+  name                   = "${local.resource_prefix}-application"
+  destination            = "logging.googleapis.com/${google_logging_project_bucket_config.application[0].id}"
+  filter                 = local.service_filter
+  unique_writer_identity = true
+}
+resource "google_logging_project_exclusion" "application_default" {
+  count      = local.service_logs_enabled ? 1 : 0
+  project    = local.project_id
+  name       = "${local.resource_prefix}-application-routed"
+  filter     = local.service_filter
+  depends_on = [google_logging_project_sink.application]
+}

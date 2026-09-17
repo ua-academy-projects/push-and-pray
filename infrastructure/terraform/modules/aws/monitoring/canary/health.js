@@ -48,5 +48,61 @@ exports.handler = async (_event, context) => {
     throw new Error('HEALTH_URL must be HTTPS without credentials');
   }
   await synthetics.executeStep('health', () => checkHealth(url));
+  if (process.env.BROWSER_ENABLED === 'true') {
+    synthetics.getConfiguration().setConfig({
+      screenshotOnStepStart: false, screenshotOnStepSuccess: false,
+      screenshotOnStepFailure: true, includeRequestHeaders: false,
+      includeResponseHeaders: false, includeRequestBody: false, includeResponseBody: false
+    });
+    const page = await synthetics.getPage();
+    // Each run creates its own anonymous Redis session, never an administrator session.
+    await page.deleteCookie(...await page.cookies(url.origin));
+    await browserJourney(page, url.origin, (name, fn) => synthetics.executeStep(name, fn));
+  }
 };
 exports.checkHealth = checkHealth;
+
+async function browserJourney(page, origin, step) {
+  const errors = [];
+  page.on('pageerror', () => errors.push('JavaScript error'));
+  page.setDefaultTimeout(15000);
+  await step('render-charts', async () => {
+    const response = await page.goto(origin, { waitUntil: 'networkidle0', timeout: 20000 });
+    if (!response || response.status() !== 200) throw new Error('UI navigation failed');
+    await page.waitForFunction(() => {
+      const canvases = [...document.querySelectorAll('canvas')];
+      return document.querySelectorAll('.instrument-list input[type=checkbox]').length === 3 &&
+        canvases.some(canvas => canvas.width > 0 && canvas.height > 0) &&
+        Number(document.querySelector('.point-count strong')?.textContent) > 0;
+    });
+  });
+  async function clickButton(text) {
+    await page.evaluate(label => {
+      const button = [...document.querySelectorAll('button')].find(item => item.textContent.trim() === label);
+      if (!button) throw new Error('Missing interaction control');
+      button.click();
+    }, text);
+  }
+  await step('save-preferences', async () => {
+    const saved = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/session/preferences' &&
+      response.request().method() === 'PUT' && response.status() === 200);
+    await clickButton('Clear');
+    await saved;
+    await page.waitForFunction(() => document.querySelectorAll('.instrument-list input:checked').length === 0);
+    await page.reload({ waitUntil: 'networkidle0' });
+    await page.waitForFunction(() => document.querySelectorAll('.instrument-list input').length === 3 &&
+      document.querySelectorAll('.instrument-list input:checked').length === 0);
+  });
+  await step('restore-chart-selection', async () => {
+    const saved = page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/session/preferences' &&
+      response.request().method() === 'PUT' && response.status() === 200);
+    await clickButton('Select all');
+    await saved;
+    await page.waitForFunction(() => document.querySelectorAll('.instrument-list input:checked').length === 3 &&
+      document.querySelector('canvas') !== null);
+    if (errors.length) throw new Error('UI JavaScript errors');
+  });
+}
+exports.browserJourney = browserJourney;

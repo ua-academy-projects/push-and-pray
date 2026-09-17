@@ -307,6 +307,7 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
+          terraform -chdir=infrastructure/terraform test
 
   ansible:
     name: Ansible Lint

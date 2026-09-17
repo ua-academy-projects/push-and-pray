@@ -1,0 +1,10 @@
+/var/log/oilscope/application-metrics.jsonl {
+    daily
+    maxsize 10M
+    rotate 3
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 root root
+}

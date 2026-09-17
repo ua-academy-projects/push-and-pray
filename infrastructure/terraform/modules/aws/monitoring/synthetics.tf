@@ -82,13 +82,14 @@ resource "aws_synthetics_canary" "health" {
   success_retention_period = 7
   failure_retention_period = 7
   schedule {
-    expression = "rate(${local.settings.synthetics.period_minutes} minutes)"
+    expression = "rate(${local.settings.synthetics.period_minutes} ${local.settings.synthetics.period_minutes == 1 ? "minute" : "minutes"})"
   }
   run_config {
-    timeout_in_seconds = 30
+    timeout_in_seconds = local.settings.synthetics.browser_enabled ? 120 : 30
     active_tracing     = false
     environment_variables = {
       LOG_RETENTION_DAYS = tostring(local.settings.log_retention_days)
+      BROWSER_ENABLED    = tostring(local.settings.synthetics.browser_enabled)
       HEALTH_URL         = "https://${local.settings.synthetics.hostname}${local.settings.synthetics.path}"
     }
   }

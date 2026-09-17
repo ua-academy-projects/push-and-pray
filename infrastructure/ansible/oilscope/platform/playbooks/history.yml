@@ -45,3 +45,5 @@
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         history_host_port: "{{ compose_project_config.service_ports.history_api }}"
+
+    - role: oilscope.platform.application_monitoring

@@ -25,7 +25,7 @@ package = false
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["services/history/tests", "services/ui/backend/tests"]
+testpaths = ["services/history/tests", "services/ui/backend/tests", "infrastructure/monitoring/tests"]
 pythonpath = ["services/history/src", "services/ui/backend/src"]
 
 [tool.ruff]

@@ -18,3 +18,10 @@ resource "aws_cloudwatch_log_metric_filter" "http" {
     unit          = "Count"
   }
 }
+
+resource "aws_cloudwatch_log_group" "application" {
+  count             = local.application_enabled || local.service_logs_enabled ? 1 : 0
+  name              = local.application_log_group
+  retention_in_days = local.settings.log_retention_days
+  tags              = local.common_labels
+}
