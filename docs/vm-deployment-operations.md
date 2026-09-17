@@ -92,9 +92,3 @@ sudo docker compose \
 
 The infrastructure services' named volumes remain present. Rerunning the corresponding
 Ansible playbook starts the service again.
-
-## Historical cloud-init workflow
-
-The files under `infrastructure/terraform/cloud-init/` document the earlier
-educational workload bootstrap implementation. They are retained for history
-but are not used by the current infrastructure.

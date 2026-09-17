@@ -20,8 +20,3 @@
     owner: "{{ compose_project_owner }}"
     group: "{{ compose_project_group }}"
     mode: "0644"
-
-- name: Remove the obsolete shared deployment configuration
-  ansible.builtin.file:
-    path: "{{ compose_project_dir }}/deployment.env"
-    state: absent

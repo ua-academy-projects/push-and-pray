@@ -50,10 +50,6 @@ handled by this role.
 
 The installed file is `/opt/oilscope/app/compose.yaml`.
 
-`compose.deployment.yaml.j2` is retained only with the historical workload
-cloud-init implementation. The current Ansible role does not select or install
-it.
-
 ## License
 
 GPL-2.0-or-later

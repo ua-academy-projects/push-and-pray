@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
----
-- name: Use the renamed infrastructure deployment
-  ansible.builtin.import_playbook: infrastructure.yml

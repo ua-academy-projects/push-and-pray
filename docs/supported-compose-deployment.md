@@ -143,9 +143,3 @@ reconciles the container, and verifies its health.
 
 The cloud deployment uses Docker's default JSON log files. The observability
 playbooks configure the appropriate cloud agent to collect those workload logs.
-
-## Historical deployment files
-
-`infrastructure/terraform/cloud-init/` and
-`compose.deployment.yaml.j2` preserve the earlier workload cloud-init exercise.
-They are not referenced by the current Terraform or Ansible deployment path.

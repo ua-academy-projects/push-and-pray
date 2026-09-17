@@ -16,7 +16,7 @@ before merging*). The names below are exactly what GitHub reports:
 | `Python`                 | ruff lint, ruff format, pytest                            |
 | `Go`                     | gofmt, go vet, go test                                    |
 | `Frontend`               | npm ci, typecheck, production build                       |
-| `Docker Compose`         | local and historical combined Compose definitions parse  |
+| `Docker Compose`         | local Docker Compose definitions parse                    |
 | `Docker image (database)` | the PostgreSQL application image builds                  |
 | `Docker image (fetcher)` | the fetcher image builds                                  |
 | `Docker image (history)` | the history image builds                                  |
