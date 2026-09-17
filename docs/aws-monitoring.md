@@ -46,13 +46,17 @@ Memory on one dev VM:
 stress-ng --vm 1 --vm-bytes 85% --timeout 10m
 ```
 
-HTTP 5xx without stopping the application:
+Structured HTTP 5xx pipeline event without stopping the application:
 
 ```bash
-container_id=$(docker ps -q --filter name=petroscope-ui | head -1)
-docker exec "$container_id" sh -c \
-  'printf "%s\n" "INFO: 127.0.0.1:54321 - GET /monitoring-test HTTP/1.1 500 Internal Server Error" > /proc/1/fd/1'
+sudo sh -c 'printf "%s\n" \
+  '\''{"timestamp":"2026-01-01T00:00:00Z","service":"ui","event":"http_access","method":"GET","route":"/monitoring-test","status":500,"duration_ms":1,"request_id":"monitoring-test"}'\'' \
+  >> /var/log/oilscope/monitoring-test.jsonl'
 ```
+
+This validates agent ingestion, JSON field parsing, the metric and alarm. It
+does not prove that a real application failure path was exercised. Remove the
+test file afterwards.
 
 For every test, record the dashboard graph, `ALARM` email, recovery graph, and
 `OK` email. Never fill the production root filesystem to test a disk alarm.

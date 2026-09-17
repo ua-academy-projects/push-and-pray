@@ -1,163 +1,247 @@
-# Розгортання OilScope у GCP та AWS
+# Розгортання OilScope в AWS або GCP
 
-## Три профілі, один контракт
+## Статус реалізації
 
-Terraform і Ansible читають один JSON-контракт. Готові профілі:
+Поточний контракт підтримує один provider на deployment, runtime `compose` і
+чотири конфігурації:
 
-- `configs/project-config.aws.json`;
-- `configs/project-config.gcp.json`;
-- `configs/project-config.mixed.json`.
+| Provider | Data profile | Config | Локальна перевірка |
+| --- | --- | --- | --- |
+| AWS | `portable` | `configs/project-config.aws-portable.json` | mocked Terraform plan пройшов |
+| AWS | `managed` | `configs/project-config.aws.json` | mocked Terraform plan пройшов |
+| GCP | `portable` | `configs/project-config.gcp-portable.json` | mocked Terraform plan пройшов |
+| GCP | `managed` | `configs/project-config.gcp.json` | mocked Terraform plan пройшов |
 
-`default_cloud` визначає хмару VM без власного `cloud`. Абстрактні
-`machine_profile`, `image_profile` і `boot_disk.profile` перетворюються на
-provider values у спільному `modules/config`.
+Це `implemented` і перевірено локальними static/unit tests. Реальні provider
+plans, live apply, DNS/HTTPS та application acceptance ще не виконувалися.
+`mixed` з AWS+GCP, VPN між хмарами і provider per VM не належать до цього
+етапу. `deploy-cloud.sh` навмисно відхиляє legacy config без
+`schema_version=1`, щоб не зробити частковий apply за старим контрактом.
 
-## Команди
+## Контракт конфігурації
 
-Після перевірки account/project, AMI, SSH key, email і створення всіх secret IDs
-запускайте:
+Обов'язкові глобальні селектори:
 
-    ./scripts/deploy-cloud.sh aws
-    ./scripts/deploy-cloud.sh gcp
-    ./scripts/deploy-cloud.sh mixed
+```json
+{
+  "schema_version": 1,
+  "cloud_provider": "aws",
+  "data_profile": "portable",
+  "deployment_runtime": "compose"
+}
+```
 
-Явний шлях також підтримується:
+- `cloud_provider`: тільки `aws` або `gcp`;
+- `data_profile`: `portable` або `managed`;
+- `deployment_runtime`: зараз тільки `compose`;
+- усі VM у version 1 мусять використовувати глобальний provider;
+- config зберігає лише secret identifiers, а не secret values;
+- `registry.image_sha` — повний Git SHA;
+- Redis/RabbitMQ source image містить точний `@sha256:` digest.
 
-    ./scripts/deploy-cloud.sh ./project-config.json
+JSON Schema: `infrastructure/terraform/project-config.schema.json`.
+Cross-field правила перевіряє `scripts/validate_project_config.py`: CIDR,
+overlap, provider-reserved IP, subnet membership, public IP roles, private DB,
+profile roles та immutable image references.
 
-AWS і GCP мають ізольовані Terraform roots у
-`infrastructure/terraform/stacks`. Mixed використовує головний root. Local
-state зберігається окремо в
-`infrastructure/terraform/.state/<profile>.tfstate`. Для production замініть
-local backend на окремі remote backend keys.
+### Логічні provider mappings
 
-## Два режими даних, черги та сесій
+| Логічне значення | AWS | GCP |
+| --- | --- | --- |
+| compute `micro`/`small` | `t3.micro`/`t3.small` | `e2-micro`/`e2-small` |
+| disk `balanced` | `gp3` | `pd-balanced` |
+| image `ubuntu-lts` | Canonical AMI lookup за region/architecture | Ubuntu image family |
+| static UI address | Elastic IP | reserved external address |
+| managed PostgreSQL | private RDS | private-IP Cloud SQL |
+| registry | private ECR repositories | private Artifact Registry |
 
-`manage_db=false` залишає VM з `role=database` і контейнерним PostgreSQL.
-Образ PostgreSQL/migrations береться з GitHub Container Registry (GHCR).
-Черга подій і UI-сесії також зберігаються у PostgreSQL, тому Redis та RabbitMQ
-у цьому режимі не запускаються.
+Provider escape hatches залишаються в `clouds.aws` і `clouds.gcp`, але
+applications не отримують назву provider і не розгалужують business logic.
 
-`manage_db=true` прибирає database VM та створює RDS або Cloud SQL відповідно
-до `database.cloud`. У цьому режимі History VM додатково запускає RabbitMQ для
-черги та Redis для UI-сесій. Їхні persistent Docker volumes залишаються на
-History VM.
+## Data profiles
 
-Ansible отримує provider-neutral output `managed_database`, перевіряє TCP
-доступ з workload VM і запускає міграції з History VM. `DATABASE_HOST`, port,
-name, user та sslmode більше не залежать від inventory group `database`.
+`portable` створює приватну VM з role `database`. Custom PostgreSQL забезпечує
+дані, SQL queue і UI sessions. RabbitMQ та Redis не запускаються.
 
-## Redis і RabbitMQ у cloud registry
+`managed` створює private RDS або private-IP Cloud SQL. RabbitMQ і Redis
+залишаються контейнерами на History VM: RabbitMQ є queue backend, Redis —
+session backend. Managed Redis/RabbitMQ навмисно не додаються на цьому етапі.
 
-Для `manage_db=true` Terraform створює окремі приватні repositories:
+В обох режимах PostgreSQL, Redis і RabbitMQ не мають Internet ingress.
+Public IP дозволені лише bastion і UI. AWS UI належить public subnet; у GCP UI
+отримує reserved address на workload subnet.
 
-- AWS Elastic Container Registry для AWS workloads;
-- GCP Artifact Registry для GCP workloads.
+## Foundation і remote state
 
-`deploy-cloud.sh` бере upstream-образи з `managed_services`, копіює їхні
-multi-architecture manifests через `docker buildx imagetools create` у registry
-кожної задіяної хмари, а History VM завантажує їх через власну IAM role або
-service account. Паролі `RABBITMQ_PASSWORD` і `REDIS_PASSWORD` надходять лише із
-SSM Parameter Store або Secret Manager. Для mirroring локально потрібні Docker
-Buildx і відповідно `aws` та/або `gcloud` з активною автентифікацією.
+Спочатку виконується read-only перевірка:
 
-RabbitMQ (`5672`) дозволений тільки від Fetcher, Redis (`6379`) — від UI;
-у mixed-профілі доступ із другої хмари йде приватним VPN-маршрутом. Порти не
-публікуються через public security/firewall rules.
+```bash
+scripts/bootstrap-cloud.sh \
+  --provider aws \
+  --environment dev \
+  --deployment oilscope \
+  --region eu-west-1 \
+  --config configs/project-config.aws.json \
+  --check
+```
 
-Початкові dev-профілі мають:
+Для GCP змініть provider, region та config. `--check` не створює cloud або
+local state. Лише після перевірки account/project, billing і IAM окремо
+дозволяється повторити з `--yes`. Результат записується з mode `0600` у:
 
-    "backups_enabled": false,
-    "backup_on_delete": false,
-    "deletion_protection": false
+```text
+.generated/<environment>/<provider>/<deployment>/
+├── backend.hcl
+└── foundation.json
+```
 
-Для RDS це означає `backup_retention_period=0`, `skip_final_snapshot=true` і
-`delete_automated_backups=true`. Для Cloud SQL вимкнені regular/PITR та final
-backup. Видалення такої БД може спричинити повну втрату даних.
+AWS stack використовує S3 backend з native lockfile, GCP — GCS backend.
+State key: `<environment>/<provider>/<deployment>/terraform.tfstate`. Деталі й
+IAM prerequisites: [foundation-bootstrap.md](foundation-bootstrap.md).
 
-## Приватна мережа БД
+## Registry promotion
 
-RDS використовує DB subnet group з двома private subnets у різних Availability
-Zones, `publicly_accessible=false` і security group без `0.0.0.0/0` ingress.
-Застосунки підключаються до DNS endpoint.
+Terraform створює immutable targets для Fetcher, History, UI і custom
+PostgreSQL. Для managed profile також створюються targets для pinned Redis і
+RabbitMQ. VM читають ECR/GAR через IAM role/service account; `GHCR_TOKEN` їм не
+передається.
 
-Cloud SQL використовує окремий Private Services Access range,
-`google_service_networking_connection` та `ipv4_enabled=false`. Це service
-producer range, а не звичайна VM subnet.
+GHCR залишається source artifact. Після Terraform apply явний script копіює
+той самий manifest без rebuild:
 
-Mixed profile має різні AWS/GCP VPC CIDR. Terraform створює AWS Virtual Private
-Gateway, Customer Gateway, Site-to-Site VPN, GCP Classic VPN tunnel і тільки
-private routes. Cloud SQL peering імпортує та експортує custom routes. Для RDS
-database subnets мають окрему private route table з маршрутом назад до GCP через
-Virtual Private Gateway. Жоден managed database не має public IP.
+```bash
+terraform -chdir=infrastructure/terraform/stacks/aws output -json registry \
+  > /tmp/oilscope-registry.json
+scripts/promote-cloud-images.sh \
+  configs/project-config.aws.json \
+  /tmp/oilscope-registry.json
+```
 
-## Моніторинг і поштові сповіщення
+Script порівнює source/target digest, є idempotent для однакового digest і
+відмовляється перезаписувати immutable tag іншим manifest. Source SHA має вже
+існувати в GHCR. Promotion не виконується Terraform `local-exec`.
 
-Коли `observability.enabled=true`, AWS створює CloudWatch dashboard, EC2/RDS
-alarms, log metric для HTTP 500, synthetic HTTPS check, SNS topic і budget
-notifications. GCP створює Monitoring dashboard, VM/Cloud SQL alert policies,
-uptime check, logs-based HTTP 500 metric і email notification channel. Агенти на
-VM читають `/var/lib/docker/containers/*/*.log`, тобто саме application logs, а
-не лише журнал Docker daemon.
+## Cloudflare і HTTPS
 
-У готових cloud-профілях одержувач — `o.m.zakip@gmail.com`. Після першого AWS
-apply потрібно підтвердити SNS email subscription; до підтвердження CloudWatch
-alarms не надсилатимуть листи. Terraform-тести перевіряють конфігурацію, але
-фактичну доставку листа можна підтвердити тільки після live deployment і
-навмисно згенерованої тестової 500-відповіді.
+Для schema version 1 Cloudflare A-record є Terraform resource і прямо залежить
+від static UI IP. Потрібні:
 
-Поточний mixed VPN має один IPsec tunnel і не є HA. Для production додайте
-другий tunnel та dynamic routing через Cloud Router/BGP або GCP HA VPN.
+```bash
+export CLOUDFLARE_API_TOKEN='...'
+export CLOUDFLARE_ZONE_ID='32-character-zone-id'
+```
 
-## Щомісячний restore та ім'я
+Token повинен мати лише Zone Read та DNS Write для потрібної zone. Zone ID не
+є secret, але передається окремо від project config. `proxied` і `ttl` можна
+задати в `vms.ui.public_endpoint`; defaults — `false` і `60`.
 
-Managed instance називається:
+Якщо A-record вже існує, його потрібно імпортувати у правильний isolated
+state до apply, а не створювати дубль. `deploy-cloud.sh` після provisioning
+перевіряє public DNS і trusted HTTPS. Traefik зберігається як поточний
+коректний reverse proxy, слухає 80/443 і отримує ACME certificate.
 
-    <name_prefix>-<environment>-postgres-<generation>
+## Ansible і outputs
 
-Для нового restore змініть `generation`, наприклад `2026-09` на `2026-10`, і
-задайте одне з полів:
+AWS та GCP roots повертають однаковий output `deployment`: nodes, bastion,
+database, registry, DNS і monitoring. `scripts/render_ansible_inventory.py`
+створює JSON inventory; private nodes отримують ProxyJump через bastion.
 
-- `restore.aws_snapshot_identifier`;
-- `restore.gcp_backup_run_id`.
+Role boundaries:
 
-Без restore source нове ім'я створить порожню БД. Пароль у secret backend має
-відповідати паролю snapshot/backup. Перевірте plan, створіть нову БД, перевірте
-міграції та HTTPS і лише потім видаляйте стару.
+- `host_baseline`, `docker_engine` — host prerequisites;
+- `database`, `history`, `fetcher`, `ui` — workload-specific deployment;
+- `cloud_registry_auth` — short-lived ECR/GAR credentials;
+- `resolve_secrets` — provider secret backend;
+- `edge_proxy` — HTTPS ingress;
+- `cloudwatch_agent`/`google_ops_agent` — logs і host metrics.
 
-Не використовуйте `timestamp()` або random suffix для `generation`: це
-спричинить небажану заміну на наступному plan.
+`deployment_runtime` є явною межею для майбутнього k3s. Terraform node
+contract не містить Compose paths, а application images/config/secrets не
+залежать від orchestrator. k3s, Helm та manifests зараз не реалізовані.
 
-## Dynamic blocks
+## Monitoring і безпека логів
 
-Cloud SQL module використовує dynamic blocks для backup configuration, final
-backup configuration та optional restore context. Повторювані subnets, routes
-і security rules створюються через `for_each`.
+UI, History і Fetcher пишуть JSONL у `/var/log/oilscope` з полями:
 
-## Secrets
+```text
+timestamp, service, event, method, route, status,
+duration_ms, request_id
+```
 
-Secret IDs зберігаються в JSON, значення — в GCP Secret Manager або AWS SSM
-Parameter Store. `database.password_secret_id` визначає спільний password
-container для managed DB та workloads. Deployment environment variable
-утворюється з цього ID у верхньому регістрі, наприклад
-`example-db-password` → `EXAMPLE_DB_PASSWORD`. Provider змушений зберегти
-password managed instance як sensitive state value, тому state повинен бути
-зашифрований і доступний лише deployment principals.
+Query string, cookies, Authorization і secret payload не записуються. AWS
+CloudWatch і GCP Ops Agent читають ці JSONL-файли. HTTP 5xx metric фільтрує
+числове поле `status` у подіях `event=http_access`; threshold і window задають
+`observability.http_5xx_threshold` та
+`observability.http_5xx_window_seconds`.
 
-## Статична перевірка
+Також реалізовані CPU, memory, disk, VM availability, DB metrics, dashboard та
+зовнішня HTTPS availability. Email subscription/channel потребує live
+підтвердження. Monitoring code без контрольованого live 5xx не є доказом
+доставки alarm.
 
-    uvx check-jsonschema \
-      --schemafile infrastructure/terraform/project-config.schema.json \
-      project-config.example.json configs/*.json
-    terraform -chdir=infrastructure/terraform fmt -check -recursive
-    terraform -chdir=infrastructure/terraform validate
-    terraform -chdir=infrastructure/terraform test
-    terraform -chdir=infrastructure/terraform/stacks/aws test
-    terraform -chdir=infrastructure/terraform/stacks/gcp test
+## Безпечний deployment flow
 
-Перед live apply окремо перевірте `aws sts get-caller-identity` та
-`gcloud auth application-default print-access-token`. `fmt`, `validate` і mock
-tests не доводять quota, реальну VPN connectivity, SSH, migrations або HTTPS.
+Перед будь-яким apply:
 
-RDS, Cloud SQL, public IPv4 і VPN є платними ресурсами. `free_tier_guardrails`
-не гарантує нульовий рахунок.
+1. Перевірити AWS account/GCP project, region, billing і active principal.
+2. Перевірити config schema та cross-field contracts.
+3. Запустити bootstrap `--check`; окремо погодити `--yes`, якщо foundation
+   відсутній.
+4. Виконати `terraform init` з generated backend і зберегти plan.
+5. Перевірити plan: тільки один provider, private DB, public IP лише bastion/UI,
+   закриті data ports, immutable registries, DNS dependency і monitoring.
+6. Лише після окремого дозволу застосувати saved plan.
+7. Окремо звітувати infrastructure, Ansible configuration та end-to-end
+   application acceptance.
+
+`scripts/deploy-cloud.sh` є live workflow і виконує apply; не запускайте його
+для read-only перевірки.
+
+## Локальна валідація
+
+```bash
+for config in \
+  configs/project-config.aws.json \
+  configs/project-config.aws-portable.json \
+  configs/project-config.gcp.json \
+  configs/project-config.gcp-portable.json; do
+  uvx check-jsonschema \
+    --schemafile infrastructure/terraform/project-config.schema.json \
+    "$config"
+  python3 scripts/validate_project_config.py "$config"
+done
+
+terraform -chdir=infrastructure/terraform fmt -check -recursive
+terraform -chdir=infrastructure/terraform validate
+terraform -chdir=infrastructure/terraform test
+terraform -chdir=infrastructure/terraform/stacks/aws validate
+terraform -chdir=infrastructure/terraform/stacks/aws test
+terraform -chdir=infrastructure/terraform/stacks/gcp validate
+terraform -chdir=infrastructure/terraform/stacks/gcp test
+uv run pytest -q
+(cd services/fetcher && go test ./...)
+```
+
+Mocked Terraform tests не замінюють real provider plan. Ansible syntax/lint,
+Compose rendering, shellcheck і secret scanning також залишаються required CI
+checks.
+
+## Міграція і troubleshooting
+
+Покрокова міграція зі старого `default_cloud/manage_db/cloud` contract:
+[multicloud-migration.md](multicloud-migration.md).
+
+Типові причини ранньої відмови:
+
+- немає `.generated/.../backend.hcl` — bootstrap ще не завершений;
+- provider/region не збігається з config — виправте target, не обходьте guard;
+- UI IP не в AWS public subnet — використайте адресу з
+  `public_subnet_cidr`;
+- immutable target має інший digest — створіть новий immutable tag/SHA;
+- existing Cloudflare record не в state — імпортуйте його;
+- GCP billing не підтверджено — bootstrap не повинен мутувати project;
+- image SHA ще не опублікований у GHCR — дочекайтесь publish workflow.
+
+Платними можуть бути VM, public IPv4, RDS/Cloud SQL, logs, synthetic checks,
+registries та network egress. Локальні tests не створюють ці ресурси і не
+підтверджують нульову вартість.

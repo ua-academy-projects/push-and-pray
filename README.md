@@ -79,7 +79,8 @@ components.
 
 ### Data flow
 
-With `manage_db=false`, PostgreSQL runs from the project image in GHCR and the
+With `data_profile=portable`, PostgreSQL runs from the project image promoted
+from GHCR to the selected cloud registry and the
 flow is:
 
 1. The Go Fetcher selects the current scheduled UTC slot.
@@ -103,7 +104,7 @@ successful observation persistence. If processing fails before the archive opera
 visibility timeout makes the message available again. Database uniqueness on
 `(instrument_code, scheduled_for)` keeps redelivery idempotent.
 
-With `manage_db=true`, RDS or private-IP Cloud SQL stores observations,
+With `data_profile=managed`, RDS or private-IP Cloud SQL stores observations,
 RabbitMQ replaces the PostgreSQL queue, and Redis replaces the PostgreSQL UI
 session store. Redis and RabbitMQ images are mirrored to ECR or Artifact
 Registry before Ansible starts them on the History VM.
@@ -158,9 +159,10 @@ validated through Docker and cloud-oriented deployments using portable PostgreSQ
 
 ## Docker deployment details
 
-The supported production-style deployment pulls prebuilt GHCR images through
-the `oilscope.platform.compose_project` Ansible role. See
-[the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
+The supported cloud deployment promotes immutable GHCR source artifacts to ECR
+or Artifact Registry, then pulls them with workload identity through the
+`oilscope.platform.compose_project` Ansible role. See
+[the legacy single-host Compose guide](docs/supported-compose-deployment.md) for the
 required parent-process environment, the one-command startup, independent VM roles,
 shutdown, and smoke test.
 
@@ -174,8 +176,9 @@ The older role-specific files below remain for the Vagrant development topology:
 | `compose.ui.yaml`       | `petroscope-ui`       | `ui`       |
 
 Containers on the same VM use their Compose network and service names. Communication
-between VMs uses the configured bridged LAN addresses. PostgreSQL uses a named Docker volume. All containers use `restart: unless-stopped` and the journald
-logging driver.
+between VMs uses the configured bridged LAN addresses. PostgreSQL uses a named Docker volume.
+Cloud application services write structured JSON access logs collected by
+CloudWatch Agent or Google Ops Agent.
 
 Journald is limited by provisioning to 200 MB and seven days per VM. Grafana and Loki are
 not part of this project.

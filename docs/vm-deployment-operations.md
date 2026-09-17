@@ -74,7 +74,8 @@ re-run the whole deploy script through systemd rather than calling
 sudo systemctl restart oilscope-deploy.service
 ```
 
-This re-authenticates to GHCR, re-pulls images, and re-applies the correct
+In the cloud workflow this re-authenticates to ECR or Artifact Registry with
+workload identity, re-pulls images, and re-applies the correct
 `up`/`run` sequence for this VM's role — it will only actually recreate a
 container if something about it changed (a newer image, for instance);
 otherwise it's a fast no-op.

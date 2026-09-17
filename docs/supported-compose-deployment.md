@@ -1,4 +1,9 @@
-# Supported Docker Compose deployment
+# Legacy single-host Docker Compose deployment
+
+This document describes the older single-host/Vagrant workflow. It is not the
+current AWS/GCP deployment contract. For isolated multi-VM cloud deployment,
+remote state, ECR/GAR and role-based Ansible, use
+[multi-cloud-deployment-uk.md](multi-cloud-deployment-uk.md).
 
 This deployment pulls prebuilt application and PostgreSQL images. It does not
 build application images on the target machine. The Ansible role installs a
@@ -10,7 +15,7 @@ The canonical configuration is the `compose_project` role template at
 `infrastructure/ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2`.
 The role installs it as `/opt/oilscope/app/compose.yaml`. The older role-specific
 Compose files are retained for the Vagrant development environment; they are not
-the supported GHCR deployment configuration.
+the legacy GHCR deployment configuration.
 
 ## Required settings
 

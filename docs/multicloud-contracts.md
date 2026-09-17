@@ -1,6 +1,7 @@
 # OilScope multi-cloud contracts
 
-Status: target contract for incremental, backward-compatible implementation.
+Status: implemented contract; local static/unit validation completed, real
+provider plans and live acceptance pending.
 
 ## Configuration identity
 
@@ -35,8 +36,9 @@ During migration, old configurations are normalised as follows:
 | missing runtime | `deployment_runtime=compose` |
 | VM `cloud` | deprecated alias of VM `provider` |
 
-Supplying both old and new fields with conflicting values is an error. New
-examples use only version 1 names after all consumers support them.
+Supplying both old and new fields with conflicting values is an error. Current
+examples temporarily carry matching legacy aliases for consumers outside the
+live version 1 wrapper; new logic uses the versioned fields.
 
 ## Provider settings
 
@@ -45,22 +47,25 @@ never contain credentials:
 
 ```json
 {
-  "providers": {
+  "clouds": {
     "aws": {
-      "region": "eu-west-1",
-      "profile": "oilscope-deploy"
+      "locations": {
+        "primary": {"region": "eu-west-1", "zone": "eu-west-1a"}
+      }
     },
     "gcp": {
       "project_id": "example-project",
-      "region": "europe-west1",
-      "zone": "europe-west1-b"
+      "locations": {
+        "primary": {"region": "europe-west1", "zone": "europe-west1-b"}
+      }
     }
   }
 }
 ```
 
-Profile is a local operator hint only. Terraform and CI use the standard AWS/GCP
-credential chains and short-lived assumed/impersonated identities.
+Credentials and local CLI profile names are deliberately absent. Terraform and
+CI use standard AWS/GCP credential chains and short-lived
+assumed/impersonated identities.
 
 ## Logical infrastructure inputs
 
@@ -139,8 +144,11 @@ object({
     secret_id = string
   })
   registry = object({
-    repositories = map(string)
-    images       = map(string)
+    provider       = string
+    host           = string
+    immutable_tags = bool
+    repositories   = map(any)
+    images          = map(string)
   })
   monitoring = object({
     dashboard_id       = optional(string)
@@ -151,8 +159,9 @@ object({
 })
 ```
 
-Legacy outputs remain temporarily as projections of this object so current
-inventory and scripts continue to operate during migration.
+Legacy Terraform outputs remain as projections during migration. The live
+deployment wrapper accepts only schema version 1 so it cannot partially apply
+the unsupported mixed contract.
 
 ## Application environment contract
 
