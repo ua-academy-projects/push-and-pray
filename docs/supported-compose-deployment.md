@@ -5,7 +5,7 @@ Terraform creates the VMs, networking, workload identities, and secret
 containers. Terraform cloud-init configures only the bastion's SSH service;
 Ansible configures and deploys the workload VMs.
 
-Start from the complete example matching the selected architecture:
+Start from the complete example matching the selected database architecture:
 
 - [`project-config.self-managed-db.example.json`](../project-config.self-managed-db.example.json)
 - [`project-config.managed-db.example.json`](../project-config.managed-db.example.json)
@@ -18,12 +18,12 @@ Start from the complete example matching the selected architecture:
 }
 ```
 
-`self_managed` runs PostgreSQL and its extensions on the infrastructure VM.
-`managed` creates private Cloud SQL or RDS PostgreSQL according to
-`default_cloud`, and runs RabbitMQ and Redis on the infrastructure VM. Managed
-deployments additionally require the PostgreSQL `version`, database `size`, and
-`storage_gb` settings. Self-managed compute and storage are configured on the
-`infrastructure` VM instead.
+A self-managed database (`self_managed`) runs PostgreSQL and its extensions on
+the infrastructure VM. A managed database (`managed`) creates private Cloud SQL
+or RDS PostgreSQL according to `default_cloud`, and runs RabbitMQ and Redis on
+the infrastructure VM. A managed database additionally requires the PostgreSQL
+`version`, database `size`, and `storage_gb` settings. Self-managed database
+compute is configured through the `infrastructure` VM's `machine_type`.
 
 ```json
 "database": {
@@ -33,6 +33,11 @@ deployments additionally require the PostgreSQL `version`, database `size`, and
   "storage_gb": 20
 }
 ```
+
+An optional `data_disks` entry on the infrastructure VM only creates and
+attaches the disk. The current Terraform and Ansible code does not format or
+mount it, and PostgreSQL continues to use its Compose named volume on the boot
+disk until disk preparation and a matching Compose mount are configured.
 
 Development RDS instances set `backup_retention_period` to `0`, delete
 automated backups, and skip a final snapshot. Stage and production retain seven
@@ -48,17 +53,17 @@ Each workload VM receives one role-specific Compose definition:
 | `ui` | UI | `/opt/oilscope/app/compose.yaml` |
 | `ui` | Traefik proxy | `/opt/oilscope/proxy/compose.yaml` |
 
-Application images use the OCI tag from `registry.image_tag`. A personal,
-mutable tag such as `andrii-miroshnyk` is suitable for an isolated development
-environment; use an immutable version tag for shared or release deployments.
-The database image is required in both database modes because it also provides
-the migration command.
+Application images use the OCI tag from `registry.image_tag`. The current image
+workflow publishes exact Git tags matching `v*` or `andrii-miroshnyk-*`; it does
+not create a bare `andrii-miroshnyk` tag. Use an immutable release tag for shared
+deployments. The database image is required with both database architectures
+because it also provides the migration command.
 
 ```json
 "registry": {
   "repository": "ghcr.io/example-org/example-project",
   "username": "example-operator",
-  "image_tag": "example-operator"
+  "image_tag": "v1.0.0"
 }
 ```
 
@@ -72,15 +77,16 @@ export DB_PASSWORD="$(openssl rand -hex 32)"
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
 
-# Managed mode only:
+# Managed database only:
 export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
 export REDIS_PASSWORD="$(openssl rand -hex 32)"
 export TF_VAR_database_password="${DB_PASSWORD}"
 ```
 
-The VM `secret_mappings` must follow the selected mode. Self-managed
-deployments omit RabbitMQ and Redis mappings. Managed deployments map
-`RABBITMQ_PASSWORD` on Infrastructure, History, and Fetcher and map
+The VM `secret_mappings` must follow the selected database architecture. A
+self-managed database deployment omits RabbitMQ and Redis mappings. A managed
+database deployment maps
+`RABBITMQ_PASSWORD` on Infrastructure, History, and Fetcher and maps
 `REDIS_PASSWORD` on Infrastructure and UI. `TF_VAR_database_password` is also
 needed only when Terraform provisions a managed database.
 
@@ -95,7 +101,44 @@ desired state and intentionally creates new secret versions.
 
 See [secrets.md](secrets.md) for provider requirements and rotation guidance.
 
-## Deploy
+## Create the infrastructure
+
+From the repository root, initialize Terraform and validate the configuration:
+
+```sh
+terraform -chdir=infrastructure/terraform init \
+  -backend-config="bucket=<terraform-state-bucket>" \
+  -backend-config="prefix=<terraform-state-prefix>"
+
+terraform -chdir=infrastructure/terraform validate
+```
+
+The root module uses a GCS backend, including when the selected deployment cloud
+is AWS. Supply the existing state bucket and prefix for the environment.
+
+For a managed database, export the same database password that Ansible will
+upload to the cloud secret container. A self-managed database does not require
+this Terraform variable:
+
+```sh
+export DB_PASSWORD="..."
+export TF_VAR_database_password="${DB_PASSWORD}"
+```
+
+Create and apply a saved plan:
+
+```sh
+terraform -chdir=infrastructure/terraform plan \
+  -var='project_config_path=../../project-config.json' \
+  -out=tfplan
+
+terraform -chdir=infrastructure/terraform apply tfplan
+```
+
+For a self-managed database, omit `TF_VAR_database_password` or remove it from
+the shell with `unset TF_VAR_database_password` before planning.
+
+## Deploy the applications
 
 After Terraform has created the infrastructure, the DNS record points to the UI
 VM's current public address, and the Ansible collection has been installed,
@@ -161,3 +204,13 @@ reconciles the container, and verifies its health.
 
 The cloud deployment uses Docker's default JSON log files. The observability
 playbooks configure the appropriate cloud agent to collect those workload logs.
+
+## Destroy the infrastructure
+
+After the environment is no longer needed, use the same configuration path and,
+for a managed database, the same `TF_VAR_database_password` value:
+
+```sh
+terraform -chdir=infrastructure/terraform destroy \
+  -var='project_config_path=../../project-config.json'
+```

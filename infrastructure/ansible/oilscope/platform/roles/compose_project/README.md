@@ -3,8 +3,8 @@
 Installs one selected OilScope Compose definition. Each workload VM receives
 only its own application services:
 
-- `infrastructure`: PostgreSQL in self-managed mode, or RabbitMQ and Redis in
-  managed mode, plus the one-shot migration service;
+- `infrastructure`: PostgreSQL for a self-managed database, or RabbitMQ and
+  Redis for a managed database, plus the one-shot migration service;
 - `history`: History only;
 - `fetcher`: Fetcher only;
 - `ui`: UI only.

@@ -1,8 +1,8 @@
 # Security scanning
 
 `.github/workflows/security.yml` runs static analysis and supply-chain scanning
-on every pull request targeting `develop` and `main`, on pushes to `develop`,
-and on a weekly schedule.
+on every pull request targeting `develop` and `main`, on pushes to `develop` and
+`main`, and on a weekly schedule.
 
 The weekly run is not redundant. New CVEs are published and new CodeQL queries
 are shipped without anything in this repository changing, so code that was clean

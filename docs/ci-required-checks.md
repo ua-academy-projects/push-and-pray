@@ -15,6 +15,7 @@ before merging*). The names below are exactly what GitHub reports:
 | `YAML`                   | every versioned YAML file parses and passes yamllint      |
 | `Python`                 | ruff lint, ruff format, pytest                            |
 | `Go`                     | gofmt, go vet, go test                                    |
+| `PostgreSQL Integration` | PostgreSQL, PGMQ, and migration integration tests         |
 | `Frontend`               | npm ci, typecheck, production build                       |
 | `Docker Compose`         | local Docker Compose definitions parse                    |
 | `Docker image (database)` | the PostgreSQL application image builds                  |
@@ -22,6 +23,7 @@ before merging*). The names below are exactly what GitHub reports:
 | `Docker image (history)` | the history image builds                                  |
 | `Docker image (ui)`      | the UI image builds                                       |
 | `Terraform`              | Terraform formatting, validation, and cloud-init schema   |
+| `Ansible Lint`           | collection build, installation, and Ansible linting       |
 
 Also enable *Require branches to be up to date before merging*, otherwise two
 PRs that each pass individually can still break `develop` when both land.

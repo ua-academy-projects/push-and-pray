@@ -14,7 +14,7 @@
   "registry": {
     "repository": "ghcr.io/example-org/example-project",
     "username": "example-operator",
-    "image_tag": "example-operator"
+    "image_tag": "v1.0.0"
   },
   "database": {
     "mode": "managed",

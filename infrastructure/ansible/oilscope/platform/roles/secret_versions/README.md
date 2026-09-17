@@ -44,19 +44,21 @@ with `AWS_PROFILE` and authenticate `gcloud` before running the playbook.
 
 ## Usage
 
+This example deliberately rotates only the external API key:
+
 ```bash
-export DB_PASSWORD="$(openssl rand -hex 32)"
-export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
 
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
   -e secret_versions_config_file="$PWD/project-config.json" \
+  -e '{"secret_versions_only": ["external-api-key"]}' \
   --check
 
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
-  -e secret_versions_config_file="$PWD/project-config.json"
+  -e secret_versions_config_file="$PWD/project-config.json" \
+  -e '{"secret_versions_only": ["external-api-key"]}'
 ```
 
 The explicit upload playbook forces a new version and is intended for deliberate
@@ -65,6 +67,9 @@ access without adding versions. Payloads pass on stdin with no trailing newline,
 and comparisons and other secret-bearing tasks use `no_log`. All targets are
 validated before uploading; an external API failure during the upload phase can
 still leave a partial rotation and should be retried after the cause is fixed.
+Database password rotation requires changing PostgreSQL and its secret value as
+one coordinated operation; uploading a new `DB_PASSWORD` version alone is not
+sufficient.
 
 To rotate only one container:
 

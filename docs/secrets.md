@@ -2,8 +2,9 @@
 
 Application credentials live in the secret manager of the cloud where each VM
 runs. Terraform manages containers and workload access; Ansible manages values
-and retrieves them during deployment. Secret values never pass through
-Terraform configuration, plans, or state.
+and retrieves them during deployment. Application secret versions do not pass
+through Terraform configuration, plans, or state. The password used to create a
+managed PostgreSQL database is the one exception described below.
 
 ## Configuration model
 
@@ -20,9 +21,10 @@ Both strings are identifiers, not secrets. The key is the variable consumed by
 the application on that VM. The value is the container ID in AWS Secrets
 Manager or Google Secret Manager.
 
-Mappings must describe only the services used by the selected database mode.
-Self-managed deployments use PostgreSQL for PGMQ and UI sessions, so they do
-not map RabbitMQ or Redis secrets. Managed deployments additionally map
+Mappings must describe only the services used by the selected database
+architecture. Self-managed database deployments use PostgreSQL for PGMQ and UI
+sessions, so they do not map RabbitMQ or Redis secrets. Managed database
+deployments additionally map
 `RABBITMQ_PASSWORD` on the Infrastructure, History, and Fetcher VMs and
 `REDIS_PASSWORD` on the Infrastructure and UI VMs.
 
@@ -40,7 +42,7 @@ region; GCP containers are scoped to `cloud_settings.gcp.project_id`.
 | `secret_versions` Ansible role | Reconcile environment values with the latest enabled versions in every required cloud and scope |
 | `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
 
-Terraform deliberately creates no secret versions. Managed PostgreSQL creation
+Terraform deliberately creates no secret versions. Creating a managed database
 is the one exception to the Ansible-only value flow: set the ephemeral
 `TF_VAR_database_password` variable to the same value as `DB_PASSWORD`.
 The managed database resources use provider write-only password arguments, so
@@ -88,7 +90,7 @@ export DB_PASSWORD="..."
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
 
-# Managed mode only:
+# Managed database only:
 export RABBITMQ_PASSWORD="..."
 export REDIS_PASSWORD="..."
 
@@ -96,27 +98,30 @@ ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-To force a new version for deliberate rotation, use the upload playbook:
+To force a new version for a deliberate API-key rotation, select that container
+explicitly with the upload playbook:
 
 ```bash
-export DB_PASSWORD="$(openssl rand -hex 32)"
-export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
-
-# Managed mode only:
-export TF_VAR_database_password="${DB_PASSWORD}"
-export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
-export REDIS_PASSWORD="$(openssl rand -hex 32)"
 
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
   -e secret_versions_config_file="$PWD/project-config.json" \
+  -e '{"secret_versions_only": ["external-api-key"]}' \
   --check
 
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
-  -e secret_versions_config_file="$PWD/project-config.json"
+  -e secret_versions_config_file="$PWD/project-config.json" \
+  -e '{"secret_versions_only": ["external-api-key"]}'
 ```
+
+The upload playbook does not consume `TF_VAR_database_password` and cannot change
+the password on an existing database. For a self-managed database, PostgreSQL
+also does not change an initialized user's password when the container's
+`POSTGRES_PASSWORD` environment value changes. Therefore, do not rotate
+`DB_PASSWORD` with the upload playbook alone. Database password rotation requires
+a separate coordinated procedure that changes PostgreSQL and its secret value.
 
 Check mode verifies source variables, target containers, and current-version
 read access without writing. The normal run passes payloads through stdin
@@ -130,7 +135,7 @@ Rotate a subset by container ID or derived source variable:
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
   -e secret_versions_config_file="$PWD/project-config.json" \
-  -e '{"secret_versions_only": ["db-password"]}'
+  -e '{"secret_versions_only": ["external-api-key"]}'
 ```
 
 ## Reading values during deployment

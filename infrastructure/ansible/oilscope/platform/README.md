@@ -6,11 +6,11 @@ Documentation for the collection.
 
 Before deploying, validate your project configuration file against the schema:
 
-​```bash
+```bash
 uvx check-jsonschema \
   --schemafile project-config.schema.json \
   /absolute/path/project-config.json
-​```
+```
 
 ## Deploy everything
 

@@ -20,7 +20,7 @@ sudo docker compose \
 ```
 
 The infrastructure VM contains `postgres` and the one-shot `migrate` service
-in self-managed mode. In managed mode it contains RabbitMQ, Redis, the
+for a self-managed database. With a managed database it contains RabbitMQ, Redis, the
 migration job, and the GCP Cloud SQL Auth Proxy when applicable. Other workload
 VMs contain their corresponding `history`, `fetcher`, or `ui` service.
 
