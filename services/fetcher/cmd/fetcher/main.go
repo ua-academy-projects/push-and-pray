@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,6 +29,12 @@ import (
 )
 
 func main() {
+	closeLog, err := configureLogging()
+	if err != nil {
+		panic(err)
+	}
+	defer closeLog()
+
 	configuration, err := config.Load()
 	if err != nil {
 		slog.Error("invalid configuration", "error", err)
@@ -208,7 +219,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              configuration.ListenAddress,
-		Handler:           mux,
+		Handler:           accessLogMiddleware(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -243,6 +254,81 @@ func main() {
 	if err := server.Shutdown(shutdownContext); err != nil {
 		slog.Error("HTTP shutdown failed", "error", err)
 	}
+}
+
+var validRequestID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (recorder *statusRecorder) WriteHeader(status int) {
+	recorder.status = status
+	recorder.ResponseWriter.WriteHeader(status)
+}
+
+func accessLogMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requestID := request.Header.Get("X-Request-ID")
+		if !validRequestID.MatchString(requestID) {
+			random := make([]byte, 16)
+			if _, err := rand.Read(random); err != nil {
+				requestID = "unavailable"
+			} else {
+				requestID = hex.EncodeToString(random)
+			}
+		}
+		response.Header().Set("X-Request-ID", requestID)
+		recorder := &statusRecorder{ResponseWriter: response, status: http.StatusOK}
+		started := time.Now()
+		next.ServeHTTP(recorder, request)
+		route := request.Pattern
+		if route == "" {
+			route = "<unmatched>"
+		}
+		slog.Info(
+			"HTTP request completed",
+			"event", "http_access",
+			"method", request.Method,
+			"route", route,
+			"status", recorder.status,
+			"duration_ms", float64(time.Since(started).Microseconds())/1000,
+			"request_id", requestID,
+		)
+	})
+}
+
+func configureLogging() (func(), error) {
+	writers := []io.Writer{os.Stdout}
+	var file *os.File
+	if path := os.Getenv("OILSCOPE_LOG_FILE"); path != "" {
+		var err error
+		file, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, err
+		}
+		writers = append(writers, file)
+	}
+	handler := slog.NewJSONHandler(io.MultiWriter(writers...), &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, attribute slog.Attr) slog.Attr {
+			switch attribute.Key {
+			case slog.TimeKey:
+				attribute.Key = "timestamp"
+			case slog.MessageKey:
+				attribute.Key = "message"
+			case slog.LevelKey:
+				attribute.Value = slog.StringValue(strings.ToLower(attribute.Value.String()))
+			}
+			return attribute
+		},
+	})
+	slog.SetDefault(slog.New(handler).With("service", "fetcher"))
+	return func() {
+		if file != nil {
+			_ = file.Close()
+		}
+	}, nil
 }
 
 func writeJSON(

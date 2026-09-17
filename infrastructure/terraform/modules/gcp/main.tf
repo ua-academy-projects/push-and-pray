@@ -260,6 +260,14 @@ module "observability" {
   resource_prefix = module.config.resource_prefix
   alert_email     = module.config.config.observability.alert_email
   synthetic_url   = module.config.config.observability.synthetic_url
+  http_5xx_threshold = try(
+    module.config.config.observability.http_5xx_threshold,
+    1,
+  )
+  http_5xx_window_seconds = try(
+    module.config.config.observability.http_5xx_window_seconds,
+    300,
+  )
   database_instance_id = (
     module.config.managed_database_enabled ? module.database[0].instance_name : null
   )

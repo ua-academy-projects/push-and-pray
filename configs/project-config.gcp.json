@@ -68,7 +68,9 @@
     "alert_email": "o.m.zakip@gmail.com",
     "monthly_budget_usd": 20,
     "synthetic_url": "https://shiphappens.pp.ua",
-    "log_retention_days": 14
+    "log_retention_days": 14,
+    "http_5xx_threshold": 1,
+    "http_5xx_window_seconds": 300
   },
   "ssh_users": {
     "ubuntu": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOuHUOVp9DXJqpuqtPrw012XyiKWhMpJmZ5ZU8Fadmmd dadayaalex@gmail.com"

@@ -21,6 +21,7 @@ services:
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-history.price-observations}
       RABBITMQ_ROUTING_KEY: ${RABBITMQ_ROUTING_KEY:-prices.observed}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OILSCOPE_LOG_FILE: /var/log/oilscope/history.jsonl
       TZ: UTC
     ports:
       - "${HISTORY_BIND_ADDRESS:-0.0.0.0}:${HISTORY_HOST_PORT:-8001}:8001"
@@ -43,6 +44,8 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+    volumes:
+      - "{{ compose_project_log_dir }}:/var/log/oilscope"
 {% if compose_project_config.manage_db | bool %}
     depends_on:
       rabbitmq:

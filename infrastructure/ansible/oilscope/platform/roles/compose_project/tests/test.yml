@@ -8,6 +8,9 @@
     project_config_path: >-
       {{ playbook_dir }}/../../../../../../../configs/project-config.aws.json
     internal_ip: 10.0.1.5
+    compose_project_log_dir: /tmp/oilscope-compose-project-test/logs
+    compose_project_app_uid: "{{ lookup('ansible.builtin.pipe', 'id -u') }}"
+    compose_project_app_gid: "{{ lookup('ansible.builtin.pipe', 'id -g') }}"
     deployment_contract:
       registry:
         images:

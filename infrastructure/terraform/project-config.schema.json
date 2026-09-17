@@ -358,7 +358,9 @@
         "alert_email": { "type": "string", "format": "email" },
         "monthly_budget_usd": { "type": "number", "exclusiveMinimum": 0 },
         "synthetic_url": { "type": "string", "format": "uri", "pattern": "^https://" },
-        "log_retention_days": { "type": "integer", "enum": [1, 3, 5, 7, 14, 30, 60, 90] }
+        "log_retention_days": { "type": "integer", "enum": [1, 3, 5, 7, 14, 30, 60, 90] },
+        "http_5xx_threshold": { "type": "integer", "minimum": 1 },
+        "http_5xx_window_seconds": { "type": "integer", "enum": [60, 300, 600, 900] }
       }
     },
     "cloud_name": {

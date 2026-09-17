@@ -22,7 +22,9 @@ resource "google_logging_metric" "http_5xx" {
   filter      = <<-EOT
     resource.type="gce_instance"
     log_id("oilscope_application")
-    (jsonPayload.MESSAGE =~ "HTTP/[0-9.]+.* 5[0-9][0-9]" OR textPayload =~ "HTTP/[0-9.]+.* 5[0-9][0-9]")
+    jsonPayload.event="http_access"
+    jsonPayload.status>=500
+    jsonPayload.status<600
   EOT
 
   metric_descriptor {
@@ -141,14 +143,14 @@ resource "google_monitoring_alert_policy" "http_5xx" {
   notification_channels = local.notification_channels
 
   conditions {
-    display_name = "At least one HTTP 5xx in 5 minutes"
+    display_name = "Structured HTTP 5xx threshold reached"
     condition_threshold {
       filter          = "metric.type = \"logging.googleapis.com/user/${google_logging_metric.http_5xx.name}\" AND resource.type = \"gce_instance\""
       comparison      = "COMPARISON_GT"
-      threshold_value = 0
+      threshold_value = var.http_5xx_threshold - 1
       duration        = "0s"
       aggregations {
-        alignment_period     = "300s"
+        alignment_period     = "${var.http_5xx_window_seconds}s"
         per_series_aligner   = "ALIGN_DELTA"
         cross_series_reducer = "REDUCE_SUM"
       }

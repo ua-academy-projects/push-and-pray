@@ -13,6 +13,15 @@
     group: "{{ compose_project_group }}"
     mode: "0750"
 
+- name: Create structured application log directory
+  ansible.builtin.file:
+    path: "{{ compose_project_log_dir }}"
+    state: directory
+    owner: "{{ compose_project_app_uid }}"
+    group: "{{ compose_project_app_gid }}"
+    mode: "0750"
+  when: compose_project_workload in ['history', 'fetcher', 'ui']
+
 - name: Install Compose definition
   ansible.builtin.template:
     src: "{{ compose_project_templates[compose_project_workload] }}"

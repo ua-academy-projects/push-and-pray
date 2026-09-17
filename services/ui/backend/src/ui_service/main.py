@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,13 +11,11 @@ from fastapi.staticfiles import StaticFiles
 from psycopg import Error as PostgreSQLError
 from redis.exceptions import RedisError
 
+from .access_logging import configure_structured_logging, install_access_logging
 from .session_store import PostgreSQLSessionStore, RedisSessionStore
 from .sessions import SessionPreferences, resolve_session_id
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+configure_structured_logging("ui", os.getenv("LOG_LEVEL", "INFO"))
 
 STATIC_DIR = Path(__file__).parent / "static"
 HISTORY_SERVICE_URL = os.getenv("HISTORY_SERVICE_URL", "http://localhost:8001").rstrip("/")
@@ -50,6 +47,7 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
+install_access_logging(app, "ui")
 if SESSION_BACKEND == "redis":
     app.state.session_store = RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS)
 elif SESSION_BACKEND == "postgres":

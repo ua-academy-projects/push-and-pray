@@ -4,6 +4,8 @@ variable "alert_email" { type = string }
 variable "monthly_budget_usd" { type = number }
 variable "synthetic_url" { type = string }
 variable "log_retention_days" { type = number }
+variable "http_5xx_threshold" { type = number }
+variable "http_5xx_window_seconds" { type = number }
 variable "tags" { type = map(string) }
 
 variable "database_identifier" {

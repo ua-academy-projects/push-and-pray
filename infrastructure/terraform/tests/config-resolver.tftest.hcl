@@ -20,7 +20,8 @@ run "resolve_gcp_profiles" {
       output.resolved_vms["history"].machine_type == "e2-small" &&
       output.resolved_vms["history"].image_profile == "ubuntu" &&
       output.resolved_vms["history"].disk_type == "pd-balanced" &&
-      contains(keys(output.resolved_vms["history"].secret_mappings), "GHCR_TOKEN") &&
+      contains(keys(output.resolved_vms["history"].secret_mappings), "POSTGRES_PASSWORD") &&
+      !contains(keys(output.resolved_vms["history"].secret_mappings), "GHCR_TOKEN") &&
       length(output.resolved_vms["bastion"].secret_mappings) == 0
     )
     error_message = "The resolver must translate GCP abstract profiles."

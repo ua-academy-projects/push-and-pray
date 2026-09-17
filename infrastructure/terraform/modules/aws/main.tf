@@ -292,12 +292,17 @@ module "observability" {
     try(module.config.config.observability.enabled, false)
   ) ? 1 : 0
 
-  resource_prefix     = module.config.resource_prefix
-  region              = module.config.location.region
-  alert_email         = module.config.config.observability.alert_email
-  monthly_budget_usd  = module.config.config.observability.monthly_budget_usd
-  synthetic_url       = module.config.config.observability.synthetic_url
-  log_retention_days  = try(module.config.config.observability.log_retention_days, 14)
+  resource_prefix    = module.config.resource_prefix
+  region             = module.config.location.region
+  alert_email        = module.config.config.observability.alert_email
+  monthly_budget_usd = module.config.config.observability.monthly_budget_usd
+  synthetic_url      = module.config.config.observability.synthetic_url
+  log_retention_days = try(module.config.config.observability.log_retention_days, 14)
+  http_5xx_threshold = try(module.config.config.observability.http_5xx_threshold, 1)
+  http_5xx_window_seconds = try(
+    module.config.config.observability.http_5xx_window_seconds,
+    300,
+  )
   tags                = module.config.common_metadata
   database_identifier = module.config.managed_database_enabled ? module.database[0].identifier : null
   database_enabled    = module.config.managed_database_enabled

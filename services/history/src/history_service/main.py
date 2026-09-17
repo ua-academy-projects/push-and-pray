@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import models  # noqa: F401
+from .access_logging import configure_structured_logging, install_access_logging
 from .config import get_settings
 from .database import Base, engine, get_db
 from .messaging import build_consumer
@@ -29,10 +30,7 @@ from .schemas import (
 
 settings = get_settings()
 
-logging.basicConfig(
-    level=settings.log_level,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+configure_structured_logging("history", settings.log_level)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +57,7 @@ app = FastAPI(
     description=("Owns persistence and serves timestamped market price snapshots."),
     lifespan=lifespan,
 )
+install_access_logging(app, "history")
 
 
 @app.get("/health", tags=["operations"])

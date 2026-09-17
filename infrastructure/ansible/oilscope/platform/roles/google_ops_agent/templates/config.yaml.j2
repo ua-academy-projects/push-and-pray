@@ -3,7 +3,7 @@ logging:
     oilscope_application:
       type: files
       include_paths:
-        - /var/lib/docker/containers/*/*.log
+        - /var/log/oilscope/*.jsonl
     oilscope_deploy:
       type: systemd_journald
       include_units:
@@ -13,9 +13,14 @@ logging:
       oilscope_application:
         receivers:
           - oilscope_application
+        processors:
+          - oilscope_json
       oilscope_deploy:
         receivers:
           - oilscope_deploy
+  processors:
+    oilscope_json:
+      type: parse_json
 metrics:
   receivers:
     hostmetrics:

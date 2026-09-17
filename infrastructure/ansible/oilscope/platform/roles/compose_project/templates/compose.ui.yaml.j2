@@ -17,6 +17,7 @@ services:
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-2592000}
       SESSION_COOKIE_SECURE: "{{ 'true' if compose_project_config.vms.ui.public_endpoint is defined else 'false' }}"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OILSCOPE_LOG_FILE: /var/log/oilscope/ui.jsonl
       TZ: UTC
     healthcheck:
       test:
@@ -31,6 +32,8 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+    volumes:
+      - "{{ compose_project_log_dir }}:/var/log/oilscope"
 {% if compose_project_config.vms.ui.public_endpoint is not defined %}
     ports:
       - "80:8080"

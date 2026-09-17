@@ -20,14 +20,7 @@
     owner: root
     group: root
     mode: "0644"
-  register: google_ops_agent_config
-
-- name: Restart the Google Cloud Ops Agent
-  ansible.builtin.service:
-    name: google-cloud-ops-agent
-    state: restarted
-    enabled: true
-  when: google_ops_agent_config.changed
+  notify: Restart Google Cloud Ops Agent
 
 - name: Ensure the Google Cloud Ops Agent is running
   ansible.builtin.service:

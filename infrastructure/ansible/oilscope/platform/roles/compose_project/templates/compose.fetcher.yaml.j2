@@ -24,6 +24,7 @@ services:
       FETCH_ON_STARTUP: ${FETCH_ON_STARTUP:-true}
       REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-15}
       LISTEN_ADDRESS: ${FETCHER_LISTEN_ADDRESS:-0.0.0.0:8002}
+      OILSCOPE_LOG_FILE: /var/log/oilscope/fetcher.jsonl
       TZ: UTC
     ports:
       - "${FETCHER_BIND_ADDRESS:-0.0.0.0}:${FETCHER_HOST_PORT:-8002}:8002"
@@ -36,3 +37,5 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+    volumes:
+      - "{{ compose_project_log_dir }}:/var/log/oilscope"

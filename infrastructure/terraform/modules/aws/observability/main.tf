@@ -27,7 +27,7 @@ resource "aws_cloudwatch_log_group" "application" {
 resource "aws_cloudwatch_log_metric_filter" "http_5xx" {
   name           = "${var.resource_prefix}-http-5xx"
   log_group_name = aws_cloudwatch_log_group.application.name
-  pattern        = "% 5[0-9][0-9] %"
+  pattern        = "{ $.event = \"http_access\" && $.status >= 500 && $.status < 600 }"
 
   metric_transformation {
     name          = "HTTP5xxCount"
@@ -124,14 +124,14 @@ resource "aws_cloudwatch_metric_alarm" "disk_high" {
 
 resource "aws_cloudwatch_metric_alarm" "http_5xx" {
   alarm_name          = "${var.resource_prefix}-aws-http-5xx"
-  alarm_description   = "Kickoff: at least one HTTP 5xx was logged in 5 minutes. Closure: no 5xx in the next period. Dashboard: ${var.resource_prefix}-aws"
+  alarm_description   = "Kickoff: structured HTTP 5xx threshold reached. Closure: no 5xx in the next period. Dashboard: ${var.resource_prefix}-aws"
   namespace           = "OilScope/Application"
   metric_name         = "HTTP5xxCount"
   statistic           = "Sum"
-  period              = 300
+  period              = var.http_5xx_window_seconds
   evaluation_periods  = 1
   datapoints_to_alarm = 1
-  threshold           = 1
+  threshold           = var.http_5xx_threshold
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
