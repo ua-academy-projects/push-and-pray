@@ -43,7 +43,7 @@ resource "google_service_networking_connection" "private" {
   network                 = var.network_id
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_service_access.name]
-  deletion_policy         = "DELETE"
+  deletion_policy         = "REMOVE_PEERING"
 }
 
 resource "google_sql_database_instance" "this" {
