@@ -1,4 +1,8 @@
 {
+  "schema_version": 1,
+  "cloud_provider": "gcp",
+  "data_profile": "portable",
+  "deployment_runtime": "compose",
   "default_cloud": "gcp",
   "manage_db": false,
   "defaults": {

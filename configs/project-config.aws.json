@@ -1,4 +1,8 @@
 {
+  "schema_version": 1,
+  "cloud_provider": "aws",
+  "data_profile": "managed",
+  "deployment_runtime": "compose",
   "default_cloud": "aws",
   "manage_db": true,
   "defaults": {

@@ -11,9 +11,13 @@ variable "project_config_path" {
   validation {
     condition = contains(
       ["aws", "gcp"],
-      lower(try(jsondecode(file(var.project_config_path)).default_cloud, "")),
+      lower(try(
+        jsondecode(file(var.project_config_path)).cloud_provider,
+        jsondecode(file(var.project_config_path)).default_cloud,
+        "",
+      )),
     )
-    error_message = "default_cloud must be either aws or gcp."
+    error_message = "cloud_provider (or legacy default_cloud) must be either aws or gcp."
   }
 }
 variable "enable_bastion_ssh_bootstrap" {

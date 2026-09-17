@@ -1,6 +1,35 @@
 output "default_cloud" {
-  description = "Default cloud selected by the shared project configuration."
-  value       = jsondecode(file(var.project_config_path)).default_cloud
+  description = "Deprecated alias of cloud_provider retained for inventory compatibility."
+  value = lower(try(
+    jsondecode(file(var.project_config_path)).cloud_provider,
+    jsondecode(file(var.project_config_path)).default_cloud,
+  ))
+}
+
+output "schema_version" {
+  description = "Project configuration schema version, or 0 for a legacy configuration."
+  value       = try(tonumber(jsondecode(file(var.project_config_path)).schema_version), 0)
+}
+
+output "cloud_provider" {
+  description = "Global deployment provider."
+  value = lower(try(
+    jsondecode(file(var.project_config_path)).cloud_provider,
+    jsondecode(file(var.project_config_path)).default_cloud,
+  ))
+}
+
+output "data_profile" {
+  description = "Normalized portable or managed data profile."
+  value = lower(try(
+    jsondecode(file(var.project_config_path)).data_profile,
+    try(jsondecode(file(var.project_config_path)).manage_db, false) ? "managed" : "portable",
+  ))
+}
+
+output "deployment_runtime" {
+  description = "Normalized deployment runtime."
+  value       = lower(try(jsondecode(file(var.project_config_path)).deployment_runtime, "compose"))
 }
 
 output "vms" {
@@ -18,7 +47,10 @@ output "bastion_public_ip" {
   value = try([
     for vm in values(merge(module.gcp.vms, module.aws.vms)) :
     vm.public_ip
-    if vm.role == "bastion" && vm.cloud == jsondecode(file(var.project_config_path)).default_cloud
+    if vm.role == "bastion" && vm.cloud == lower(try(
+      jsondecode(file(var.project_config_path)).cloud_provider,
+      jsondecode(file(var.project_config_path)).default_cloud,
+    ))
   ][0], null)
 }
 

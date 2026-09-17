@@ -5,11 +5,35 @@ locals {
   defaults     = local.config.defaults
   network      = merge(local.config.network, lookup(local.cloud_config, "network", {}))
 
-  manage_db = lookup(local.config, "manage_db", false)
+  schema_version     = try(tonumber(local.config.schema_version), 0)
+  versioned_contract = local.schema_version > 0
+  cloud_provider = lower(try(
+    local.config.cloud_provider,
+    local.config.default_cloud,
+  ))
+  data_profile = lower(try(
+    local.config.data_profile,
+    try(local.config.manage_db, false) ? "managed" : "portable",
+  ))
+  deployment_runtime = lower(try(local.config.deployment_runtime, "compose"))
+
+  manage_db = local.data_profile == "managed"
   database  = lookup(local.config, "database", null)
   database_cloud = local.manage_db ? lower(
-    lookup(local.database, "cloud", local.config.default_cloud)
+    lookup(local.database, "cloud", local.cloud_provider)
   ) : null
+
+  legacy_contract_consistent = (
+    try(local.config.default_cloud, local.cloud_provider) == local.cloud_provider &&
+    try(local.config.manage_db, local.manage_db) == local.manage_db
+  )
+  versioned_contract_valid = !local.versioned_contract || (
+    local.schema_version == 1 &&
+    contains(["aws", "gcp"], local.cloud_provider) &&
+    contains(["portable", "managed"], local.data_profile) &&
+    local.deployment_runtime == "compose" &&
+    local.legacy_contract_consistent
+  )
 
   resource_prefix = "${local.config.name_prefix}-${local.config.environment}"
   common_metadata = merge(
@@ -25,7 +49,7 @@ locals {
   selected_vms = {
     for name, vm in local.config.vms : name => vm
     if(
-      lower(lookup(vm, "cloud", local.config.default_cloud)) == local.cloud &&
+      lower(try(vm.provider, vm.cloud, local.cloud_provider)) == local.cloud &&
       !(local.manage_db && vm.role == "database")
     )
   }
@@ -34,8 +58,13 @@ locals {
     for vm in values(local.config.vms) :
     contains(
       ["aws", "gcp"],
-      lower(lookup(vm, "cloud", local.config.default_cloud)),
+      lower(try(vm.provider, vm.cloud, local.cloud_provider)),
     )
+  ])
+
+  all_vm_providers_match = alltrue([
+    for vm in values(local.config.vms) :
+    lower(try(vm.provider, vm.cloud, local.cloud_provider)) == local.cloud_provider
   ])
 
   database_vm_count = length([
@@ -44,13 +73,14 @@ locals {
   ])
   used_clouds = toset([
     for vm in values(local.config.vms) :
-    lower(lookup(vm, "cloud", local.config.default_cloud))
+    lower(try(vm.provider, vm.cloud, local.cloud_provider))
   ])
   database_valid = local.manage_db ? (
     local.database != null &&
     contains(["aws", "gcp"], local.database_cloud) &&
     contains(local.used_clouds, local.database_cloud) &&
-    local.database_vm_count == 0
+    local.database_vm_count == 0 &&
+    (!local.versioned_contract || local.database_cloud == local.cloud_provider)
     ) : (
     local.database == null && local.database_vm_count == 1
   )
@@ -58,6 +88,7 @@ locals {
   resolved_vms = {
     for name, vm in local.selected_vms : name => merge(vm, {
       cloud           = local.cloud
+      provider        = local.cloud
       machine_profile = lookup(vm, "machine_profile", local.defaults.machine_profile)
       image_profile   = lookup(vm, "image_profile", local.defaults.image_profile)
       disk_profile    = lookup(vm.boot_disk, "profile", local.defaults.disk_profile)

@@ -20,6 +20,13 @@
     "vms"
   ],
   "properties": {
+    "schema_version": { "const": 1 },
+    "cloud_provider": { "$ref": "#/$defs/cloud_name" },
+    "data_profile": {
+      "type": "string",
+      "enum": ["portable", "managed"]
+    },
+    "deployment_runtime": { "const": "compose" },
     "default_cloud": { "$ref": "#/$defs/cloud_name" },
     "manage_db": { "type": "boolean" },
     "database": { "$ref": "#/$defs/database" },
@@ -191,6 +198,44 @@
   },
   "allOf": [
     {
+      "if": { "required": ["schema_version"] },
+      "then": {
+        "required": [
+          "cloud_provider",
+          "data_profile",
+          "deployment_runtime"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "cloud_provider": { "const": "aws" } },
+        "required": ["cloud_provider"]
+      },
+      "then": { "properties": { "default_cloud": { "const": "aws" } } }
+    },
+    {
+      "if": {
+        "properties": { "cloud_provider": { "const": "gcp" } },
+        "required": ["cloud_provider"]
+      },
+      "then": { "properties": { "default_cloud": { "const": "gcp" } } }
+    },
+    {
+      "if": {
+        "properties": { "data_profile": { "const": "managed" } },
+        "required": ["data_profile"]
+      },
+      "then": { "properties": { "manage_db": { "const": true } } }
+    },
+    {
+      "if": {
+        "properties": { "data_profile": { "const": "portable" } },
+        "required": ["data_profile"]
+      },
+      "then": { "properties": { "manage_db": { "const": false } } }
+    },
+    {
       "if": {
         "properties": { "manage_db": { "const": true } },
         "required": ["manage_db"]
@@ -238,6 +283,7 @@
       ],
       "properties": {
         "cloud": { "$ref": "#/$defs/cloud_name" },
+        "provider": { "$ref": "#/$defs/cloud_name" },
         "engine": { "const": "postgres" },
         "engine_version": { "type": "string", "minLength": 1 },
         "database_name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },

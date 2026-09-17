@@ -1,8 +1,12 @@
 locals {
   root_config = jsondecode(file(var.project_config_path))
+  root_cloud_provider = lower(try(
+    local.root_config.cloud_provider,
+    local.root_config.default_cloud,
+  ))
   used_clouds = toset([
     for vm in values(local.root_config.vms) :
-    lower(lookup(vm, "cloud", local.root_config.default_cloud))
+    lower(try(vm.provider, vm.cloud, local.root_cloud_provider))
   ])
   gcp_enabled = contains(local.used_clouds, "gcp")
   aws_enabled = contains(local.used_clouds, "aws")
@@ -10,7 +14,11 @@ locals {
   mixed_network_enabled = (
     local.mixed_cloud && try(local.root_config.mixed_network.enabled, false)
   )
-  manage_db = try(local.root_config.manage_db, false)
+  manage_db = try(
+    lower(local.root_config.data_profile) == "managed",
+    local.root_config.manage_db,
+    false,
+  )
   database_vm_count = length([
     for vm in values(local.root_config.vms) : vm
     if vm.role == "database"

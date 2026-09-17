@@ -9,8 +9,14 @@ run "gcp_default_selects_only_gcp" {
   }
 
   assert {
-    condition     = output.default_cloud == "gcp"
-    error_message = "The default GCP example must report gcp."
+    condition = (
+      output.default_cloud == "gcp" &&
+      output.cloud_provider == "gcp" &&
+      output.schema_version == 1 &&
+      output.data_profile == "portable" &&
+      output.deployment_runtime == "compose"
+    )
+    error_message = "The versioned GCP example must expose its normalized contract."
   }
 
   assert {

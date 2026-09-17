@@ -12,6 +12,10 @@ run "resolve_gcp_profiles" {
 
   assert {
     condition = (
+      output.schema_version == 1 &&
+      output.cloud_provider == "gcp" &&
+      output.data_profile == "portable" &&
+      output.deployment_runtime == "compose" &&
       output.selected_count == 5 &&
       output.resolved_vms["history"].machine_type == "e2-small" &&
       output.resolved_vms["history"].image_profile == "ubuntu" &&

@@ -12,6 +12,26 @@ output "cloud" {
   value = local.cloud
 }
 
+output "schema_version" {
+  description = "Versioned project configuration schema, or 0 for a legacy configuration."
+  value       = local.schema_version
+}
+
+output "cloud_provider" {
+  description = "Global provider selected by the versioned or legacy project contract."
+  value       = local.cloud_provider
+}
+
+output "data_profile" {
+  description = "Normalized portable or managed data profile."
+  value       = local.data_profile
+}
+
+output "deployment_runtime" {
+  description = "Normalized deployment runtime. Only compose is currently supported."
+  value       = local.deployment_runtime
+}
+
 output "network" {
   description = "Cloud-specific network configuration merged over the shared defaults."
   value       = local.network
@@ -73,7 +93,9 @@ output "profiles_valid" {
 
 output "configuration_valid" {
   value = (
+    local.versioned_contract_valid &&
     local.all_clouds_valid &&
+    (!local.versioned_contract || local.all_vm_providers_match) &&
     local.database_valid &&
     length(local.resolved_vms) == length(local.provisionable_vms) &&
     (length(local.selected_vms) == 0 || (
