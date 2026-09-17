@@ -1,7 +1,8 @@
 # Cloud inventory
 
 `oilscope.yml` discovers the live virtual machines described by the same
-`project-config.json` that Terraform reads. The inventory source is independent
+`project-config.json` that Terraform reads. The top-level `bastion` object and
+the workload machines in `vms` are normalized into one inventory. The inventory source is independent
 of the selected environment and of whether its VMs use GCP, AWS, or both.
 
 The inventory is dynamic in the Ansible sense: it is rebuilt when an Ansible
@@ -21,7 +22,9 @@ the top-level defaults. It then:
 - creates functional inventory groups from each VM's `tags` array.
 
 The JSON configuration remains the authority for logical placement and
-grouping. Cloud APIs provide live existence and current public addresses.
+grouping. The plugin supplies the bastion's functional tag because its purpose
+is explicit in the configuration structure. Cloud APIs provide live existence
+and current public addresses.
 
 ## Setup
 
@@ -103,13 +106,13 @@ Every discovered host receives:
 | `oilscope_cloud` | `aws` or `gcp` |
 | `oilscope_location` | logical location key from the configuration |
 | `oilscope_tags` | functional tags from the VM definition |
-| `oilscope_vm_name` | VM key from the `vms` object |
+| `oilscope_vm_name` | workload key from `vms`, or `bastion` for the top-level bastion |
 | `ansible_user` | provider-appropriate or explicitly overridden SSH user |
 | `ansible_ssh_common_args` | environment-specific host-key and bastion routing options |
 | `ansible_ssh_private_key_file` | optional key path from `OILSCOPE_SSH_KEY` |
 
 For a bastion, `ansible_host` is its public address and both `ansible_port` and
-`bastion_ssh_port` come from its VM definition. Other VMs use their internal
+`bastion_ssh_port` come from its top-level definition. Other VMs use their internal
 address and port 22.
 
 ## SSH routing

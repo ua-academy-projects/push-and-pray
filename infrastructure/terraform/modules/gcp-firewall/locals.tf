@@ -3,30 +3,32 @@ locals {
 
   vms = {
     for name, vm in var.config.vms : name => merge(vm, {
-      location      = lookup(vm, "location", var.config.default_location)
-      ssh_port      = lookup(vm, "ssh_port", 22)
-      allowed_cidrs = lookup(vm, "allowed_cidrs", [])
+      location = lookup(vm, "location", var.config.default_location)
     })
     if lookup(vm, "cloud", var.config.default_cloud) == "gcp"
   }
 
+  bastions = lookup(var.config.bastion, "cloud", var.config.default_cloud) == "gcp" ? {
+    (lookup(var.config.bastion, "location", var.config.default_location)) = merge(var.config.bastion, {
+      location = lookup(var.config.bastion, "location", var.config.default_location)
+    })
+  } : {}
+
   tags = {
     for pair in flatten([
       for location in keys(var.networks) : [
-        for tag in toset(flatten([
-          for vm in values(local.vms) : vm.tags if vm.location == location
-          ])) : {
+        for tag in setunion(
+          toset(flatten([
+            for vm in values(local.vms) : vm.tags if vm.location == location
+          ])),
+          contains(keys(local.bastions), location) ? toset(["bastion"]) : toset([]),
+          ) : {
           key      = "${location}/${tag}"
           location = location
           tag      = tag
         }
       ]
     ]) : pair.key => pair
-  }
-
-  bastions = {
-    for name, vm in local.vms : vm.location => vm
-    if contains(vm.tags, "bastion")
   }
 
   workload_locations = toset([

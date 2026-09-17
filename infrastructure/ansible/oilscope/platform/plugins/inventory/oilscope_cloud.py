@@ -137,14 +137,24 @@ class InventoryModule(BaseInventoryPlugin):
         environment = self._required_string(config, "environment")
         locations = config.get("locations")
         vms = config.get("vms")
+        bastion = config.get("bastion")
 
         if not isinstance(locations, dict):
             raise AnsibleParserError("the project configuration must define a 'locations' object")
         if not isinstance(vms, dict):
             raise AnsibleParserError("the project configuration must define a 'vms' object")
+        if not isinstance(bastion, dict):
+            raise AnsibleParserError("the project configuration must define a 'bastion' object")
+        virtual_machines = {
+            **vms,
+            "bastion": {
+                **bastion,
+                "tags": ["bastion"],
+            },
+        }
 
         normalized = {}
-        for name, vm in vms.items():
+        for name, vm in virtual_machines.items():
             if not isinstance(vm, dict):
                 raise AnsibleParserError(f"VM {name!r} must be an object")
 

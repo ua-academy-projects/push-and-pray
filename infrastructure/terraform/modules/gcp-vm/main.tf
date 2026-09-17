@@ -3,7 +3,7 @@ resource "google_compute_address" "public" {
     for name, vm in local.vms : name => vm if vm.assign_public_ip
   }
 
-  name   = "${local.context.resource_prefix}-${each.key}-ip"
+  name   = "${each.value.resource_name}-ip"
   region = each.value.region
   labels = each.value.labels
 }
@@ -28,16 +28,12 @@ resource "google_compute_disk" "data" {
 resource "google_compute_instance" "this" {
   for_each = local.vms
 
-  name                      = "${local.context.resource_prefix}-${each.key}"
+  name                      = each.value.resource_name
   zone                      = each.value.zone
   machine_type              = each.value.machine_type
   allow_stopping_for_update = true
-
-  tags = [
-    for tag in each.value.tags :
-    "${local.context.resource_prefix}-${each.value.location}-${tag}"
-  ]
-  labels = each.value.labels
+  tags                      = each.value.provider_tags
+  labels                    = each.value.labels
 
   boot_disk {
     auto_delete = true
@@ -61,7 +57,7 @@ resource "google_compute_instance" "this" {
   }
 
   network_interface {
-    subnetwork = each.value.assign_public_ip ? var.networks[each.value.location].public_subnet_id : var.networks[each.value.location].private_subnet_id
+    subnetwork = each.value.subnet_id
     network_ip = each.value.internal_ip
 
     dynamic "access_config" {
@@ -79,23 +75,16 @@ resource "google_compute_instance" "this" {
     enable_integrity_monitoring = true
   }
 
-  service_account {
-    email  = var.service_account_emails[each.key]
-    scopes = ["cloud-platform"]
+  dynamic "service_account" {
+    for_each = each.value.service_account_email == null ? [] : [each.value.service_account_email]
+
+    content {
+      email  = service_account.value
+      scopes = ["cloud-platform"]
+    }
   }
 
-  metadata = merge(
-    {
-      "enable-oslogin" = "FALSE"
-      "ssh-keys" = join("\n", [
-        for username, public_key in var.config.ssh_users :
-        "${username}:${trimspace(public_key)}"
-      ])
-    },
-    each.value.cloud_init == null ? {} : {
-      "user-data" = each.value.cloud_init
-    },
-  )
+  metadata = each.value.metadata
 
   lifecycle {
     replace_triggered_by = [terraform_data.cloud_init[each.key].output]

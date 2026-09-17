@@ -1,6 +1,11 @@
 output "public_ips" {
   description = "Public IP addresses keyed by VM name."
-  value       = merge(module.gcp_vm.public_ips, module.aws_vm.public_ips)
+  value = merge(
+    module.gcp_workloads.public_ips,
+    module.aws_workloads.public_ips,
+    module.gcp_bastion.public_ips,
+    module.aws_bastion.public_ips,
+  )
 }
 
 output "managed_database" {

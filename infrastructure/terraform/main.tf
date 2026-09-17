@@ -21,18 +21,35 @@ module "aws_observability" {
   source = "./modules/aws-observability"
 
   config       = local.config
-  instance_ids = module.aws_vm.instance_ids
+  instance_ids = module.aws_workloads.instance_ids
   role_names   = module.aws_secrets.role_names
-  volume_ids   = module.aws_vm.volume_ids
+  volume_ids   = module.aws_workloads.volume_ids
 }
 
-module "aws_vm" {
-  source = "./modules/aws-vm"
+module "aws_workloads" {
+  source = "./modules/aws-workloads"
 
-  config             = local.config
-  instance_profiles  = module.aws_secrets.instance_profile_names
-  networks           = module.aws_network.networks
-  security_group_ids = module.aws_security.security_group_ids
+  config              = local.config
+  bootstrap_key_names = module.aws_key_pair.names
+  instance_profiles   = module.aws_secrets.instance_profile_names
+  networks            = module.aws_network.networks
+  security_group_ids  = module.aws_security.security_group_ids
+}
+
+module "aws_key_pair" {
+  source = "./modules/aws-key-pair"
+
+  config   = local.config
+  networks = module.aws_network.networks
+}
+
+module "aws_bastion" {
+  source = "./modules/aws-bastion"
+
+  config              = local.config
+  bootstrap_key_names = module.aws_key_pair.names
+  networks            = module.aws_network.networks
+  security_group_ids  = module.aws_security.security_group_ids
 }
 
 module "gcp_network" {
@@ -58,16 +75,23 @@ module "gcp_observability" {
   source = "./modules/gcp-observability"
 
   config                 = local.config
-  instance_ids           = module.gcp_vm.instance_ids
+  instance_ids           = module.gcp_workloads.instance_ids
   service_account_emails = module.gcp_secrets.service_account_emails
 }
 
-module "gcp_vm" {
-  source = "./modules/gcp-vm"
+module "gcp_workloads" {
+  source = "./modules/gcp-workloads"
 
   config                 = local.config
   networks               = module.gcp_network.networks
   service_account_emails = module.gcp_secrets.service_account_emails
+}
+
+module "gcp_bastion" {
+  source = "./modules/gcp-bastion"
+
+  config   = local.config
+  networks = module.gcp_network.networks
 }
 
 module "aws_managed_database" {
@@ -102,5 +126,5 @@ module "cloudflare_dns" {
 
   zone_id      = local.config.dns.cloudflare.zone_id
   hostname     = local.config.vms.ui.public_endpoint.hostname
-  ipv4_address = merge(module.gcp_vm.public_ips, module.aws_vm.public_ips)["ui"]
+  ipv4_address = merge(module.gcp_workloads.public_ips, module.aws_workloads.public_ips)["ui"]
 }

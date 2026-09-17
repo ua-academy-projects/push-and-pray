@@ -5,37 +5,26 @@ data "aws_ssm_parameter" "image" {
   name   = each.value.image.ssm_parameter
 }
 
-resource "aws_key_pair" "bootstrap" {
-  for_each = var.networks
-
-  region     = each.value.region
-  key_name   = "${local.context.resource_prefix}-${each.key}-bootstrap"
-  public_key = local.bootstrap_ssh_public_key
-
-  tags = local.context.labels
-}
-
 resource "aws_instance" "this" {
   for_each = local.vms
 
   region                      = each.value.region
   ami                         = data.aws_ssm_parameter.image[each.key].value
   instance_type               = each.value.machine_type
-  subnet_id                   = each.value.assign_public_ip ? var.networks[each.value.location].public_subnet_id : var.networks[each.value.location].private_subnet_id
+  subnet_id                   = each.value.subnet_id
   private_ip                  = each.value.internal_ip
-  vpc_security_group_ids      = [for tag in each.value.tags : var.security_group_ids[each.value.location][tag]]
-  iam_instance_profile        = var.instance_profiles[each.key]
-  key_name                    = aws_key_pair.bootstrap[each.value.location].key_name
-  user_data                   = each.value.cloud_init
-  user_data_replace_on_change = each.value.cloud_init != null
-
+  vpc_security_group_ids      = each.value.security_group_ids
+  iam_instance_profile        = try(each.value.instance_profile, null)
+  key_name                    = each.value.key_name
+  user_data                   = try(each.value.cloud_init, null)
+  user_data_replace_on_change = try(each.value.cloud_init, null) != null
   root_block_device {
     volume_size           = each.value.boot_disk.size_gb
     volume_type           = each.value.boot_disk.type
     iops                  = each.value.boot_disk.iops
     delete_on_termination = true
     encrypted             = true
-    tags                  = merge(each.value.labels, { Name = "${local.context.resource_prefix}-${each.key}" })
+    tags                  = merge(each.value.labels, { Name = each.value.resource_name })
   }
 
   dynamic "ebs_block_device" {
@@ -49,7 +38,7 @@ resource "aws_instance" "this" {
       delete_on_termination = true
       encrypted             = true
       tags = merge(each.value.labels, {
-        Name = "${local.context.resource_prefix}-${each.key}-${ebs_block_device.key}"
+        Name = "${each.value.resource_name}-${ebs_block_device.key}"
       })
     }
   }
@@ -60,7 +49,7 @@ resource "aws_instance" "this" {
   }
 
   tags = merge(each.value.labels, {
-    Name           = "${local.context.resource_prefix}-${each.key}"
+    Name           = each.value.resource_name
     FunctionalTags = join(",", sort(each.value.tags))
   })
 }
@@ -73,5 +62,5 @@ resource "aws_eip" "public" {
   region   = each.value.region
   domain   = "vpc"
   instance = aws_instance.this[each.key].id
-  tags     = merge(each.value.labels, { Name = "${local.context.resource_prefix}-${each.key}-ip" })
+  tags     = merge(each.value.labels, { Name = "${each.value.resource_name}-ip" })
 }
