@@ -9,7 +9,8 @@
     "location_profile": "primary",
     "machine_profile": "micro",
     "image_profile": "ubuntu",
-    "disk_profile": "balanced"
+    "disk_profile": "balanced",
+    "architecture": "amd64"
   },
   "clouds": {
     "gcp": {
@@ -50,7 +51,7 @@
         "ssd": "io2"
       },
       "images": {
-        "ubuntu": "ami-0526a6499f6470118"
+        "ubuntu": "ubuntu-lts"
       },
       "bastion_nat": true,
       "free_tier_guardrails": true

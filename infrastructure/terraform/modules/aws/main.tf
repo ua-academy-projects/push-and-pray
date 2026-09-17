@@ -15,6 +15,40 @@ resource "terraform_data" "configuration" {
   }
 }
 
+locals {
+  ubuntu_lts_architectures = toset([
+    for vm in values(module.config.provisionable_vms) : vm.architecture
+    if vm.image == "ubuntu-lts"
+  ])
+}
+
+data "aws_ami" "ubuntu_lts" {
+  for_each = module.config.configuration_valid ? local.ubuntu_lts_architectures : toset([])
+
+  most_recent = true
+  owners      = ["099720109477"]
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-${each.key}-server-*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = [each.key == "arm64" ? "arm64" : "x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  filter {
+    name   = "root-device-type"
+    values = ["ebs"]
+  }
+}
+
 module "network" {
   source = "./network"
   count = (
@@ -134,10 +168,12 @@ module "vm" {
   subnet_id = each.value.role == "bastion" ? module.network[0].management_subnet_id : (
     each.value.assign_public_ip ? module.network[0].public_subnet_id : module.network[0].workload_subnet_id
   )
-  security_group_ids  = [module.security[0].security_group_ids[each.value.role]]
-  internal_ip         = each.value.internal_ip
-  instance_type       = each.value.machine_type
-  ami_id              = each.value.image
+  security_group_ids = [module.security[0].security_group_ids[each.value.role]]
+  internal_ip        = each.value.internal_ip
+  instance_type      = each.value.machine_type
+  ami_id = each.value.image == "ubuntu-lts" ? (
+    data.aws_ami.ubuntu_lts[each.value.architecture].id
+  ) : each.value.image
   root_volume_size_gb = each.value.boot_disk.size_gb
   root_volume_type    = each.value.disk_type
   assign_public_ip    = each.value.assign_public_ip

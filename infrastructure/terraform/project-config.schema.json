@@ -52,7 +52,11 @@
         "location_profile": { "$ref": "#/$defs/profile_name" },
         "machine_profile": { "$ref": "#/$defs/profile_name" },
         "image_profile": { "$ref": "#/$defs/profile_name" },
-        "disk_profile": { "$ref": "#/$defs/profile_name" }
+        "disk_profile": { "$ref": "#/$defs/profile_name" },
+        "architecture": {
+          "type": "string",
+          "enum": ["amd64", "arm64"]
+        }
       }
     },
     "clouds": {
@@ -463,6 +467,10 @@
         "cloud": { "$ref": "#/$defs/cloud_name" },
         "machine_profile": { "$ref": "#/$defs/profile_name" },
         "image_profile": { "$ref": "#/$defs/profile_name" },
+        "architecture": {
+          "type": "string",
+          "enum": ["amd64", "arm64"]
+        },
         "internal_ip": { "type": "string", "minLength": 1 },
         "boot_disk": { "$ref": "#/$defs/boot_disk" },
         "assign_public_ip": { "type": "boolean" },

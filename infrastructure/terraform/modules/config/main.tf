@@ -92,6 +92,7 @@ locals {
       machine_profile = lookup(vm, "machine_profile", local.defaults.machine_profile)
       image_profile   = lookup(vm, "image_profile", local.defaults.image_profile)
       disk_profile    = lookup(vm.boot_disk, "profile", local.defaults.disk_profile)
+      architecture    = lookup(vm, "architecture", lookup(local.defaults, "architecture", "amd64"))
       secret_mappings = vm.role == "bastion" ? {} : lookup(
         local.config.secrets_by_role,
         vm.role,

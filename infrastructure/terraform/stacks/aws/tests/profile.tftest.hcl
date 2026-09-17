@@ -1,4 +1,10 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  mock_data "aws_ami" {
+    defaults = {
+      id = "ami-0123456789abcdef0"
+    }
+  }
+}
 mock_provider "archive" {}
 
 run "aws_profile_uses_only_aws_root" {
