@@ -18,6 +18,7 @@ import (
 	"oil-price-tracker/fetcher/internal/config"
 	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
+	"oil-price-tracker/fetcher/internal/rabbitmq"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
 )
@@ -42,24 +43,36 @@ func main() {
 		}
 	}
 
-	database, err := sql.Open("pgx", configuration.DatabaseURL)
-	if err != nil {
-		slog.Error("open PostgreSQL connection", "error", err)
-		os.Exit(1)
-	}
-	defer database.Close()
+	var publisher service.Publisher
+	var database *sql.DB
 
-	if err := database.Ping(); err != nil {
-		slog.Error("connect to PostgreSQL", "error", err)
-		os.Exit(1)
+	if configuration.QueueBackend == "pgmq" {
+		database, err = sql.Open("pgx", configuration.DatabaseURL)
+		if err != nil {
+			slog.Error("open PostgreSQL connection", "error", err)
+			os.Exit(1)
+		}
+		defer database.Close()
+
+		if err := database.Ping(); err != nil {
+			slog.Error("connect to PostgreSQL", "error", err)
+			os.Exit(1)
+		}
+
+		publisher = pgmq.Publisher{
+			DB:        database,
+			QueueName: configuration.QueueName,
+		}
+	} else {
+		publisher = rabbitmq.Publisher{
+			URL:       configuration.RabbitMQURL,
+			QueueName: configuration.QueueName,
+		}
 	}
 
 	collector := service.New(
 		priceProvider,
-		pgmq.Publisher{
-			DB:        database,
-			QueueName: configuration.QueueName,
-		},
+		publisher,
 	)
 
 	ctx, stop := signal.NotifyContext(
@@ -141,7 +154,7 @@ func main() {
 				"status":   "ok",
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
+				"delivery": configuration.QueueBackend,
 				"queue":    configuration.QueueName,
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,

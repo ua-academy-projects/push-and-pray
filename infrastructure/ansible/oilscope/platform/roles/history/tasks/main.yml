@@ -4,7 +4,17 @@
   environment:
     DOCKER_CONFIG: "{{ history_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ history_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    POSTGRES_PASSWORD_URLENCODED: "{{ history_postgres_password | urlencode }}"
+    POSTGRES_USER: "{{ history_database_user }}"
+    POSTGRES_USER_URLENCODED: "{{ history_database_user | urlencode }}"
+    POSTGRES_DB: "{{ history_database_name }}"
+    POSTGRES_DB_URLENCODED: "{{ history_database_name | urlencode }}"
+    DATABASE_HOST: "{{ history_database_host }}"
+    DATABASE_PORT: "{{ history_database_port | string }}"
+    DATABASE_SSLMODE: "{{ history_database_sslmode }}"
+    QUEUE_BACKEND: "{{ history_queue_backend }}"
+    QUEUE_NAME: "{{ history_queue_name }}"
+    RABBITMQ_URL: "{{ history_rabbitmq_url }}"
   no_log: true
   block:
     - name: Pull the History image
@@ -63,9 +73,15 @@
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_extension', ''
-      ) == 'installed'
+        'queue_consumer',
+        (history_health.json | default({})).get('pgmq_consumer', '')
+        if history_queue_backend == 'pgmq' else ''
+      ) == 'ready'
     - >-
       (history_health.json | default({})).get(
-        'pgmq_consumer', ''
-      ) == 'ready'
+        'queue_backend',
+        'pgmq'
+        if history_queue_backend == 'pgmq' and
+           'pgmq_consumer' in (history_health.json | default({}))
+        else ''
+      ) == history_queue_backend

@@ -8,3 +8,8 @@ ui_postgres_password: ""
 ui_health_retries: 30
 ui_health_delay: 2
 ui_docker_config_dir: /run/oilscope/docker-auth
+ui_database_host: postgres
+ui_database_port: 5432
+ui_database_name: oil_tracker
+ui_database_user: oil_tracker
+ui_database_sslmode: disable

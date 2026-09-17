@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure the Google Cloud Ops Agent
+  hosts: cloud_gcp
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  roles:
+    - role: oilscope.platform.gcp_ops_agent
+
+- name: Configure the Amazon CloudWatch Agent
+  hosts: cloud_aws
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  roles:
+    - role: oilscope.platform.aws_cloudwatch_agent

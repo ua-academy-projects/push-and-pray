@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the Amazon CloudWatch Agent target
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - aws_cloudwatch_agent_architecture | length > 0
+    fail_msg: >-
+      The Amazon CloudWatch Agent role supports Ubuntu on x86_64 or aarch64.
+
+- name: Download the Amazon CloudWatch Agent package
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ aws_cloudwatch_agent_package_url }}"
+    dest: "{{ aws_cloudwatch_agent_package_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Amazon CloudWatch Agent package
+  become: true
+  ansible.builtin.apt:
+    deb: "{{ aws_cloudwatch_agent_package_path }}"
+    state: present
+  notify: Apply the Amazon CloudWatch Agent configuration
+
+- name: Install the Amazon CloudWatch Agent configuration
+  become: true
+  ansible.builtin.template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: "{{ aws_cloudwatch_agent_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the Amazon CloudWatch Agent configuration
+
+- name: Apply pending Amazon CloudWatch Agent changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the Amazon CloudWatch Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ aws_cloudwatch_agent_service }}"
+    enabled: true
+    state: started
+    daemon_reload: true

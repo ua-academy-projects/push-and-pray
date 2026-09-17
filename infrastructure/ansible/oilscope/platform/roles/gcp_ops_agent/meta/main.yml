@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+galaxy_info:
+  author: Push and Pray team
+  description: Install and run the Google Cloud Ops Agent
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+    - name: Debian
+      versions:
+        - all
+  galaxy_tags:
+    - cloud
+    - gcp
+    - monitoring
+
+dependencies: []

@@ -1,9 +1,9 @@
 # Resolve secrets role
 
-Resolves the secret values permitted for the current host from Secret
-Manager, using the workload VM's own attached service account — not the
-operator's credentials. It runs on the workload host itself, as part of a
-deployment play, not on `localhost`.
+Resolves the secret values permitted for the current host from the selected
+cloud's secret manager. GCP access uses the workload VM service account and
+metadata token. AWS access uses the controller's standard AWS SDK credential
+chain, which is also required by the dynamic inventory.
 
 Terraform creates the containers and grants each workload access only to its
 own secrets; `secret_versions` writes values into them from an operator's
@@ -17,9 +17,9 @@ containers.
 - Only the secrets listed in the current host's own `secret_mappings` are
   ever requested — never another workload's, and never a sibling VM that
   happens to share the same `role`.
-- Authentication is the instance's attached service account, obtained from
-  the metadata server. No credential is supplied by the operator or stored
-  on the host.
+- GCP authentication comes from the attached service account. AWS
+  authentication follows `AWS_PROFILE` or the normal SDK credential chain;
+  credentials are never written to a workload host.
 - Nothing is written to disk. The result exists only as an in-memory fact
   for the duration of the play.
 - Every task that could carry a token or a secret value is marked `no_log`,
@@ -29,10 +29,13 @@ containers.
 
 ## Requirements
 
-The host must be a GCE instance with a service account attached, granted
-`roles/secretmanager.secretAccessor` on the secrets in its own
-`secret_mappings` — this is what `infrastructure/terraform/secrets.tf`
-grants automatically.
+GCP hosts need `roles/secretmanager.secretAccessor`, granted by
+`gcp-secrets` and `gcp-cloud-sql`. AWS controllers need
+`secretsmanager:GetSecretValue`; the EC2 runtime role receives the same
+least-privilege access for future in-host retrieval.
+
+In managed mode the role replaces `POSTGRES_PASSWORD` with the RDS-managed or
+Cloud SQL credential secret and resolves the generated RabbitMQ password.
 
 The role identifies which `vms` entry is "this host" from `inventory_hostname`
 itself, not from a role or group name. Terraform names every instance
@@ -56,7 +59,7 @@ never resolve to a sibling's secrets even in that case.
 ## Optional variables
 
 - `resolve_secrets_project_id`: target project. Falls back to
-  `$GOOGLE_PROJECT`, then to `project_id` in the configuration.
+  `$GOOGLE_PROJECT`, then to `clouds.gcp.project_id` in the configuration.
 - `resolve_secrets_metadata_url`: the instance metadata token endpoint.
 - `resolve_secrets_secretmanager_url`: the Secret Manager REST API base URL.
 

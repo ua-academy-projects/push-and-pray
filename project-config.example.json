@@ -1,8 +1,121 @@
 {
-  "project_id": "example-project-12345",
+  "config_version": 3,
+  "default_cloud": "gcp",
+  "location": {
+    "region": "default",
+    "zone": "default"
+  },
+  "clouds": {
+    "gcp": {
+      "project_id": "example-project-12345",
+      "regions": {
+        "default": "europe-west1",
+        "europe-west": "europe-west1",
+        "europe-central": "europe-west3",
+        "america-east": "us-east1",
+        "america-west": "us-west1",
+        "asia-southeast": "asia-southeast1"
+      },
+      "zones": {
+        "default": "europe-west1-b",
+        "europe-west": "europe-west1-b",
+        "europe-central": "europe-west3-a",
+        "america-east": "us-east1-b",
+        "america-west": "us-west1-a",
+        "asia-southeast": "asia-southeast1-b"
+      },
+      "machine_types": {
+        "micro": "e2-micro",
+        "small": "e2-small"
+      },
+      "disk_types": {
+        "balanced": "pd-balanced"
+      },
+      "images": {
+        "default": {
+          "ubuntu-2404": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+          "ubuntu-2204": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+        },
+        "europe-west": {
+          "ubuntu-2404": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+          "ubuntu-2204": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+        },
+        "europe-central": {
+          "ubuntu-2404": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+          "ubuntu-2204": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+        },
+        "america-east": {
+          "ubuntu-2404": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+          "ubuntu-2204": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+        },
+        "america-west": {
+          "ubuntu-2404": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+          "ubuntu-2204": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+        },
+        "asia-southeast": {
+          "ubuntu-2404": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+          "ubuntu-2204": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+        }
+      }
+    },
+    "aws": {
+      "regions": {
+        "default": "us-east-1",
+        "europe-west": "eu-west-1",
+        "europe-central": "eu-central-1",
+        "america-east": "us-east-1",
+        "america-west": "us-west-2",
+        "asia-southeast": "ap-southeast-1"
+      },
+      "zones": {
+        "default": "us-east-1a",
+        "europe-west": "eu-west-1a",
+        "europe-central": "eu-central-1a",
+        "america-east": "us-east-1a",
+        "america-west": "us-west-2a",
+        "asia-southeast": "ap-southeast-1a"
+      },
+      "machine_types": {
+        "micro": "t3.micro",
+        "small": "t3.small"
+      },
+      "disk_types": {
+        "balanced": "gp3"
+      },
+      "images": {
+        "default": {
+          "ubuntu-2404": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+          "ubuntu-2204": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        },
+        "europe-west": {
+          "ubuntu-2404": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+          "ubuntu-2204": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        },
+        "europe-central": {
+          "ubuntu-2404": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+          "ubuntu-2204": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        },
+        "america-east": {
+          "ubuntu-2404": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+          "ubuntu-2204": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        },
+        "america-west": {
+          "ubuntu-2404": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+          "ubuntu-2204": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        },
+        "asia-southeast": {
+          "ubuntu-2404": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+          "ubuntu-2204": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        }
+      },
+      "network": {
+        "management_subnet_cidr": "10.0.0.0/28",
+        "workload_subnet_cidr": "10.0.1.0/26",
+        "vpc_cidr": "10.0.0.0/16"
+      }
+    }
+  },
   "environment": "dev",
-  "region": "europe-west1",
-  "zone": "europe-west1-b",
   "name_prefix": "oilscope",
   "common_labels": {
     "project": "example-oil-price-tracker",
@@ -17,90 +130,122 @@
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
   "network": {
+    "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/29",
     "workload_subnet_cidr": "10.0.1.0/26",
-    "ui_public_ports": [80, 443]
+    "ui_public_ports": [
+      80,
+      443
+    ]
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672
   },
   "vms": {
     "bastion": {
       "role": "bastion",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "machine_type": "micro",
+      "image": "ubuntu-2404",
       "internal_ip": "10.0.0.2",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": true,
-      "network_tags": ["bastion"],
+      "network_tags": [
+        "bastion"
+      ],
       "secret_mappings": {},
       "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
+      "allowed_cidrs": [
+        "192.0.2.10/32"
+      ],
+      "internal_ips": {
+        "aws": "10.0.0.10"
+      }
     },
     "infra": {
       "role": "database",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "machine_type": "micro",
+      "image": "ubuntu-2404",
       "internal_ip": "10.0.1.2",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": ["infra"],
+      "network_tags": [
+        "infra"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "internal_ips": {
+        "aws": "10.0.1.10"
       }
     },
     "history": {
       "role": "history",
-      "machine_type": "e2-small",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "machine_type": "small",
+      "image": "ubuntu-2404",
       "internal_ip": "10.0.1.3",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": ["history"],
+      "network_tags": [
+        "history"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "internal_ips": {
+        "aws": "10.0.1.11"
       }
     },
     "fetcher": {
       "role": "fetcher",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "machine_type": "micro",
+      "image": "ubuntu-2404",
       "internal_ip": "10.0.1.4",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": ["fetcher"],
+      "network_tags": [
+        "fetcher"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "OILPRICEAPI_KEY": "example-api-key",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "internal_ips": {
+        "aws": "10.0.1.12"
       }
     },
     "ui": {
       "role": "ui",
-      "machine_type": "e2-micro",
-      "image": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "machine_type": "micro",
+      "image": "ubuntu-2404",
       "internal_ip": "10.0.1.5",
       "boot_disk": {
         "size_gb": 10,
-        "type": "pd-balanced"
+        "type": "balanced"
       },
       "assign_public_ip": true,
-      "network_tags": ["ui"],
+      "network_tags": [
+        "ui"
+      ],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
         "GHCR_TOKEN": "example-ghcr-token"
@@ -108,6 +253,9 @@
       "public_endpoint": {
         "hostname": "oilscope.example.com",
         "acme_email": "example-operator@example.com"
+      },
+      "internal_ips": {
+        "aws": "10.0.0.11"
       }
     }
   }

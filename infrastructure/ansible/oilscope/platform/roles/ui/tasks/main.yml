@@ -4,7 +4,14 @@
   environment:
     DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
     POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
+    POSTGRES_PASSWORD_URLENCODED: "{{ ui_postgres_password | urlencode }}"
+    POSTGRES_USER: "{{ ui_database_user }}"
+    POSTGRES_USER_URLENCODED: "{{ ui_database_user | urlencode }}"
+    POSTGRES_DB: "{{ ui_database_name }}"
+    POSTGRES_DB_URLENCODED: "{{ ui_database_name | urlencode }}"
+    DATABASE_HOST: "{{ ui_database_host }}"
+    DATABASE_PORT: "{{ ui_database_port | string }}"
+    DATABASE_SSLMODE: "{{ ui_database_sslmode }}"
     HISTORY_SERVICE_URL: >-
       http://{{ hostvars[groups['history'][0]].internal_ip }}:8001
   no_log: true

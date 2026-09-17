@@ -7,7 +7,7 @@ local health endpoint.
 
 - Docker and the Compose plugin are installed.
 - `/opt/oilscope/app/compose.yaml` is installed.
-- The dynamic GCP inventory contains one host in the `database` group with an `internal_ip` variable.
+- Dynamic inventory provides the selected database and queue connection metadata.
 - Database is healthy and migrated.
 
 The deployment workflow retrieves `POSTGRES_PASSWORD` from Secret Manager and
@@ -17,6 +17,8 @@ secret values.
 ## Variables
 
 - `history_postgres_password`: password injected by the deployment workflow.
+- `history_queue_backend`: `pgmq` or `rabbitmq`.
+- `history_rabbitmq_url`: required only for RabbitMQ.
 
 ## Example
 

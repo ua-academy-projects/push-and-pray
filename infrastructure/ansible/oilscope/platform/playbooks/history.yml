@@ -33,3 +33,16 @@
     - role: oilscope.platform.history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        history_database_host: "{{ database_host }}"
+        history_database_port: "{{ database_port }}"
+        history_database_name: "{{ database_name }}"
+        history_database_user: "{{ database_user }}"
+        history_database_sslmode: "{{ database_sslmode }}"
+        history_queue_backend: "{{ queue_backend }}"
+        history_queue_name: price_observations
+        history_rabbitmq_url: >-
+          {{ 'amqp://' ~ (queue_username | urlencode)
+             ~ ':' ~ (resolve_secrets_result.RABBITMQ_PASSWORD
+                       | default('') | urlencode)
+             ~ '@' ~ queue_host ~ ':' ~ (queue_port | string)
+             ~ '/' ~ (queue_vhost | urlencode) }}

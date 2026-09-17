@@ -1,11 +1,13 @@
 # Controller-side Python requirements for the OilScope Ansible tooling.
 #
-# The google.cloud.gcp_compute inventory plugin used by
-# inventory/oilscope.gcp.yml talks to the Compute Engine API through these
-# libraries, authenticating with Application Default Credentials:
+# The multi-cloud inventory wrapper delegates to the GCP and AWS inventory
+# plugins. GCP uses Application Default Credentials and AWS uses the standard
+# AWS SDK credential chain:
 #
 #     pip install -r infrastructure/ansible/requirements.txt
 #     gcloud auth application-default login
 #
 google-auth>=2.0.0
 requests>=2.25.0
+boto3>=1.35.0
+botocore>=1.35.0

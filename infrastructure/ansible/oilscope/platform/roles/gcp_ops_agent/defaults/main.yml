@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+gcp_ops_agent_package: google-cloud-ops-agent
+gcp_ops_agent_service: google-cloud-ops-agent
+gcp_ops_agent_installer_url: >-
+  https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+gcp_ops_agent_installer_path: /var/tmp/add-google-cloud-ops-agent-repo.sh
+gcp_ops_agent_version: latest

@@ -6,6 +6,7 @@ set -eu
 : "${PGUSER:?PGUSER is required}"
 : "${PGDATABASE:?PGDATABASE is required}"
 : "${PGPASSWORD:?PGPASSWORD is required}"
+: "${DATABASE_MODE:=self_hosted}"
 
 attempt=1
 max_attempts=30
@@ -26,6 +27,12 @@ do
 done
 
 for migration in /opt/petroscope/migrations/*.sql; do
+    if [ "${DATABASE_MODE}" = "managed" ] &&
+        [ "$(basename "${migration}")" = "004_create_pgmq_queue.sql" ]; then
+        echo "Skipping $(basename "${migration}") for managed database mode"
+        continue
+    fi
+
     echo "Applying $(basename "${migration}")"
 
     psql \

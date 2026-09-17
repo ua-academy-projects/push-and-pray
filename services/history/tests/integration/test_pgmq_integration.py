@@ -291,7 +291,7 @@ def test_history_persists_observations_exactly_once(
 
     settings = Settings(
         database_url=DATABASE_URL,
-        pgmq_queue=QUEUE,
+        queue_name=QUEUE,
         pgmq_visibility_timeout_seconds=5,
         pgmq_poll_interval_seconds=0.1,
         pgmq_max_attempts=5,

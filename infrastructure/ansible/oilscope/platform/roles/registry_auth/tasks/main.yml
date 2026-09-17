@@ -21,6 +21,24 @@
     msg: GHCR_TOKEN is missing or empty for this workload.
   when: not registry_auth_token_available
 
+- name: Reject a token wrapped in braces
+  ansible.builtin.fail:
+    msg: >-
+      GHCR_TOKEN must contain only the raw token in Secrets Manager plaintext;
+      remove surrounding braces, quotes, and key/value JSON.
+  when: >-
+    (registry_auth_token | trim | regex_search('^\{(ghp_|github_pat_)'))
+    is not none
+
+- name: Require a GitHub personal access token classic for GHCR
+  ansible.builtin.fail:
+    msg: >-
+      GHCR requires a GitHub personal access token classic beginning with ghp_
+      and carrying at least the read:packages scope.
+  when:
+    - registry_auth_registry == 'ghcr.io'
+    - not (registry_auth_token | trim).startswith('ghp_')
+
 - name: Create the transient Docker configuration directory
   become: true
   ansible.builtin.file:

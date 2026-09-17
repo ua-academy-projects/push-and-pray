@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+rabbitmq_compose_project_dir: /opt/oilscope/app
+rabbitmq_compose_file: "{{ rabbitmq_compose_project_dir }}/compose.yaml"
+rabbitmq_compose_project_name: petroscope
+rabbitmq_service: rabbitmq
+rabbitmq_image: rabbitmq:4.1-management
+rabbitmq_username: oilscope
+rabbitmq_password: ""
+rabbitmq_vhost: oilscope
+rabbitmq_bind_address: 0.0.0.0
+rabbitmq_port: 5672
+rabbitmq_management_port: 15672
+rabbitmq_health_retries: 30
+rabbitmq_health_delay: 2

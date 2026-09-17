@@ -1,5 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Require an OilPriceAPI key
+  ansible.builtin.fail:
+    msg: OILPRICEAPI_KEY is missing or empty.
+  when: fetcher_oilpriceapi_key | trim | length == 0
+
+- name: Reject an OilPriceAPI key wrapped in braces
+  ansible.builtin.fail:
+    msg: >-
+      OILPRICEAPI_KEY must contain only the raw key in Secrets Manager
+      plaintext; remove surrounding braces, quotes, and key/value JSON.
+  when:
+    - (fetcher_oilpriceapi_key | trim).startswith('{')
+    - (fetcher_oilpriceapi_key | trim).endswith('}')
+
 - name: Pull the Fetcher image
   ansible.builtin.command:
     argv:

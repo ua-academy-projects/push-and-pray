@@ -32,7 +32,18 @@
 
     - role: oilscope.platform.fetcher
       vars:
-        fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
+        fetcher_database_host: "{{ database_host }}"
+        fetcher_database_port: "{{ database_port }}"
+        fetcher_postgres_name: "{{ database_name }}"
+        fetcher_postgres_user: "{{ database_user }}"
+        fetcher_database_sslmode: "{{ database_sslmode }}"
+        fetcher_queue_backend: "{{ queue_backend }}"
+        fetcher_queue_name: price_observations
+        fetcher_rabbitmq_url: >-
+          {{ 'amqp://' ~ (queue_username | urlencode)
+             ~ ':' ~ (resolve_secrets_result.RABBITMQ_PASSWORD
+                       | default('') | urlencode)
+             ~ '@' ~ queue_host ~ ':' ~ (queue_port | string)
+             ~ '/' ~ (queue_vhost | urlencode) }}
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

@@ -11,9 +11,11 @@ services:
       OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
       DATA_PROVIDER: ${DATA_PROVIDER:-oilpriceapi}
       # yamllint disable rule:line-length
-      DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      DATABASE_URL: postgres://${POSTGRES_USER_URLENCODED:-oil_tracker}:${POSTGRES_PASSWORD_URLENCODED:?POSTGRES_PASSWORD_URLENCODED is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-5432}/${POSTGRES_DB_URLENCODED:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
-      PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-pgmq}
+      QUEUE_NAME: ${QUEUE_NAME:-price_observations}
+      RABBITMQ_URL: ${RABBITMQ_URL:-}
       FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}
       FETCH_TIMEZONE: ${FETCH_TIMEZONE:-UTC}
       FETCH_ON_STARTUP: ${FETCH_ON_STARTUP:-true}

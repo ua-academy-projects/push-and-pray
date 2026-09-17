@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the Google Cloud Ops Agent target
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Debian'
+    fail_msg: The Google Cloud Ops Agent role currently supports Debian-family Linux only.
+
+- name: Read installed packages
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Install the Google Cloud Ops Agent
+  when: gcp_ops_agent_package not in ansible_facts['packages']
+  block:
+    - name: Download the Google Cloud Ops Agent installer
+      become: true
+      ansible.builtin.get_url:
+        url: "{{ gcp_ops_agent_installer_url }}"
+        dest: "{{ gcp_ops_agent_installer_path }}"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Run the Google Cloud Ops Agent installer
+      become: true
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ gcp_ops_agent_installer_path }}"
+          - --also-install
+          - --version
+          - "{{ gcp_ops_agent_version }}"
+      changed_when: true
+
+- name: Enable and start the Google Cloud Ops Agent
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ gcp_ops_agent_service }}"
+    enabled: true
+    state: started

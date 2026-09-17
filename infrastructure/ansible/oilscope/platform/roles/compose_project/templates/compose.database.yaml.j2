@@ -42,14 +42,35 @@ services:
     restart: "no"
     command: ["petroscope-migrate"]
     environment:
-      PGHOST: postgres
-      PGPORT: 5432
+      DATABASE_MODE: ${DATABASE_MODE:-self_hosted}
+      PGHOST: ${DATABASE_HOST:-postgres}
+      PGPORT: ${DATABASE_PORT:-5432}
       PGUSER: ${POSTGRES_USER:-oil_tracker}
       PGDATABASE: ${POSTGRES_DB:-oil_tracker}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    depends_on:
-      postgres:
-        condition: service_healthy
+      PGSSLMODE: ${DATABASE_SSLMODE:-disable}
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.1-management}
+    restart: unless-stopped
+    hostname: oilscope-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-oilscope}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-unused-in-self-hosted-mode}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oilscope}
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 30s
 
 volumes:
   postgres_data:
+  rabbitmq_data:

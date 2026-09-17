@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the Compose definition
+  ansible.builtin.stat:
+    path: "{{ rabbitmq_compose_file }}"
+  register: rabbitmq_compose_definition
+  failed_when: not rabbitmq_compose_definition.stat.exists
+
+- name: Start RabbitMQ
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ rabbitmq_compose_project_name }}"
+      - --file
+      - "{{ rabbitmq_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ rabbitmq_service }}"
+  args:
+    chdir: "{{ rabbitmq_compose_project_dir }}"
+  environment:
+    POSTGRES_PASSWORD: unused-in-managed-mode
+    RABBITMQ_IMAGE: "{{ rabbitmq_image }}"
+    RABBITMQ_USERNAME: "{{ rabbitmq_username }}"
+    RABBITMQ_PASSWORD: "{{ rabbitmq_password }}"
+    RABBITMQ_VHOST: "{{ rabbitmq_vhost }}"
+    RABBITMQ_BIND_ADDRESS: "{{ rabbitmq_bind_address }}"
+    RABBITMQ_PORT: "{{ rabbitmq_port | string }}"
+    RABBITMQ_MANAGEMENT_PORT: "{{ rabbitmq_management_port | string }}"
+  register: rabbitmq_compose_up
+  changed_when: >-
+    'Created' in rabbitmq_compose_up.stderr or
+    'Started' in rabbitmq_compose_up.stderr or
+    'Recreated' in rabbitmq_compose_up.stderr
+  no_log: true
+
+- name: Get the RabbitMQ container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ rabbitmq_compose_project_name }}"
+      - --file
+      - "{{ rabbitmq_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ rabbitmq_service }}"
+  args:
+    chdir: "{{ rabbitmq_compose_project_dir }}"
+  environment:
+    POSTGRES_PASSWORD: unused-in-managed-mode
+  register: rabbitmq_container
+  changed_when: false
+  failed_when: rabbitmq_container.stdout | trim | length == 0
+
+- name: Wait for RabbitMQ to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ rabbitmq_container.stdout | trim }}"
+  register: rabbitmq_health
+  changed_when: false
+  retries: "{{ rabbitmq_health_retries }}"
+  delay: "{{ rabbitmq_health_delay }}"
+  until: rabbitmq_health.stdout | trim == 'healthy'

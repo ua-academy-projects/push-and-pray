@@ -41,3 +41,8 @@
     - role: oilscope.platform.ui
       vars:
         ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_database_host: "{{ database_host }}"
+        ui_database_port: "{{ database_port }}"
+        ui_database_name: "{{ database_name }}"
+        ui_database_user: "{{ database_user }}"
+        ui_database_sslmode: "{{ database_sslmode }}"

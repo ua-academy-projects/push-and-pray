@@ -16,11 +16,8 @@ infrastructure/docker/deployment
 **/.terraform/
 *.tfstate
 *.tfstate.*
-terraform.tfvars
-infrastructure/terraform/terraform.tfvars
 infrastructure/terraform/legacy
 infrastructure/legacy_terraform
-infrastructure/docker/deployment
 *.tfvars
 *.tfvars.json
 *.tfplan
@@ -35,6 +32,7 @@ crash.*.log
 !project-config.example.json
 
 # Built Ansible collection artifacts
+.ansible/
 infrastructure/ansible/**/*.tar.gz
 infrastructure/ansible/inventory/oilscope.gcp.yml
 

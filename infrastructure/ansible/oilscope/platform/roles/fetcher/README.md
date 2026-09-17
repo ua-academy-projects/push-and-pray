@@ -9,9 +9,9 @@ The target must have Docker with the Compose plugin installed. The supported
 Compose definition must already be installed on the target; use the
 `oilscope.platform.compose_project` role for that step.
 
-A reachable PostgreSQL instance is required: the Fetcher process pings it at
-startup and exits immediately if the connection fails, before its HTTP
-server (and therefore its health check) ever starts.
+A reachable PostgreSQL instance is required for the PGMQ backend. In managed
+mode Fetcher publishes directly to RabbitMQ while History and UI use the
+managed PostgreSQL endpoint.
 
 ## Required variables
 
@@ -34,6 +34,8 @@ server (and therefore its health check) ever starts.
   `oil_tracker`.
 - `fetcher_database_host`: defaults to `postgres`; override to the database
   VM's address when Fetcher and the database run on separate hosts.
+- `fetcher_queue_backend`: `pgmq` or `rabbitmq`.
+- `fetcher_rabbitmq_url`: required only for RabbitMQ.
 - `fetcher_bind_address`: defaults to `0.0.0.0`.
 - `fetcher_host_port`: defaults to `8002`.
 - `fetcher_health_retries` and `fetcher_health_delay`: health polling

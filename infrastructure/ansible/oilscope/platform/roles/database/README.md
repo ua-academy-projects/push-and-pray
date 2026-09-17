@@ -1,7 +1,9 @@
 # Database role
 
-Pulls the immutable OilScope PostgreSQL image, starts the database service,
-waits for its Docker health check, and applies the bundled SQL migrations.
+In `self_hosted` mode, pulls the immutable OilScope PostgreSQL image, starts
+the database service, waits for its health check, and applies migrations. In
+`managed` mode it stops the old PostgreSQL container without deleting its
+volume and runs those migrations against RDS or Cloud SQL.
 
 ## Requirements
 
@@ -19,6 +21,9 @@ The database image must contain `petroscope-migrate` and the migrations under
 - `database_postgres_password`: password supplied by the deployment secret
   mechanism. The role marks tasks receiving it with `no_log` and does not write
   it to disk.
+- `database_mode`: `self_hosted` or `managed`.
+- `database_connection_host`, `database_connection_port`, and
+  `database_connection_sslmode`: migration target.
 
 ## Optional variables
 

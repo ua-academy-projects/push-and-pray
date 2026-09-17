@@ -182,3 +182,18 @@ def test_consumer_archives_after_retry_limit(
     )
 
     assert archived == [999]
+
+
+def test_consumer_factory_selects_rabbitmq() -> None:
+    consumer = messaging.build_consumer(
+        Settings(
+            queue_backend="rabbitmq",
+            rabbitmq_url="amqp://oilscope:test@localhost:5672/oilscope",
+        )
+    )
+
+    assert isinstance(consumer, messaging.RabbitMQConsumer)
+
+
+def test_consumer_factory_defaults_to_pgmq() -> None:
+    assert isinstance(messaging.build_consumer(Settings()), messaging.PGMQConsumer)

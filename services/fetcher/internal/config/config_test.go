@@ -58,8 +58,27 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 		)
 	}
 
+	if configuration.QueueBackend != "pgmq" {
+		t.Fatalf("unexpected queue backend: %s", configuration.QueueBackend)
+	}
+
 	if configuration.DatabaseURL == "" {
 		t.Fatal("DATABASE_URL should not be empty")
+	}
+}
+
+func TestLoadRabbitMQConfiguration(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("QUEUE_BACKEND", "rabbitmq")
+	t.Setenv("RABBITMQ_URL", "amqp://oilscope:test@localhost:5672/oilscope")
+
+	configuration, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if configuration.QueueBackend != "rabbitmq" {
+		t.Fatalf("unexpected queue backend: %s", configuration.QueueBackend)
 	}
 }
 

@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Any
 
+import aio_pika
+from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 from pydantic import ValidationError
 from sqlalchemy import text
 
@@ -48,7 +50,7 @@ class PGMQConsumer:
         logger.info(
             "PGMQ consumer started",
             extra={
-                "queue": self.settings.pgmq_queue,
+                "queue": self.settings.queue_name,
             },
         )
 
@@ -81,7 +83,7 @@ class PGMQConsumer:
                     """
                 ),
                 {
-                    "queue_name": self.settings.pgmq_queue,
+                    "queue_name": self.settings.queue_name,
                     "visibility_timeout": self.settings.pgmq_visibility_timeout_seconds,
                 },
             )
@@ -183,7 +185,7 @@ class PGMQConsumer:
                     """
                 ),
                 {
-                    "queue_name": self.settings.pgmq_queue,
+                    "queue_name": self.settings.queue_name,
                     "msg_id": msg_id,
                 },
             ).scalar_one()
@@ -192,3 +194,78 @@ class PGMQConsumer:
 
             if not archived:
                 raise RuntimeError(f"failed to archive PGMQ message {msg_id}")
+
+
+class RabbitMQConsumer:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.connection: AbstractRobustConnection | None = None
+        self.ready = False
+
+    @property
+    def is_ready(self) -> bool:
+        return bool(self.ready and self.connection is not None and not self.connection.is_closed)
+
+    async def start(self) -> None:
+        if not self.settings.rabbitmq_url:
+            raise RuntimeError("RABBITMQ_URL is required when QUEUE_BACKEND=rabbitmq")
+
+        self.connection = await aio_pika.connect_robust(self.settings.rabbitmq_url)
+        channel = await self.connection.channel()
+        await channel.set_qos(prefetch_count=1)
+        queue = await channel.declare_queue(self.settings.queue_name, durable=True)
+        await queue.consume(self._handle_delivery)
+        self.ready = True
+
+        logger.info(
+            "RabbitMQ consumer started",
+            extra={"queue": self.settings.queue_name},
+        )
+
+    async def stop(self) -> None:
+        self.ready = False
+        if self.connection is not None:
+            await self.connection.close()
+
+    async def _handle_delivery(self, message: AbstractIncomingMessage) -> None:
+        try:
+            event = ObservationEvent.model_validate_json(message.body)
+        except ValidationError as exc:
+            logger.error(
+                "permanently invalid RabbitMQ message",
+                extra={"message_id": message.message_id, "error": str(exc)},
+            )
+            await message.reject(requeue=False)
+            return
+
+        try:
+            inserted, duplicates = await asyncio.to_thread(self._persist_event, event)
+        except Exception:
+            logger.exception(
+                "failed to persist RabbitMQ message; requeueing",
+                extra={"message_id": message.message_id},
+            )
+            await message.nack(requeue=True)
+            return
+
+        await message.ack()
+        logger.info(
+            "RabbitMQ message persisted",
+            extra={
+                "message_id": message.message_id,
+                "event_key": event.event_key,
+                "inserted": inserted,
+                "duplicates": duplicates,
+            },
+        )
+
+    @staticmethod
+    def _persist_event(event: ObservationEvent) -> tuple[int, int]:
+        with SessionLocal() as session:
+            return insert_batch(session, event.observations)
+
+
+def build_consumer(settings: Settings) -> PGMQConsumer | RabbitMQConsumer:
+    if settings.queue_backend == "rabbitmq":
+        return RabbitMQConsumer(settings)
+    return PGMQConsumer(settings)

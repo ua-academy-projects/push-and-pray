@@ -15,3 +15,7 @@ database_health_retries: 30
 database_health_delay: 2
 database_docker_config_dir: /run/oilscope/docker-auth
 database_compose_environment: {}
+database_mode: self_hosted
+database_connection_host: postgres
+database_connection_port: 5432
+database_connection_sslmode: disable

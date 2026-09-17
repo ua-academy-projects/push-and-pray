@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
+from .messaging import build_consumer
 from .models import PriceObservation
 from .repository import (
     insert_batch,
@@ -36,7 +36,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+queue_consumer = build_consumer(settings)
 
 
 @asynccontextmanager
@@ -45,12 +45,12 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
-    await pgmq_consumer.start()
+    await queue_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await queue_consumer.stop()
 
 
 app = FastAPI(
@@ -67,23 +67,30 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    extension_installed = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
+    extension_status = "not_required"
+    if settings.queue_backend == "pgmq":
+        extension_installed = db.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_extension
+                    WHERE extname = 'pgmq'
+                )
+                """
             )
-            """
-        )
-    ).scalar_one()
+        ).scalar_one()
+        extension_status = "installed" if extension_installed else "missing"
+
+    consumer_status = "ready" if queue_consumer.is_ready else "not_ready"
 
     return {
         "status": "ok",
         "database": "connected",
-        "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
+        "queue_backend": settings.queue_backend,
+        "queue_consumer": consumer_status,
+        "pgmq_extension": extension_status,
+        "pgmq_consumer": consumer_status if settings.queue_backend == "pgmq" else "not_required",
     }
 
 

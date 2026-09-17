@@ -45,7 +45,7 @@ configuration file this role reads.
 ## Optional variables
 
 - `secret_versions_project_id`: target project. Falls back to `$GOOGLE_PROJECT`,
-  then to `project_id` in the configuration.
+  then to `clouds.gcp.project_id` in the configuration.
 - `secret_versions_only`: list of container IDs or variable names to upload.
   Defaults to all of them; use it to rotate one credential.
 - `secret_versions_gcloud`: path to the `gcloud` executable.

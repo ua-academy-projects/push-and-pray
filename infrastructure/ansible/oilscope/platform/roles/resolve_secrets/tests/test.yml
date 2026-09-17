@@ -15,13 +15,26 @@
   connection: local
   gather_facts: false
   tasks:
-    - name: Include the role without a configuration file
-      ansible.builtin.include_role:
-        name: resolve_secrets
-      vars:
-        resolve_secrets_config_path: /nonexistent/project-config.json
-      register: resolve_secrets_no_config
-      ignore_errors: true
+    - name: Verify a missing configuration is rejected
+      block:
+        - name: Include the role without a configuration file
+          ansible.builtin.include_role:
+            name: resolve_secrets
+          vars:
+            resolve_secrets_config_path: /nonexistent/project-config.json
+
+        - name: Fail when the missing configuration was accepted
+          ansible.builtin.fail:
+            msg: The role unexpectedly accepted a missing configuration file.
+      rescue:
+        - name: Record the expected rejection
+          ansible.builtin.set_fact:
+            resolve_secrets_missing_config_rejected: true
+
+    - name: Confirm the missing configuration was rejected
+      ansible.builtin.assert:
+        that:
+          - resolve_secrets_missing_config_rejected | default(false)
 
 - name: Test the resolve_secrets role (host with no secret mappings)
   hosts: oilscope-dev-bastion

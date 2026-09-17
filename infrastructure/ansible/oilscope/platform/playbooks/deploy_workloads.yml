@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Configure cloud monitoring agents
+  ansible.builtin.import_playbook: monitoring_agents.yml
+
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml
 

@@ -33,6 +33,12 @@
 
     - role: oilscope.platform.database
       vars:
+        database_connection_host: >-
+          {{ database_host if database_mode == 'managed' else 'postgres' }}
+        database_connection_port: "{{ database_port }}"
+        database_connection_sslmode: "{{ database_sslmode }}"
+        database_postgres_user: "{{ database_user }}"
+        database_postgres_name: "{{ database_name }}"
         database_postgres_image: >-
           {{
             compose_project_config.registry.repository
@@ -40,3 +46,10 @@
             ~ compose_project_config.registry.image_sha
           }}
         database_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+
+    - role: oilscope.platform.rabbitmq
+      when: database_mode == 'managed'
+      vars:
+        rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+        rabbitmq_username: "{{ queue_username }}"
+        rabbitmq_vhost: "{{ queue_vhost }}"
