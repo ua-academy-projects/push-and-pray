@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 readonly REPO_ROOT
 readonly TF_DIR="${REPO_ROOT}/infrastructure/terraform"
 readonly ANSIBLE_DIR="${REPO_ROOT}/infrastructure/ansible"
-readonly INVENTORY="${ANSIBLE_DIR}/inventory/oilscope.yml"
+readonly LEGACY_INVENTORY="${ANSIBLE_DIR}/inventory/oilscope.yml"
 readonly COLLECTION_DIR="${ANSIBLE_DIR}/oilscope/platform"
 readonly DOMAIN="shiphappens.pp.ua"
 readonly DEPLOY_VENV="${REPO_ROOT}/.oilscope-deploy/venv"
@@ -86,6 +86,13 @@ case "${PROFILE}:${CONFIG_SCHEMA_VERSION}" in
 esac
 readonly TF_RUN_DIR
 readonly BACKEND_FILE="${GENERATED_ROOT}/${CONFIG_ENVIRONMENT}/${CONFIG_PROVIDER}/${CONFIG_DEPLOYMENT}/backend.hcl"
+readonly DEPLOYMENT_OUTPUT_FILE="${GENERATED_ROOT}/${CONFIG_ENVIRONMENT}/${CONFIG_PROVIDER}/${CONFIG_DEPLOYMENT}/deployment.json"
+if [[ "${CONFIG_SCHEMA_VERSION}" -gt 0 ]]; then
+  INVENTORY="${GENERATED_ROOT}/${CONFIG_ENVIRONMENT}/${CONFIG_PROVIDER}/${CONFIG_DEPLOYMENT}/inventory.json"
+else
+  INVENTORY="${LEGACY_INVENTORY}"
+fi
+readonly INVENTORY
 
 for command_name in jq terraform curl dig nc python3; do
   require_command "${command_name}"
@@ -413,6 +420,15 @@ terraform -chdir="${TF_RUN_DIR}" apply \
   "${TF_APPLY_ARGS[@]}" \
   -var="enable_bastion_ssh_bootstrap=true"
 BOOTSTRAP_ENABLED=true
+
+if [[ "${CONFIG_SCHEMA_VERSION}" -gt 0 ]]; then
+  step "Rendering normalized deployment output and Ansible inventory"
+  terraform -chdir="${TF_RUN_DIR}" output -json deployment >"${DEPLOYMENT_OUTPUT_FILE}"
+  chmod 0600 "${DEPLOYMENT_OUTPUT_FILE}"
+  python3 "${SCRIPT_DIR}/render_ansible_inventory.py" \
+    --deployment "${DEPLOYMENT_OUTPUT_FILE}" \
+    --output "${INVENTORY}"
+fi
 
 DATABASE_VARS_FILE="${COLLECTION_BUILD_DIR}/database-connection.json"
 terraform -chdir="${TF_RUN_DIR}" output -json managed_database | \

@@ -16,3 +16,8 @@ output "workload_internal_ips" {
 output "secret_ids" { value = module.aws.secret_ids }
 output "workload_secret_access" { value = module.aws.workload_secret_access }
 output "managed_service_images" { value = { aws = module.aws.managed_service_images } }
+
+output "deployment" {
+  description = "Versioned provider-neutral deployment contract."
+  value       = module.deployment_contract.deployment
+}

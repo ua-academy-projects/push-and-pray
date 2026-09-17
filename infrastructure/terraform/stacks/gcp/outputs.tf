@@ -16,3 +16,8 @@ output "workload_internal_ips" {
 output "secret_ids" { value = module.gcp.secret_ids }
 output "workload_secret_access" { value = module.gcp.workload_secret_access }
 output "managed_service_images" { value = { gcp = module.gcp.managed_service_images } }
+
+output "deployment" {
+  description = "Versioned provider-neutral deployment contract."
+  value       = module.deployment_contract.deployment
+}

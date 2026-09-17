@@ -1,6 +1,7 @@
 output "name" { value = aws_instance.this.tags["Name"] }
 output "instance_id" { value = aws_instance.this.id }
 output "root_volume_id" { value = aws_instance.this.root_block_device[0].volume_id }
+output "instance_arn" { value = aws_instance.this.arn }
 output "internal_ip" { value = aws_instance.this.private_ip }
 output "public_ip" { value = var.assign_public_ip ? aws_eip.this[0].public_ip : null }
 output "network_tags" { value = [var.role] }

@@ -8,6 +8,11 @@ output "instance_id" {
   value       = google_compute_instance.workload.instance_id
 }
 
+output "boot_disk_id" {
+  description = "Provider identifier of the VM boot disk."
+  value       = google_compute_instance.workload.boot_disk[0].source
+}
+
 output "internal_ip" {
   description = "Internal IP address of the workload VM."
   value       = google_compute_instance.workload.network_interface[0].network_ip

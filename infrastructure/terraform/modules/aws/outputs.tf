@@ -2,13 +2,35 @@ output "vms" {
   description = "Provider-neutral AWS VM records."
   value = {
     for name, vm in module.vm : name => {
+      contract_version = 1
+      logical_name     = name
       name             = vm.name
       role             = module.config.provisionable_vms[name].role
+      provider         = module.config.cloud
       cloud            = module.config.cloud
+      region           = module.config.location.region
+      zone             = module.config.location.zone
+      architecture     = try(module.config.provisionable_vms[name].architecture, "amd64")
+      private_address  = vm.internal_ip
+      public_address   = vm.public_ip
       internal_ip      = vm.internal_ip
       public_ip        = vm.public_ip
       network_tags     = vm.network_tags
       runtime_identity = vm.identity
+      access_profiles  = toset([module.config.provisionable_vms[name].role])
+      labels           = module.config.provisionable_vms[name].metadata
+      disks = [{
+        id      = vm.root_volume_id
+        purpose = "boot"
+      }]
+      ssh = {
+        user = keys(module.config.config.ssh_users)[0]
+        port = try(module.config.provisionable_vms[name].ssh_port, 22)
+        proxyjump_node = (
+          module.config.provisionable_vms[name].role == "bastion" ? null : module.config.bastion_key
+        )
+        host_key_alias = "${module.config.resource_prefix}-${name}"
+      }
     }
   }
 }
@@ -59,4 +81,14 @@ output "managed_service_images" {
     redis    = "${aws_ecr_repository.managed_service["redis"].repository_url}:${module.config.config.managed_services.redis.target_tag}"
     rabbitmq = "${aws_ecr_repository.managed_service["rabbitmq"].repository_url}:${module.config.config.managed_services.rabbitmq.target_tag}"
   } : null, null)
+}
+
+output "monitoring" {
+  description = "Provider-neutral monitoring resource identifiers."
+  value = try(module.observability[0].contract, {
+    dashboard_id     = null
+    alert_policy_ids = []
+    availability_id  = null
+    log_metric_ids   = []
+  })
 }

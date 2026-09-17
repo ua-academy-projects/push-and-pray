@@ -71,13 +71,20 @@ After a successful `--yes` run:
 ```text
 .generated/<environment>/<provider>/<deployment>/
 ├── backend.hcl
-└── foundation.json
+├── foundation.json
+├── deployment.json
+└── inventory.json
 ```
 
 The directory is ignored by Git. Files are created with mode `0600` and contain
 identifiers only, never credentials or secret values. The script prints the
 exact next commands for role activation/impersonation, `terraform init`, and
 `terraform plan`. It never runs `terraform apply`.
+
+`deployment.json` and `inventory.json` are written later by the authorised
+deployment workflow after Terraform has produced the normalized deployment
+output. The inventory uses only the public bastion endpoint and private workload
+addresses and contains no secret values or private keys.
 
 The isolated AWS and GCP roots declare `s3` and `gcs` backends respectively.
 For local static validation initialise them without a backend:
