@@ -148,7 +148,7 @@ scientific data source.
 │       ├── backend/                Python UI gateway and PostgreSQL sessions
 │       └── frontend/               React and TypeScript application
 ├── .env.example                    Local application configuration template
-├── project-config.example.json     Non-secret deployment configuration example
+├── project-config.*.example.json   Self-managed and managed deployment examples
 ├── project-config.schema.json      Deployment configuration schema
 ├── pyproject.toml                  Python dependencies and tooling
 ├── uv.lock                         Locked Python dependencies

@@ -12,8 +12,6 @@ Each VM declares the application variable name and secret container ID:
 ```json
 "secret_mappings": {
   "POSTGRES_PASSWORD": "db-password",
-  "RABBITMQ_PASSWORD": "rabbitmq-password",
-  "REDIS_PASSWORD": "redis-password",
   "GHCR_TOKEN": "ghcr-token"
 }
 ```
@@ -21,6 +19,12 @@ Each VM declares the application variable name and secret container ID:
 Both strings are identifiers, not secrets. The key is the variable consumed by
 the application on that VM. The value is the container ID in AWS Secrets
 Manager or Google Secret Manager.
+
+Mappings must describe only the services used by the selected database mode.
+Self-managed deployments use PostgreSQL for PGMQ and UI sessions, so they do
+not map RabbitMQ or Redis secrets. Managed deployments additionally map
+`RABBITMQ_PASSWORD` on the Infrastructure, History, and Fetcher VMs and
+`REDIS_PASSWORD` on the Infrastructure and UI VMs.
 
 Terraform derives the containers and least-privilege read grants from this
 mapping. The same container ID may be shared by several VMs in one provider
@@ -81,10 +85,12 @@ adds a version only when the corresponding environment value differs:
 
 ```bash
 export DB_PASSWORD="..."
-export RABBITMQ_PASSWORD="..."
-export REDIS_PASSWORD="..."
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
+
+# Managed mode only:
+export RABBITMQ_PASSWORD="..."
+export REDIS_PASSWORD="..."
 
 ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
@@ -94,11 +100,13 @@ To force a new version for deliberate rotation, use the upload playbook:
 
 ```bash
 export DB_PASSWORD="$(openssl rand -hex 32)"
+export GHCR_TOKEN="..."
+export EXTERNAL_API_KEY="..."
+
+# Managed mode only:
 export TF_VAR_database_password="${DB_PASSWORD}"
 export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
 export REDIS_PASSWORD="$(openssl rand -hex 32)"
-export GHCR_TOKEN="..."
-export EXTERNAL_API_KEY="..."
 
 ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \

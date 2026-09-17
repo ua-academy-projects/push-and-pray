@@ -17,7 +17,10 @@
     "image_tag": "example-operator"
   },
   "database": {
-    "mode": "self_managed"
+    "mode": "managed",
+    "version": "18",
+    "size": "micro",
+    "storage_gb": 20
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
@@ -56,8 +59,6 @@
     }
   },
   "bastion": {
-    "cloud": "gcp",
-    "location": "ohio",
     "machine_type": "micro",
     "image": "ubuntu_2604",
     "internal_ip": "10.0.0.4",
@@ -77,12 +78,6 @@
         "size_gb": 10,
         "disk_type": "general_purpose"
       },
-      "data_disks": {
-        "postgres-data": {
-          "size_gb": 30,
-          "disk_type": "general_purpose"
-        }
-      },
       "assign_public_ip": false,
       "tags": ["infrastructure"],
       "secret_mappings": {
@@ -93,7 +88,7 @@
       }
     },
     "history": {
-      "machine_type": "small",
+      "machine_type": "micro",
       "image": "ubuntu_2604",
       "internal_ip": "10.0.1.11",
       "boot_disk": {

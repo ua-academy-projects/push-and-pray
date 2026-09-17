@@ -194,6 +194,79 @@
       "$ref": "#/$defs/disk_types"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "database": {
+            "properties": {
+              "mode": {
+                "const": "managed"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "vms": {
+            "properties": {
+              "infrastructure": {
+                "properties": {
+                  "secret_mappings": {
+                    "required": ["RABBITMQ_PASSWORD", "REDIS_PASSWORD"]
+                  }
+                }
+              },
+              "history": {
+                "properties": {
+                  "secret_mappings": {
+                    "required": ["RABBITMQ_PASSWORD"]
+                  }
+                }
+              },
+              "fetcher": {
+                "properties": {
+                  "secret_mappings": {
+                    "required": ["RABBITMQ_PASSWORD"]
+                  }
+                }
+              },
+              "ui": {
+                "properties": {
+                  "secret_mappings": {
+                    "required": ["REDIS_PASSWORD"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "vms": {
+            "additionalProperties": {
+              "properties": {
+                "secret_mappings": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": ["RABBITMQ_PASSWORD"]
+                      },
+                      {
+                        "required": ["REDIS_PASSWORD"]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "bastion": {
       "type": "object",

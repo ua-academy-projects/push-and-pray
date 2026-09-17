@@ -1,0 +1,232 @@
+{
+  "$schema": "./project-config.schema.json",
+  "environment": "dev",
+  "default_cloud": "aws",
+  "default_location": "stockholm",
+  "name_prefix": "oilscope",
+  "common_labels": {
+    "project": "example-oil-price-tracker",
+    "team": "example-team"
+  },
+  "ssh_users": {
+    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+  },
+  "registry": {
+    "repository": "ghcr.io/example-org/example-project",
+    "username": "example-operator",
+    "image_tag": "example-operator"
+  },
+  "database": {
+    "mode": "self_managed"
+  },
+  "network": {
+    "vpc_cidr": "10.0.0.0/16",
+    "public_subnet_cidr": "10.0.0.0/24",
+    "private_subnet_cidr": "10.0.1.0/26",
+    "managed_database": {
+      "gcp_private_service_cidr": "10.0.2.0/24",
+      "aws_private_subnet_cidrs": [
+        "10.0.3.0/24",
+        "10.0.4.0/24"
+      ]
+    },
+    "ui_public_ports": [80, 443]
+  },
+  "service_ports": {
+    "history_api": 8001,
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
+  },
+  "monitoring": {
+    "aws": {
+      "log_retention_days": 30,
+      "notification_topic_arns": {
+        "eu-north-1": "arn:aws:sns:eu-north-1:123456789012:example-oilscope-alerts",
+        "us-east-1": "arn:aws:sns:us-east-1:123456789012:example-oilscope-availability-alerts"
+      }
+    },
+    "gcp": {
+      "notification_channel_id": "projects/example-project-12345/notificationChannels/1234567890123456789"
+    }
+  },
+  "dns": {
+    "cloudflare": {
+      "zone_id": "0123456789abcdef0123456789abcdef"
+    }
+  },
+  "bastion": {
+    "machine_type": "micro",
+    "image": "ubuntu_2604",
+    "internal_ip": "10.0.0.4",
+    "boot_disk": {
+      "size_gb": 10,
+      "disk_type": "general_purpose"
+    },
+    "ssh_port": 8787,
+    "allowed_cidrs": ["192.0.2.10/32"]
+  },
+  "vms": {
+    "infrastructure": {
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.10",
+      "boot_disk": {
+        "size_gb": 10,
+        "disk_type": "general_purpose"
+      },
+      "data_disks": {
+        "postgres-data": {
+          "size_gb": 30,
+          "disk_type": "general_purpose"
+        }
+      },
+      "assign_public_ip": false,
+      "tags": ["infrastructure"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      }
+    },
+    "history": {
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.11",
+      "boot_disk": {
+        "size_gb": 10,
+        "disk_type": "general_purpose"
+      },
+      "assign_public_ip": false,
+      "tags": ["history"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      }
+    },
+    "fetcher": {
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.1.12",
+      "boot_disk": {
+        "size_gb": 10,
+        "disk_type": "general_purpose"
+      },
+      "assign_public_ip": false,
+      "tags": ["fetcher"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "OILPRICEAPI_KEY": "example-api-key",
+        "GHCR_TOKEN": "example-ghcr-token"
+      }
+    },
+    "ui": {
+      "machine_type": "micro",
+      "image": "ubuntu_2604",
+      "internal_ip": "10.0.0.13",
+      "boot_disk": {
+        "size_gb": 10,
+        "disk_type": "general_purpose"
+      },
+      "assign_public_ip": true,
+      "tags": ["ui"],
+      "secret_mappings": {
+        "POSTGRES_PASSWORD": "example-db-password",
+        "GHCR_TOKEN": "example-ghcr-token"
+      },
+      "public_endpoint": {
+        "hostname": "oilscope.example.com",
+        "acme_email": "example-operator@example.com"
+      }
+    }
+  },
+  "cloud_settings": {
+    "gcp": {
+      "project_id": "example-project-12345"
+    }
+  },
+  "locations": {
+    "stockholm": {
+      "gcp": {
+        "region": "europe-north2",
+        "zone": "europe-north2-b"
+      },
+      "aws": {
+        "region": "eu-north-1",
+        "zone": "eu-north-1a"
+      }
+    },
+    "ohio": {
+      "gcp": {
+        "region": "us-east5",
+        "zone": "us-east5-a"
+      },
+      "aws": {
+        "region": "us-east-2",
+        "zone": "us-east-2a"
+      }
+    },
+    "mexico": {
+      "gcp": {
+        "region": "northamerica-south1",
+        "zone": "northamerica-south1-a"
+      },
+      "aws": {
+        "region": "mx-central-1",
+        "zone": "mx-central-1a"
+      }
+    }
+  },
+  "machine_types": {
+    "micro": {
+      "gcp": "e2-micro",
+      "aws": "t3.micro"
+    },
+    "small": {
+      "gcp": "e2-small",
+      "aws": "t3.small"
+    },
+    "medium": {
+      "gcp": "e2-medium",
+      "aws": "t3.medium"
+    }
+  },
+  "images": {
+    "ubuntu_2404": {
+      "gcp": {
+        "project": "ubuntu-os-cloud",
+        "family": "ubuntu-2404-lts-amd64"
+      },
+      "aws": {
+        "ssm_parameter": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+      }
+    },
+    "ubuntu_2604": {
+      "gcp": {
+        "project": "ubuntu-os-cloud",
+        "family": "ubuntu-2604-lts-amd64"
+      },
+      "aws": {
+        "ssm_parameter": "/aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+      }
+    }
+  },
+  "disk_types": {
+    "general_purpose": {
+      "gcp": {
+        "type": "pd-balanced"
+      },
+      "aws": {
+        "type": "gp3"
+      }
+    },
+    "performance": {
+      "gcp": {
+        "type": "pd-ssd"
+      },
+      "aws": {
+        "type": "io2",
+        "iops": 7000
+      }
+    }
+  }
+}

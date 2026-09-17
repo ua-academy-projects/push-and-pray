@@ -5,6 +5,11 @@ Terraform creates the VMs, networking, workload identities, and secret
 containers. Terraform cloud-init configures only the bastion's SSH service;
 Ansible configures and deploys the workload VMs.
 
+Start from the complete example matching the selected architecture:
+
+- [`project-config.self-managed-db.example.json`](../project-config.self-managed-db.example.json)
+- [`project-config.managed-db.example.json`](../project-config.managed-db.example.json)
+
 `database.mode` in `project-config.json` selects the architecture:
 
 ```json
@@ -64,12 +69,20 @@ controller environment:
 
 ```sh
 export DB_PASSWORD="$(openssl rand -hex 32)"
-export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
-export REDIS_PASSWORD="$(openssl rand -hex 32)"
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
+
+# Managed mode only:
+export RABBITMQ_PASSWORD="$(openssl rand -hex 32)"
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
 export TF_VAR_database_password="${DB_PASSWORD}"
 ```
+
+The VM `secret_mappings` must follow the selected mode. Self-managed
+deployments omit RabbitMQ and Redis mappings. Managed deployments map
+`RABBITMQ_PASSWORD` on Infrastructure, History, and Fetcher and map
+`REDIS_PASSWORD` on Infrastructure and UI. `TF_VAR_database_password` is also
+needed only when Terraform provisions a managed database.
 
 The general deployment synchronizes changed or missing versions before any VM
 configuration. During workload deployment, each VM retrieves only its configured

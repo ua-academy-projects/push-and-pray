@@ -41,5 +41,9 @@
           {{ 'redis' if compose_project_config.database.mode == 'managed' else 'postgresql' }}
         ui_database_host: "{{ hostvars[groups['infrastructure'][0]].internal_ip }}"
         ui_redis_url: >-
-          redis://:{{ resolve_secrets_result.REDIS_PASSWORD | urlencode }}@{{
-          hostvars[groups['infrastructure'][0]].internal_ip }}:6379/0
+          {{
+            'redis://:' ~ (resolve_secrets_result.REDIS_PASSWORD | urlencode)
+            ~ '@' ~ hostvars[groups['infrastructure'][0]].internal_ip ~ ':6379/0'
+            if compose_project_config.database.mode == 'managed'
+            else ''
+          }}

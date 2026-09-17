@@ -33,7 +33,13 @@
         fetcher_messaging_backend: >-
           {{ 'rabbitmq' if compose_project_config.database.mode == 'managed' else 'pgmq' }}
         fetcher_rabbitmq_url: >-
-          amqp://oil_tracker:{{ resolve_secrets_result.RABBITMQ_PASSWORD | urlencode }}@{{
-          hostvars[groups['infrastructure'][0]].internal_ip }}:5672/oil_tracker
+          {{
+            'amqp://oil_tracker:'
+            ~ (resolve_secrets_result.RABBITMQ_PASSWORD | urlencode)
+            ~ '@' ~ hostvars[groups['infrastructure'][0]].internal_ip
+            ~ ':5672/oil_tracker'
+            if compose_project_config.database.mode == 'managed'
+            else ''
+          }}
         fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"
