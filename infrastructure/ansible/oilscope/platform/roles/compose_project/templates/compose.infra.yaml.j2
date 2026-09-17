@@ -1,11 +1,3 @@
-{#
-  What the infra VM runs follows the database mode in the project
-  configuration. Self-hosted: the PostgreSQL container, with the queue in
-  PGMQ and the UI sessions in a table. Managed: PostgreSQL lives in the cloud,
-  and this VM carries the RabbitMQ broker and the Redis cache that take those
-  two jobs over. The migration job is present either way, because this is the
-  one machine that owns the schema.
-#}
 {% set infra_managed = compose_project_config.database.mode | default('self-hosted') == 'managed' %}
 name: petroscope
 

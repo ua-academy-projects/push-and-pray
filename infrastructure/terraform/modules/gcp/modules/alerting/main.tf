@@ -60,8 +60,6 @@ resource "google_monitoring_alert_policy" "metric" {
   }
 }
 
-# The docker-events unit on every host writes one JSON line per container
-# exit; an exit code other than zero is a crash, a planned stop is zero.
 resource "google_monitoring_alert_policy" "container_died" {
   project               = var.project_id
   display_name          = "${var.resource_prefix}: container died"
@@ -137,8 +135,6 @@ resource "google_monitoring_alert_policy" "http_5xx" {
   }
 }
 
-# A budget lives on the billing account and filters down to this project by
-# number; the API behind it is off in a fresh project.
 data "google_project" "this" {
   project_id = var.project_id
 }

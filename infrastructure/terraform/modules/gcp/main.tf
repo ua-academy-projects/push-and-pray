@@ -1,5 +1,3 @@
-# The VPC foundation: a network, its subnets and outbound routing. Long-lived
-# and unaware of which ports the application happens to need.
 module "network" {
   source = "./modules/network"
   count  = local.is_active ? 1 : 0
@@ -22,10 +20,6 @@ module "firewall" {
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
   database_managed             = local.database_managed
 }
-
-# ---------------------------------------------------------------- database
-# Present only in managed mode. The infra VM then carries the broker and the
-# cache instead of PostgreSQL; the firewall above already opens their ports.
 
 module "database" {
   source = "./modules/database"
@@ -111,11 +105,6 @@ module "vm" {
     },
   )
 }
-
-# ---------------------------------------------------------- observability
-# Logs and metrics leave every VM through an agent; these grant it the right
-# to write, draw the dashboard and decide who hears when a threshold breaks.
-# The metric table lives in monitoring, so alerting never names a metric.
 
 module "logging" {
   source = "./modules/logging"

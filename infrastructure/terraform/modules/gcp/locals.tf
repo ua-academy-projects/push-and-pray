@@ -12,9 +12,6 @@ locals {
   database_managed = module.selection.database_managed
   builds_database  = module.selection.builds_database
 
-  # Every VM identity on this cloud, the bastion included: logging and
-  # monitoring both grant it the right to write. Count-based, so the bastion
-  # joins only when the cloud is active.
   identities = merge(
     { for name in keys(local.workload_vms) : name => module.identity[name].member },
     local.is_active ? { bastion = module.bastion_identity[0].member } : {},

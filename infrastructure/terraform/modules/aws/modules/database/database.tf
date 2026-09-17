@@ -1,7 +1,3 @@
-# The managed PostgreSQL. Lives in the database subnets, admits the three
-# workloads and the infra instance on its port, and nothing else. The default
-# parameter group of this engine family already forces TLS, so clients set
-# sslmode=require and no custom group is needed.
 resource "aws_db_subnet_group" "main" {
   name        = local.name
   description = "Subnets the managed database is reachable in"
@@ -32,9 +28,6 @@ resource "aws_vpc_security_group_ingress_rule" "clients" {
   tags = var.tags
 }
 
-# The master password is generated and kept by RDS in Secrets Manager, so it
-# never passes through Terraform. Ansible copies it into the project's own
-# secret container afterwards; see the managed_database_credentials playbook.
 resource "aws_db_instance" "main" {
   identifier     = local.name
   engine         = "postgres"

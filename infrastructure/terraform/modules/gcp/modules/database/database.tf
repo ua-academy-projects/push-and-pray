@@ -1,7 +1,3 @@
-# The managed PostgreSQL. Reached only through a Private Service Connect
-# endpoint in the database subnet: no public address, no peering, and TLS on
-# every connection. The application role is not created here - Ansible does
-# that with a password Terraform never sees.
 resource "google_sql_database_instance" "main" {
   name             = local.name
   region           = var.region
@@ -11,7 +7,6 @@ resource "google_sql_database_instance" "main" {
 
   settings {
     tier = var.tier
-    # Shared-core tiers such as db-f1-micro exist only in this edition.
     edition           = "ENTERPRISE"
     availability_type = "ZONAL"
     disk_type         = "PD_SSD"
@@ -48,15 +43,9 @@ resource "google_sql_database_instance" "main" {
 resource "google_sql_database" "application" {
   name     = var.settings.name
   instance = google_sql_database_instance.main.name
-
-  # Destroying the instance takes the database with it; there is no reason to
-  # drop it separately first, and the provider cannot while users still exist.
   deletion_policy = "ABANDON"
 }
 
-# The consumer side of Private Service Connect: an address of our own in the
-# database subnet, and a forwarding rule that ties it to the instance's
-# service attachment. Workloads connect to this address.
 resource "google_compute_address" "endpoint" {
   name         = "${local.name}-endpoint"
   region       = var.region

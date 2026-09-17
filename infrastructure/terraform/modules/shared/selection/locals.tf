@@ -13,10 +13,6 @@ locals {
     if local.is_active
   }
 
-  # Where PostgreSQL runs is decided once for the whole project, but only the
-  # cloud hosting the infra VM builds the managed instance: that VM carries the
-  # broker and the cache the workloads pair with it, and there is no
-  # cross-cloud networking to reach a database anywhere else.
   database_managed = try(var.config.database.mode, "self-hosted") == "managed"
 
   hosts_infra = length([

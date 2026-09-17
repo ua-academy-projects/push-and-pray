@@ -70,11 +70,6 @@ resource "google_compute_firewall" "history_api" {
   }
 }
 
-# What the infra VM serves depends on where the database runs. Self-hosted:
-# PostgreSQL. Managed: the RabbitMQ broker and the Redis cache that take over
-# the queue and the sessions. The clients are the same three workloads either
-# way. The managed database itself needs no rule here - a Private Service
-# Connect endpoint is not a VM, and egress from the VPC is allowed by default.
 resource "google_compute_firewall" "postgresql" {
   count = var.database_managed ? 0 : 1
 
@@ -88,11 +83,6 @@ resource "google_compute_firewall" "postgresql" {
     protocol = "tcp"
     ports    = [tostring(var.config.service_ports.postgresql)]
   }
-}
-
-moved {
-  from = google_compute_firewall.postgresql
-  to   = google_compute_firewall.postgresql[0]
 }
 
 resource "google_compute_firewall" "amqp" {

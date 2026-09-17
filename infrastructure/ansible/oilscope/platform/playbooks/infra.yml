@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# The infra VM carries whatever the database mode leaves on a VM. Self-hosted:
-# the PostgreSQL container. Managed: the RabbitMQ broker and the Redis cache
-# that take over the queue and the UI sessions. Either way it is the one host
-# that runs the schema migrations, so one machine owns the schema.
 - name: Deploy Infra
   hosts: infra
   become: true
