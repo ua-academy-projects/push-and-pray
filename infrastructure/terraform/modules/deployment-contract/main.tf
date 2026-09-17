@@ -69,6 +69,7 @@ locals {
       url            = "https://${local.config.vms.ui.public_endpoint.hostname}"
     }
     database = local.database
+    dns      = var.dns
     registry = {
       repositories = {
         application      = local.config.registry.repository

@@ -14,6 +14,16 @@ module "aws" {
   database_password            = var.database_password
 }
 
+module "dns" {
+  source = "../../modules/cloudflare-dns"
+
+  zone_id      = var.cloudflare_zone_id
+  hostname     = local.config.vms.ui.public_endpoint.hostname
+  ipv4_address = module.aws.vms.ui.public_address
+  proxied      = try(local.config.vms.ui.public_endpoint.proxied, false)
+  ttl          = try(local.config.vms.ui.public_endpoint.ttl, 60)
+}
+
 module "deployment_contract" {
   source = "../../modules/deployment-contract"
 
@@ -23,4 +33,5 @@ module "deployment_contract" {
   managed_database       = module.aws.managed_database
   managed_service_images = module.aws.managed_service_images
   monitoring             = module.aws.monitoring
+  dns                    = module.dns.record
 }

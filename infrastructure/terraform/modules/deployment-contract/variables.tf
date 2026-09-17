@@ -29,3 +29,8 @@ variable "monitoring" {
   description = "Normalized monitoring identifiers."
   type        = any
 }
+
+variable "dns" {
+  description = "Normalized public DNS record."
+  type        = any
+}

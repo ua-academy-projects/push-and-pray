@@ -10,7 +10,6 @@ readonly TF_DIR="${REPO_ROOT}/infrastructure/terraform"
 readonly ANSIBLE_DIR="${REPO_ROOT}/infrastructure/ansible"
 readonly LEGACY_INVENTORY="${ANSIBLE_DIR}/inventory/oilscope.yml"
 readonly COLLECTION_DIR="${ANSIBLE_DIR}/oilscope/platform"
-readonly DOMAIN="shiphappens.pp.ua"
 readonly DEPLOY_VENV="${REPO_ROOT}/.oilscope-deploy/venv"
 readonly DEPLOY_ENV_FILE="${OILSCOPE_DEPLOY_ENV_FILE:-${REPO_ROOT}/.env}"
 readonly GENERATED_ROOT="${OILSCOPE_GENERATED_ROOT:-${REPO_ROOT}/.generated}"
@@ -52,6 +51,33 @@ step() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+update_legacy_cloudflare_dns() {
+  local ipv4_address="$1"
+  local api="https://api.cloudflare.com/client/v4"
+  local zone_response zone_id record_response record_id payload response
+  local -a auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")
+
+  printf 'WARNING: legacy schema uses the compatibility Cloudflare API path; migrate to schema_version=1.\n' >&2
+  zone_response="$(curl --fail --silent --show-error "${auth[@]}" \
+    "${api}/zones?name=${DOMAIN}&status=active")"
+  zone_id="$(jq -r '.result[0].id // empty' <<< "${zone_response}")"
+  [[ -n "${zone_id}" ]] || fail "Cloudflare zone ${DOMAIN} was not found."
+  record_response="$(curl --fail --silent --show-error "${auth[@]}" \
+    "${api}/zones/${zone_id}/dns_records?type=A&name=${DOMAIN}")"
+  record_id="$(jq -r '.result[0].id // empty' <<< "${record_response}")"
+  payload="$(jq -cn --arg name "${DOMAIN}" --arg content "${ipv4_address}" \
+    '{type:"A", name:$name, content:$content, ttl:60, proxied:false}')"
+  if [[ -n "${record_id}" ]]; then
+    response="$(curl --fail --silent --show-error --request PUT "${auth[@]}" \
+      --data "${payload}" "${api}/zones/${zone_id}/dns_records/${record_id}")"
+  else
+    response="$(curl --fail --silent --show-error --request POST "${auth[@]}" \
+      --data "${payload}" "${api}/zones/${zone_id}/dns_records")"
+  fi
+  jq -e '.success == true' <<< "${response}" >/dev/null || \
+    fail "Cloudflare rejected the legacy DNS update."
 }
 
 if [[ ! -f "${CONFIG_INPUT}" ]]; then
@@ -110,8 +136,8 @@ else
 fi
 
 CONFIG_DOMAIN="$(jq -r '.vms.ui.public_endpoint.hostname // empty' "${CONFIG}")"
-[[ "${CONFIG_DOMAIN}" == "${DOMAIN}" ]] || \
-  fail "vms.ui.public_endpoint.hostname must be ${DOMAIN}, got ${CONFIG_DOMAIN:-<empty>}"
+[[ -n "${CONFIG_DOMAIN}" ]] || fail "vms.ui.public_endpoint.hostname is required."
+readonly DOMAIN="${CONFIG_DOMAIN}"
 
 ACME_EMAIL="$(jq -r '.vms.ui.public_endpoint.acme_email // empty' "${CONFIG}")"
 [[ -n "${ACME_EMAIL}" && "${ACME_EMAIL}" != *@example.com ]] || \
@@ -283,6 +309,11 @@ fi
 TF_APPLY_ARGS=(
   -var="project_config_path=${CONFIG}"
 )
+if [[ "${CONFIG_SCHEMA_VERSION}" -gt 0 ]]; then
+  [[ "${CLOUDFLARE_ZONE_ID:-}" =~ ^[0-9a-f]{32}$ ]] || \
+    fail "CLOUDFLARE_ZONE_ID must be the 32-character zone ID for ${DOMAIN}."
+  TF_APPLY_ARGS+=(-var="cloudflare_zone_id=${CLOUDFLARE_ZONE_ID}")
+fi
 if [[ "${OILSCOPE_AUTO_APPROVE:-0}" == "1" ]]; then
   TF_APPLY_ARGS+=(-auto-approve)
 fi
@@ -385,33 +416,12 @@ UI_IP="$(terraform -chdir="${TF_RUN_DIR}" output -json workload_external_ips | j
 [[ "${UI_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
   fail "Terraform did not return a public IPv4 address for the ui VM."
 
-step "Updating Cloudflare DNS for ${DOMAIN} -> ${UI_IP}"
-CF_API="https://api.cloudflare.com/client/v4"
-CF_AUTH=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")
-ZONE_RESPONSE="$(curl --fail --silent --show-error "${CF_AUTH[@]}" \
-  "${CF_API}/zones?name=${DOMAIN}&status=active")"
-ZONE_ID="$(jq -r '.result[0].id // empty' <<< "${ZONE_RESPONSE}")"
-[[ -n "${ZONE_ID}" ]] || fail "Cloudflare zone ${DOMAIN} was not found for this API token."
-
-RECORD_RESPONSE="$(curl --fail --silent --show-error "${CF_AUTH[@]}" \
-  "${CF_API}/zones/${ZONE_ID}/dns_records?type=A&name=${DOMAIN}")"
-RECORD_ID="$(jq -r '.result[0].id // empty' <<< "${RECORD_RESPONSE}")"
-DNS_PAYLOAD="$(jq -cn --arg name "${DOMAIN}" --arg content "${UI_IP}" \
-  '{type:"A", name:$name, content:$content, ttl:60, proxied:false}')"
-
-if [[ -n "${RECORD_ID}" ]]; then
-  DNS_RESPONSE="$(curl --fail --silent --show-error --request PUT "${CF_AUTH[@]}" \
-    --data "${DNS_PAYLOAD}" \
-    "${CF_API}/zones/${ZONE_ID}/dns_records/${RECORD_ID}")"
-else
-  DNS_RESPONSE="$(curl --fail --silent --show-error --request POST "${CF_AUTH[@]}" \
-    --data "${DNS_PAYLOAD}" \
-    "${CF_API}/zones/${ZONE_ID}/dns_records")"
+if [[ "${CONFIG_SCHEMA_VERSION}" -eq 0 ]]; then
+  step "Updating Cloudflare DNS through the legacy compatibility path"
+  update_legacy_cloudflare_dns "${UI_IP}"
 fi
-jq -e '.success == true' <<< "${DNS_RESPONSE}" >/dev/null || \
-  fail "Cloudflare rejected the DNS update: $(jq -c '.errors' <<< "${DNS_RESPONSE}")"
 
-step "Waiting for public DNS propagation"
+step "Verifying Cloudflare DNS propagation"
 DNS_READY=false
 for _ in $(seq 1 60); do
   if dig +short A "${DOMAIN}" @1.1.1.1 | grep -Fxq "${UI_IP}"; then

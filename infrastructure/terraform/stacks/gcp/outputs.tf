@@ -21,3 +21,8 @@ output "deployment" {
   description = "Versioned provider-neutral deployment contract."
   value       = module.deployment_contract.deployment
 }
+
+output "dns" {
+  description = "Cloudflare UI record."
+  value       = module.dns.record
+}

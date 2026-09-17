@@ -1,4 +1,5 @@
 mock_provider "google" {}
+mock_provider "cloudflare" {}
 
 run "gcp_profile_uses_only_gcp_root" {
   command = plan
@@ -6,6 +7,7 @@ run "gcp_profile_uses_only_gcp_root" {
   variables {
     project_config_path = "../../../../configs/project-config.gcp.json"
     database_password   = "test-only-password"
+    cloudflare_zone_id  = "0123456789abcdef0123456789abcdef"
   }
 
   assert {
@@ -20,6 +22,7 @@ run "gcp_profile_uses_only_gcp_root" {
       output.deployment.data_profile == "managed" &&
       output.deployment.runtime == "compose" &&
       output.deployment.database.mode == "managed" &&
+      output.deployment.dns.hostname == "shiphappens.pp.ua" &&
       output.deployment.nodes.ui.role == "ui"
     )
     error_message = "The GCP root must expose the normalized deployment contract."
@@ -31,6 +34,7 @@ run "gcp_portable_profile" {
 
   variables {
     project_config_path = "../../../../configs/project-config.gcp-portable.json"
+    cloudflare_zone_id  = "0123456789abcdef0123456789abcdef"
   }
 
   assert {

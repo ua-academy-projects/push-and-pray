@@ -7,5 +7,9 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 7.44.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.24"
+    }
   }
 }

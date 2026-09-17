@@ -6,6 +6,7 @@ mock_provider "aws" {
   }
 }
 mock_provider "archive" {}
+mock_provider "cloudflare" {}
 
 run "aws_profile_uses_only_aws_root" {
   command = plan
@@ -13,6 +14,7 @@ run "aws_profile_uses_only_aws_root" {
   variables {
     project_config_path = "../../../../configs/project-config.aws.json"
     database_password   = "test-only-password"
+    cloudflare_zone_id  = "0123456789abcdef0123456789abcdef"
   }
 
   assert {
@@ -27,6 +29,7 @@ run "aws_profile_uses_only_aws_root" {
       output.deployment.data_profile == "managed" &&
       output.deployment.runtime == "compose" &&
       output.deployment.database.mode == "managed" &&
+      output.deployment.dns.hostname == "shiphappens.pp.ua" &&
       output.deployment.nodes.ui.role == "ui"
     )
     error_message = "The AWS root must expose the normalized deployment contract."
@@ -38,6 +41,7 @@ run "aws_portable_profile" {
 
   variables {
     project_config_path = "../../../../configs/project-config.aws-portable.json"
+    cloudflare_zone_id  = "0123456789abcdef0123456789abcdef"
   }
 
   assert {

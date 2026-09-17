@@ -26,3 +26,8 @@ variable "database_password" {
   default   = null
   nullable  = true
 }
+
+variable "cloudflare_zone_id" {
+  description = "Existing Cloudflare zone ID for the UI hostname."
+  type        = string
+}
