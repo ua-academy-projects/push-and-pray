@@ -25,6 +25,16 @@ variable "managed_service_images" {
   default     = null
 }
 
+variable "application_images" {
+  description = "Cloud-registry references for first-party images."
+  type        = map(string)
+}
+
+variable "cloud_registry" {
+  description = "Provider-neutral registry contract."
+  type        = any
+}
+
 variable "monitoring" {
   description = "Normalized monitoring identifiers."
   type        = any

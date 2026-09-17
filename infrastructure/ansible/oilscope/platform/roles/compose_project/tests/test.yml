@@ -4,6 +4,19 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    project_config_path: >-
+      {{ playbook_dir }}/../../../../../../../configs/project-config.aws.json
+    internal_ip: 10.0.1.5
+    deployment_contract:
+      registry:
+        images:
+          fetcher: registry.invalid/fetcher:sha
+          history: registry.invalid/history:sha
+          ui: registry.invalid/ui:sha
+          database: registry.invalid/database:sha
+          redis: registry.invalid/redis:digest
+          rabbitmq: registry.invalid/rabbitmq:digest
   tasks:
     - name: Render the Compose definition for each workload role
       ansible.builtin.include_role:
@@ -36,6 +49,8 @@
         HISTORY_SERVICE_URL: http://127.0.0.1:8001
         OILPRICEAPI_KEY: test-only
         POSTGRES_PASSWORD: test-only
+        RABBITMQ_PASSWORD: test-only
+        REDIS_PASSWORD: test-only
       changed_when: false
       loop:
         - database

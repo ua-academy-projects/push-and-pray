@@ -82,6 +82,31 @@ output "managed_service_images" {
   } : null, null)
 }
 
+output "application_images" {
+  description = "Immutable cloud-registry references for first-party images."
+  value = try({
+    for service in ["fetcher", "history", "ui", "database"] :
+    service => "${module.config.location.region}-docker.pkg.dev/${module.config.cloud_config.project_id}/${google_artifact_registry_repository.application[0].repository_id}/${service}:${module.config.config.registry.image_sha}"
+  }, {})
+}
+
+output "registry" {
+  description = "Provider-neutral registry promotion and runtime contract."
+  value = {
+    provider       = "gcp"
+    host           = "${module.config.location.region}-docker.pkg.dev"
+    immutable_tags = true
+    application = try({
+      for service in ["fetcher", "history", "ui", "database"] :
+      service => "${module.config.location.region}-docker.pkg.dev/${module.config.cloud_config.project_id}/${google_artifact_registry_repository.application[0].repository_id}/${service}:${module.config.config.registry.image_sha}"
+    }, {})
+    managed = try(module.config.manage_db ? {
+      redis    = "${module.config.location.region}-docker.pkg.dev/${module.config.cloud_config.project_id}/${google_artifact_registry_repository.managed_services[0].repository_id}/redis:${module.config.config.managed_services.redis.target_tag}"
+      rabbitmq = "${module.config.location.region}-docker.pkg.dev/${module.config.cloud_config.project_id}/${google_artifact_registry_repository.managed_services[0].repository_id}/rabbitmq:${module.config.config.managed_services.rabbitmq.target_tag}"
+    } : {}, {})
+  }
+}
+
 output "monitoring" {
   description = "Provider-neutral monitoring resource identifiers."
   value = try(module.observability[0].contract, {

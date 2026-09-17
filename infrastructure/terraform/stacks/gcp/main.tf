@@ -34,6 +34,8 @@ module "deployment_contract" {
   provider_name          = "gcp"
   nodes                  = module.gcp.vms
   managed_database       = module.gcp.managed_database
+  application_images     = module.gcp.application_images
+  cloud_registry         = module.gcp.registry
   managed_service_images = module.gcp.managed_service_images
   monitoring             = module.gcp.monitoring
   dns                    = module.dns.record

@@ -34,6 +34,15 @@ run "aws_profile_uses_only_aws_root" {
     )
     error_message = "The AWS root must expose the normalized deployment contract."
   }
+
+  assert {
+    condition = (
+      length(output.registry.application) == 4 &&
+      output.registry.immutable_tags &&
+      output.registry.scan_on_push
+    )
+    error_message = "AWS must create immutable, scan-on-push repositories for every application image."
+  }
 }
 
 run "aws_portable_profile" {

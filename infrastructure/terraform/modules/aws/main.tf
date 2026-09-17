@@ -134,6 +134,26 @@ module "database" {
   tags = module.config.common_metadata
 }
 
+resource "aws_ecr_repository" "application" {
+  for_each = (
+    module.config.selected_count > 0 &&
+    module.config.configuration_valid
+  ) ? toset(["fetcher", "history", "ui", "database"]) : toset([])
+
+  name                 = "${module.config.resource_prefix}/${each.value}"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = module.config.common_metadata
+}
+
 resource "aws_ecr_repository" "managed_service" {
   for_each = (
     module.config.manage_db &&
@@ -142,8 +162,7 @@ resource "aws_ecr_repository" "managed_service" {
   ) ? toset(["redis", "rabbitmq"]) : toset([])
 
   name                 = "${module.config.resource_prefix}/${each.value}"
-  image_tag_mutability = "MUTABLE"
-  force_delete         = true
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -233,13 +252,13 @@ resource "aws_iam_role_policy" "workload_secret_access" {
   })
 }
 
-resource "aws_iam_role_policy" "managed_service_registry_pull" {
+resource "aws_iam_role_policy" "cloud_registry_pull" {
   for_each = {
     for name, vm in module.config.workload_vms : name => vm
-    if module.config.manage_db
+    if module.config.configuration_valid
   }
 
-  name = "${module.config.resource_prefix}-managed-service-registry-pull"
+  name = "${module.config.resource_prefix}-registry-pull"
   role = module.vm[each.key].iam_role_name
   policy = jsonencode({
     Version = "2012-10-17"
@@ -256,7 +275,10 @@ resource "aws_iam_role_policy" "managed_service_registry_pull" {
           "ecr:BatchGetImage",
           "ecr:GetDownloadUrlForLayer",
         ]
-        Resource = [for repository in aws_ecr_repository.managed_service : repository.arn]
+        Resource = concat(
+          [for repository in aws_ecr_repository.application : repository.arn],
+          [for repository in aws_ecr_repository.managed_service : repository.arn],
+        )
       },
     ]
   })

@@ -2,7 +2,7 @@ name: petroscope
 
 services:
   history:
-    image: "{{ compose_project_config.registry.repository }}/history:{{ compose_project_config.registry.image_sha }}"
+    image: "{{ deployment_contract.registry.images.history }}"
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
     pull_policy: ${APPLICATION_PULL_POLICY:-always}
     restart: unless-stopped
@@ -49,7 +49,7 @@ services:
         condition: service_healthy
 
   rabbitmq:
-    image: "{{ managed_service_images[oilscope_cloud].rabbitmq }}"
+    image: "{{ deployment_contract.registry.images.rabbitmq }}"
     pull_policy: always
     restart: unless-stopped
     environment:
@@ -67,7 +67,7 @@ services:
       retries: 20
 
   redis:
-    image: "{{ managed_service_images[oilscope_cloud].redis }}"
+    image: "{{ deployment_contract.registry.images.redis }}"
     pull_policy: always
     restart: unless-stopped
     environment:

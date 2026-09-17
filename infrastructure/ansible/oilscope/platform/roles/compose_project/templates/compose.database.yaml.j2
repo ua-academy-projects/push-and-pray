@@ -2,7 +2,7 @@ name: petroscope
 
 services:
   postgres:
-    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    image: "{{ deployment_contract.registry.images.database }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
     pull_policy: ${POSTGRES_PULL_POLICY:-always}
     restart: unless-stopped
@@ -28,7 +28,7 @@ services:
     stop_grace_period: 30s
 
   migrate:
-    image: "{{ compose_project_config.registry.repository }}/database:{{ compose_project_config.registry.image_sha }}"
+    image: "{{ deployment_contract.registry.images.database }}"
     platform: ${POSTGRES_PLATFORM:-linux/amd64}
     pull_policy: ${POSTGRES_PULL_POLICY:-always}
     restart: "no"

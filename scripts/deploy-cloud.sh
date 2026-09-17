@@ -93,6 +93,9 @@ CONFIG_SCHEMA_VERSION="$(jq -r '.schema_version // 0' "${CONFIG}")"
 CONFIG_PROVIDER="$(jq -r '.cloud_provider // .default_cloud // empty | ascii_downcase' "${CONFIG}")"
 CONFIG_ENVIRONMENT="$(jq -r '.environment // empty' "${CONFIG}")"
 CONFIG_DEPLOYMENT="$(jq -r '.name_prefix // empty' "${CONFIG}")"
+if [[ "${CONFIG_SCHEMA_VERSION}" -eq 0 ]]; then
+  fail "Legacy/mixed deployment is intentionally not executed by this workflow; migrate the config to schema_version=1 first."
+fi
 if [[ "${PROFILE}" == "custom" && "${CONFIG_SCHEMA_VERSION}" -gt 0 ]]; then
   PROFILE="${CONFIG_PROVIDER}"
 fi
@@ -167,10 +170,8 @@ case "${DATA_PROFILE}" in
   *) fail "data_profile must be portable or managed." ;;
 esac
 readonly DATA_PROFILE MANAGE_DB
-if [[ "${MANAGE_DB}" == true ]]; then
-  require_command docker
-  docker buildx version >/dev/null || fail "Docker Buildx is required to mirror managed-service images."
-fi
+require_command docker
+docker buildx version >/dev/null || fail "Docker Buildx is required to promote deployment images."
 required_roles=(history fetcher ui)
 if [[ "${MANAGE_DB}" == false ]]; then
   required_roles=(database "${required_roles[@]}")
@@ -405,12 +406,16 @@ terraform -chdir="${TF_RUN_DIR}" output -json managed_service_images |
   jq '{managed_service_images: .}' > "${MANAGED_SERVICES_VARS_FILE}"
 chmod 0600 "${MANAGED_SERVICES_VARS_FILE}"
 
-if [[ "${MANAGE_DB}" == true ]]; then
-  step "Mirroring Redis and RabbitMQ images to cloud registries"
-  "${SCRIPT_DIR}/mirror-managed-images.sh" \
-    "${CONFIG}" \
-    <(jq '.managed_service_images' "${MANAGED_SERVICES_VARS_FILE}")
-fi
+DEPLOYMENT_VARS_FILE="${COLLECTION_BUILD_DIR}/deployment-contract.json"
+jq '{deployment_contract: .}' "${DEPLOYMENT_OUTPUT_FILE}" >"${DEPLOYMENT_VARS_FILE}"
+chmod 0600 "${DEPLOYMENT_VARS_FILE}"
+
+REGISTRY_OUTPUT_FILE="${COLLECTION_BUILD_DIR}/registry.json"
+terraform -chdir="${TF_RUN_DIR}" output -json registry >"${REGISTRY_OUTPUT_FILE}"
+chmod 0600 "${REGISTRY_OUTPUT_FILE}"
+
+step "Promoting immutable application and managed-service images"
+"${SCRIPT_DIR}/promote-cloud-images.sh" "${CONFIG}" "${REGISTRY_OUTPUT_FILE}"
 
 UI_IP="$(terraform -chdir="${TF_RUN_DIR}" output -json workload_external_ips | jq -r '.ui // empty')"
 [[ "${UI_IP}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
@@ -499,6 +504,7 @@ step "Deploying database, history, fetcher, UI, and HTTPS proxy"
   -i "${INVENTORY}" \
   -e "project_config_path=${CONFIG}" \
   -e "@${DATABASE_VARS_FILE}" \
+  -e "@${DEPLOYMENT_VARS_FILE}" \
   -e "@${MANAGED_SERVICES_VARS_FILE}"
 
 if jq -e '.observability.enabled == true' "${CONFIG}" >/dev/null 2>&1; then

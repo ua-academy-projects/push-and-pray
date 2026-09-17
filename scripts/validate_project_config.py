@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,17 @@ def validate_config(config: dict[str, Any]) -> None:
     ).lower()
     if data_profile not in {"managed", "portable"}:
         raise ConfigError("data_profile must be managed or portable")
+
+    image_sha = str(config.get("registry", {}).get("image_sha", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", image_sha):
+        raise ConfigError("registry.image_sha must be a full lowercase Git commit SHA")
+    if data_profile == "managed":
+        for service in ("redis", "rabbitmq"):
+            image = str(config.get("managed_services", {}).get(service, {}).get("source_image", ""))
+            if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", image):
+                raise ConfigError(
+                    f"managed_services.{service}.source_image must include an exact sha256 digest"
+                )
 
     vms = config.get("vms", {})
     if not vms:

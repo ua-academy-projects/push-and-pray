@@ -95,6 +95,23 @@ module "database" {
   depends_on = [google_project_service.required]
 }
 
+resource "google_artifact_registry_repository" "application" {
+  count = module.config.selected_count > 0 ? 1 : 0
+
+  project       = module.config.cloud_config.project_id
+  location      = module.config.location.region
+  repository_id = "${module.config.resource_prefix}-application"
+  description   = "Promoted OilScope application images"
+  format        = "DOCKER"
+  labels        = module.config.common_metadata
+
+  docker_config {
+    immutable_tags = true
+  }
+
+  depends_on = [google_project_service.required]
+}
+
 resource "google_artifact_registry_repository" "managed_services" {
   count = module.config.manage_db && module.config.selected_count > 0 ? 1 : 0
 
@@ -104,6 +121,10 @@ resource "google_artifact_registry_repository" "managed_services" {
   description   = "Mirrored Redis and RabbitMQ images for private OilScope workloads"
   format        = "DOCKER"
   labels        = module.config.common_metadata
+
+  docker_config {
+    immutable_tags = true
+  }
 
   cleanup_policy_dry_run = false
 
@@ -158,6 +179,16 @@ resource "google_project_iam_member" "ops_agent_metric_writer" {
   project = module.config.cloud_config.project_id
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${each.value.service_account_email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "application_pull" {
+  for_each = module.vm
+
+  project    = module.config.cloud_config.project_id
+  location   = module.config.location.region
+  repository = google_artifact_registry_repository.application[0].name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${each.value.service_account_email}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "managed_service_pull" {

@@ -105,25 +105,21 @@
   },
   "secrets_by_role": {
     "database": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "example-db-password"
     },
     "history": {
       "POSTGRES_PASSWORD": "example-db-password",
       "RABBITMQ_PASSWORD": "rabbitmq-password",
-      "REDIS_PASSWORD": "redis-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "REDIS_PASSWORD": "redis-password"
     },
     "fetcher": {
       "POSTGRES_PASSWORD": "example-db-password",
       "RABBITMQ_PASSWORD": "rabbitmq-password",
-      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b"
     },
     "ui": {
       "POSTGRES_PASSWORD": "example-db-password",
-      "REDIS_PASSWORD": "redis-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "REDIS_PASSWORD": "redis-password"
     }
   },
   "vms": {
@@ -210,12 +206,12 @@
     "rabbitmq_vhost": "oil_tracker",
     "rabbitmq_queue": "history.price-observations",
     "redis": {
-      "source_image": "redis:7-alpine",
-      "target_tag": "7-alpine"
+      "source_image": "redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98",
+      "target_tag": "7.4.6-alpine-3b73847e7287"
     },
     "rabbitmq": {
-      "source_image": "rabbitmq:4-management-alpine",
-      "target_tag": "4-management-alpine"
+      "source_image": "rabbitmq:4.1.4-management-alpine@sha256:5cbd7145b0306399ad68422c3350b6cbd1bb95704b39f5896480e5b6d4238a04",
+      "target_tag": "4.1.4-management-alpine-5cbd7145b030"
     }
   }
 }

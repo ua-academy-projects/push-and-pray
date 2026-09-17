@@ -24,12 +24,7 @@ locals {
     if node.role == "database"
   ][0], null)
 
-  application_images = {
-    fetcher  = "${local.config.registry.repository}/fetcher:${local.config.registry.image_sha}"
-    history  = "${local.config.registry.repository}/history:${local.config.registry.image_sha}"
-    ui       = "${local.config.registry.repository}/ui:${local.config.registry.image_sha}"
-    database = "${local.config.registry.repository}/database:${local.config.registry.image_sha}"
-  }
+  application_images = var.application_images
   managed_images = var.managed_service_images == null ? {} : {
     redis    = var.managed_service_images.redis
     rabbitmq = var.managed_service_images.rabbitmq
@@ -70,13 +65,15 @@ locals {
     }
     database = local.database
     dns      = var.dns
-    registry = {
+    registry = merge(var.cloud_registry, {
       repositories = {
-        application      = local.config.registry.repository
+        application = {
+          for service, image in var.application_images : service => dirname(image)
+        }
         managed_services = try(var.managed_service_images.registry, null)
       }
       images = merge(local.application_images, local.managed_images)
-    }
+    })
     monitoring = var.monitoring
   }
 }

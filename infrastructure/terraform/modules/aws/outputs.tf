@@ -83,6 +83,35 @@ output "managed_service_images" {
   } : null, null)
 }
 
+output "application_images" {
+  description = "Immutable cloud-registry references for first-party images."
+  value = {
+    for service, repository in aws_ecr_repository.application :
+    service => "${repository.repository_url}:${module.config.config.registry.image_sha}"
+  }
+}
+
+output "registry" {
+  description = "Provider-neutral registry promotion and runtime contract."
+  value = {
+    provider       = "aws"
+    immutable_tags = true
+    scan_on_push   = true
+    host = try(
+      split("/", values(aws_ecr_repository.application)[0].repository_url)[0],
+      null,
+    )
+    application = {
+      for service, repository in aws_ecr_repository.application :
+      service => "${repository.repository_url}:${module.config.config.registry.image_sha}"
+    }
+    managed = try(module.config.manage_db ? {
+      redis    = "${aws_ecr_repository.managed_service["redis"].repository_url}:${module.config.config.managed_services.redis.target_tag}"
+      rabbitmq = "${aws_ecr_repository.managed_service["rabbitmq"].repository_url}:${module.config.config.managed_services.rabbitmq.target_tag}"
+    } : {}, {})
+  }
+}
+
 output "monitoring" {
   description = "Provider-neutral monitoring resource identifiers."
   value = try(module.observability[0].contract, {

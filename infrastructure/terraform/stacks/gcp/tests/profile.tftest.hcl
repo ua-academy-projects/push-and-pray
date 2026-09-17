@@ -27,6 +27,15 @@ run "gcp_profile_uses_only_gcp_root" {
     )
     error_message = "The GCP root must expose the normalized deployment contract."
   }
+
+  assert {
+    condition = (
+      length(output.registry.application) == 4 &&
+      output.registry.immutable_tags &&
+      startswith(output.registry.application.fetcher, "europe-west1-docker.pkg.dev/")
+    )
+    error_message = "GCP must create an immutable Artifact Registry for every application image."
+  }
 }
 
 run "gcp_portable_profile" {

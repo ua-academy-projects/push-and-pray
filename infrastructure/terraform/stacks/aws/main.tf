@@ -31,6 +31,8 @@ module "deployment_contract" {
   provider_name          = "aws"
   nodes                  = module.aws.vms
   managed_database       = module.aws.managed_database
+  application_images     = module.aws.application_images
+  cloud_registry         = module.aws.registry
   managed_service_images = module.aws.managed_service_images
   monitoring             = module.aws.monitoring
   dns                    = module.dns.record

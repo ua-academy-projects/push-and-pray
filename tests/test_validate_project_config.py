@@ -70,3 +70,13 @@ def test_overlapping_subnets_are_rejected() -> None:
 
     with pytest.raises(ConfigError, match="network ranges overlap"):
         validate_config(config)
+
+
+def test_managed_upstream_image_requires_digest() -> None:
+    config = json.loads(
+        (CONFIGS / "project-config.aws.json").read_text(encoding="utf-8")
+    )
+    config["managed_services"]["redis"]["source_image"] = "redis:7.4.6-alpine"
+
+    with pytest.raises(ConfigError, match="exact sha256 digest"):
+        validate_config(config)

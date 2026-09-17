@@ -89,21 +89,17 @@
   },
   "secrets_by_role": {
     "database": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "example-db-password"
     },
     "history": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "example-db-password"
     },
     "fetcher": {
       "POSTGRES_PASSWORD": "example-db-password",
-      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b"
     },
     "ui": {
-      "POSTGRES_PASSWORD": "example-db-password",
-      "GHCR_TOKEN": "example-ghcr-token"
+      "POSTGRES_PASSWORD": "example-db-password"
     }
   },
   "vms": {
