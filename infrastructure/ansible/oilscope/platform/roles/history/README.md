@@ -7,7 +7,7 @@ local health endpoint.
 
 - Docker and the Compose plugin are installed.
 - `/opt/oilscope/app/compose.yaml` is installed.
-- The dynamic cloud inventory contains one host in the `database` group with
+- The dynamic cloud inventory contains one host in the `infrastructure` group with
   an `internal_ip` variable.
 - Database is healthy and migrated.
 

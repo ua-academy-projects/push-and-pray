@@ -64,6 +64,9 @@
     - >-
       (history_health.json | default({})).get('database', '') == 'connected'
     - >-
-      (history_health.json | default({})).get(
-        'messaging', ''
-      ) == 'ready'
+      (history_health.json | default({})).get('messaging', '') == 'ready'
+      or
+      (history_messaging_backend == 'pgmq'
+       and (history_health.json | default({})).get(
+         'pgmq_consumer', ''
+       ) == 'ready')
