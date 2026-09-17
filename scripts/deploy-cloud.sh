@@ -13,6 +13,7 @@ readonly COLLECTION_DIR="${ANSIBLE_DIR}/oilscope/platform"
 readonly DOMAIN="shiphappens.pp.ua"
 readonly DEPLOY_VENV="${REPO_ROOT}/.oilscope-deploy/venv"
 readonly DEPLOY_ENV_FILE="${OILSCOPE_DEPLOY_ENV_FILE:-${REPO_ROOT}/.env}"
+readonly GENERATED_ROOT="${OILSCOPE_GENERATED_ROOT:-${REPO_ROOT}/.generated}"
 
 if [[ -f "${DEPLOY_ENV_FILE}" ]]; then
   set -a
@@ -30,7 +31,7 @@ case "${PROFILE}" in
     CONFIG_INPUT="${OILSCOPE_PROJECT_CONFIG:-${REPO_ROOT}/project-config.json}"
     PROFILE="custom"
     ;;
-  *.json|*/*.json)
+  *.json)
     CONFIG_INPUT="${PROFILE}"
     PROFILE="custom"
     ;;
@@ -61,11 +62,22 @@ CONFIG_DIR="$(cd "$(dirname "${CONFIG_INPUT}")" && pwd -P)"
 readonly CONFIG_DIR
 CONFIG="${CONFIG_DIR}/$(basename "${CONFIG_INPUT}")"
 readonly CONFIG
-readonly PROFILE
+require_command jq
+CONFIG_SCHEMA_VERSION="$(jq -r '.schema_version // 0' "${CONFIG}")"
+CONFIG_PROVIDER="$(jq -r '.cloud_provider // .default_cloud // empty | ascii_downcase' "${CONFIG}")"
+CONFIG_ENVIRONMENT="$(jq -r '.environment // empty' "${CONFIG}")"
+CONFIG_DEPLOYMENT="$(jq -r '.name_prefix // empty' "${CONFIG}")"
+if [[ "${PROFILE}" == "custom" && "${CONFIG_SCHEMA_VERSION}" -gt 0 ]]; then
+  PROFILE="${CONFIG_PROVIDER}"
+fi
+readonly PROFILE CONFIG_SCHEMA_VERSION CONFIG_PROVIDER CONFIG_ENVIRONMENT CONFIG_DEPLOYMENT
 readonly TF_STATE_DIR="${TF_DIR}/.state"
 readonly TF_STATE_PATH="${TF_STATE_DIR}/${PROFILE}.tfstate"
-case "${PROFILE}" in
-  aws|gcp)
+case "${PROFILE}:${CONFIG_SCHEMA_VERSION}" in
+  aws:[1-9]*|gcp:[1-9]*)
+    TF_RUN_DIR="${TF_DIR}/stacks/${PROFILE}"
+    ;;
+  aws:0|gcp:0)
     TF_RUN_DIR="${TF_DIR}/stacks/${PROFILE}"
     ;;
   *)
@@ -73,6 +85,7 @@ case "${PROFILE}" in
     ;;
 esac
 readonly TF_RUN_DIR
+readonly BACKEND_FILE="${GENERATED_ROOT}/${CONFIG_ENVIRONMENT}/${CONFIG_PROVIDER}/${CONFIG_DEPLOYMENT}/backend.hcl"
 
 for command_name in jq terraform curl dig nc python3; do
   require_command "${command_name}"
@@ -112,11 +125,15 @@ with open(sys.argv[1], encoding="utf-8") as config_file:
     config = json.load(config_file)
 
 networks = {}
-for cloud in {vm.get("cloud", config["default_cloud"]).lower() for vm in config["vms"].values()}:
+global_provider = config.get("cloud_provider", config.get("default_cloud", "")).lower()
+for cloud in {
+    vm.get("provider", vm.get("cloud", global_provider)).lower()
+    for vm in config["vms"].values()
+}:
     networks[cloud] = config["network"] | config["clouds"].get(cloud, {}).get("network", {})
 
 for name, vm in config["vms"].items():
-    cloud = vm.get("cloud", config["default_cloud"]).lower()
+    cloud = vm.get("provider", vm.get("cloud", global_provider)).lower()
     network = networks[cloud]
     if vm["role"] == "bastion":
         subnet_key = "management_subnet_cidr"
@@ -169,11 +186,20 @@ PY
 
 USED_CLOUDS="$(jq -r '
   . as $config
-  | [.vms[] | (.cloud // $config.default_cloud | ascii_downcase)]
+  | ($config.cloud_provider // $config.default_cloud) as $global_provider
+  | [.vms[] | (.provider // .cloud // $global_provider | ascii_downcase)]
   | unique[]
 ' "${CONFIG}")"
 
-MANAGE_DB="$(jq -r '.manage_db' "${CONFIG}")"
+DATA_PROFILE="$(jq -r '
+  .data_profile // (if (.manage_db // false) then "managed" else "portable" end)
+' "${CONFIG}")"
+case "${DATA_PROFILE}" in
+  managed) MANAGE_DB=true ;;
+  portable) MANAGE_DB=false ;;
+  *) fail "data_profile must be portable or managed." ;;
+esac
+readonly DATA_PROFILE MANAGE_DB
 if [[ "${MANAGE_DB}" == true ]]; then
   require_command docker
   docker buildx version >/dev/null || fail "Docker Buildx is required to mirror managed-service images."
@@ -193,28 +219,30 @@ done
 if [[ "${MANAGE_DB}" == true ]]; then
   DATABASE_VM_COUNT="$(jq '[.vms[] | select(.role == "database")] | length' "${CONFIG}")"
   [[ "${DATABASE_VM_COUNT}" -eq 0 ]] || fail \
-    "manage_db=true must not define a VM with role database."
+    "data_profile=managed must not define a VM with role database."
 else
   jq -e 'has("database") | not' "${CONFIG}" >/dev/null || fail \
-    "manage_db=false must not define the managed database object."
+    "data_profile=portable must not define the managed database object."
 fi
 
 while IFS= read -r cloud; do
   [[ -n "${cloud}" ]] || continue
   BASTION_COUNT="$(jq -r --arg cloud "${cloud}" '
     . as $config
+    | ($config.cloud_provider // $config.default_cloud) as $global_provider
     | [.vms[] | select(
         .role == "bastion"
-        and ((.cloud // $config.default_cloud | ascii_downcase) == $cloud)
+        and ((.provider // .cloud // $global_provider | ascii_downcase) == $cloud)
       )]
     | length
   ' "${CONFIG}")"
   PRIVATE_COUNT="$(jq -r --arg cloud "${cloud}" '
     . as $config
+    | ($config.cloud_provider // $config.default_cloud) as $global_provider
     | [.vms[] | select(
         .role != "bastion"
         and .assign_public_ip == false
-        and ((.cloud // $config.default_cloud | ascii_downcase) == $cloud)
+        and ((.provider // .cloud // $global_provider | ascii_downcase) == $cloud)
       )]
     | length
   ' "${CONFIG}")"
@@ -368,9 +396,17 @@ COLLECTION_ARCHIVE="$(find "${COLLECTION_BUILD_DIR}" -maxdepth 1 -type f -name '
 "${ANSIBLE_GALAXY}" collection install "${COLLECTION_ARCHIVE}" --force
 
 step "Initializing Terraform"
-mkdir -p "${TF_STATE_DIR}"
-terraform -chdir="${TF_RUN_DIR}" init -reconfigure \
-  -backend-config="path=${TF_STATE_PATH}"
+if [[ "${CONFIG_SCHEMA_VERSION}" -gt 0 ]]; then
+  [[ -f "${BACKEND_FILE}" ]] || fail \
+    "Remote backend config not found: ${BACKEND_FILE}. Run scripts/bootstrap-cloud.sh --check, then an explicitly confirmed --yes bootstrap."
+  terraform -chdir="${TF_RUN_DIR}" init -reconfigure \
+    -backend-config="${BACKEND_FILE}"
+else
+  printf 'WARNING: legacy local state mode is retained only for compatibility.\n' >&2
+  mkdir -p "${TF_STATE_DIR}"
+  terraform -chdir="${TF_RUN_DIR}" init -reconfigure \
+    -backend-config="path=${TF_STATE_PATH}"
+fi
 
 step "Creating cloud infrastructure with temporary SSH bootstrap access"
 terraform -chdir="${TF_RUN_DIR}" apply \
