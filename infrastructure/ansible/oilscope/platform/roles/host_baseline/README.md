@@ -7,7 +7,7 @@ directories and permissions.
 
 ## Requirements
 
-- Ansible Core 2.21 or newer.
+- Ansible Core 2.16 or newer.
 - An Ubuntu managed host with Python available.
 - An SSH user permitted to use privilege escalation.
 

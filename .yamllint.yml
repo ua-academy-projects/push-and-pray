@@ -12,6 +12,19 @@ ignore: |
   services/ui/frontend/node_modules/
 
 rules:
+  # Match ansible-lint's YAML profile so both lint jobs can share this file.
+  braces:
+    max-spaces-inside: 1
+
+  comments:
+    min-spaces-from-content: 1
+
+  comments-indentation: false
+
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+
   # Compose files legitimately contain long connection strings and healthcheck
   # commands. 200 is generous but still catches genuinely runaway lines.
   line-length:
