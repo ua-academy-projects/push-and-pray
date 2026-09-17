@@ -78,7 +78,7 @@
   "registry": {
     "repository": "ghcr.io/ua-academy-projects/push-and-pray",
     "username": "example-operator",
-    "image_sha": "7075d4610949ab6852c90e2ac63a50d2ec4c3a41"
+    "image_sha": "76396ad43a86d4fe18e199bc90c968400fffcc85"
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
