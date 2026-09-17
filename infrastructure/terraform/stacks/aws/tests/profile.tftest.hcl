@@ -32,3 +32,23 @@ run "aws_profile_uses_only_aws_root" {
     error_message = "The AWS root must expose the normalized deployment contract."
   }
 }
+
+run "aws_portable_profile" {
+  command = plan
+
+  variables {
+    project_config_path = "../../../../configs/project-config.aws-portable.json"
+  }
+
+  assert {
+    condition = (
+      length(output.vms) == 5 &&
+      output.deployment.data_profile == "portable" &&
+      output.deployment.database.mode == "portable" &&
+      output.vms.infra.role == "database" &&
+      output.vms.infra.private_address == "10.0.1.4" &&
+      output.vms.ui.private_address == "10.0.2.7"
+    )
+    error_message = "The AWS portable profile must use a private database VM and a UI address in the public subnet."
+  }
+}

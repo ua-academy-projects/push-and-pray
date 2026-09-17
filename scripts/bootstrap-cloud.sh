@@ -112,6 +112,7 @@ CONFIG="${CONFIG_DIR}/$(basename "${CONFIG_INPUT}")"
 readonly CONFIG
 [[ -f "${CONFIG}" ]] || fail "Project config not found: ${CONFIG}"
 jq empty "${CONFIG}"
+python3 "${SCRIPT_DIR}/validate_project_config.py" "${CONFIG}"
 
 CONFIG_PROVIDER="$(jq -r '.cloud_provider // .default_cloud // empty | ascii_downcase' "${CONFIG}")"
 CONFIG_ENVIRONMENT="$(jq -r '.environment // empty' "${CONFIG}")"

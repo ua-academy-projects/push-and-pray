@@ -123,73 +123,7 @@ jq -e '.vms.ui.role == "ui" and .vms.ui.assign_public_ip == true' "${CONFIG}" >/
 jq -e '.network.ui_public_ports | index(443) != null' "${CONFIG}" >/dev/null || \
   fail "network.ui_public_ports must include 443 for HTTPS."
 
-python3 - "${CONFIG}" <<'PY'
-import ipaddress
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as config_file:
-    config = json.load(config_file)
-
-networks = {}
-global_provider = config.get("cloud_provider", config.get("default_cloud", "")).lower()
-for cloud in {
-    vm.get("provider", vm.get("cloud", global_provider)).lower()
-    for vm in config["vms"].values()
-}:
-    networks[cloud] = config["network"] | config["clouds"].get(cloud, {}).get("network", {})
-
-for name, vm in config["vms"].items():
-    cloud = vm.get("provider", vm.get("cloud", global_provider)).lower()
-    network = networks[cloud]
-    if vm["role"] == "bastion":
-        subnet_key = "management_subnet_cidr"
-    elif cloud == "aws" and vm["assign_public_ip"]:
-        subnet_key = "public_subnet_cidr"
-    else:
-        subnet_key = "workload_subnet_cidr"
-
-    address = ipaddress.ip_address(vm["internal_ip"])
-    subnet = ipaddress.ip_network(network[subnet_key])
-    if address not in subnet:
-        raise SystemExit(
-            f"VM {name} uses {cloud} and must have an internal_ip inside "
-            f"{subnet_key} ({subnet}), got {address}"
-        )
-
-for cloud, network in networks.items():
-    ranges = {
-        key: ipaddress.ip_network(value)
-        for key, value in network.items()
-        if key.endswith("_cidr")
-    }
-    ranges.update({
-        f"database_subnet_cidrs[{index}]": ipaddress.ip_network(value)
-        for index, value in enumerate(network.get("database_subnet_cidrs", []))
-    })
-    items = list(ranges.items())
-    for index, (left_name, left) in enumerate(items):
-        for right_name, right in items[index + 1:]:
-            if left_name == "vpc_cidr" or right_name == "vpc_cidr":
-                continue
-            if left.overlaps(right):
-                raise SystemExit(
-                    f"Cloud {cloud} network ranges overlap: {left_name}={left} and "
-                    f"{right_name}={right}"
-                )
-
-if len(networks) > 1:
-    cloud_items = list(networks.items())
-    for index, (left_cloud, left_network) in enumerate(cloud_items):
-        left_vpc = ipaddress.ip_network(left_network["vpc_cidr"])
-        for right_cloud, right_network in cloud_items[index + 1:]:
-            right_vpc = ipaddress.ip_network(right_network["vpc_cidr"])
-            if left_vpc.overlaps(right_vpc):
-                raise SystemExit(
-                    f"Mixed-cloud VPC CIDRs overlap: {left_cloud}={left_vpc}, "
-                    f"{right_cloud}={right_vpc}"
-                )
-PY
+python3 "${SCRIPT_DIR}/validate_project_config.py" "${CONFIG}"
 
 USED_CLOUDS="$(jq -r '
   . as $config

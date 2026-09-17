@@ -25,3 +25,23 @@ run "gcp_profile_uses_only_gcp_root" {
     error_message = "The GCP root must expose the normalized deployment contract."
   }
 }
+
+run "gcp_portable_profile" {
+  command = plan
+
+  variables {
+    project_config_path = "../../../../configs/project-config.gcp-portable.json"
+  }
+
+  assert {
+    condition = (
+      length(output.vms) == 5 &&
+      output.deployment.data_profile == "portable" &&
+      output.deployment.database.mode == "portable" &&
+      output.vms.infra.role == "database" &&
+      output.vms.infra.private_address == "10.0.1.4" &&
+      output.vms.ui.private_address == "10.0.1.7"
+    )
+    error_message = "The GCP portable profile must use a private database VM in the workload subnet."
+  }
+}
