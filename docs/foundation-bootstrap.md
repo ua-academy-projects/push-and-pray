@@ -58,7 +58,14 @@ GCP foundation:
 - required service APIs;
 - versioned, uniform-access, public-prevented GCS state bucket;
 - Terraform, CI publisher, and runtime service accounts;
+- GitHub Actions Workload Identity Pool/provider restricted to the configured
+  source repository, with keyless CI impersonation of the publisher account;
 - additive least-purpose project roles and bucket object access.
+
+The GCP CI account receives `roles/artifactregistry.writer` and can be
+impersonated only by GitHub OIDC tokens whose `repository` claim matches
+`registry.repository`. No service-account key is created. The generated
+manifest exposes `ci_oidc_provider` and `ci_repository` for CI configuration.
 
 Workload Terraform continues to own workload resources. Runtime foundation
 identities are not automatically substituted for the currently state-managed
@@ -105,7 +112,8 @@ uv run pytest tests/test_bootstrap_cloud.py
 shellcheck scripts/bootstrap-cloud.sh
 ```
 
-The repository test uses mocked AWS CLI responses to prove that `--check` does
-not issue known mutating calls or create generated files. `shellcheck` remains a
-required CI/local dependency even if it is not installed on a particular
-workstation.
+The repository tests use mocked AWS and GCP CLI responses to prove that
+`--check` does not issue known mutating calls or create generated files. They
+also verify that an authorised GCP bootstrap creates repository-scoped Workload
+Identity Federation and no service-account key. `shellcheck` remains a required
+CI/local dependency even if it is not installed on a particular workstation.

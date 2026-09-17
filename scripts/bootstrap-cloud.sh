@@ -176,6 +176,9 @@ aws_ensure_role() {
       --tags Key=application,Value="${DEPLOYMENT}" Key=environment,Value="${ENVIRONMENT}" \
       >/dev/null
   fi
+  aws iam update-assume-role-policy \
+    --role-name "${role_name}" \
+    --policy-document "file://${trust_file}"
 }
 
 bootstrap_aws() {
@@ -357,6 +360,7 @@ use_lockfile = true"
   info "AWS foundation ready. IAM propagation can take several minutes."
   info "Next: aws sts assume-role --role-arn arn:aws:iam::${account}:role/${terraform_role} --role-session-name oilscope-terraform"
   info "Next: terraform -chdir=infrastructure/terraform/stacks/aws init -reconfigure -backend-config=${BACKEND_FILE}"
+  info "Next: python3 scripts/validate_project_config.py ${CONFIG}"
   info "Next: terraform -chdir=infrastructure/terraform/stacks/aws plan -var=project_config_path=${CONFIG}"
 }
 
@@ -393,8 +397,9 @@ gcp_bind_role() {
 }
 
 bootstrap_gcp() {
-  local project_id active_account bucket state_prefix
+  local project_id project_number active_account bucket state_prefix
   local terraform_id ci_id runtime_id terraform_email ci_email runtime_email
+  local github_repository workload_pool workload_provider workload_provider_name
   local missing=0 bucket_exists=false
   local -a services terraform_roles runtime_roles
 
@@ -402,8 +407,9 @@ bootstrap_gcp() {
   [[ -n "${project_id}" ]] || fail "clouds.gcp.project_id is required."
   active_account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -1)"
   [[ -n "${active_account}" ]] || fail "No active gcloud identity."
-  gcloud projects describe "${project_id}" --format='value(projectId)' >/dev/null 2>&1 || \
+  project_number="$(gcloud projects describe "${project_id}" --format='value(projectNumber)' 2>/dev/null)" || \
     fail "GCP project ${project_id} does not exist or the active identity cannot access it. Project creation requires an explicit future opt-in."
+  [[ -n "${project_number}" ]] || fail "Unable to resolve the numeric project number for ${project_id}."
 
   if ! gcloud beta billing projects describe "${project_id}" --format='value(billingEnabled)' 2>/dev/null \
     | grep -qx 'True'; then
@@ -422,6 +428,12 @@ bootstrap_gcp() {
   terraform_email="${terraform_id}@${project_id}.iam.gserviceaccount.com"
   ci_email="${ci_id}@${project_id}.iam.gserviceaccount.com"
   runtime_email="${runtime_id}@${project_id}.iam.gserviceaccount.com"
+  github_repository="$(jq -r '.registry.repository // empty' "${CONFIG}" | sed -E 's#^ghcr.io/([^/]+/[^/]+).*$#\1#')"
+  [[ "${github_repository}" == */* ]] || fail "registry.repository must identify a GitHub owner/repository."
+  workload_pool="${DEPLOYMENT}-${ENVIRONMENT}-github"
+  workload_pool="${workload_pool:0:32}"
+  workload_provider="github"
+  workload_provider_name="projects/${project_number}/locations/global/workloadIdentityPools/${workload_pool}/providers/${workload_provider}"
   services=(
     cloudresourcemanager.googleapis.com
     serviceusage.googleapis.com
@@ -471,6 +483,21 @@ bootstrap_gcp() {
       ((missing += 1))
     fi
   done
+  if gcloud iam workload-identity-pools describe "${workload_pool}" \
+    --location global --project "${project_id}" >/dev/null 2>&1; then
+    info "GCP Workload Identity Pool exists: ${workload_pool}"
+  else
+    action "GCP Workload Identity Pool is missing: ${workload_pool}"
+    ((missing += 1))
+  fi
+  if gcloud iam workload-identity-pools providers describe "${workload_provider}" \
+    --workload-identity-pool "${workload_pool}" \
+    --location global --project "${project_id}" >/dev/null 2>&1; then
+    info "GCP GitHub OIDC provider exists: ${workload_provider_name}"
+  else
+    action "GCP GitHub OIDC provider is missing: ${workload_provider_name}"
+    ((missing += 1))
+  fi
 
   if [[ "${MODE}" == "check" ]]; then
     info "Check complete: ${missing} documented GCP foundation object(s) missing. No changes made."
@@ -497,6 +524,38 @@ bootstrap_gcp() {
   gcp_ensure_service_account "${ci_id}" "OilScope CI image publisher" "${project_id}"
   gcp_ensure_service_account "${runtime_id}" "OilScope runtime foundation" "${project_id}"
 
+  if ! gcloud iam workload-identity-pools describe "${workload_pool}" \
+    --location global --project "${project_id}" >/dev/null 2>&1; then
+    gcloud iam workload-identity-pools create "${workload_pool}" \
+      --location global \
+      --project "${project_id}" \
+      --display-name "OilScope GitHub Actions" \
+      --description "Repository-scoped federation for ${github_repository}" \
+      --quiet
+  fi
+  if ! gcloud iam workload-identity-pools providers describe "${workload_provider}" \
+    --workload-identity-pool "${workload_pool}" \
+    --location global --project "${project_id}" >/dev/null 2>&1; then
+    gcloud iam workload-identity-pools providers create-oidc "${workload_provider}" \
+      --workload-identity-pool "${workload_pool}" \
+      --location global \
+      --project "${project_id}" \
+      --display-name "GitHub Actions" \
+      --issuer-uri "https://token.actions.githubusercontent.com" \
+      --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository" \
+      --attribute-condition "assertion.repository == '${github_repository}'" \
+      --quiet
+  fi
+  gcloud iam workload-identity-pools providers update-oidc "${workload_provider}" \
+    --workload-identity-pool "${workload_pool}" \
+    --location global \
+    --project "${project_id}" \
+    --display-name "GitHub Actions" \
+    --issuer-uri "https://token.actions.githubusercontent.com" \
+    --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository" \
+    --attribute-condition "assertion.repository == '${github_repository}'" \
+    --quiet
+
   local role
   for role in "${terraform_roles[@]}"; do
     gcp_bind_role "${project_id}" "serviceAccount:${terraform_email}" "${role}"
@@ -504,6 +563,12 @@ bootstrap_gcp() {
   for role in "${runtime_roles[@]}"; do
     gcp_bind_role "${project_id}" "serviceAccount:${runtime_email}" "${role}"
   done
+  gcp_bind_role "${project_id}" "serviceAccount:${ci_email}" "roles/artifactregistry.writer"
+  gcloud iam service-accounts add-iam-policy-binding "${ci_email}" \
+    --project "${project_id}" \
+    --role roles/iam.workloadIdentityUser \
+    --member "principalSet://iam.googleapis.com/projects/${project_number}/locations/global/workloadIdentityPools/${workload_pool}/attribute.repository/${github_repository}" \
+    --quiet >/dev/null
   gcloud storage buckets add-iam-policy-binding "gs://${bucket}" \
     --member "serviceAccount:${terraform_email}" \
     --role roles/storage.objectAdmin \
@@ -518,12 +583,15 @@ bootstrap_gcp() {
     --arg state_prefix "${state_prefix}" \
     --arg deployment_identity "${terraform_email}" \
     --arg ci_identity "${ci_email}" \
+    --arg ci_oidc_provider "${workload_provider_name}" \
+    --arg ci_repository "${github_repository}" \
     --arg runtime_identity "${runtime_email}" \
     --argjson services "$(printf '%s\n' "${services[@]}" | jq -R . | jq -s .)" \
     --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
       schema_version:1, provider:$provider, project_id:$project_id, region:$region,
       state_bucket:$state_bucket, state_prefix:$state_prefix,
       deployment_identity:$deployment_identity, ci_identity:$ci_identity,
+      ci_oidc_provider:$ci_oidc_provider, ci_repository:$ci_repository,
       runtime_identity:$runtime_identity, enabled_services:$services,
       created_at:$created_at
     }')"
@@ -534,6 +602,7 @@ prefix = \"${state_prefix}\""
   info "GCP foundation ready. IAM propagation can take several minutes."
   info "Next: gcloud auth application-default login --impersonate-service-account=${terraform_email}"
   info "Next: terraform -chdir=infrastructure/terraform/stacks/gcp init -reconfigure -backend-config=${BACKEND_FILE}"
+  info "Next: python3 scripts/validate_project_config.py ${CONFIG}"
   info "Next: terraform -chdir=infrastructure/terraform/stacks/gcp plan -var=project_config_path=${CONFIG}"
 }
 
