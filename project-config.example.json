@@ -29,8 +29,8 @@
     "managed_database": {
       "gcp_private_service_cidr": "10.0.2.0/24",
       "aws_private_subnet_cidrs": [
-        "10.0.2.0/24",
-        "10.0.3.0/24"
+        "10.0.3.0/24",
+        "10.0.4.0/24"
       ]
     },
     "ui_public_ports": [80, 443]
