@@ -17,10 +17,7 @@
     "image_tag": "example-operator"
   },
   "database": {
-    "mode": "self_managed",
-    "version": "18",
-    "size": "micro",
-    "storage_gb": 20
+    "mode": "self_managed"
   },
   "network": {
     "vpc_cidr": "10.0.0.0/16",

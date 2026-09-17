@@ -9,17 +9,25 @@ Ansible configures and deploys the workload VMs.
 
 ```json
 "database": {
-  "mode": "self_managed",
-  "version": "18",
-  "size": "micro",
-  "storage_gb": 20
+  "mode": "self_managed"
 }
 ```
 
 `self_managed` runs PostgreSQL and its extensions on the infrastructure VM.
 `managed` creates private Cloud SQL or RDS PostgreSQL according to
-`default_cloud`, and runs RabbitMQ and Redis on the infrastructure VM. Both
-providers use the configured 20 GB development storage allocation.
+`default_cloud`, and runs RabbitMQ and Redis on the infrastructure VM. Managed
+deployments additionally require the PostgreSQL `version`, database `size`, and
+`storage_gb` settings. Self-managed compute and storage are configured on the
+`infrastructure` VM instead.
+
+```json
+"database": {
+  "mode": "managed",
+  "version": "18",
+  "size": "micro",
+  "storage_gb": 20
+}
+```
 
 Development RDS instances set `backup_retention_period` to `0`, delete
 automated backups, and skip a final snapshot. Stage and production retain seven

@@ -251,26 +251,57 @@
       "description": "Selects the PostgreSQL deployment architecture and its non-secret settings.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "version", "size", "storage_gb"],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "type": "string",
           "enum": ["self_managed", "managed"]
         },
         "version": {
+          "description": "PostgreSQL major version for a provider-managed database.",
           "type": "string",
           "const": "18"
         },
         "size": {
+          "description": "Compute size for a provider-managed database.",
           "type": "string",
           "enum": ["micro", "small", "medium"]
         },
         "storage_gb": {
-          "description": "Managed PostgreSQL storage allocation in GB; the shared minimum accommodates RDS PostgreSQL gp3.",
+          "description": "Provider-managed PostgreSQL storage allocation in GB; the shared minimum accommodates RDS PostgreSQL gp3.",
           "type": "integer",
           "minimum": 20
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "managed"
+              }
+            }
+          },
+          "then": {
+            "required": ["version", "size", "storage_gb"]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["version"]
+                },
+                {
+                  "required": ["size"]
+                },
+                {
+                  "required": ["storage_gb"]
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "managed_database_network": {
       "description": "Private address space reserved for provider-managed PostgreSQL.",
