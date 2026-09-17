@@ -63,7 +63,7 @@ Rerun the complete deployment when shared dependencies or several services have
 changed:
 
 ```sh
-ansible-playbook oilscope.platform.deploy_workloads \
+ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 

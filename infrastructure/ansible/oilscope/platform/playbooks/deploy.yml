@@ -1,7 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Synchronize deployment secrets
+  ansible.builtin.import_playbook: synchronize_secret_versions.yml
+
 - name: Prepare workload hosts
   ansible.builtin.import_playbook: prepare_workloads.yml
+
+- name: Configure AWS observability when AWS hosts exist
+  ansible.builtin.import_playbook: configure_aws_observability.yml
+
+- name: Configure GCP observability when GCP hosts exist
+  ansible.builtin.import_playbook: configure_gcp_observability.yml
 
 - name: Deploy Infrastructure workload
   ansible.builtin.import_playbook: infrastructure.yml

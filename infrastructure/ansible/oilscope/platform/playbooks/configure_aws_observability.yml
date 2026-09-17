@@ -4,5 +4,7 @@
   hosts: aws
   become: true
   gather_facts: false
+  force_handlers: true
+  any_errors_fatal: true
   roles:
     - role: oilscope.platform.aws_cloudwatch_agent

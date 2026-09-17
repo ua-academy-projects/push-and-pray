@@ -12,28 +12,32 @@ uvx check-jsonschema \
   /absolute/path/project-config.json
 ​```
 
-## Deploy all workloads
+## Deploy everything
 
-Deploy the application workloads in dependency order:
-
-1. Infrastructure and database migrations
-2. History
-3. Fetcher
-4. UI
-
-Run from the repository root:
+Load the required secret values from their recovery source, then run the general
+deployment from the repository root. Reuse the same values on subsequent runs;
+changing an environment value requests a new cloud secret version.
 
 ```bash
-ansible-playbook oilscope.platform.deploy_workloads \
+ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-The deployment stops if a workload fails, preventing dependent workloads from being deployed.
+The playbook:
+
+1. Synchronizes changed or missing cloud secret versions.
+2. Prepares workload hosts with the baseline and Docker Engine.
+3. Installs the CloudWatch Agent on AWS hosts or the Ops Agent on GCP hosts.
+4. Deploys Infrastructure, History, Fetcher, and UI in dependency order.
+
+The inventory groups select the monitoring agent automatically. The deployment
+stops if a stage fails, preventing dependent workloads from being deployed.
 
 ## Upload secret versions
 
 Terraform creates the AWS and GCP secret containers, but it does not store
-their values. Validate and upload values from the controller environment with:
+their values. The general deployment only adds a version when the latest
+enabled value differs. Force a new version for deliberate rotation with:
 
 ```bash
 ansible-playbook oilscope.platform.upload_secret_versions \
@@ -51,8 +55,9 @@ source variable naming, and rotation guidance.
 
 ## Configure GCP observability
 
-After Terraform grants the GCP VM service accounts their Logging and Monitoring
-writer roles, install the Ops Agent on the existing VMs with:
+The general deployment configures observability automatically. To reconcile
+only the GCP Ops Agent after Terraform has granted the VM service accounts
+their Logging and Monitoring writer roles, run:
 
 ```bash
 ansible-playbook oilscope.platform.configure_gcp_observability \
@@ -65,8 +70,8 @@ logs from workload VMs. It does not restart the application containers. See the
 
 ## Configure AWS observability
 
-After Terraform attaches the CloudWatch Agent policy to the EC2 instance
-roles, install and configure the agent on the existing instances with:
+To reconcile only the CloudWatch Agent after Terraform has attached its policy
+to the EC2 instance roles, run:
 
 ```bash
 ansible-playbook oilscope.platform.configure_aws_observability \

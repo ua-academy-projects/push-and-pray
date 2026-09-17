@@ -51,7 +51,7 @@ the migration command.
 
 ## Secrets
 
-Terraform creates no secret values. Before deployment, upload values from the
+Terraform creates no secret values. Before deployment, export values in the
 controller environment:
 
 ```sh
@@ -61,21 +61,16 @@ export REDIS_PASSWORD="$(openssl rand -hex 32)"
 export GHCR_TOKEN="..."
 export EXTERNAL_API_KEY="..."
 export TF_VAR_database_password="${DB_PASSWORD}"
-
-ansible-playbook oilscope.platform.upload_secret_versions \
-  -i localhost, \
-  -e secret_versions_config_file="$PWD/project-config.json" \
-  --check
-
-ansible-playbook oilscope.platform.upload_secret_versions \
-  -i localhost, \
-  -e secret_versions_config_file="$PWD/project-config.json"
 ```
 
-During workload deployment, each VM retrieves only its configured secrets
-through its attached AWS or GCP identity. Ansible passes values to Compose in
-the command environment and does not create a persistent deployment environment
-file.
+The general deployment synchronizes changed or missing versions before any VM
+configuration. During workload deployment, each VM retrieves only its configured
+secrets through its attached AWS or GCP identity. Ansible passes values to
+Compose in the command environment and does not create a persistent deployment
+environment file.
+
+Reuse the same values on later deployments. Generating new values changes the
+desired state and intentionally creates new secret versions.
 
 See [secrets.md](secrets.md) for provider requirements and rotation guidance.
 
@@ -91,16 +86,18 @@ ansible-inventory \
   --graph
 ```
 
-Deploy all workloads in dependency order:
+Prepare hosts, configure the selected cloud's monitoring agent, and deploy all
+workloads in dependency order:
 
 ```sh
-ansible-playbook oilscope.platform.deploy_workloads \
+ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-The orchestrator deploys Infrastructure, History, Fetcher, and UI in that order. The
-UI play also starts Traefik, which terminates HTTPS and redirects HTTP traffic
-from port 80 to port 443.
+The orchestrator synchronizes secrets, prepares workload hosts, installs the
+provider-specific monitoring agent, and then deploys Infrastructure, History,
+Fetcher, and UI. The UI play also starts Traefik, which terminates HTTPS and
+redirects HTTP traffic from port 80 to port 443.
 
 To deploy one component, run its playbook directly, for example:
 

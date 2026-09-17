@@ -87,10 +87,9 @@
     loop_var: secret_versions_target
     label: "{{ secret_versions_target.key }}"
 
-- name: Add every secret version
-  ansible.builtin.include_tasks: "upload_{{ secret_versions_target.cloud }}.yml"
+- name: Synchronize every secret version
+  ansible.builtin.include_tasks: "synchronize_{{ secret_versions_target.cloud }}.yml"
   loop: "{{ secret_versions_catalog }}"
   loop_control:
     loop_var: secret_versions_target
     label: "{{ secret_versions_target.key }}"
-  when: not ansible_check_mode

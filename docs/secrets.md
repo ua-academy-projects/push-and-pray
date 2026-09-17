@@ -33,7 +33,7 @@ region; GCP containers are scoped to `cloud_settings.gcp.project_id`.
 | --- | --- |
 | Terraform AWS secrets module | Create regional containers, EC2 roles and instance profiles, and `GetSecretValue` policies |
 | Terraform GCP secrets module | Create project containers and VM service accounts, and grant secret accessor membership |
-| `secret_versions` Ansible role | Upload versions from the operator environment to every required cloud and scope |
+| `secret_versions` Ansible role | Reconcile environment values with the latest enabled versions in every required cloud and scope |
 | `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
 
 Terraform deliberately creates no secret versions. Managed PostgreSQL creation
@@ -70,10 +70,27 @@ both clouds:
   `AWS_PROFILE`.
 - GCP: an authenticated `gcloud` session.
 
-The operator also needs permission to describe containers and add versions.
-Terraform's workload-reader policies do not grant operator upload access.
+The operator also needs permission to describe containers, read current
+versions, and add versions. Terraform's workload-reader policies do not grant
+operator synchronization access.
 
-Run from the repository root:
+Load the desired values from their independent recovery source. Reuse those
+values on repeated deployments; running the random-generation commands again
+requests a rotation. The general deployment reads the latest enabled value and
+adds a version only when the corresponding environment value differs:
+
+```bash
+export DB_PASSWORD="..."
+export RABBITMQ_PASSWORD="..."
+export REDIS_PASSWORD="..."
+export GHCR_TOKEN="..."
+export EXTERNAL_API_KEY="..."
+
+ansible-playbook oilscope.platform.deploy \
+  -i infrastructure/ansible/inventory/oilscope.yml
+```
+
+To force a new version for deliberate rotation, use the upload playbook:
 
 ```bash
 export DB_PASSWORD="$(openssl rand -hex 32)"
@@ -93,11 +110,11 @@ ansible-playbook oilscope.platform.upload_secret_versions \
   -e secret_versions_config_file="$PWD/project-config.json"
 ```
 
-Check mode verifies source variables and target containers without writing.
-The normal run passes payloads through stdin without an added newline. Tasks
-that handle values use `no_log`. All containers are checked before uploads
-start, although a provider failure during the write phase can still result in a
-partial rotation.
+Check mode verifies source variables, target containers, and current-version
+read access without writing. The normal run passes payloads through stdin
+without an added newline. Tasks that compare or otherwise handle values use
+`no_log`. All containers are checked before uploads start, although a provider
+failure during the write phase can still result in a partial rotation.
 
 Rotate a subset by container ID or derived source variable:
 

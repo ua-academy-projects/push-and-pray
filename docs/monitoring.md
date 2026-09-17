@@ -61,8 +61,9 @@ uptime probes do not inflate the request metric.
 
 1. Apply Terraform to create the infrastructure, monitoring definitions, and
    optional Cloudflare DNS record.
-2. Deploy the application with Ansible.
-3. Run the provider-specific observability playbook to install the guest agent.
+2. Run `oilscope.platform.deploy`. The general Ansible playbook prepares the
+   hosts, installs the applicable provider guest agent, and deploys the
+   application workloads.
 
 Agent-backed alarms can initially show no data. The HTTPS alarm can initially
 open while DNS, Traefik, and the application are not ready; it closes after the

@@ -81,6 +81,9 @@ class InventoryModule(BaseInventoryPlugin):
         virtual_machines = self._virtual_machines(config)
 
         for cloud in DELEGATES:
+            inventory.add_group(cloud)
+
+        for cloud in DELEGATES:
             cloud_vms = {name: vm for name, vm in virtual_machines.items() if vm["cloud"] == cloud}
             if not cloud_vms:
                 continue
