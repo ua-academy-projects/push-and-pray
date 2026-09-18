@@ -6,8 +6,6 @@ logging:
         - /var/log/oilscope/*.jsonl
     oilscope_deploy:
       type: systemd_journald
-      include_units:
-        - oilscope-deploy.service
   service:
     pipelines:
       oilscope_application:
@@ -18,9 +16,16 @@ logging:
       oilscope_deploy:
         receivers:
           - oilscope_deploy
+        processors:
+          - oilscope_deploy_only
   processors:
     oilscope_json:
       type: parse_json
+    # systemd_journald receivers cannot filter by unit, so drop other units here.
+    oilscope_deploy_only:
+      type: exclude_logs
+      match_any:
+        - 'jsonPayload._SYSTEMD_UNIT != "oilscope-deploy.service"'
 metrics:
   receivers:
     hostmetrics:

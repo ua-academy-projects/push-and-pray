@@ -14,7 +14,7 @@
   },
   "clouds": {
     "gcp": {
-      "project_id": "shiphappens-dev",
+      "project_id": "shiphappens-dev-508919",
       "locations": {
         "primary": {
           "region": "europe-west1",
