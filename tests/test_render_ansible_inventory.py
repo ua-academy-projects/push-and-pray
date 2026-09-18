@@ -34,12 +34,14 @@ def test_inventory_uses_public_bastion_and_private_workload_addresses() -> None:
 
     inventory = render_inventory(deployment)
 
-    assert inventory["_meta"]["hostvars"]["bastion"]["ansible_host"] == "198.51.100.10"
-    history = inventory["_meta"]["hostvars"]["history"]
+    assert inventory["all"]["hosts"]["bastion"]["ansible_host"] == "198.51.100.10"
+    history = inventory["all"]["hosts"]["history"]
     assert history["ansible_host"] == "10.0.1.10"
+    assert history["oilscope_vm_key"] == "history"
     assert "ProxyJump=ubuntu@198.51.100.10:8787" in history["ansible_ssh_common_args"]
-    assert inventory["history"]["hosts"] == ["history"]
+    assert list(inventory["history"]["hosts"]) == ["history"]
     assert sorted(inventory["workloads"]["hosts"]) == ["history", "ui"]
+    assert list(inventory["aws_bastion"]["hosts"]) == ["bastion"]
 
 
 def test_inventory_contains_no_secret_fields() -> None:

@@ -351,8 +351,7 @@ cleanup() {
     printf '\n==> Closing temporary bastion SSH port 22 after an interrupted deployment\n' >&2
     terraform -chdir="${TF_RUN_DIR}" apply \
       -input=false \
-      -auto-approve \
-      -var="project_config_path=${CONFIG}" \
+      "${TF_APPLY_ARGS[@]}" \
       -var="enable_bastion_ssh_bootstrap=false" >/dev/null || \
       printf 'WARNING: Could not close the temporary SSH bootstrap rule automatically.\n' >&2
   fi

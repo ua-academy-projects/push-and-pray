@@ -32,10 +32,7 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
     bastion_port = bastion["ssh"]["port"]
     bastion_host = bastion["public_address"]
 
-    inventory: dict[str, Any] = {
-        "_meta": {"hostvars": {}},
-        "all": {"children": []},
-    }
+    inventory: dict[str, Any] = {"all": {"hosts": {}, "children": {}}}
     groups: dict[str, list[str]] = {
         deployment["provider"]: [],
         "bastion": [],
@@ -44,6 +41,7 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
 
     for logical_name, node in sorted(nodes.items()):
         role = node["role"]
+        inventory_name = node.get("name") or logical_name
         is_bastion = role == "bastion"
         address = node.get("public_address") if is_bastion else node["private_address"]
         if not address:
@@ -55,6 +53,7 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
             "ansible_port": node["ssh"]["port"],
             "oilscope_cloud": node["provider"],
             "oilscope_role": role,
+            "oilscope_vm_key": logical_name,
             "internal_ip": node["private_address"],
             "public_ip": node.get("public_address"),
             "runtime_identity": node["runtime_identity"],
@@ -64,21 +63,21 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
                 f"-o IdentitiesOnly=yes -o ProxyJump={bastion_user}@{bastion_host}:{bastion_port}"
             )
 
-        inventory["_meta"]["hostvars"][logical_name] = hostvars
-        groups.setdefault(node["provider"], []).append(logical_name)
-        groups.setdefault(role, []).append(logical_name)
-        groups["bastion" if is_bastion else "workloads"].append(logical_name)
+        inventory["all"]["hosts"][inventory_name] = hostvars
+        groups.setdefault(node["provider"], []).append(inventory_name)
+        groups.setdefault(role, []).append(inventory_name)
+        groups.setdefault(f"{node['provider']}_{role}", []).append(inventory_name)
+        groups["bastion" if is_bastion else "workloads"].append(inventory_name)
 
-    if bastion_name not in groups["bastion"]:
+    bastion_inventory_name = nodes[bastion_name].get("name") or bastion_name
+    if bastion_inventory_name not in groups["bastion"]:
         raise ValueError("Bastion contract does not match a bastion node")
 
     for group, hosts in sorted(groups.items()):
         if not hosts:
             continue
-        inventory[group] = {"hosts": sorted(set(hosts))}
-        inventory["all"]["children"].append(group)
-
-    inventory["all"]["children"] = sorted(set(inventory["all"]["children"]))
+        inventory[group] = {"hosts": {host: {} for host in sorted(set(hosts))}}
+        inventory["all"]["children"][group] = {}
     return inventory
 
 
