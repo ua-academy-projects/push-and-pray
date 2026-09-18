@@ -3,8 +3,17 @@
 - name: Configure the bastion
   hosts: bastion
   become: true
-  gather_facts: true
+  gather_facts: false
   pre_tasks:
+    - name: Use the discovered bootstrap SSH port
+      ansible.builtin.set_fact:
+        ansible_port: >-
+          {{ lookup('ansible.builtin.env', 'OILSCOPE_BASTION_CONNECT_PORT')
+             | default(ansible_port, true) | int }}
+
+    - name: Gather facts through the bootstrap SSH port
+      ansible.builtin.setup:
+
     - name: Load the project configuration
       ansible.builtin.include_vars:
         file: >-

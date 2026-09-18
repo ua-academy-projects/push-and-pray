@@ -58,6 +58,10 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
             "public_ip": node.get("public_address"),
             "runtime_identity": node["runtime_identity"],
         }
+        if is_bastion:
+            # Keep the desired hardened port separate from the port used for
+            # the first bootstrap connection (normally 22).
+            hostvars["bastion_ssh_port"] = node["ssh"]["port"]
         if not is_bastion:
             hostvars["ansible_ssh_common_args"] = (
                 f"-o IdentitiesOnly=yes -o ProxyJump={bastion_user}@{bastion_host}:{bastion_port}"
