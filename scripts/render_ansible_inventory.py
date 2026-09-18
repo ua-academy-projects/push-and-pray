@@ -51,6 +51,9 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
             "ansible_host": address,
             "ansible_user": node["ssh"]["user"],
             "ansible_port": node["ssh"]["port"],
+            "ansible_ssh_common_args": (
+                "-o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes"
+            ),
             "oilscope_cloud": node["provider"],
             "oilscope_role": role,
             "oilscope_vm_key": logical_name,
@@ -64,7 +67,8 @@ def render_inventory(deployment: dict[str, Any]) -> dict[str, Any]:
             hostvars["bastion_ssh_port"] = node["ssh"]["port"]
         if not is_bastion:
             hostvars["ansible_ssh_common_args"] = (
-                f"-o IdentitiesOnly=yes -o ProxyJump={bastion_user}@{bastion_host}:{bastion_port}"
+                "-o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes "
+                f"-o ProxyJump={bastion_user}@{bastion_host}:{bastion_port}"
             )
 
         inventory["all"]["hosts"][inventory_name] = hostvars

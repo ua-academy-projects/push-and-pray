@@ -36,6 +36,9 @@ def test_inventory_uses_public_bastion_and_private_workload_addresses() -> None:
 
     assert inventory["all"]["hosts"]["bastion"]["ansible_host"] == "198.51.100.10"
     assert inventory["all"]["hosts"]["bastion"]["bastion_ssh_port"] == 8787
+    assert "StrictHostKeyChecking=accept-new" in inventory["all"]["hosts"]["bastion"][
+        "ansible_ssh_common_args"
+    ]
     history = inventory["all"]["hosts"]["history"]
     assert history["ansible_host"] == "10.0.1.10"
     assert history["oilscope_vm_key"] == "history"
