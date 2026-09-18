@@ -3,9 +3,11 @@
 
 """Build OilScope inventory dynamically across configured cloud providers."""
 
+import getpass
 import hashlib
 import json
 import os
+import shlex
 import tempfile
 
 from ansible.errors import AnsibleError, AnsibleParserError
@@ -148,6 +150,76 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 )
             finally:
                 self._cleanup(generated)
+
+        self._apply_connection_vars(inventory)
+
+    def _apply_connection_vars(self, inventory):
+        hosts = list(inventory.hosts.values())
+
+        if not hosts:
+            return
+
+        bastion_role = plain(self.get_option("bastion_role"))
+        bastion_group = inventory.groups.get(bastion_role)
+        bastions = bastion_group.get_hosts() if bastion_group else []
+
+        if len(bastions) != 1:
+            raise AnsibleParserError(
+                f"live inventory must contain exactly one {bastion_role!r} host, "
+                f"found {len(bastions)}"
+            )
+
+        bastion = bastions[0]
+        bastion_address = bastion.vars.get("ansible_host")
+        bastion_port = bastion.vars.get("ansible_port")
+
+        if not bastion_address or not bastion_port:
+            raise AnsibleParserError(
+                "the live bastion host must define ansible_host and ansible_port"
+            )
+
+        ansible_user = (
+            os.environ.get("OILSCOPE_SSH_USER")
+            or os.environ.get("USER")
+            or getpass.getuser()
+        )
+        private_key_file = os.environ.get("ANSIBLE_PRIVATE_KEY_FILE", "")
+        base_args = "-o StrictHostKeyChecking=accept-new"
+
+        for host in hosts:
+            host.set_variable("ansible_user", ansible_user)
+            host.set_variable("oilscope_ssh_base_args", base_args)
+            host.set_variable("ansible_ssh_common_args", base_args)
+            if private_key_file:
+                host.set_variable("ansible_private_key_file", private_key_file)
+
+        proxy_parts = [
+            "ssh",
+            "-W",
+            "%h:%p",
+            "-q",
+            "-p",
+            str(bastion_port),
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+        ]
+        if private_key_file:
+            proxy_parts.extend(
+                ["-o", "IdentitiesOnly=yes", "-i", private_key_file]
+            )
+        proxy_parts.append(f"{ansible_user}@{bastion_address}")
+        proxy_command = " ".join(shlex.quote(part) for part in proxy_parts)
+        workload_args = f"{base_args} -o ProxyCommand={shlex.quote(proxy_command)}"
+
+        workload_group = inventory.groups.get("workloads")
+        for host in workload_group.get_hosts() if workload_group else []:
+            host.set_variable("oilscope_bastion_address", bastion_address)
+            host.set_variable("oilscope_bastion_ssh_port", bastion_port)
+            host.set_variable(
+                "oilscope_bastion_private_key_file",
+                private_key_file,
+            )
+            host.set_variable("ansible_ssh_common_args", workload_args)
 
     def _resolve_config_path(self, inventory_path):
         configured = os.environ.get(

@@ -40,13 +40,12 @@ resource "google_monitoring_dashboard" "cpu" {
       tiles = concat(local.cpu_enabled ? [{
         width  = 12
         height = 8
-        xPos   = 0
-        yPos   = 0
         widget = {
           title = "Compute Engine CPU utilization"
           xyChart = {
             dataSets = [{
-              plotType = "LINE"
+              plotType   = "LINE"
+              targetAxis = "Y1"
               timeSeriesQuery = {
                 timeSeriesFilter = {
                   filter = "metric.type=\"compute.googleapis.com/instance/cpu/utilization\" AND resource.type=\"gce_instance\" AND (${local.cpu_filter})"
@@ -63,35 +62,34 @@ resource "google_monitoring_dashboard" "cpu" {
             }
           }
         }
-        }] : [], local.http_5xx_enabled ? [{
-        width  = 12
-        height = 8
-        xPos   = 0
-        yPos   = local.cpu_enabled ? 8 : 0
-        widget = {
-          title = "Traefik HTTP 5xx responses"
-          xyChart = {
-            dataSets = [
-              for name, vm in local.http_5xx_ui_vms : {
-                plotType = "LINE"
-                timeSeriesQuery = {
-                  timeSeriesFilter = {
-                    filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.http_5xx[name].name}\" AND resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${vm.instance_id}\""
-                    aggregation = {
-                      alignmentPeriod  = "60s"
-                      perSeriesAligner = "ALIGN_SUM"
+        }] : [], local.http_5xx_enabled ? [merge({
+          width  = 12
+          height = 8
+          widget = {
+            title = "Traefik HTTP 5xx responses"
+            xyChart = {
+              dataSets = [
+                for name, vm in local.http_5xx_ui_vms : {
+                  plotType   = "LINE"
+                  targetAxis = "Y1"
+                  timeSeriesQuery = {
+                    timeSeriesFilter = {
+                      filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.http_5xx[name].name}\" AND resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${vm.instance_id}\""
+                      aggregation = {
+                        alignmentPeriod  = "60s"
+                        perSeriesAligner = "ALIGN_SUM"
+                      }
                     }
                   }
                 }
+              ]
+              yAxis = {
+                label = "5xx responses"
+                scale = "LINEAR"
               }
-            ]
-            yAxis = {
-              label = "5xx responses"
-              scale = "LINEAR"
             }
           }
-        }
-      }] : [])
+      }, local.cpu_enabled ? { yPos = 8 } : {})] : [])
     }
   })
 }

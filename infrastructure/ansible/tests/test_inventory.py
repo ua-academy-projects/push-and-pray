@@ -105,6 +105,7 @@ class InventoryTests(unittest.TestCase):
                     patch.dict(os.environ, {"OILSCOPE_PROJECT_CONFIG": str(path)}),
                     patch.object(self.plugin, "_read_config_data"),
                     patch.object(self.plugin, "_delegate", side_effect=delegate),
+                    patch.object(self.plugin, "_apply_connection_vars") as connection_vars,
                 ):
                     self.plugin.parse(
                         InventoryData(),
@@ -116,6 +117,7 @@ class InventoryTests(unittest.TestCase):
                 [MODULE.GCP_DELEGATE, MODULE.AWS_DELEGATE] if hybrid else [MODULE.GCP_DELEGATE],
             )
             self.assertTrue(all(not path.exists() for path in files))
+            connection_vars.assert_called_once()
 
     def test_region_override(self):
         self.config["cloud_mappings"]["regions"]["alternate"] = {
@@ -131,24 +133,57 @@ class InventoryTests(unittest.TestCase):
             self.plugin._build_gcp_settings(self.config, self.project_config_path)
 
     def test_nested_proxy_has_explicit_key_and_final_port(self):
-        variables = yaml.safe_load(
-            (ROOT / "infrastructure/ansible/inventory/group_vars/workloads.yml").read_text()
+        inventory = InventoryData()
+        inventory.add_group("bastion")
+        inventory.add_group("workloads")
+        inventory.add_host("oilscope-bastion", group="bastion")
+        inventory.add_host("oilscope-history", group="workloads")
+        inventory.set_variable("oilscope-bastion", "ansible_host", "192.0.2.1")
+        inventory.set_variable("oilscope-bastion", "ansible_port", 8787)
+
+        with patch.dict(
+            os.environ,
+            {
+                "OILSCOPE_SSH_USER": "operator",
+                "ANSIBLE_PRIVATE_KEY_FILE": "/home/operator/keys/my key",
+            },
+        ):
+            self.plugin._apply_connection_vars(inventory)
+
+        bastion = inventory.get_host("oilscope-bastion")
+        workload = inventory.get_host("oilscope-history")
+        self.assertEqual(bastion.vars["ansible_user"], "operator")
+        self.assertEqual(
+            bastion.vars["ansible_private_key_file"],
+            "/home/operator/keys/my key",
         )
-        self.env.filters["quote"] = shlex.quote
-        result = self.env.from_string(variables["ansible_ssh_common_args"]).render(
-            oilscope_ssh_base_args="-o StrictHostKeyChecking=accept-new",
-            oilscope_bastion_ssh_port=8787,
-            oilscope_bastion_private_key_file="/home/operator/keys/my key",
-            oilscope_bastion_address="192.0.2.1",
-            ansible_user="operator",
-        )
-        args = shlex.split(result)
+        args = shlex.split(workload.vars["ansible_ssh_common_args"])
         proxy = next(arg.split("=", 1)[1] for arg in args if arg.startswith("ProxyCommand="))
         nested = shlex.split(proxy)
         self.assertEqual(nested[nested.index("-p") + 1], "8787")
         self.assertEqual(nested[nested.index("-i") + 1], "/home/operator/keys/my key")
         self.assertIn("IdentitiesOnly=yes", nested)
         self.assertIn("operator@192.0.2.1", nested)
+
+    def test_connection_vars_allow_ssh_agent_without_private_key(self):
+        inventory = InventoryData()
+        inventory.add_group("bastion")
+        inventory.add_group("workloads")
+        inventory.add_host("oilscope-bastion", group="bastion")
+        inventory.add_host("oilscope-ui", group="workloads")
+        inventory.set_variable("oilscope-bastion", "ansible_host", "198.51.100.2")
+        inventory.set_variable("oilscope-bastion", "ansible_port", 8787)
+
+        with patch.dict(
+            os.environ,
+            {"OILSCOPE_SSH_USER": "operator", "ANSIBLE_PRIVATE_KEY_FILE": ""},
+        ):
+            self.plugin._apply_connection_vars(inventory)
+
+        workload = inventory.get_host("oilscope-ui")
+        self.assertNotIn("ansible_private_key_file", workload.vars)
+        self.assertNotIn("IdentitiesOnly=yes", workload.vars["ansible_ssh_common_args"])
+        self.assertIn("operator@198.51.100.2", workload.vars["ansible_ssh_common_args"])
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
   "name_prefix": "oilscope",
   "default_cloud": "gcp",
   "default_region": "europe",
-  "database_mode": "self_hosted",
+  "database_mode": "managed",
   "clouds": {
     "gcp": {
       "project_id": "example-project-12345"

@@ -51,6 +51,10 @@ class EdgeProxyConfigurationTests(unittest.TestCase):
         aws_when = by_name["Configure the Amazon CloudWatch Agent for Traefik access logs"]["when"]
         self.assertIn('oilscope_cloud == "gcp"', gcp_when)
         self.assertIn('oilscope_cloud == "aws"', aws_when)
+        self.assertEqual(
+            by_name["Install the Google Cloud Ops Agent"]["args"]["creates"],
+            "/opt/google-cloud-ops-agent/libexec/google_cloud_ops_agent_engine",
+        )
 
         compose = (COLLECTION / "roles/compose_project/templates/compose.proxy.yaml.j2").read_text()
         self.assertIn("--accesslog.format=json", compose)

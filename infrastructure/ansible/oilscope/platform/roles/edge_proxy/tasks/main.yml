@@ -46,7 +46,7 @@
       - "{{ edge_proxy_gcp_agent_installer_path }}"
       - --also-install
   args:
-    creates: /opt/google-cloud-ops-agent/bin/google_cloud_ops_agent_engine
+    creates: /opt/google-cloud-ops-agent/libexec/google_cloud_ops_agent_engine
   when:
     - edge_proxy_http_5xx_enabled | bool
     - oilscope_cloud == "gcp"

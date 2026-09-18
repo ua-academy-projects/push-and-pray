@@ -1,9 +1,0 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
----
-ansible_user: >-
-  {{ lookup('ansible.builtin.env', 'OILSCOPE_SSH_USER')
-     | default(lookup('ansible.builtin.env', 'USER'), true) }}
-
-oilscope_ssh_base_args: >-
-  -o StrictHostKeyChecking=accept-new
-ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"

@@ -13,7 +13,9 @@ Both delegates expose the provider-neutral `bastion`, `database`, `history`,
 `fetcher`, `ui`, and `workloads` groups. The `infra` VM is grouped as
 `database` because grouping uses its `role`, not its configuration key. Hosts
 also expose `internal_ip`, `public_ip`, `oilscope_role`, `oilscope_cloud`,
-`oilscope_region`, `ansible_host`, and `ansible_port`.
+`oilscope_region`, `ansible_host`, and `ansible_port`. The plugin also assigns
+all SSH connection variables directly after discovery; deployment does not
+depend on a static `group_vars` directory.
 
 ## Setup
 
@@ -73,6 +75,9 @@ UI. The nested ProxyCommand explicitly passes `ANSIBLE_PRIVATE_KEY_FILE` when
 set. Bastion first-boot logic configures `vms.bastion.ssh_port` (8787 in the
 example); Ansible waits for that port and enforces the same SSH policy.
 No temporary public port 22 or bootstrap connection override is needed.
+The inventory plugin resolves `ansible_user`, common host-key policy, bastion
+address and port, optional private-key handling, and the workload ProxyCommand
+from the live inventory and controller environment.
 The inventory plugin propagates the absolute project-config path as a host
 variable, so deployment roles consume the same file used for discovery.
 
