@@ -20,6 +20,9 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "this" {
     ingress_rule {
       hostname = local.hostname
       service  = try(var.config.cloudflare.service, "http://ui:8080")
+      origin_request {
+        origin_server_name = local.hostname
+      }
     }
     ingress_rule {
       service = "http_status:404"

@@ -177,7 +177,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         self._apply_connection_settings(inventory, bastion_port)
 
     def _ssh_base_args(self):
-        return "-o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes"
+        return (
+            "-o StrictHostKeyChecking=accept-new "
+            "-o UserKnownHostsFile=/dev/null "
+            "-o IdentitiesOnly=yes"
+        )
 
     def _apply_connection_settings(self, inventory, bastion_port):
         ssh_user = (

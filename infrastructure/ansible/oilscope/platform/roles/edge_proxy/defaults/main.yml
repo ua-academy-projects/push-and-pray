@@ -2,3 +2,8 @@ edge_proxy_dir: /opt/oilscope/proxy
 edge_proxy_compose_file: "{{ edge_proxy_dir }}/compose.yaml"
 edge_proxy_compose_project_name: oilscope-proxy
 edge_proxy_network_name: oilscope-edge
+
+edge_proxy_cloudflare_dns_token: ""
+
+edge_proxy_runtime_environment:
+  CF_DNS_API_TOKEN: "{{ edge_proxy_cloudflare_dns_token }}"

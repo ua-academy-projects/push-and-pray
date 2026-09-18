@@ -55,3 +55,5 @@
     pull: missing
     wait: true
     wait_timeout: 60
+  environment: "{{ edge_proxy_runtime_environment }}"
+  no_log: true

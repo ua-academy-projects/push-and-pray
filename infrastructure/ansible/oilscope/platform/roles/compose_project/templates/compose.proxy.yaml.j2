@@ -9,15 +9,16 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=false"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
       - >-
         --certificatesresolvers.letsencrypt.acme.email={{
           compose_project_config.vms.ui.public_endpoint.acme_email }}
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--ping=true"
       - "--log.level=INFO"
-    ports:
-      - "443:443"
+    environment:
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:?CF_DNS_API_TOKEN is required}
     volumes:
       - "{{ compose_project_dir }}/dynamic:/etc/traefik/dynamic:ro"
       - "{{ compose_project_dir }}/acme.json:/letsencrypt/acme.json"

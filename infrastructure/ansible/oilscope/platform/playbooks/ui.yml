@@ -41,6 +41,8 @@
         compose_project_workload: proxy
 
     - role: oilscope.platform.edge_proxy
+      vars:
+        edge_proxy_cloudflare_dns_token: "{{ cloudflare_dns_token_value | default('') }}"
 
     - role: oilscope.platform.ui
       vars:

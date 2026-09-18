@@ -28,19 +28,6 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
-resource "google_compute_firewall" "ui_web" {
-  count   = local.tag_present["ui"] ? 1 : 0
-  name    = "${local.resource_prefix}-allow-ui-web"
-  network = var.network_id
-
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = [var.network_tags.ui]
-
-  allow {
-    protocol = "tcp"
-    ports    = local.ui_public_ports_str
-  }
-}
 
 resource "google_compute_firewall" "history_api" {
   count   = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0

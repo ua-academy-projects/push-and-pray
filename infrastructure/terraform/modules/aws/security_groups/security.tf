@@ -78,15 +78,6 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
     ip_protocol = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ui_web" {
-    for_each = local.tag_present["ui"] ? toset(local.ui_public_ports_str) : toset([])
-
-    security_group_id = aws_security_group.ui[0].id
-    cidr_ipv4 = "0.0.0.0/0"
-    from_port = tonumber(each.value)
-    to_port = tonumber(each.value)
-    ip_protocol = "tcp"
-}
 
 resource "aws_vpc_security_group_ingress_rule" "history_api" {
     count = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0
