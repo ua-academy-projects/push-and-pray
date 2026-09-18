@@ -17,9 +17,7 @@ class ConfigError(ValueError):
 
 
 def _network_for(config: dict[str, Any], provider: str) -> dict[str, Any]:
-    return config["network"] | config.get("clouds", {}).get(provider, {}).get(
-        "network", {}
-    )
+    return config["network"] | config.get("clouds", {}).get(provider, {}).get("network", {})
 
 
 def _provider_for(config: dict[str, Any], vm: dict[str, Any]) -> str:
@@ -39,9 +37,7 @@ def _vm_subnet_key(provider: str, vm: dict[str, Any]) -> str:
     return "workload_subnet_cidr"
 
 
-def _reserved_addresses(
-    provider: str, subnet: ipaddress.IPv4Network
-) -> set[ipaddress.IPv4Address]:
+def _reserved_addresses(provider: str, subnet: ipaddress.IPv4Network) -> set[ipaddress.IPv4Address]:
     if provider == "aws":
         offsets = (0, 1, 2, 3, subnet.num_addresses - 1)
     else:
@@ -61,9 +57,7 @@ def _looks_like_secret_value(value: str) -> bool:
 
 def validate_config(config: dict[str, Any]) -> None:
     schema_version = int(config.get("schema_version", 0))
-    global_provider = str(
-        config.get("cloud_provider", config.get("default_cloud", ""))
-    ).lower()
+    global_provider = str(config.get("cloud_provider", config.get("default_cloud", ""))).lower()
     if global_provider not in {"aws", "gcp"}:
         raise ConfigError("cloud_provider/default_cloud must be aws or gcp")
     if schema_version > 0 and config.get("cloud_provider") != global_provider:
@@ -211,8 +205,7 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ConfigError(f"VM {name} internal_ip must be IPv4")
         if address not in subnet:
             raise ConfigError(
-                f"VM {name} internal_ip {address} must be inside "
-                f"{subnet_key} ({subnet})"
+                f"VM {name} internal_ip {address} must be inside {subnet_key} ({subnet})"
             )
         if address in _reserved_addresses(provider, subnet):
             raise ConfigError(

@@ -30,9 +30,7 @@ def test_supported_profile_matrix_is_valid(name: str) -> None:
 
 
 def test_aws_public_vm_must_use_public_subnet() -> None:
-    config = json.loads(
-        (CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8")
-    )
+    config = json.loads((CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8"))
     config["vms"]["ui"]["internal_ip"] = "10.0.1.7"
 
     with pytest.raises(ConfigError, match="public_subnet_cidr"):
@@ -40,9 +38,7 @@ def test_aws_public_vm_must_use_public_subnet() -> None:
 
 
 def test_provider_reserved_address_is_rejected() -> None:
-    config = json.loads(
-        (CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8")
-    )
+    config = json.loads((CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8"))
     config["vms"]["bastion"]["internal_ip"] = "10.0.0.3"
 
     with pytest.raises(ConfigError, match="reserved by aws"):
@@ -50,9 +46,7 @@ def test_provider_reserved_address_is_rejected() -> None:
 
 
 def test_private_workload_cannot_receive_public_ip() -> None:
-    config = json.loads(
-        (CONFIGS / "project-config.gcp-portable.json").read_text(encoding="utf-8")
-    )
+    config = json.loads((CONFIGS / "project-config.gcp-portable.json").read_text(encoding="utf-8"))
     config["vms"]["history"]["assign_public_ip"] = True
 
     with pytest.raises(ConfigError, match="cannot have a public IP"):
@@ -60,22 +54,16 @@ def test_private_workload_cannot_receive_public_ip() -> None:
 
 
 def test_overlapping_subnets_are_rejected() -> None:
-    config = json.loads(
-        (CONFIGS / "project-config.gcp-portable.json").read_text(encoding="utf-8")
-    )
+    config = json.loads((CONFIGS / "project-config.gcp-portable.json").read_text(encoding="utf-8"))
     config = copy.deepcopy(config)
-    config["network"]["public_subnet_cidr"] = config["network"][
-        "workload_subnet_cidr"
-    ]
+    config["network"]["public_subnet_cidr"] = config["network"]["workload_subnet_cidr"]
 
     with pytest.raises(ConfigError, match="network ranges overlap"):
         validate_config(config)
 
 
 def test_managed_upstream_image_requires_digest() -> None:
-    config = json.loads(
-        (CONFIGS / "project-config.aws.json").read_text(encoding="utf-8")
-    )
+    config = json.loads((CONFIGS / "project-config.aws.json").read_text(encoding="utf-8"))
     config["managed_services"]["redis"]["source_image"] = "redis:7.4.6-alpine"
 
     with pytest.raises(ConfigError, match="exact sha256 digest"):
@@ -83,9 +71,7 @@ def test_managed_upstream_image_requires_digest() -> None:
 
 
 def test_secret_value_is_rejected_without_echoing_it() -> None:
-    config = json.loads(
-        (CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8")
-    )
+    config = json.loads((CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8"))
     leaked_value = "a" * 64
     config["secrets_by_role"]["fetcher"]["OILPRICEAPI_KEY"] = leaked_value
 
