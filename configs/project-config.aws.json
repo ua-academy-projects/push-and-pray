@@ -182,7 +182,7 @@
   "database": {
     "cloud": "aws",
     "engine": "postgres",
-    "engine_version": "16.4",
+    "engine_version": "16.15",
     "database_name": "oil_tracker",
     "username": "oil_tracker",
     "password_secret_id": "db-password",
