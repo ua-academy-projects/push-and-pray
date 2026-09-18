@@ -23,6 +23,12 @@ REGISTRY="$(jq -r '.host // empty' "${REGISTRY_FILE}")"
 REGISTRY_DOCKER_CONFIG="$(mktemp -d)"
 export DOCKER_CONFIG="${REGISTRY_DOCKER_CONFIG}"
 trap 'rm -R -- "${REGISTRY_DOCKER_CONFIG}"' EXIT
+if [[ -x "${HOME}/.docker/cli-plugins/docker-buildx" ]]; then
+  install -d -m 0700 "${REGISTRY_DOCKER_CONFIG}/cli-plugins"
+  ln -s "${HOME}/.docker/cli-plugins/docker-buildx" \
+    "${REGISTRY_DOCKER_CONFIG}/cli-plugins/docker-buildx"
+fi
+docker buildx version >/dev/null || fail "Docker Buildx is unavailable with the isolated registry config."
 
 SOURCE_REPOSITORY="$(jq -r '.registry.repository // empty' "${CONFIG}")"
 SOURCE_USERNAME="$(jq -r '.registry.username // empty' "${CONFIG}")"
