@@ -8,12 +8,14 @@
 | Provider | Data profile | Config | Локальна перевірка |
 | --- | --- | --- | --- |
 | AWS | `portable` | `configs/project-config.aws-portable.json` | mocked Terraform plan пройшов |
-| AWS | `managed` | `configs/project-config.aws.json` | mocked Terraform plan пройшов |
+| AWS | `managed` | `configs/project-config.aws.json` | live application acceptance пройшов 2026-09-18 |
 | GCP | `portable` | `configs/project-config.gcp-portable.json` | mocked Terraform plan пройшов |
 | GCP | `managed` | `configs/project-config.gcp.json` | mocked Terraform plan пройшов |
 
-Це `implemented` і перевірено локальними static/unit tests. Реальні provider
-plans, live apply, DNS/HTTPS та application acceptance ще не виконувалися.
+GCP режими `implemented` і `statically validated`; live GCP apply не
+виконувався. AWS managed окремо пройшов live infrastructure, configuration та
+application acceptance. Результат одного provider не є доказом live-готовності
+іншого.
 `mixed` з AWS+GCP, VPN між хмарами і provider per VM не належать до цього
 етапу. `deploy-cloud.sh` навмисно відхиляє legacy config без
 `schema_version=1`, щоб не зробити частковий apply за старим контрактом.
@@ -52,7 +54,7 @@ profile roles та immutable image references.
 | disk `balanced` | `gp3` | `pd-balanced` |
 | image `ubuntu-lts` | Canonical AMI lookup за region/architecture | Ubuntu image family |
 | static UI address | Elastic IP | reserved external address |
-| managed PostgreSQL | private RDS | private-IP Cloud SQL |
+| managed PostgreSQL | private RDS | private-IP Cloud SQL з `ENCRYPTED_ONLY` |
 | registry | private ECR repositories | private Artifact Registry |
 
 Provider escape hatches залишаються в `clouds.aws` і `clouds.gcp`, але
@@ -85,9 +87,23 @@ scripts/bootstrap-cloud.sh \
   --check
 ```
 
-Для GCP змініть provider, region та config. `--check` не створює cloud або
-local state. Лише після перевірки account/project, billing і IAM окремо
-дозволяється повторити з `--yes`. Результат записується з mode `0600` у:
+GCP read-only перевірка виконується окремою командою:
+
+```bash
+scripts/bootstrap-cloud.sh \
+  --provider gcp \
+  --environment dev \
+  --deployment oilscope \
+  --region europe-west1 \
+  --config configs/project-config.gcp.json \
+  --check
+```
+
+`--check` не створює cloud або local state. Лише після перевірки active
+account/project, billing і IAM окремо дозволяється повторити з `--yes`.
+`deploy-cloud.sh` додатково перевіряє active gcloud account, project lifecycle,
+billing, CLI access token та Application Default Credentials до Terraform.
+Результат bootstrap записується з mode `0600` у:
 
 ```text
 .generated/<environment>/<provider>/<deployment>/

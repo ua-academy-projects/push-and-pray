@@ -36,6 +36,18 @@ run "gcp_profile_uses_only_gcp_root" {
     )
     error_message = "GCP must create an immutable Artifact Registry for every application image."
   }
+
+  assert {
+    condition = (
+      output.managed_database.security.public_endpoint == false &&
+      output.managed_database.security.transport_encrypted == true &&
+      output.managed_database.sslmode == "require" &&
+      output.deployment.database.sslmode == "require" &&
+      output.vms.history.public_address == null &&
+      output.vms.fetcher.public_address == null
+    )
+    error_message = "GCP managed PostgreSQL and workload VMs must remain private, with encrypted database connections required."
+  }
 }
 
 run "gcp_portable_profile" {
@@ -51,6 +63,7 @@ run "gcp_portable_profile" {
       length(output.vms) == 5 &&
       output.deployment.data_profile == "portable" &&
       output.deployment.database.mode == "portable" &&
+      output.deployment.database.sslmode == "disable" &&
       output.vms.infra.role == "database" &&
       output.vms.infra.private_address == "10.0.1.4" &&
       output.vms.ui.private_address == "10.0.1.7"

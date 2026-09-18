@@ -29,12 +29,24 @@ printf 'test-password\\n'
 """,
     )
     _write_executable(
+        bin_dir / "gcloud",
+        """#!/usr/bin/env bash
+set -eu
+if [[ "$*" == "auth print-access-token" ]]; then
+  printf 'test-gcp-token\n'
+  exit 0
+fi
+exit 1
+""",
+    )
+    _write_executable(
         bin_dir / "docker",
         """#!/usr/bin/env bash
 set -eu
 printf '%s\\n' "$*" >> "${FAKE_DOCKER_CALLS}"
 case "$*" in
-  "buildx version"|"login "*) exit 0 ;;
+  "buildx version") exit 0 ;;
+  "login "*) cat >/dev/null; exit 0 ;;
   "buildx imagetools inspect "*)
     image="$4"
     if [[ "$image" == target.invalid/* ]]; then
@@ -57,12 +69,12 @@ esac
     return environment, calls
 
 
-def _registry_file(tmp_path: Path) -> Path:
+def _registry_file(tmp_path: Path, provider: str = "aws") -> Path:
     registry = tmp_path / "registry.json"
     registry.write_text(
         json.dumps(
             {
-                "provider": "aws",
+                "provider": provider,
                 "host": "target.invalid",
                 "application": {
                     service: f"target.invalid/oilscope/{service}:sha"
@@ -110,3 +122,25 @@ def test_existing_different_digest_is_rejected(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "exists with a different digest" in result.stderr
     assert "imagetools create" not in calls.read_text(encoding="utf-8")
+
+
+def test_gcp_uses_access_token_for_artifact_registry(tmp_path: Path) -> None:
+    environment, calls = _environment(tmp_path, DIGEST)
+
+    result = subprocess.run(  # noqa: S603
+        [
+            str(SCRIPT),
+            str(CONFIG),
+            str(_registry_file(tmp_path, provider="gcp")),
+        ],
+        cwd=REPOSITORY,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    invoked = calls.read_text(encoding="utf-8")
+    assert "login --username oauth2accesstoken --password-stdin target.invalid" in invoked
+    assert result.stdout.count("Already promoted:") == 4

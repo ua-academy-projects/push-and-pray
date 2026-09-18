@@ -142,6 +142,7 @@ object({
     name      = string
     username  = string
     secret_id = string
+    sslmode   = string
   })
   registry = object({
     provider       = string
