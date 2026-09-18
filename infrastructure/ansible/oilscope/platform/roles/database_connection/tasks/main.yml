@@ -26,7 +26,7 @@
       port: "{{ managed_database.port | int }}"
       name: "{{ managed_database.name }}"
       user: "{{ managed_database.user }}"
-      sslmode: require
+      sslmode: "{{ managed_database.sslmode | default('require') }}"
   when: database_connection_project.manage_db | bool
 
 - name: Validate self-managed database inventory

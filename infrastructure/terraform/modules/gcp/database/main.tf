@@ -44,6 +44,7 @@ resource "google_sql_database_instance" "this" {
 
     ip_configuration {
       ipv4_enabled       = false
+      ssl_mode           = "ENCRYPTED_ONLY"
       private_network    = var.network_id
       allocated_ip_range = google_compute_global_address.private_services.name
     }

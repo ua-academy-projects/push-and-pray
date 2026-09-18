@@ -272,7 +272,24 @@ while IFS= read -r cloud; do
   case "${cloud}" in
     gcp)
       require_command gcloud
+      GCP_PROJECT_ID="$(jq -r '.clouds.gcp.project_id // empty' "${CONFIG}")"
+      GCP_ACTIVE_ACCOUNT="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -1)"
+      [[ -n "${GCP_ACTIVE_ACCOUNT}" ]] || fail "No active gcloud identity."
+      GCP_PROJECT_STATE="$(gcloud projects describe "${GCP_PROJECT_ID}" --format='value(lifecycleState)' 2>/dev/null)" || \
+        fail "GCP project ${GCP_PROJECT_ID} does not exist or is not accessible."
+      [[ "${GCP_PROJECT_STATE}" == "ACTIVE" ]] || \
+        fail "GCP project ${GCP_PROJECT_ID} is not ACTIVE (state=${GCP_PROJECT_STATE:-unknown})."
+      GCP_BILLING_ENABLED="$(gcloud beta billing projects describe "${GCP_PROJECT_ID}" --format='value(billingEnabled)' 2>/dev/null)" || \
+        fail "Cannot verify billing for GCP project ${GCP_PROJECT_ID}."
+      [[ "${GCP_BILLING_ENABLED}" == "True" ]] || \
+        fail "Billing is not enabled for GCP project ${GCP_PROJECT_ID}."
+      gcloud auth print-access-token >/dev/null
       gcloud auth application-default print-access-token >/dev/null
+      printf 'GCP target: project=%s region=%s account=%s\n' \
+        "${GCP_PROJECT_ID}" \
+        "$(jq -r '.clouds.gcp.locations[.defaults.location_profile].region' "${CONFIG}")" \
+        "${GCP_ACTIVE_ACCOUNT}"
+      unset GCP_PROJECT_ID GCP_ACTIVE_ACCOUNT GCP_PROJECT_STATE GCP_BILLING_ENABLED
       ;;
     aws)
       require_command aws

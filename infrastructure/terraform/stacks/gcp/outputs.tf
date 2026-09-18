@@ -6,7 +6,21 @@ output "vms" {
     error_message = "The project configuration is invalid. Versioned GCP deployments require every VM provider and managed database provider to match cloud_provider=gcp."
   }
 }
-output "managed_database" { value = coalesce(module.gcp.managed_database, { enabled = false, cloud = null, host = null, port = null, name = null, user = null }) }
+output "managed_database" {
+  value = coalesce(module.gcp.managed_database, {
+    enabled = false
+    cloud   = null
+    host    = null
+    port    = null
+    name    = null
+    user    = null
+    sslmode = null
+    security = {
+      public_endpoint     = null
+      transport_encrypted = null
+    }
+  })
+}
 output "workload_external_ips" {
   value = { for name, vm in module.gcp.vms : name => vm.public_ip if vm.role != "bastion" }
 }

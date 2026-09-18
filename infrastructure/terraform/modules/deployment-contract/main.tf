@@ -38,6 +38,7 @@ locals {
     name      = try(var.managed_database.name, local.config.database.database_name)
     username  = try(var.managed_database.user, local.config.database.username)
     secret_id = local.config.database.password_secret_id
+    sslmode   = try(var.managed_database.sslmode, "require")
     } : {
     mode      = "portable"
     engine    = "postgresql"
@@ -46,6 +47,7 @@ locals {
     name      = "oil_tracker"
     username  = "oil_tracker"
     secret_id = try(local.config.secrets_by_role.database.POSTGRES_PASSWORD, null)
+    sslmode   = "disable"
   }
 
   deployment = {
