@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Explicit non-secret values used by Terraform tests"
+regexTarget = "secret"
+regexes = [
+  '''^test-only-password$''',
+  '''^example-db-password$''',
+]
+stopwords = [
+  "test-only-password",
+  "example-db-password",
+]

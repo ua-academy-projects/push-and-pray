@@ -90,6 +90,11 @@ The first full-history run found ten hits across 269 commits, all predating the
 current layout (`proxy-service/`, `provision/`, `services/history-service/` no
 longer exist). They are not equally serious:
 
+`.gitleaks.toml` extends the upstream rules and allowlists only the exact
+`test-only-password` and `example-db-password` markers used by Terraform unit
+tests. Do not add real credentials, broad paths, or generic credential patterns
+to this allowlist.
+
 **Needs action.** A real provider API key in a committed `.env`, and two private
 keys under `provision/certs/`. This repository is public, so all three must be
 treated as compromised regardless of whether the files still exist on any
