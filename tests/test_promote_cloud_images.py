@@ -53,6 +53,7 @@ esac
     environment["FAKE_DOCKER_CALLS"] = str(calls)
     environment["FAKE_SOURCE_DIGEST"] = DIGEST
     environment["FAKE_TARGET_DIGEST"] = target_digest
+    environment["GHCR_TOKEN"] = "test-only-password"  # noqa: S105
     return environment, calls
 
 
@@ -89,7 +90,9 @@ def test_existing_matching_digest_is_idempotent(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("Already promoted:") == 4
-    assert "imagetools create" not in calls.read_text(encoding="utf-8")
+    invoked = calls.read_text(encoding="utf-8")
+    assert "login --username darkkkCoDeR --password-stdin ghcr.io" in invoked
+    assert "imagetools create" not in invoked
 
 
 def test_existing_different_digest_is_rejected(tmp_path: Path) -> None:

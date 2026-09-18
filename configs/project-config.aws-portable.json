@@ -68,7 +68,7 @@
   },
   "registry": {
     "repository": "ghcr.io/ua-academy-projects/push-and-pray",
-    "username": "example-operator",
+    "username": "darkkkCoDeR",
     "image_sha": "76396ad43a86d4fe18e199bc90c968400fffcc85"
   },
   "network": {
@@ -89,17 +89,17 @@
   },
   "secrets_by_role": {
     "database": {
-      "POSTGRES_PASSWORD": "example-db-password"
+      "POSTGRES_PASSWORD": "db-password"
     },
     "history": {
-      "POSTGRES_PASSWORD": "example-db-password"
+      "POSTGRES_PASSWORD": "db-password"
     },
     "fetcher": {
-      "POSTGRES_PASSWORD": "example-db-password",
+      "POSTGRES_PASSWORD": "db-password",
       "OILPRICEAPI_KEY": "oilpriceapi-key"
     },
     "ui": {
-      "POSTGRES_PASSWORD": "example-db-password"
+      "POSTGRES_PASSWORD": "db-password"
     }
   },
   "vms": {

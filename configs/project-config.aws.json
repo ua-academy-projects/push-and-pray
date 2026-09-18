@@ -77,7 +77,7 @@
   },
   "registry": {
     "repository": "ghcr.io/ua-academy-projects/push-and-pray",
-    "username": "example-operator",
+    "username": "darkkkCoDeR",
     "image_sha": "76396ad43a86d4fe18e199bc90c968400fffcc85"
   },
   "network": {
@@ -107,20 +107,20 @@
   },
   "secrets_by_role": {
     "database": {
-      "POSTGRES_PASSWORD": "example-db-password"
+      "POSTGRES_PASSWORD": "db-password"
     },
     "history": {
-      "POSTGRES_PASSWORD": "example-db-password",
+      "POSTGRES_PASSWORD": "db-password",
       "RABBITMQ_PASSWORD": "rabbitmq-password",
       "REDIS_PASSWORD": "redis-password"
     },
     "fetcher": {
-      "POSTGRES_PASSWORD": "example-db-password",
+      "POSTGRES_PASSWORD": "db-password",
       "RABBITMQ_PASSWORD": "rabbitmq-password",
       "OILPRICEAPI_KEY": "oilpriceapi-key"
     },
     "ui": {
-      "POSTGRES_PASSWORD": "example-db-password",
+      "POSTGRES_PASSWORD": "db-password",
       "REDIS_PASSWORD": "redis-password"
     }
   },
@@ -185,7 +185,7 @@
     "engine_version": "16.4",
     "database_name": "oil_tracker",
     "username": "oil_tracker",
-    "password_secret_id": "example-db-password",
+    "password_secret_id": "db-password",
     "port": 5432,
     "generation": "2026-09",
     "backup_on_delete": false,

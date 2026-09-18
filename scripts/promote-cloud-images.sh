@@ -24,6 +24,17 @@ REGISTRY_DOCKER_CONFIG="$(mktemp -d)"
 export DOCKER_CONFIG="${REGISTRY_DOCKER_CONFIG}"
 trap 'rm -R -- "${REGISTRY_DOCKER_CONFIG}"' EXIT
 
+SOURCE_REPOSITORY="$(jq -r '.registry.repository // empty' "${CONFIG}")"
+SOURCE_USERNAME="$(jq -r '.registry.username // empty' "${CONFIG}")"
+SOURCE_REGISTRY="${SOURCE_REPOSITORY%%/*}"
+[[ -n "${SOURCE_REPOSITORY}" && -n "${SOURCE_USERNAME}" ]] || \
+  fail "registry.repository and registry.username are required."
+if [[ -n "${GHCR_TOKEN:-}" ]]; then
+  printf '%s' "${GHCR_TOKEN}" |
+    docker login --username "${SOURCE_USERNAME}" --password-stdin "${SOURCE_REGISTRY}" \
+      >/dev/null
+fi
+
 case "${PROVIDER}" in
   aws)
     command -v aws >/dev/null 2>&1 || fail "Required command not found: aws"
@@ -68,7 +79,6 @@ promote_image() {
     fail "Digest mismatch after promotion: source=${source_digest} target=${target_digest}"
 }
 
-SOURCE_REPOSITORY="$(jq -r '.registry.repository' "${CONFIG}")"
 SOURCE_SHA="$(jq -r '.registry.image_sha' "${CONFIG}")"
 for service in fetcher history ui database; do
   target_image="$(jq -r --arg service "${service}" '.application[$service] // empty' "${REGISTRY_FILE}")"

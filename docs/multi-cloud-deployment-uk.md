@@ -119,7 +119,9 @@ scripts/promote-cloud-images.sh \
 
 Script порівнює source/target digest, є idempotent для однакового digest і
 відмовляється перезаписувати immutable tag іншим manifest. Source SHA має вже
-існувати в GHCR. Promotion не виконується Terraform `local-exec`.
+існувати в GHCR. Для private GHCR source deployment environment має містити
+`GHCR_TOKEN`; token використовується лише promotion script і не передається на
+VM. Promotion не виконується Terraform `local-exec`.
 
 ## Cloudflare і HTTPS
 
