@@ -49,6 +49,16 @@ def _reserved_addresses(
     return {subnet.network_address + offset for offset in offsets}
 
 
+def _looks_like_secret_value(value: str) -> bool:
+    """Reject common credential shapes without logging the candidate value."""
+    return bool(
+        re.fullmatch(r"[0-9a-fA-F]{32,}", value)
+        or re.match(r"^(?:sk-|ghp_|github_pat_|AKIA|ASIA|AIza)", value)
+        or "PRIVATE KEY-----" in value
+        or "\n" in value
+    )
+
+
 def validate_config(config: dict[str, Any]) -> None:
     schema_version = int(config.get("schema_version", 0))
     global_provider = str(
@@ -66,6 +76,20 @@ def validate_config(config: dict[str, Any]) -> None:
     ).lower()
     if data_profile not in {"managed", "portable"}:
         raise ConfigError("data_profile must be managed or portable")
+
+    for role, mappings in config.get("secrets_by_role", {}).items():
+        if not isinstance(mappings, dict):
+            raise ConfigError(f"secrets_by_role.{role} must be an object")
+        for environment_name, reference in mappings.items():
+            if not isinstance(reference, str) or not reference.strip():
+                raise ConfigError(
+                    f"secrets_by_role.{role}.{environment_name} must be a secret reference"
+                )
+            if _looks_like_secret_value(reference):
+                raise ConfigError(
+                    f"secrets_by_role.{role}.{environment_name} looks like a secret value; "
+                    "store only its provider secret reference"
+                )
 
     image_sha = str(config.get("registry", {}).get("image_sha", ""))
     if not re.fullmatch(r"[0-9a-f]{40}", image_sha):

@@ -96,7 +96,7 @@
     },
     "fetcher": {
       "POSTGRES_PASSWORD": "example-db-password",
-      "OILPRICEAPI_KEY": "3eac1c37b92c136eb0fb57dc917925b49866b8f4a448bc578083e014fe97b01b"
+      "OILPRICEAPI_KEY": "oilpriceapi-key"
     },
     "ui": {
       "POSTGRES_PASSWORD": "example-db-password"

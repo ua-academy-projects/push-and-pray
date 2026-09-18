@@ -80,3 +80,16 @@ def test_managed_upstream_image_requires_digest() -> None:
 
     with pytest.raises(ConfigError, match="exact sha256 digest"):
         validate_config(config)
+
+
+def test_secret_value_is_rejected_without_echoing_it() -> None:
+    config = json.loads(
+        (CONFIGS / "project-config.aws-portable.json").read_text(encoding="utf-8")
+    )
+    leaked_value = "a" * 64
+    config["secrets_by_role"]["fetcher"]["OILPRICEAPI_KEY"] = leaked_value
+
+    with pytest.raises(ConfigError, match="looks like a secret value") as error:
+        validate_config(config)
+
+    assert leaked_value not in str(error.value)
