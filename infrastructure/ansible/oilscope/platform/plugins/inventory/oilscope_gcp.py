@@ -15,6 +15,7 @@ from ansible_collections.oilscope.platform.plugins.module_utils.oilscope_invento
     bastion_ssh_port as compute_bastion_ssh_port,
 )
 from ansible_collections.oilscope.platform.plugins.module_utils.oilscope_inventory import (
+    apply_connection_vars,
     load_project_config,
     plain,
     require_str,
@@ -100,10 +101,20 @@ notes:
     VM's own configuration entry - C(resolve_secrets), C(secret_versions) -
     should read C(oilscope_vm_key) rather than parsing C(inventory_hostname)
     themselves.
-  - Does not set C(ansible_port). A composed host var would outrank the
-    C(ansible_port) computed in C(group_vars/bastion.yml), which is what lets
-    C(OILSCOPE_BASTION_CONNECT_PORT) override it during first-boot bootstrap.
-    C(bastion_ssh_port) is exposed instead, as data.
+  - Sets the SSH connection variables itself, after discovery - there is no
+    C(group_vars/) directory beside the inventory. Every host gets
+    C(ansible_user) (C(OILSCOPE_SSH_USER), else the controller's own login),
+    C(ansible_ssh_private_key_file) (C(OILSCOPE_SSH_KEY), else the
+    gcloud-managed C(~/.ssh/google_compute_engine)) and
+    C(ansible_ssh_common_args). The bastion also gets C(ansible_port), which
+    C(OILSCOPE_BASTION_CONNECT_PORT) overrides for first-boot bootstrap.
+    Workloads have no public address, so each gets an
+    C(ansible_ssh_common_args) carrying a C(ProxyCommand) through the
+    bastion's discovered address, plus C(oilscope_bastion_address) and
+    C(oilscope_bastion_ssh_port) as data.
+  - A workload's C(ProxyCommand) needs the bastion's discovered address, which
+    a per-host C(compose) expression cannot see, so these are applied in
+    Python once the delegate has finished rather than composed per host.
 """
 
 EXAMPLES = r"""
@@ -147,6 +158,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 display.vvv(f"could not remove {generated}: {cleanup_error}")
 
         validate_inventory_hosts(inventory, config, "GCP")
+        apply_connection_vars(inventory, config, plain(self.get_option("bastion_role")), "GCP")
 
     def _build_settings(self, config):
         region_key = require_str(config, "region")

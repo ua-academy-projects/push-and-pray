@@ -272,5 +272,10 @@
       "email_recipients": [],
       "billing_account_id": ""
     }
+  },
+  "cloudflare": {
+    "enabled": false,
+    "zone_name": "example.com",
+    "ttl": 60
   }
 }

@@ -107,6 +107,11 @@ output "budgets" {
   value = { aws = module.aws_budget.summary, gcp = module.gcp_budget.summary }
 }
 
+output "dns" {
+  description = "The Cloudflare record published for the UI, or null when DNS is managed by hand."
+  value       = module.cloudflare_dns.summary
+}
+
 output "aws_monitoring" {
   description = "AWS monitoring identifiers and non-secret agent configurations for deployment."
   value = {

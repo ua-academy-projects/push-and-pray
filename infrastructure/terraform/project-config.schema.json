@@ -667,7 +667,7 @@
               "default": "USD"
             },
             "actual_thresholds": {
-              "description": "Absolute currency amounts (in the budget's own currency) at which to notify — not fractions of monthly_amount.",
+              "description": "Absolute currency amounts (in the budget's own currency) at which to notify \u2014 not fractions of monthly_amount.",
               "type": "array",
               "minItems": 1,
               "maxItems": 5,
@@ -707,7 +707,7 @@
               "default": "USD"
             },
             "actual_thresholds": {
-              "description": "Absolute currency amounts (in the budget's own currency) at which to notify — not fractions of monthly_amount.",
+              "description": "Absolute currency amounts (in the budget's own currency) at which to notify \u2014 not fractions of monthly_amount.",
               "type": "array",
               "minItems": 1,
               "maxItems": 5,
@@ -730,6 +730,47 @@
               "type": "string"
             }
           }
+        }
+      }
+    },
+    "cloudflare": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cloudflare DNS for the UI's public hostname. The API token comes from the CLOUDFLARE_API_TOKEN environment variable, never from this file.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "zone_name": {
+          "description": "The apex zone that owns the UI hostname, e.g. \"example.com\".",
+          "type": "string",
+          "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
+        },
+        "ttl": {
+          "description": "Record TTL in seconds: 1 for Cloudflare's automatic value, otherwise 60-86400.",
+          "default": 60,
+          "anyOf": [
+            {
+              "type": "integer",
+              "const": 1
+            },
+            {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400
+            }
+          ]
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "proxied": {
+          "description": "Must stay false: proxying breaks Traefik's ACME TLS-ALPN-01 challenge.",
+          "type": "boolean",
+          "const": false,
+          "default": false
         }
       }
     }

@@ -84,3 +84,11 @@ module "gcp_monitoring" {
   database = module.gcp_database.monitoring
 }
 
+module "cloudflare_dns" {
+  source = "./modules/cloudflare/dns"
+
+  config  = local.config
+  aws_vms = module.aws_vm.vms
+  gcp_vms = module.gcp_vm.vms
+}
+

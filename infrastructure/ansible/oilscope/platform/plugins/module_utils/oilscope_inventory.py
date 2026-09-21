@@ -7,6 +7,12 @@ same project configuration JSON that Terraform reads. This module is the one
 place that knows how to load that file, how to find the bastion's SSH port in
 it, and how a VM's cloud resource name maps back to its key in `vms`- so the
 two plugins cannot drift from each other on those points.
+
+It also owns how the operator reaches those hosts: the SSH identity every
+host is contacted with, the port the bastion itself answers on, and the
+ProxyCommand that carries a workload connection through the bastion. Those
+settings are applied here, in Python, once the delegate has discovered the
+hosts - see `apply_connection_vars`.
 """
 
 import json
@@ -190,4 +196,129 @@ def validate_inventory_hosts(inventory, config, cloud_name):
             "partial discovery must not be mistaken for 'nothing exists yet' - "
             "check the region and application/environment filters actually "
             "match reality, and that terraform apply has run."
+        )
+
+
+# Applied to the bastion hop and to every direct connection alike:
+# accept-new keeps first contact with a freshly created VM from prompting,
+# and IdentitiesOnly stops ssh-agent from offering unrelated keys first and
+# tripping the server's MaxAuthTries before the intended key is ever tried.
+SSH_BASE_ARGS = "-o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes"
+
+
+def ssh_user():
+    """The operator's SSH user: OILSCOPE_SSH_USER, else the controller's own login."""
+    return os.environ.get("OILSCOPE_SSH_USER") or os.environ.get("USER") or ""
+
+
+def ssh_private_key_file():
+    """The operator's SSH key: OILSCOPE_SSH_KEY, else the gcloud-managed key.
+
+    The gcloud-managed key is a reasonable default only on GCP - an AWS
+    operator's key is never provisioned there, so OILSCOPE_SSH_KEY is
+    effectively required on AWS.
+    """
+    configured = os.environ.get("OILSCOPE_SSH_KEY")
+
+    if configured:
+        return configured
+
+    return os.path.join(os.environ.get("HOME", ""), ".ssh", "google_compute_engine")
+
+
+def bastion_connect_port(configured_port):
+    """The port Ansible dials on the bastion itself.
+
+    Defaults to the `ssh_port` in the project configuration, which is where
+    sshd ends up. OILSCOPE_BASTION_CONNECT_PORT overrides it for first-boot
+    bootstrap, when sshd is still on the image's default port and the
+    configured one is not listening yet.
+    """
+    override = os.environ.get("OILSCOPE_BASTION_CONNECT_PORT")
+
+    if not override:
+        return configured_port
+
+    try:
+        return int(override)
+    except (TypeError, ValueError) as port_error:
+        raise AnsibleParserError(
+            f"OILSCOPE_BASTION_CONNECT_PORT must be an integer port, got {override!r}"
+        ) from port_error
+
+
+def _proxy_command_args(user, key_file, bastion_address, bastion_hop_port):
+    """ssh arguments that carry a workload connection through the bastion.
+
+    The workload has no public address, so every connection to it is opened
+    from the bastion with -W. The hop reuses the operator's own key and the
+    same hardening flags as the outer connection.
+    """
+    proxy = (
+        f"ssh -W %h:%p -q -p {bastion_hop_port} -i {key_file} "
+        f"{SSH_BASE_ARGS} {user}@{bastion_address}"
+    )
+    return f'{SSH_BASE_ARGS} -o ProxyCommand="{proxy}"'
+
+
+def apply_connection_vars(inventory, config, bastion_role, cloud_name):
+    """Give every discovered host the SSH settings needed to reach it.
+
+    Set here rather than in inventory `compose` because the workloads'
+    ProxyCommand needs the bastion's discovered address, which only exists
+    once the delegate has finished - a per-host compose expression cannot see
+    another host. Set here rather than in `group_vars/` because that spreads
+    one connection contract across three files whose names have to match
+    group names the plugin itself invents.
+    """
+    user = ssh_user()
+    key_file = ssh_private_key_file()
+    hop_port = bastion_ssh_port(config, bastion_role)
+    bastion_name = None
+    workload_names = []
+
+    for host_name in list(inventory.hosts):
+        host_vars = inventory.get_host(host_name).get_vars()
+
+        if host_vars.get("oilscope_role") == bastion_role:
+            bastion_name = host_name
+        else:
+            workload_names.append(host_name)
+
+        inventory.set_variable(host_name, "ansible_user", user)
+        inventory.set_variable(host_name, "ansible_ssh_private_key_file", key_file)
+        inventory.set_variable(host_name, "oilscope_ssh_base_args", SSH_BASE_ARGS)
+        inventory.set_variable(host_name, "ansible_ssh_common_args", SSH_BASE_ARGS)
+
+    if bastion_name is not None:
+        inventory.set_variable(bastion_name, "ansible_port", bastion_connect_port(hop_port))
+
+    if not workload_names:
+        return
+
+    if bastion_name is None:
+        raise AnsibleParserError(
+            f"the {cloud_name} inventory has workload hosts "
+            f"({', '.join(sorted(workload_names))}) but no host with role "
+            f"{bastion_role!r}. Workloads have no public address and are only "
+            "reachable through the bastion, so they cannot be contacted from "
+            "an inventory the bastion is absent from - check that the bastion "
+            "VM resolves to this cloud and is running."
+        )
+
+    bastion_address = inventory.get_host(bastion_name).get_vars().get("ansible_host")
+
+    if not bastion_address:
+        raise AnsibleParserError(
+            f"the discovered {cloud_name} bastion {bastion_name!r} has no address to "
+            "proxy workload connections through; it needs a reachable public IP"
+        )
+
+    for host_name in workload_names:
+        inventory.set_variable(host_name, "oilscope_bastion_address", bastion_address)
+        inventory.set_variable(host_name, "oilscope_bastion_ssh_port", hop_port)
+        inventory.set_variable(
+            host_name,
+            "ansible_ssh_common_args",
+            _proxy_command_args(user, key_file, bastion_address, hop_port),
         )

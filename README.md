@@ -294,6 +294,10 @@ means operationally, what's collected automatically versus requires manual
 inspection, and how to distinguish a broker outage from a database outage
 from a delayed backlog.
 
+See [docs/dns.md](docs/dns.md) for how the UI's public hostname is published to
+Cloudflare on apply, why the record stays DNS-only, and what enabling the
+orange cloud or a tunnel would require.
+
 ## Data model
 
 The `price_observations` table stores exact decimal prices, normalized instrument data,

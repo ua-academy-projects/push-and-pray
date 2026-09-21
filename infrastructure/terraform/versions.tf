@@ -21,5 +21,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.7"
     }
+
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.12"
+    }
   }
 }

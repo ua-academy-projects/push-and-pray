@@ -38,14 +38,25 @@ doesn't map back to a `vms` entry — wrong `name_prefix`/`environment`, or a
 renamed VM — fails inventory parsing immediately rather than silently
 producing a host with no secret mappings.
 
-Neither wrapper sets `ansible_port`. Composing it directly, as an earlier
-version of this plugin did, is a trap: a value composed by the inventory
-plugin is a host var from "inventory file or script", which outranks a group
-var such as the one `group_vars/bastion.yml` computes — so
-`OILSCOPE_BASTION_CONNECT_PORT` would have no effect during first-boot
-bootstrap no matter what it's set to. `bastion_ssh_port` is exposed instead,
-as plain data; `group_vars/bastion.yml` is what turns that into the
-connection's actual `ansible_port`.
+Each wrapper also sets the SSH connection variables itself, in Python, once
+its delegate has finished discovering hosts: `ansible_user`,
+`ansible_ssh_private_key_file` and `ansible_ssh_common_args` on every host,
+`ansible_port` on the bastion, and on each workload a `ProxyCommand` through
+the bastion (plus `oilscope_bastion_address`/`oilscope_bastion_ssh_port` as
+data). There is deliberately no `group_vars/` directory here.
+
+Two things force that placement. A workload's `ProxyCommand` needs the
+bastion's *discovered* address, and a `compose` expression only ever sees the
+one host it is composing — so it cannot be composed. And `ansible_port` has
+to honour `OILSCOPE_BASTION_CONNECT_PORT` during first-boot bootstrap, so the
+override has to be read wherever the value is produced; reading it in Python
+alongside the port itself keeps that in one place instead of splitting the
+connection contract across files named after groups the plugin invents.
+
+Note that the bastion's own `ansible_port` and the workloads' hop port are
+not the same value: the override moves only the port Ansible dials on the
+bastion directly, while the `ProxyCommand` keeps using the configured
+`ssh_port`, which is where sshd ends up once `bootstrap_bastion.yml` has run.
 
 ### GCP (`oilscope.yml`)
 
@@ -213,11 +224,12 @@ name. Also set: `public_ip`, `oilscope_role`, `oilscope_cloud`,
 [How it fits together](#how-it-fits-together) for what each one means and
 guarantees.
 
-Note what's deliberately *not* set: `ansible_port`. `group_vars/bastion.yml`
-computes the bastion's actual connection port from `bastion_ssh_port`
-(defaulting to it, but honoring `OILSCOPE_BASTION_CONNECT_PORT` during the
-one-time bootstrap connection); every workload connects on Ansible's own
-default of 22, which is the only port their sshd ever listens on.
+`ansible_port` is set on the bastion only. The plugin derives it from that
+VM's `ssh_port`, honoring `OILSCOPE_BASTION_CONNECT_PORT` during the one-time
+bootstrap connection; every workload connects on Ansible's own default of 22,
+which is the only port their sshd ever listens on. Workloads additionally
+carry `oilscope_bastion_address` and `oilscope_bastion_ssh_port`, the two
+values their `ProxyCommand` is built from.
 
 Raw instance fields from the GCP API are prefixed with `gcp_`, because two of
 them — `name` and `tags` — collide with names Ansible reserves. AWS's raw
@@ -226,8 +238,8 @@ instance fields carry no prefix; `aws_ec2` doesn't have the same collision
 
 ## SSH
 
-`ansible_user` (in `group_vars/all.yml`) defaults to `OILSCOPE_SSH_USER`, or
-the controller's own login name if that isn't set - but it can also come from
+`ansible_user` (set by the inventory plugin) defaults to `OILSCOPE_SSH_USER`,
+or the controller's own login name if that isn't set - but it can also come from
 `-e ansible_user=...`, a host var, or anywhere else Ansible reads it from.
 Whatever the source, it must resolve to one of the usernames in the
 configuration's `ssh_users`: both clouds only ever create the accounts listed
@@ -242,11 +254,11 @@ used the key `gcloud compute ssh` manages at `~/.ssh/google_compute_engine`,
 and AWS has no equivalent auto-managed key at all.
 
 The bastion is normally reached on its external address at the final port read
-from `vms.bastion.ssh_port` in the project config by
-`group_vars/bastion.yml`. Every workload is reached on its internal address at
-port 22, through a `ProxyCommand` defined in `group_vars/workloads.yml`. The
-ProxyCommand always uses the bastion's final port; the bootstrap connection
-override applies only to the bastion itself. Pass the absolute project config
+from `vms.bastion.ssh_port` in the project config. Every workload is reached on
+its internal address at port 22, through a `ProxyCommand` the inventory plugin
+builds from the bastion's discovered address. The ProxyCommand always uses the
+bastion's final port; the bootstrap connection override applies only to the
+bastion itself. Pass the absolute project config
 path on every inventory, ad-hoc and playbook command.
 
 The non-default port belongs to the bastion alone; applying it globally would
