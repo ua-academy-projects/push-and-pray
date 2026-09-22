@@ -27,7 +27,8 @@
       "type": "string",
       "enum": [
         "gcp",
-        "aws"
+        "aws",
+        "azure"
       ]
     },
     "project_id": {
@@ -289,25 +290,6 @@
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
-      "properties": {
-        "bastion": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/vm"
-            },
-            {
-              "properties": {
-                "role": {
-                  "const": "bastion"
-                }
-              },
-              "required": [
-                "role"
-              ]
-            }
-          ]
-        }
-      },
       "additionalProperties": {
         "$ref": "#/$defs/vm"
       }
@@ -329,6 +311,10 @@
         "aws": {
           "type": "string",
           "minLength": 1
+        },
+        "azure": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -345,6 +331,26 @@
         },
         "aws": {
           "$ref": "#/$defs/placement"
+        },
+        "azure": {
+          "$ref": "#/$defs/azure_placement"
+        }
+      }
+    },
+    "azure_placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "region"
+      ],
+      "properties": {
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -443,7 +449,6 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "role",
         "machine_type",
         "internal_ip",
         "boot_disk",
@@ -464,16 +469,6 @@
           "description": "Region label for this VM, resolved through the regions dictionary. Defaults to the root-level region when omitted.",
           "type": "string",
           "minLength": 1
-        },
-        "role": {
-          "type": "string",
-          "enum": [
-            "bastion",
-            "database",
-            "history",
-            "fetcher",
-            "ui"
-          ]
         },
         "machine_type": {
           "$ref": "#/$defs/machine_type"
@@ -551,10 +546,18 @@
           },
           "then": {
             "properties": {
-              "role": {
-                "enum": [
-                  "bastion",
-                  "ui"
+              "network_tags": {
+                "anyOf": [
+                  {
+                    "contains": {
+                      "const": "bastion"
+                    }
+                  },
+                  {
+                    "contains": {
+                      "const": "ui"
+                    }
+                  }
                 ]
               }
             }
@@ -563,12 +566,14 @@
         {
           "if": {
             "properties": {
-              "role": {
-                "const": "bastion"
+              "network_tags": {
+                "contains": {
+                  "const": "bastion"
+                }
               }
             },
             "required": [
-              "role"
+              "network_tags"
             ]
           },
           "then": {
@@ -610,38 +615,14 @@
         {
           "if": {
             "properties": {
-              "role": {
-                "const": "history"
+              "network_tags": {
+                "contains": {
+                  "const": "ui"
+                }
               }
             },
             "required": [
-              "role"
-            ]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "fetcher"
-              }
-            },
-            "required": [
-              "role"
-            ]
-          },
-          "then": {}
-        },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "ui"
-              }
-            },
-            "required": [
-              "role"
+              "network_tags"
             ]
           },
           "then": {

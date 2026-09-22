@@ -312,7 +312,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         ports = [
             vm.get("ssh_port")
             for vm in vms.values()
-            if isinstance(vm, dict) and vm.get("role") == bastion_role
+                if isinstance(vm, dict) and bastion_role in vm.get("network_tags", [])
         ]
 
         if len(ports) != 1:
@@ -332,7 +332,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         auth_kind = plain(self.get_option("auth_kind"))
         vars_prefix = plain(self.get_option("gcp_vars_prefix"))
 
-        is_bastion = f"labels.role | default('') == '{bastion_role}'"
+        is_bastion = f"'{bastion_role}' in (gcp_tags['items'] | default([]))"
         has_public = "networkInterfaces[0].accessConfigs | default([])"
         public = "networkInterfaces[0].accessConfigs[0].natIP"
         private = "networkInterfaces[0].networkIP"
@@ -350,10 +350,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "hostnames": ["name"],
             "vars_prefix": vars_prefix,
             "keyed_groups": [
-                {"key": "labels.role", "prefix": "", "separator": ""},
+                {"key": "gcp_tags['items'] | default([])", "prefix": "", "separator": ""},
                 {"key": "labels.cloud", "prefix": "", "separator": ""},
             ],
-            "groups": {"workloads": f"labels.role is defined and labels.role != '{bastion_role}'"},
+            "groups": {"workloads": f"'{bastion_role}' not in (gcp_tags['items'] | default([]))"},
             "compose": {
                 "internal_ip": private,
                 "public_ip": f"{public} if {has_public} else ''",
@@ -362,7 +362,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 # The final bastion SSH port, needed by bootstrap_bastion.yml to
                 # probe/settle sshd. Formerly in group_vars/bastion.yml.
                 "bastion_ssh_port": f"{bastion_port}",
-                "oilscope_role": "labels.role | default('')",
                 "oilscope_cloud": "labels.cloud | default('')",
             },
         }
@@ -370,7 +369,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     def _aws_settings(self, regions, name_prefix, environment, bastion_port, workload_port):
         bastion_role = plain(self.get_option("bastion_role"))
 
-        is_bastion = f"tags.Role | default('') == '{bastion_role}'"
+        is_bastion = f"'{bastion_role}' in (tags.Roles | default('')).split(',')"
 
         return {
             "plugin": AWS_DELEGATE,
@@ -383,10 +382,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             },
             "hostnames": ["tag:Name"],
             "keyed_groups": [
-                {"key": "tags.Role", "prefix": "", "separator": ""},
+                {"key": "(tags.Roles | default('')).split(',') | select | list", "prefix": "", "separator": ""},
                 {"key": "tags.Cloud", "prefix": "", "separator": ""},
             ],
-            "groups": {"workloads": f"tags.Role is defined and tags.Role != '{bastion_role}'"},
+            "groups": {"workloads": f"'{bastion_role}' not in (tags.Roles | default('')).split(',')"},
             "compose": {
                 "internal_ip": "private_ip_address",
                 "public_ip": "public_ip_address | default('', true)",
@@ -395,7 +394,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 # The final bastion SSH port, needed by bootstrap_bastion.yml to
                 # probe/settle sshd. Formerly in group_vars/bastion.yml.
                 "bastion_ssh_port": f"{bastion_port}",
-                "oilscope_role": "tags.Role | default('')",
                 "oilscope_cloud": "tags.Cloud | default('')",
             },
         }
