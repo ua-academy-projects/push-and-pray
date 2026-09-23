@@ -1,7 +1,7 @@
 locals {
   all_workload_vms = {
     for name, vm in local.config.vms : name => vm
-    if vm.role != "bastion" && contains(keys(merge(module.gcp_vm.names, module.aws_vm.names)), name)
+    if !contains(vm.roles, "bastion") && contains(keys(merge(module.gcp_vm.names, module.aws_vm.names)), name)
   }
 }
 
@@ -21,7 +21,7 @@ output "workload_vm_names" {
 
 output "workload_roles" {
   value = {
-    for name, workload in local.all_workload_vms : name => workload.role
+    for name, workload in local.all_workload_vms : name => workload.roles
   }
 }
 
@@ -36,13 +36,6 @@ output "workload_external_ips" {
   value = {
     for name in keys(local.all_workload_vms) :
     name => try(coalesce(try(module.gcp_vm.public_ips[name], null), try(module.aws_vm.public_ips[name], null)), null)
-  }
-}
-
-output "workload_network_tags" {
-  value = {
-    for name in keys(local.all_workload_vms) :
-    name => coalesce(try(module.gcp_vm.network_tags[name], null), try(module.aws_vm.network_tags[name], null))
   }
 }
 

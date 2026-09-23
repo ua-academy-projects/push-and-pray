@@ -17,7 +17,7 @@ locals {
 
   tag_present = {
     for tag in ["infra", "history", "fetcher", "ui"] :
-    tag => anytrue([for vm in local.selected_vms : contains(vm.network_tags, tag)])
+    tag => anytrue([for vm in local.selected_vms : contains(vm.roles, tag)])
   }
 
   workload_target_tags = [

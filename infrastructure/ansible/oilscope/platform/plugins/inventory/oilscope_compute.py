@@ -362,6 +362,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 # The final bastion SSH port, needed by bootstrap_bastion.yml to
                 # probe/settle sshd. Formerly in group_vars/bastion.yml.
                 "bastion_ssh_port": f"{bastion_port}",
+                "ansible_python_interpreter": "'/usr/bin/python3'",
                 "oilscope_cloud": "labels.cloud | default('')",
             },
         }

@@ -35,6 +35,10 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
     },
+    "azure_subscription_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+    },
     "environment": {
       "type": "string",
       "enum": [
@@ -419,7 +423,7 @@
         "small"
       ]
     },
-    "vm_network_tags": {
+    "vm_roles": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
@@ -453,7 +457,7 @@
         "internal_ip",
         "boot_disk",
         "assign_public_ip",
-        "network_tags",
+        "roles",
         "secret_mappings"
       ],
       "properties": {
@@ -490,8 +494,8 @@
         "assign_public_ip": {
           "type": "boolean"
         },
-        "network_tags": {
-          "$ref": "#/$defs/vm_network_tags"
+        "roles": {
+          "$ref": "#/$defs/vm_roles"
         },
         "labels": {
           "$ref": "#/$defs/labels"
@@ -546,7 +550,7 @@
           },
           "then": {
             "properties": {
-              "network_tags": {
+              "roles": {
                 "anyOf": [
                   {
                     "contains": {
@@ -566,14 +570,14 @@
         {
           "if": {
             "properties": {
-              "network_tags": {
+              "roles": {
                 "contains": {
                   "const": "bastion"
                 }
               }
             },
             "required": [
-              "network_tags"
+              "roles"
             ]
           },
           "then": {
@@ -585,7 +589,7 @@
               "assign_public_ip": {
                 "const": true
               },
-              "network_tags": {
+              "roles": {
                 "contains": {
                   "const": "bastion"
                 }
@@ -615,14 +619,14 @@
         {
           "if": {
             "properties": {
-              "network_tags": {
+              "roles": {
                 "contains": {
                   "const": "ui"
                 }
               }
             },
             "required": [
-              "network_tags"
+              "roles"
             ]
           },
           "then": {
@@ -630,7 +634,7 @@
               "public_endpoint"
             ],
             "properties": {
-              "network_tags": {
+              "roles": {
                 "contains": {
                   "const": "ui"
                 }

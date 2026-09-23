@@ -1,7 +1,7 @@
 locals {
   gcp_workload_vms = {
     for name, vm in var.selected_vms : name => vm
-    if vm.role != "bastion"
+    if !contains(vm.roles, "bastion")
   }
 
   common_labels = merge(

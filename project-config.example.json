@@ -108,7 +108,6 @@
   },
   "vms": {
     "bastion": {
-      "role": "bastion",
       "machine_type": "micro",
       "internal_ip": "10.0.0.4",
       "boot_disk": {
@@ -116,7 +115,7 @@
         "type": "balanced"
       },
       "assign_public_ip": true,
-      "network_tags": [
+      "roles": [
         "bastion"
       ],
       "secret_mappings": {},
@@ -126,7 +125,6 @@
       ]
     },
     "infra": {
-      "role": "database",
       "machine_type": "micro",
       "internal_ip": "10.0.1.4",
       "boot_disk": {
@@ -134,7 +132,7 @@
         "type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": [
+      "roles": [
         "infra"
       ],
       "secret_mappings": {
@@ -145,7 +143,6 @@
       }
     },
     "history": {
-      "role": "history",
       "machine_type": "small",
       "internal_ip": "10.0.1.5",
       "boot_disk": {
@@ -153,7 +150,7 @@
         "type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": [
+      "roles": [
         "history"
       ],
       "secret_mappings": {
@@ -166,7 +163,6 @@
       "cloud": "aws",
       "region": "us",
       "image": "ubuntu",
-      "role": "fetcher",
       "machine_type": "micro",
       "internal_ip": "10.0.1.6",
       "boot_disk": {
@@ -174,7 +170,7 @@
         "type": "economy"
       },
       "assign_public_ip": false,
-      "network_tags": [
+      "roles": [
         "fetcher"
       ],
       "secret_mappings": {
@@ -185,7 +181,6 @@
       }
     },
     "ui": {
-      "role": "ui",
       "machine_type": "micro",
       "internal_ip": "10.0.1.7",
       "boot_disk": {
@@ -193,7 +188,7 @@
         "type": "balanced"
       },
       "assign_public_ip": true,
-      "network_tags": [
+      "roles": [
         "ui"
       ],
       "secret_mappings": {

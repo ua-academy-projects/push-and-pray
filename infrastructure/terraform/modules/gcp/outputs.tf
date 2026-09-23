@@ -10,10 +10,6 @@ output "public_ips" {
   value = module.vm.public_ips
 }
 
-output "network_tags" {
-  value = module.vm.network_tags
-}
-
 output "service_account_emails" {
   value = module.iam.service_account_emails
 }

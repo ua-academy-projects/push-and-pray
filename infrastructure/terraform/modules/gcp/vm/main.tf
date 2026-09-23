@@ -7,7 +7,7 @@ resource "google_compute_instance" "workload" {
   allow_stopping_for_update = true
 
   tags = [
-    for tag in each.value.network_tags :
+    for tag in each.value.roles :
     "${local.resource_prefix}-${tag}"
   ]
 
@@ -16,14 +16,14 @@ resource "google_compute_instance" "workload" {
     auto_delete = true
 
     initialize_params {
-      image  = var.config.images[coalesce(try(each.value.image, null), var.config.image)]["gcp"]
-      size   = each.value.boot_disk.size_gb
-      type   = var.config.disk_types[each.value.boot_disk.type]["gcp"]
+      image = var.config.images[coalesce(try(each.value.image, null), var.config.image)]["gcp"]
+      size  = each.value.boot_disk.size_gb
+      type  = var.config.disk_types[each.value.boot_disk.type]["gcp"]
     }
   }
 
   network_interface {
-    subnetwork = contains(each.value.network_tags, "bastion") ? var.management_subnet_id : var.workload_subnet_id
+    subnetwork = contains(each.value.roles, "bastion") ? var.management_subnet_id : var.workload_subnet_id
     network_ip = each.value.internal_ip
 
     dynamic "access_config" {
@@ -48,8 +48,8 @@ resource "google_compute_instance" "workload" {
 
   lifecycle {
     precondition {
-      condition     = !each.value.assign_public_ip || length(setintersection(each.value.network_tags, ["ui", "bastion"])) > 0
-      error_message = "Only workloads with role ui or bastion may receive a public IP."
+      condition     = !each.value.assign_public_ip || length(setintersection(each.value.roles, ["ui", "bastion"])) > 0
+      error_message = "Only workloads tagged ui or bastion may receive a public IP."
     }
   }
 

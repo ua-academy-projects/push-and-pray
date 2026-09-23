@@ -16,11 +16,7 @@ output "public_ips" {
   }
 }
 
-output "network_tags" {
-  description = "Effective network tags attached to each workload VM, by VM key."
-  value       = { for name, vm in google_compute_instance.workload : name => vm.tags }
-}
 output "ids" {
-  value       = { for name, vm in google_compute_instance.workload : name => vm.instance_id }
+  value = { for name, vm in google_compute_instance.workload : name => vm.instance_id }
 }
 
