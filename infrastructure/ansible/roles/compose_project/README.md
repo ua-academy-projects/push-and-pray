@@ -5,7 +5,8 @@ uses the shared `oilscope_config` variable loaded by `inventory/group_vars/all.y
 
 Supported values of `compose_project_workload` are:
 
-- `database`;
+- `rabbitmq`;
+- `redis`;
 - `history`;
 - `fetcher`;
 - `ui`;

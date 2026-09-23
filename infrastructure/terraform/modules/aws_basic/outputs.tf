@@ -7,3 +7,11 @@ output "instance_profile_names" {
 
   depends_on = [aws_iam_role_policy.readers]
 }
+
+output "secret_arns" {
+  description = "Secrets Manager ARNs keyed by configured secret ID."
+  value = {
+    for secret_id, secret in aws_secretsmanager_secret.secrets :
+    secret_id => secret.arn
+  }
+}

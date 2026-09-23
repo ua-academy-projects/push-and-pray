@@ -14,7 +14,7 @@ services:
     init: true
     environment:
       HISTORY_SERVICE_URL: http://${HISTORY_LAN_IP:?HISTORY_LAN_IP is required}:8001
-      DATABASE_URL: postgresql://oil_tracker:${DB_PASSWORD:?DB_PASSWORD is required}@${DB_LAN_IP:?DB_LAN_IP is required}:5432/oil_tracker
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@${REDIS_LAN_IP:?REDIS_LAN_IP is required}:6379/0
       SESSION_TTL_SECONDS: "2592000"
       SESSION_COOKIE_SECURE: "false"
       LOG_LEVEL: INFO

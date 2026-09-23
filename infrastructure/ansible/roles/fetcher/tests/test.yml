@@ -4,23 +4,23 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Missing database password should be rejected
+    - name: Missing RabbitMQ password should be rejected
       block:
-        - name: Include the role without a database password
+        - name: Include the role without a RabbitMQ password
           ansible.builtin.include_role:
             name: fetcher
           vars:
             fetcher_compose_file: "{{ playbook_dir }}/test.yml"
-            fetcher_database_host: 127.0.0.1
-            fetcher_postgres_password: ""
+            fetcher_rabbitmq_host: 127.0.0.1
+            fetcher_rabbitmq_password: ""
             fetcher_oilpriceapi_key: test-only
         - name: Fail if the role did not reject the missing password
           ansible.builtin.fail:
-            msg: fetcher unexpectedly accepted an empty fetcher_postgres_password.
+            msg: fetcher unexpectedly accepted an empty fetcher_rabbitmq_password.
       rescue:
         - name: Confirm the missing password was rejected
           ansible.builtin.debug:
-            msg: Correctly rejected an empty fetcher_postgres_password.
+            msg: Correctly rejected an empty fetcher_rabbitmq_password.
 
     - name: Missing provider API key should be rejected
       block:
@@ -29,8 +29,8 @@
             name: fetcher
           vars:
             fetcher_compose_file: "{{ playbook_dir }}/test.yml"
-            fetcher_database_host: 127.0.0.1
-            fetcher_postgres_password: test-only
+            fetcher_rabbitmq_host: 127.0.0.1
+            fetcher_rabbitmq_password: test-only
             fetcher_oilpriceapi_key: ""
         - name: Fail if the role did not reject the missing API key
           ansible.builtin.fail:

@@ -6,6 +6,11 @@ locals {
     if lookup(vm, "cloud", var.config.default_cloud) == "aws"
   ])
 
+  database_subnets = {
+    for subnet in var.config.network.database_connectivity.aws[var.config.location] :
+    subnet.availability_zone => subnet
+  }
+
   bastion_ssh_rules = {
     for pair in setproduct(
       toset(var.config.vms.bastion.allowed_cidrs),

@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the Redis Compose definition
+  ansible.builtin.stat:
+    path: "{{ redis_compose_file }}"
+  register: redis_compose_definition
+
+- name: Validate the Redis configuration
+  ansible.builtin.assert:
+    that:
+      - redis_compose_definition.stat.exists
+      - redis_compose_definition.stat.isreg | default(false)
+      - redis_password | length > 0
+    fail_msg: Redis requires an existing Compose file and a non-empty password.
+
+- name: Pull the Redis image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ redis_compose_project_name }}"
+      - --file
+      - "{{ redis_compose_file }}"
+      - pull
+      - "{{ redis_service }}"
+  args:
+    chdir: "{{ redis_compose_project_dir }}"
+  environment: "{{ redis_runtime_environment }}"
+  register: redis_pull
+  changed_when: >-
+    'Downloaded newer image' in redis_pull.stdout or
+    'Downloaded newer image' in redis_pull.stderr or
+    'Pull complete' in redis_pull.stdout or
+    'Pull complete' in redis_pull.stderr
+  no_log: true
+
+- name: Start Redis
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ redis_compose_project_name }}"
+      - --file
+      - "{{ redis_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ redis_service }}"
+  args:
+    chdir: "{{ redis_compose_project_dir }}"
+  environment: "{{ redis_runtime_environment }}"
+  register: redis_up
+  changed_when: >-
+    'Created' in redis_up.stderr or
+    'Started' in redis_up.stderr or
+    'Recreated' in redis_up.stderr
+  no_log: true
+
+- name: Get the Redis container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ redis_compose_project_name }}"
+      - --file
+      - "{{ redis_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ redis_service }}"
+  args:
+    chdir: "{{ redis_compose_project_dir }}"
+  environment: "{{ redis_runtime_environment }}"
+  register: redis_container
+  changed_when: false
+  failed_when: redis_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for Redis to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ redis_container.stdout | trim }}"
+  register: redis_health
+  changed_when: false
+  retries: "{{ redis_health_retries }}"
+  delay: "{{ redis_health_delay }}"
+  until: redis_health.stdout | trim == 'healthy'

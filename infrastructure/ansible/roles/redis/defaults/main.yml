@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+redis_compose_project_dir: /opt/oilscope/redis
+redis_compose_file: "{{ redis_compose_project_dir }}/compose.yaml"
+redis_compose_project_name: oilscope-redis
+redis_service: redis
+redis_password: ""
+redis_bind_address: 0.0.0.0
+redis_health_retries: 30
+redis_health_delay: 2
+redis_compose_environment: {}

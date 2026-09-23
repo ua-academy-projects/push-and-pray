@@ -18,3 +18,18 @@ resource "google_compute_subnetwork" "vm" {
 
   private_ip_google_access = true
 }
+
+resource "google_compute_global_address" "private_services" {
+  name          = "${var.config.name_prefix}-${var.config.environment}-private-services"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  address       = cidrhost(var.config.network.database_connectivity.gcp.private_service_cidr, 0)
+  prefix_length = tonumber(split("/", var.config.network.database_connectivity.gcp.private_service_cidr)[1])
+  network       = google_compute_network.main.id
+}
+
+resource "google_service_networking_connection" "private_services" {
+  network                 = google_compute_network.main.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_services.name]
+}

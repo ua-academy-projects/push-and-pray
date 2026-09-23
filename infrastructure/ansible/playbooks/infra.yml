@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy RabbitMQ and Redis
+  hosts: infra
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+
+  roles:
+    - role: host_baseline
+
+    - role: docker_engine
+
+    - role: resolve_secrets
+
+    - role: compose_project
+      vars:
+        compose_project_dir: /opt/oilscope/rabbitmq
+        compose_project_workload: rabbitmq
+
+    - role: rabbitmq
+      vars:
+        rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+
+    - role: compose_project
+      vars:
+        compose_project_dir: /opt/oilscope/redis
+        compose_project_workload: redis
+
+    - role: redis
+      vars:
+        redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD }}"

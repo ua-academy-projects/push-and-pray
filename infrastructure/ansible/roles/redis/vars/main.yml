@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+redis_runtime_environment: >-
+  {{
+    redis_compose_environment
+    | combine({
+      'REDIS_PASSWORD': redis_password,
+      'REDIS_BIND_ADDRESS': redis_bind_address | string
+    })
+  }}

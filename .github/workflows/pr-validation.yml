@@ -109,6 +109,10 @@ jobs:
     env:
       DB_PASSWORD: ci-validation
       DB_LAN_IP: 127.0.0.1
+      RABBITMQ_LAN_IP: 127.0.0.1
+      RABBITMQ_PASSWORD: ci-validation
+      REDIS_LAN_IP: 127.0.0.1
+      REDIS_PASSWORD: ci-validation
       POSTGRES_IMAGE: postgres:18
 
     steps:
@@ -209,6 +213,10 @@ jobs:
       POSTGRES_IMAGE: postgres:18
       POSTGRES_PASSWORD: ci-validation
       OILPRICEAPI_KEY: ci-validation
+      RABBITMQ_LAN_IP: 127.0.0.1
+      RABBITMQ_PASSWORD: ci-validation
+      REDIS_LAN_IP: 127.0.0.1
+      REDIS_PASSWORD: ci-validation
       HISTORY_LAN_IP: 127.0.0.1
       FETCHER_LAN_IP: 127.0.0.1
       UI_LAN_IP: 127.0.0.1
@@ -222,8 +230,7 @@ jobs:
         run: |
           status=0
 
-          for file in compose.*.yaml \
-            ../ansible/oilscope/platform/roles/compose_project/templates/compose.deployment.yaml.j2; do
+          for file in compose.*.yaml; do
             echo "::group::${file}"
 
             if docker compose -f "${file}" config --quiet; then
@@ -353,6 +360,10 @@ jobs:
   ansible:
     name: Ansible Lint
     runs-on: ubuntu-latest
+    env:
+      ANSIBLE_CONFIG: ${{ github.workspace }}/infrastructure/ansible/ansible.cfg
+      ANSIBLE_ROLES_PATH: ${{ github.workspace }}/infrastructure/ansible/roles
+      ANSIBLE_INVENTORY_PLUGINS: ${{ github.workspace }}/infrastructure/ansible/plugins/inventory
 
     steps:
       - uses: actions/checkout@v4
@@ -362,23 +373,20 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install Ansible
-        run: pip install ansible
-
-      - name: Build collection
-        working-directory: infrastructure/ansible/oilscope/platform
-        run: ansible-galaxy collection build
-
-      - name: Install collection
-        working-directory: infrastructure/ansible/oilscope/platform
+      - name: Install Ansible dependencies
         run: |
-          ansible-galaxy collection install oilscope-platform-*.tar.gz
+          pip install -r infrastructure/ansible/requirements.txt
+          ansible-galaxy collection install \
+            -r infrastructure/ansible/requirements.yml
+
+      - name: Check playbook syntax
+        working-directory: infrastructure/ansible
+        run: |
+          ansible-playbook \
+            -i localhost, \
+            playbooks/deploy_workloads.yml \
+            --syntax-check
 
       - name: Run ansible-lint
-        uses: ansible/ansible-lint@main
-        with:
-          args: ""
-          setup_python: "true"
-          python-version: "3.14"
-          working-directory: infrastructure/ansible
-          requirements_file: ""
+        working-directory: infrastructure/ansible
+        run: ansible-lint .

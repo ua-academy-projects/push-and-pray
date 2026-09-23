@@ -14,11 +14,11 @@ variables {
     management_subnet_id = "subnet-00000000000000001"
     vm_subnet_id         = "subnet-00000000000000002"
     security_group_ids_by_role = {
-      bastion  = "sg-00000000000000001"
-      database = "sg-00000000000000002"
-      history  = "sg-00000000000000003"
-      fetcher  = "sg-00000000000000004"
-      ui       = "sg-00000000000000005"
+      bastion = "sg-00000000000000001"
+      infra   = "sg-00000000000000002"
+      history = "sg-00000000000000003"
+      fetcher = "sg-00000000000000004"
+      ui      = "sg-00000000000000005"
     }
   }
   instance_profile_names = {
@@ -29,7 +29,7 @@ variables {
   }
 }
 
-run "public_ui_private_database" {
+run "public_ui_private_infra" {
   command = plan
 
   module {
@@ -43,7 +43,7 @@ run "public_ui_private_database" {
       aws_instance.vms["infra"].subnet_id == var.network.vm_subnet_id &&
       aws_instance.vms["infra"].private_ip == "10.0.1.5"
     )
-    error_message = "UI must use its AWS override in the public subnet; database must remain private."
+    error_message = "UI must use its AWS override in the public subnet; infra must remain private."
   }
 
   assert {

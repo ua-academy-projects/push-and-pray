@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+galaxy_info:
+  role_name: rabbitmq
+  author: Push and Pray team
+  description: Deploy RabbitMQ for OilScope.
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+dependencies: []

@@ -57,6 +57,17 @@
     loop_var: secret_versions_entry
     label: "{{ secret_versions_entry.0 }}"
 
+- name: Exclude the Terraform-managed database password
+  ansible.builtin.set_fact:
+    secret_versions_catalog: >-
+      {{ secret_versions_catalog
+         | rejectattr(
+             'secret_id',
+             'equalto',
+             oilscope_config.services.database.password_secret_id
+           )
+         | list }}
+
 - name: Keep only requested secrets
   ansible.builtin.set_fact:
     secret_versions_catalog: >-

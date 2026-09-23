@@ -6,6 +6,15 @@
   gather_facts: true
   force_handlers: true
   any_errors_fatal: true
+  pre_tasks:
+    - name: Validate Terraform service endpoints
+      ansible.builtin.assert:
+        that:
+          - service_endpoints_path | length > 0
+          - oilscope_cloud in oilscope_service_endpoints
+        fail_msg: >-
+          Export OILSCOPE_SERVICE_ENDPOINTS with the JSON file generated from
+          terraform output -json service_endpoints.
   roles:
     - role: host_baseline
 
@@ -30,3 +39,24 @@
     - role: history
       vars:
         history_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        history_database_host: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.host }}
+        history_database_port: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.port }}
+        history_database_name: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.name }}
+        history_database_username: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.username }}
+        history_database_ssl_mode: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.ssl_mode }}
+        history_rabbitmq_host: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.host }}
+        history_rabbitmq_port: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.port }}
+        history_rabbitmq_username: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.username }}
+        history_rabbitmq_vhost: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.vhost }}
+        history_rabbitmq_queue: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.queue }}
+        history_rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"

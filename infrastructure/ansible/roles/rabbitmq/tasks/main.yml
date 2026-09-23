@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the RabbitMQ Compose definition
+  ansible.builtin.stat:
+    path: "{{ rabbitmq_compose_file }}"
+  register: rabbitmq_compose_definition
+
+- name: Validate the RabbitMQ configuration
+  ansible.builtin.assert:
+    that:
+      - rabbitmq_compose_definition.stat.exists
+      - rabbitmq_compose_definition.stat.isreg | default(false)
+      - rabbitmq_password | length > 0
+    fail_msg: RabbitMQ requires an existing Compose file and a non-empty password.
+
+- name: Pull the RabbitMQ image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ rabbitmq_compose_project_name }}"
+      - --file
+      - "{{ rabbitmq_compose_file }}"
+      - pull
+      - "{{ rabbitmq_service }}"
+  args:
+    chdir: "{{ rabbitmq_compose_project_dir }}"
+  environment: "{{ rabbitmq_runtime_environment }}"
+  register: rabbitmq_pull
+  changed_when: >-
+    'Downloaded newer image' in rabbitmq_pull.stdout or
+    'Downloaded newer image' in rabbitmq_pull.stderr or
+    'Pull complete' in rabbitmq_pull.stdout or
+    'Pull complete' in rabbitmq_pull.stderr
+  no_log: true
+
+- name: Start RabbitMQ
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ rabbitmq_compose_project_name }}"
+      - --file
+      - "{{ rabbitmq_compose_file }}"
+      - up
+      - --detach
+      - --no-deps
+      - "{{ rabbitmq_service }}"
+  args:
+    chdir: "{{ rabbitmq_compose_project_dir }}"
+  environment: "{{ rabbitmq_runtime_environment }}"
+  register: rabbitmq_up
+  changed_when: >-
+    'Created' in rabbitmq_up.stderr or
+    'Started' in rabbitmq_up.stderr or
+    'Recreated' in rabbitmq_up.stderr
+  no_log: true
+
+- name: Get the RabbitMQ container ID
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ rabbitmq_compose_project_name }}"
+      - --file
+      - "{{ rabbitmq_compose_file }}"
+      - ps
+      - --quiet
+      - "{{ rabbitmq_service }}"
+  args:
+    chdir: "{{ rabbitmq_compose_project_dir }}"
+  environment: "{{ rabbitmq_runtime_environment }}"
+  register: rabbitmq_container
+  changed_when: false
+  failed_when: rabbitmq_container.stdout | trim | length == 0
+  no_log: true
+
+- name: Wait for RabbitMQ to become healthy
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - "{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}else{{ '}}' }}missing{{ '{{' }}end{{ '}}' }}"
+      - "{{ rabbitmq_container.stdout | trim }}"
+  register: rabbitmq_health
+  changed_when: false
+  retries: "{{ rabbitmq_health_retries }}"
+  delay: "{{ rabbitmq_health_delay }}"
+  until: rabbitmq_health.stdout | trim == 'healthy'

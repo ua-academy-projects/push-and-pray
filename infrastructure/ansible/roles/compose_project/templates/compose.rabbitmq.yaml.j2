@@ -1,0 +1,27 @@
+name: oilscope-rabbitmq
+
+services:
+  rabbitmq:
+    image: "{{ oilscope_config.services.rabbitmq.image }}"
+    restart: unless-stopped
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: "{{ oilscope_config.services.rabbitmq.username }}"
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: "{{ oilscope_config.services.rabbitmq.vhost }}"
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:{{ oilscope_config.services.rabbitmq.amqp_port }}:5672"
+      - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:{{ oilscope_config.services.rabbitmq.management_port }}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    stop_grace_period: 30s
+
+volumes:
+  rabbitmq_data:
+    name: oilscope-rabbitmq-data

@@ -6,6 +6,15 @@
   gather_facts: true
   force_handlers: true
   any_errors_fatal: true
+  pre_tasks:
+    - name: Validate Terraform service endpoints
+      ansible.builtin.assert:
+        that:
+          - service_endpoints_path | length > 0
+          - oilscope_cloud in oilscope_service_endpoints
+        fail_msg: >-
+          Export OILSCOPE_SERVICE_ENDPOINTS with the JSON file generated from
+          terraform output -json service_endpoints.
   roles:
     - role: host_baseline
 
@@ -29,7 +38,15 @@
 
     - role: fetcher
       vars:
-        fetcher_database_host: >-
-          {{ hostvars[groups['database'][0]].internal_ip }}
-        fetcher_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        fetcher_rabbitmq_host: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.host }}
+        fetcher_rabbitmq_port: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.port }}
+        fetcher_rabbitmq_username: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.username }}
+        fetcher_rabbitmq_vhost: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.vhost }}
+        fetcher_rabbitmq_queue: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].rabbitmq.queue }}
+        fetcher_rabbitmq_password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
         fetcher_oilpriceapi_key: "{{ resolve_secrets_result.OILPRICEAPI_KEY }}"

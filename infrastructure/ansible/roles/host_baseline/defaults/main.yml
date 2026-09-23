@@ -18,4 +18,3 @@ host_baseline_directories:
     owner: "{{ host_baseline_deploy_user }}"
     group: "{{ host_baseline_deploy_group }}"
     mode: "0750"
-

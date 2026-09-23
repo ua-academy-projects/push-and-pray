@@ -5,6 +5,17 @@ history_compose_file: "{{ history_compose_project_dir }}/compose.yaml"
 history_compose_project_name: oilscope
 
 history_postgres_password: ""
+history_database_host: ""
+history_database_port: "{{ oilscope_config.services.database.port }}"
+history_database_name: "{{ oilscope_config.services.database.name }}"
+history_database_username: "{{ oilscope_config.services.database.username }}"
+history_database_ssl_mode: "{{ oilscope_config.services.database.ssl_mode }}"
+history_rabbitmq_password: ""
+history_rabbitmq_host: ""
+history_rabbitmq_port: "{{ oilscope_config.services.rabbitmq.amqp_port }}"
+history_rabbitmq_username: "{{ oilscope_config.services.rabbitmq.username }}"
+history_rabbitmq_vhost: "{{ oilscope_config.services.rabbitmq.vhost }}"
+history_rabbitmq_queue: "{{ oilscope_config.services.rabbitmq.queue }}"
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth

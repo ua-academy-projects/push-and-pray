@@ -15,6 +15,15 @@
          | list }}
     ui_vm_config: "{{ ui_vm_configs | first }}"
   pre_tasks:
+    - name: Validate Terraform service endpoints
+      ansible.builtin.assert:
+        that:
+          - service_endpoints_path | length > 0
+          - oilscope_cloud in oilscope_service_endpoints
+        fail_msg: >-
+          Export OILSCOPE_SERVICE_ENDPOINTS with the JSON file generated from
+          terraform output -json service_endpoints.
+
     - name: Validate the UI VM configuration
       ansible.builtin.assert:
         that:
@@ -56,4 +65,10 @@
 
     - role: ui
       vars:
-        ui_postgres_password: "{{ resolve_secrets_result.POSTGRES_PASSWORD }}"
+        ui_redis_host: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].redis.host }}
+        ui_redis_port: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].redis.port }}
+        ui_redis_database: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].redis.database }}
+        ui_redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD }}"

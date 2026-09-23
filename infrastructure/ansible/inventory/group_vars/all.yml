@@ -1,10 +1,17 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 project_config_path: >-
-  {{ lookup('ansible.builtin.env',  'OILSCOPE_PROJECT_CONFIG') }}
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_PROJECT_CONFIG') }}
 
 oilscope_config: >-
   {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+service_endpoints_path: >-
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_SERVICE_ENDPOINTS') }}
+
+oilscope_service_endpoints: >-
+  {{ (lookup('ansible.builtin.file', service_endpoints_path) | from_json)
+     if service_endpoints_path | length > 0 else {} }}
 
 ansible_user: "{{ oilscope_config.ansible.ssh_user }}"
 

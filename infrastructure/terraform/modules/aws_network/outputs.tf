@@ -20,6 +20,16 @@ output "vm_subnet_id" {
   ]
 }
 
+output "vpc_id" {
+  description = "ID of the application VPC."
+  value       = aws_vpc.main.id
+}
+
+output "database_subnet_ids" {
+  description = "Private subnet IDs spanning the Availability Zones required by RDS."
+  value       = [for zone in sort(keys(aws_subnet.database)) : aws_subnet.database[zone].id]
+}
+
 output "security_group_ids_by_role" {
   description = "Security group IDs keyed by VM role."
   value = {
@@ -32,6 +42,7 @@ output "security_group_ids_by_role" {
     aws_vpc_security_group_ingress_rule.vms_ssh,
     aws_vpc_security_group_ingress_rule.ui_web,
     aws_vpc_security_group_ingress_rule.history_api,
-    aws_vpc_security_group_ingress_rule.postgresql,
+    aws_vpc_security_group_ingress_rule.rabbitmq,
+    aws_vpc_security_group_ingress_rule.redis,
   ]
 }

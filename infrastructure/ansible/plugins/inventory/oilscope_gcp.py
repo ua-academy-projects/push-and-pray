@@ -220,6 +220,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "public_ip": f"{public} if {has_public} else ''",
                 "ansible_host": f"{public} if {is_bastion} else {private}",
                 "oilscope_role": "labels.role | default('')",
+                "oilscope_cloud": "'gcp'",
             },
         }
 

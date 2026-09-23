@@ -3,11 +3,9 @@
 - name: Validate the application inventory groups
   ansible.builtin.assert:
     that:
-      - groups.get('database', []) | length == 1
       - groups.get('history', []) | length == 1
     fail_msg: >-
-      The inventory must contain exactly one host in each of the database and
-      history groups.
+      The inventory must contain exactly one host in the history group.
 
 - name: Check the Compose definition
   ansible.builtin.stat:
@@ -19,20 +17,15 @@
     that:
       - ui_compose_definition.stat.exists
       - ui_compose_definition.stat.isreg | default(false)
-      - ui_postgres_password | length > 0
-      - hostvars[groups['database'][0]].internal_ip | default('') | length > 0
+      - ui_redis_password | length > 0
+      - ui_redis_host | length > 0
       - hostvars[groups['history'][0]].internal_ip | default('') | length > 0
     fail_msg: >-
-      UI requires an existing Compose file, a non-empty PostgreSQL password,
-      and internal_ip values for the database and History hosts.
+      UI requires an existing Compose file, Redis connection data, and an
+      internal_ip for the History host.
 
 - name: Deploy only UI
-  environment:
-    DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
-    POSTGRES_PASSWORD: "{{ ui_postgres_password }}"
-    DATABASE_HOST: "{{ hostvars[groups['database'][0]].internal_ip }}"
-    HISTORY_SERVICE_URL: >-
-      http://{{ hostvars[groups['history'][0]].internal_ip }}:{{ ui_history_port }}
+  environment: "{{ ui_runtime_environment }}"
   no_log: true
   block:
     - name: Pull the UI image

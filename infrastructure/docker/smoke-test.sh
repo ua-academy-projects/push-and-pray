@@ -19,8 +19,8 @@ check_health() {
     fi
 }
 
-check_health ui "${ui_health_url}" '"sessions":"postgresql"'
-check_health history "${history_health_url}" '"pgmq_consumer":"ready"'
-check_health fetcher "${fetcher_health_url}" '"delivery":"pgmq"'
+check_health ui "${ui_health_url}" '"sessions":"redis"'
+check_health history "${history_health_url}" '"rabbitmq":"ready"'
+check_health fetcher "${fetcher_health_url}" '"delivery":"rabbitmq"'
 
 printf 'Deployment smoke test passed\n'

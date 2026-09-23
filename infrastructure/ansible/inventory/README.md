@@ -15,7 +15,7 @@ response is reused.
 
 ## How it fits together
 
-`oilscope.platform.oilscope_gcp` does not talk to GCP itself. It reads the
+The local `oilscope_gcp` inventory plugin does not talk to GCP itself. It reads the
 project configuration, derives the settings below, and hands them to
 `google.cloud.gcp_compute`, which performs the discovery.
 
@@ -33,7 +33,7 @@ expression placed there is sent to the API as literal text.
 
 Everything else — the grouping rules, the host-variable expressions, the
 workload SSH port — lives in the plugin's defaults. Changing those means
-editing the plugin and rebuilding the collection, not editing this directory.
+editing the local plugin, not editing the inventory source.
 
 ## Setup
 
@@ -92,6 +92,18 @@ for the plugin to claim it, and `local.oilscope.yml` is already ignored by git.
 
 ## Usage
 
+After Terraform apply, export its non-secret service endpoints for the
+workload playbooks:
+
+```sh
+terraform -chdir=infrastructure/terraform output -json service_endpoints \
+  > .venv/oilscope-service-endpoints.json
+export OILSCOPE_SERVICE_ENDPOINTS="$(realpath .venv/oilscope-service-endpoints.json)"
+```
+
+The generated file contains database, RabbitMQ and Redis hosts and ports, but
+no passwords. Passwords continue to come from the cloud secret manager.
+
 ```sh
 ansible-inventory \
   -i infrastructure/ansible/inventory/oilscope.gcp.yml \
@@ -105,18 +117,20 @@ GCP, so before the infrastructure is created it is legitimately empty.
 ## Groups
 
 Terraform labels every VM with `role=<role>`, which becomes the `bastion`,
-`database`, `history`, `fetcher` and `ui` groups the deployment roles expect.
+`infra`, `history`, `fetcher` and `ui` groups the deployment roles expect.
 Everything except the bastion also joins `workloads`.
 
 The group name comes from the `role` label, not from the key in the project
-configuration: `vms.infra` has `role: database` and therefore lands in the
-`database` group, which is what the `ui` role looks for.
+configuration: `vms.infra` has `role: infra` and hosts RabbitMQ and Redis.
+Managed database connection data comes from Terraform's `service_endpoints`
+output rather than from an inventory host.
 
 ## Host variables
 
-`internal_ip` is set on every host. This is a contract, not a convenience: the
-`ui` role resolves its Database and History peers through that exact variable
-name. Also set: `public_ip`, `oilscope_role`, `ansible_host`, `ansible_port`.
+`internal_ip` is set on every host. The UI role resolves History through this
+variable; managed service endpoints come from the Terraform output file. Also
+set: `public_ip`, `oilscope_role`, `oilscope_cloud`, `ansible_host`,
+`ansible_port`.
 For the bastion, `bastion_ssh_port` is always the final port from
 `vms.bastion.ssh_port`. `ansible_port` normally uses that value, but can use
 `OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
@@ -158,9 +172,9 @@ terraform -chdir=infrastructure/terraform apply \
 
 ```sh
 export OILSCOPE_BASTION_CONNECT_PORT=22
-ansible-playbook oilscope.platform.bootstrap_bastion \
+ansible-playbook \
   -i infrastructure/ansible/inventory/oilscope.gcp.yml \
-  -e project_config_path=/absolute/path/project-config.json
+  infrastructure/ansible/playbooks/bootstrap_bastion.yml
 unset OILSCOPE_BASTION_CONNECT_PORT
 ```
 
@@ -207,7 +221,7 @@ key with `OILSCOPE_SSH_KEY`.
 | Symptom | Cause |
 | --- | --- |
 | `No inventory was parsed`, doubled path in the message | not run from the repository root |
-| `unknown plugin 'oilscope.platform.oilscope_gcp'` | this repository's collection is not installed, or was not rebuilt |
+| `unknown plugin 'oilscope_gcp'` | `ANSIBLE_CONFIG` does not point to `infrastructure/ansible/ansible.cfg` |
 | `unknown plugin 'google.cloud.gcp_compute'` | `requirements.yml` not installed |
 | `cannot start: ... library (google-auth)` | `requirements.txt` not installed |
 | `must define a 'vms' object` | the JSON is still `config_version` 2 |

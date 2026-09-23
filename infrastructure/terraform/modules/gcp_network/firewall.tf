@@ -55,20 +55,32 @@ resource "google_compute_firewall" "history_api" {
   }
 }
 
-resource "google_compute_firewall" "postgresql" {
-  name    = "${var.config.name_prefix}-${var.config.environment}-allow-postgresql"
+resource "google_compute_firewall" "rabbitmq" {
+  name    = "${var.config.name_prefix}-${var.config.environment}-allow-rabbitmq"
   network = google_compute_network.main.id
 
   source_tags = distinct(concat(
     var.config.vms.fetcher.network_tags,
     var.config.vms.history.network_tags,
-    var.config.vms.ui.network_tags,
   ))
 
   target_tags = var.config.vms.infra.network_tags
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.config.services.database.port)]
+    ports    = [tostring(var.config.services.rabbitmq.amqp_port)]
+  }
+}
+
+resource "google_compute_firewall" "redis" {
+  name    = "${var.config.name_prefix}-${var.config.environment}-allow-redis"
+  network = google_compute_network.main.id
+
+  source_tags = var.config.vms.ui.network_tags
+  target_tags = var.config.vms.infra.network_tags
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(var.config.services.redis.port)]
   }
 }

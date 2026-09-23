@@ -87,6 +87,33 @@
     "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/28",
     "workload_subnet_cidr": "10.0.1.0/26",
+    "database_connectivity": {
+      "aws": {
+        "us-east": [
+          {
+            "availability_zone": "us-east-1a",
+            "cidr": "10.0.2.0/28"
+          },
+          {
+            "availability_zone": "us-east-1b",
+            "cidr": "10.0.3.0/28"
+          }
+        ],
+        "eu-west": [
+          {
+            "availability_zone": "eu-west-1a",
+            "cidr": "10.0.2.0/28"
+          },
+          {
+            "availability_zone": "eu-west-1b",
+            "cidr": "10.0.3.0/28"
+          }
+        ]
+      },
+      "gcp": {
+        "private_service_cidr": "10.10.0.0/24"
+      }
+    },
     "ui_public_ports": [80, 443]
   },
   "services": {
@@ -96,18 +123,37 @@
     "database": {
       "port": 5432,
       "name": "oil_tracker",
-      "username": "oil_tracker"
+      "username": "oil_tracker",
+      "password_secret_id": "example-db-password",
+      "ssl_mode": "require",
+      "aws": {
+        "engine_version": "17",
+        "instance_class": "db.t4g.micro",
+        "allocated_storage_gb": 20,
+        "storage_type": "gp3",
+        "multi_az": false,
+        "backup_retention_days": 1
+      },
+      "gcp": {
+        "database_version": "POSTGRES_17",
+        "tier": "db-f1-micro",
+        "disk_size_gb": 10,
+        "availability_type": "ZONAL",
+        "backup_enabled": false
+      }
     },
     "rabbitmq": {
       "amqp_port": 5672,
       "management_port": 15672,
       "username": "oil_tracker",
       "vhost": "oil_tracker",
-      "queue": "price_observations"
+      "queue": "price_observations",
+      "image": "rabbitmq:4-management"
     },
     "redis": {
       "port": 6379,
-      "database": 0
+      "database": 0,
+      "image": "redis:8-alpine"
     }
   },
   "vms": {
@@ -127,8 +173,8 @@
       "allowed_cidrs": ["0.0.0.0/0"]
     },
     "infra": {
-      "role": "database",
-      "machine_type": "micro",
+      "role": "infra",
+      "machine_type": "small",
       "image": "ubuntu-26.04",
       "internal_ip": "10.0.1.5",
       "boot_disk": {

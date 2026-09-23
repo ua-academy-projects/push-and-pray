@@ -5,10 +5,13 @@ fetcher_runtime_environment: >-
     fetcher_compose_environment
     | combine({
       'DOCKER_CONFIG': fetcher_docker_config_dir,
-      'POSTGRES_PASSWORD': fetcher_postgres_password,
-      'POSTGRES_USER': fetcher_postgres_user,
-      'POSTGRES_DB': fetcher_postgres_name,
-      'DATABASE_HOST': fetcher_database_host,
+      'RABBITMQ_URL': 'amqp://' ~ fetcher_rabbitmq_username ~ ':'
+                      ~ (fetcher_rabbitmq_password | urlencode
+                         | replace('/', '%2F')) ~ '@'
+                      ~ fetcher_rabbitmq_host ~ ':'
+                      ~ (fetcher_rabbitmq_port | string) ~ '/'
+                      ~ fetcher_rabbitmq_vhost,
+      'RABBITMQ_QUEUE': fetcher_rabbitmq_queue,
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
       'FETCHER_HOST_PORT': fetcher_host_port | string

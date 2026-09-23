@@ -39,3 +39,17 @@ resource "aws_internet_gateway" "main" {
     Name = "${local.resource_prefix}-igw"
   })
 }
+
+resource "aws_subnet" "database" {
+  for_each = local.database_subnets
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = each.value.cidr
+  availability_zone       = each.value.availability_zone
+  map_public_ip_on_launch = false
+
+  tags = merge(var.config.common_labels, {
+    Name          = "${local.resource_prefix}-database-${each.key}"
+    network_class = "database"
+  })
+}

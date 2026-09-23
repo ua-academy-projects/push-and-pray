@@ -203,6 +203,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     f"if {is_bastion} else private_ip_address"
                 ),
                 "oilscope_role": "tags.role | default('')",
+                "oilscope_cloud": "'aws'",
             },
         }
 

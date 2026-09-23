@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+rabbitmq_runtime_environment: >-
+  {{
+    rabbitmq_compose_environment
+    | combine({
+      'RABBITMQ_PASSWORD': rabbitmq_password,
+      'RABBITMQ_BIND_ADDRESS': rabbitmq_bind_address | string
+    })
+  }}

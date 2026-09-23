@@ -114,6 +114,7 @@
         "vpc_cidr",
         "management_subnet_cidr",
         "workload_subnet_cidr",
+        "database_connectivity",
         "ui_public_ports"
       ],
       "properties": {
@@ -128,6 +129,51 @@
         "workload_subnet_cidr": {
           "type": "string",
           "minLength": 1
+        },
+        "database_connectivity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["aws", "gcp"],
+          "properties": {
+            "aws": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {
+                "$ref": "#/$defs/abstract_label"
+              },
+              "additionalProperties": {
+                "type": "array",
+                "minItems": 2,
+                "uniqueItems": true,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["availability_zone", "cidr"],
+                  "properties": {
+                    "availability_zone": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "cidr": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            },
+            "gcp": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["private_service_cidr"],
+              "properties": {
+                "private_service_cidr": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
         },
         "ui_public_ports": {
           "type": "array",
@@ -159,7 +205,15 @@
         "database": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["port", "name", "username"],
+          "required": [
+            "port",
+            "name",
+            "username",
+            "password_secret_id",
+            "ssl_mode",
+            "aws",
+            "gcp"
+          ],
           "properties": {
             "port": {
               "$ref": "#/$defs/port"
@@ -169,6 +223,84 @@
             },
             "username": {
               "$ref": "#/$defs/service_identifier"
+            },
+            "password_secret_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "ssl_mode": {
+              "type": "string",
+              "enum": ["disable", "require", "verify-ca", "verify-full"]
+            },
+            "aws": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "engine_version",
+                "instance_class",
+                "allocated_storage_gb",
+                "storage_type",
+                "multi_az",
+                "backup_retention_days"
+              ],
+              "properties": {
+                "engine_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "instance_class": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "allocated_storage_gb": {
+                  "type": "integer",
+                  "minimum": 20
+                },
+                "storage_type": {
+                  "type": "string",
+                  "enum": ["gp2", "gp3", "io1", "io2"]
+                },
+                "multi_az": {
+                  "type": "boolean"
+                },
+                "backup_retention_days": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 35
+                }
+              }
+            },
+            "gcp": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "database_version",
+                "tier",
+                "disk_size_gb",
+                "availability_type",
+                "backup_enabled"
+              ],
+              "properties": {
+                "database_version": {
+                  "type": "string",
+                  "pattern": "^POSTGRES_[0-9]+$"
+                },
+                "tier": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "disk_size_gb": {
+                  "type": "integer",
+                  "minimum": 10
+                },
+                "availability_type": {
+                  "type": "string",
+                  "enum": ["ZONAL", "REGIONAL"]
+                },
+                "backup_enabled": {
+                  "type": "boolean"
+                }
+              }
             }
           }
         },
@@ -181,6 +313,7 @@
             "username",
             "vhost",
             "queue"
+            ,"image"
           ],
           "properties": {
             "amqp_port": {
@@ -201,13 +334,17 @@
               "type": "string",
               "minLength": 1,
               "pattern": "^[A-Za-z0-9._-]+$"
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },
         "redis": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["port", "database"],
+          "required": ["port", "database", "image"],
           "properties": {
             "port": {
               "$ref": "#/$defs/port"
@@ -215,6 +352,10 @@
             "database": {
               "type": "integer",
               "minimum": 0
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1
             }
           }
         }
@@ -223,7 +364,7 @@
     "vms": {
       "type": "object",
       "minProperties": 2,
-      "required": ["bastion"],
+      "required": ["bastion", "infra", "history", "fetcher", "ui"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -434,7 +575,7 @@
       "properties": {
         "role": {
           "type": "string",
-          "enum": ["bastion", "database", "history", "fetcher", "ui"]
+        "enum": ["bastion", "infra", "history", "fetcher", "ui"]
         },
         "cloud": {
           "$comment": "Optional per-VM override; default_cloud applies when omitted.",

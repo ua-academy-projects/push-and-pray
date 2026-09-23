@@ -69,15 +69,25 @@ resource "aws_vpc_security_group_ingress_rule" "history_api" {
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "postgresql" {
+resource "aws_vpc_security_group_ingress_rule" "rabbitmq" {
   for_each = toset([
     for role in local.roles : role
-    if contains(["fetcher", "history", "ui"], role) && contains(local.roles, "database")
+    if contains(["fetcher", "history"], role) && contains(local.roles, "infra")
   ])
 
-  security_group_id            = aws_security_group.roles["database"].id
+  security_group_id            = aws_security_group.roles["infra"].id
   referenced_security_group_id = aws_security_group.roles[each.value].id
-  from_port                    = var.config.services.database.port
-  to_port                      = var.config.services.database.port
+  from_port                    = var.config.services.rabbitmq.amqp_port
+  to_port                      = var.config.services.rabbitmq.amqp_port
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "redis" {
+  count = contains(local.roles, "ui") && contains(local.roles, "infra") ? 1 : 0
+
+  security_group_id            = aws_security_group.roles["infra"].id
+  referenced_security_group_id = aws_security_group.roles["ui"].id
+  from_port                    = var.config.services.redis.port
+  to_port                      = var.config.services.redis.port
   ip_protocol                  = "tcp"
 }

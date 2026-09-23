@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+ui_runtime_environment:
+  DOCKER_CONFIG: "{{ ui_docker_config_dir }}"
+  REDIS_URL: >-
+    redis://:{{ ui_redis_password | urlencode | replace('/', '%2F')
+    }}@{{ ui_redis_host }}:{{ ui_redis_port }}/{{ ui_redis_database }}
+  HISTORY_SERVICE_URL: >-
+    http://{{ hostvars[groups['history'][0]].internal_ip }}:{{ ui_history_port }}

@@ -4,11 +4,13 @@ fetcher_compose_project_dir: /opt/oilscope/app
 fetcher_compose_file: "{{ fetcher_compose_project_dir }}/compose.yaml"
 fetcher_compose_project_name: oilscope
 fetcher_service: fetcher
-fetcher_postgres_password: ""
 fetcher_oilpriceapi_key: ""
-fetcher_postgres_user: oil_tracker
-fetcher_postgres_name: oil_tracker
-fetcher_database_host: ""
+fetcher_rabbitmq_password: ""
+fetcher_rabbitmq_host: ""
+fetcher_rabbitmq_port: "{{ oilscope_config.services.rabbitmq.amqp_port }}"
+fetcher_rabbitmq_username: "{{ oilscope_config.services.rabbitmq.username }}"
+fetcher_rabbitmq_vhost: "{{ oilscope_config.services.rabbitmq.vhost }}"
+fetcher_rabbitmq_queue: "{{ oilscope_config.services.rabbitmq.queue }}"
 fetcher_bind_address: 0.0.0.0
 fetcher_host_port: 8002
 fetcher_health_retries: 30

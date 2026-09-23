@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+history_runtime_environment:
+  DOCKER_CONFIG: "{{ history_docker_config_dir }}"
+  DATABASE_URL: >-
+    postgresql+psycopg://{{ history_database_username }}:{{ history_postgres_password
+    }}@{{ history_database_host }}:{{ history_database_port }}/{{ history_database_name
+    }}?sslmode={{ history_database_ssl_mode }}
+  RABBITMQ_URL: >-
+    amqp://{{ history_rabbitmq_username }}:{{ history_rabbitmq_password
+    | urlencode | replace('/', '%2F') }}@{{ history_rabbitmq_host
+    }}:{{ history_rabbitmq_port }}/{{ history_rabbitmq_vhost }}
+  RABBITMQ_QUEUE: "{{ history_rabbitmq_queue }}"

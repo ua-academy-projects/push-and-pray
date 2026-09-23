@@ -5,6 +5,8 @@
   connection: local
   gather_facts: false
   vars:
+    project_config_path: >-
+      {{ playbook_dir }}/../../../../../project-config.example.json
     oilscope_config: >-
       {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
   tasks:
@@ -17,7 +19,8 @@
         compose_project_owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
         compose_project_group: "{{ lookup('ansible.builtin.pipe', 'id -gn') }}"
       loop:
-        - database
+        - rabbitmq
+        - redis
         - history
         - fetcher
         - ui
@@ -34,13 +37,17 @@
           - config
           - --quiet
       environment:
-        DATABASE_HOST: 127.0.0.1
+        DATABASE_URL: postgresql+psycopg://oil_tracker:test-only@127.0.0.1:5432/oil_tracker
+        RABBITMQ_URL: amqp://oil_tracker:test-only@127.0.0.1:5672/oil_tracker
+        RABBITMQ_PASSWORD: test-only
+        REDIS_URL: redis://:test-only@127.0.0.1:6379/0
+        REDIS_PASSWORD: test-only
         HISTORY_SERVICE_URL: http://127.0.0.1:8001
         OILPRICEAPI_KEY: test-only
-        POSTGRES_PASSWORD: test-only
       changed_when: false
       loop:
-        - database
+        - rabbitmq
+        - redis
         - history
         - fetcher
         - ui

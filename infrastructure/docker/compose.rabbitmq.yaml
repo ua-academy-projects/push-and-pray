@@ -1,0 +1,26 @@
+name: petroscope-rabbitmq
+
+services:
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4-management}
+    restart: unless-stopped
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: oil_tracker
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: oil_tracker
+    ports:
+      - "${RABBITMQ_LAN_IP:?RABBITMQ_LAN_IP is required}:5672:5672"
+      - "${RABBITMQ_LAN_IP:?RABBITMQ_LAN_IP is required}:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  rabbitmq_data:
+    name: petroscope-rabbitmq-data

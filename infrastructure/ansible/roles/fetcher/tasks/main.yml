@@ -10,12 +10,12 @@
     that:
       - fetcher_compose_definition.stat.exists
       - fetcher_compose_definition.stat.isreg | default(false)
-      - fetcher_postgres_password | length > 0
+      - fetcher_rabbitmq_password | length > 0
       - fetcher_oilpriceapi_key | length > 0
-      - fetcher_database_host | length > 0
+      - fetcher_rabbitmq_host | length > 0
     fail_msg: >-
-      Fetcher requires an existing Compose file, a database host, a
-      PostgreSQL password, and an OilPriceAPI key.
+      Fetcher requires an existing Compose file, RabbitMQ connection data,
+      and an OilPriceAPI key.
 
 - name: Pull the Fetcher image
   ansible.builtin.command:
