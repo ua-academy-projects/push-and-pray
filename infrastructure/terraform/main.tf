@@ -15,3 +15,9 @@ module "cloudflare" {
 
   config = local.config
 }
+
+module "azure_vm" {
+  source = "./modules/azure"
+
+  config = local.config
+}

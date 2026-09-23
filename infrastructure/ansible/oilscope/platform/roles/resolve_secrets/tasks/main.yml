@@ -132,6 +132,65 @@
     label: "{{ item.item.key }}"
   when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'aws'
 
+- name: Resolve the Azure Key Vault name
+  ansible.builtin.command:
+    argv:
+      - az
+      - keyvault
+      - list
+      - --resource-group
+      - "{{ resolve_secrets_config.name_prefix }}-{{ resolve_secrets_config.environment }}-rg"
+      - --query
+      - "[0].name"
+      - --output
+      - tsv
+  delegate_to: localhost
+  become: false
+  register: resolve_secrets_azure_vault
+  changed_when: false
+  check_mode: false
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'azure'
+
+- name: Access each mapped secret's value (Azure)
+  ansible.builtin.command:
+    argv:
+      - az
+      - keyvault
+      - secret
+      - show
+      - --vault-name
+      - "{{ resolve_secrets_azure_vault.stdout | trim }}"
+      - --name
+      - "{{ item.value }}"
+      - --query
+      - value
+      - --output
+      - tsv
+  delegate_to: localhost
+  become: false
+  register: resolve_secrets_azure_accessed
+  no_log: true
+  changed_when: false
+  failed_when: false
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'azure'
+
+- name: Build the resolved secrets mapping (Azure)
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: (item.stdout | trim)
+         }) }}
+  no_log: true
+  loop: >-
+    {{ resolve_secrets_azure_accessed.results | default([])
+       | selectattr('rc', 'defined') | selectattr('rc', 'eq', 0) | list }}
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: resolve_secrets_mappings | length > 0 and oilscope_cloud == 'azure'
+
 - name: Default to an empty result when there is nothing to resolve
   ansible.builtin.set_fact:
     resolve_secrets_result: "{{ resolve_secrets_result | default({}) }}"

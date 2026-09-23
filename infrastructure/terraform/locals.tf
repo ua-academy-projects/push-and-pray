@@ -4,5 +4,6 @@ locals {
   managed_db_private_ip = try(coalesce(
     try(module.gcp_vm.managed_db_private_ip, null),
     try(module.aws_vm.managed_db_private_ip, null),
+    try(module.azure_vm.managed_db_private_ip, null),
   ), "")
 }

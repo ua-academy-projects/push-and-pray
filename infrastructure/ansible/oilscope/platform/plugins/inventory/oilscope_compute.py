@@ -117,6 +117,8 @@ GCP_DELEGATE = "google.cloud.gcp_compute"
 GCP_COLLECTION = "google.cloud"
 AWS_DELEGATE = "amazon.aws.aws_ec2"
 AWS_COLLECTION = "amazon.aws"
+AZURE_DELEGATE = "azure.azcollection.azure_rm"
+AZURE_COLLECTION = "azure.azcollection"
 display = Display()
 
 
@@ -142,7 +144,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         environment = self._require(config, "environment")
         bastion_port = self._bastion_ssh_port(config)
         workload_port = int(self.get_option("workload_ssh_port"))
-        gcp_zones, aws_regions = self._region_scopes(config)
+        gcp_zones, aws_regions, azure_regions = self._region_scopes(config)
 
         generated_files = []
         try:
@@ -167,6 +169,13 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 generated = self._write_settings(settings, "aws")
                 generated_files.append(generated)
                 self._delegate(AWS_DELEGATE, AWS_COLLECTION, inventory, loader, generated, cache)
+            if azure_regions:
+                settings = self._azure_settings(
+                    name_prefix, environment, bastion_port, workload_port
+                )
+                generated = self._write_settings(settings, "azure")
+                generated_files.append(generated)
+                self._delegate(AZURE_DELEGATE, AZURE_COLLECTION, inventory, loader, generated, cache)
         finally:
             for generated in generated_files:
                 try:
@@ -284,6 +293,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         gcp_zones = set()
         aws_regions = set()
+        azure_regions = set()
 
         for label, entry in regions.items():
             if not isinstance(entry, dict):
@@ -293,6 +303,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
             gcp_placement = entry.get("gcp")
             aws_placement = entry.get("aws")
+            azure_placement = entry.get("azure")
+
+            if isinstance(azure_placement, dict) and azure_placement.get("region"):
+                azure_regions.add(plain(azure_placement["region"]))
 
             if isinstance(gcp_placement, dict) and gcp_placement.get("zone"):
                 gcp_zones.add(plain(gcp_placement["zone"]))
@@ -300,7 +314,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             if isinstance(aws_placement, dict) and aws_placement.get("region"):
                 aws_regions.add(plain(aws_placement["region"]))
 
-        return sorted(gcp_zones), sorted(aws_regions)
+        return sorted(gcp_zones), sorted(aws_regions), sorted(azure_regions)
 
     def _bastion_ssh_port(self, config):
         bastion_role = self.get_option("bastion_role")
@@ -312,7 +326,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         ports = [
             vm.get("ssh_port")
             for vm in vms.values()
-                if isinstance(vm, dict) and bastion_role in vm.get("network_tags", [])
+                if isinstance(vm, dict) and bastion_role in vm.get("roles", [])
         ]
 
         if len(ports) != 1:
@@ -395,6 +409,37 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 # The final bastion SSH port, needed by bootstrap_bastion.yml to
                 # probe/settle sshd. Formerly in group_vars/bastion.yml.
                 "bastion_ssh_port": f"{bastion_port}",
+                "ansible_python_interpreter": "'/usr/bin/python3'",
+                "oilscope_cloud": "tags.Cloud | default('')",
+            },
+        }
+    def _azure_settings(self, name_prefix, environment, bastion_port, workload_port):
+        bastion_role   = plain(self.get_option("bastion_role"))
+        resource_group = f"{name_prefix}-{environment}-rg"
+
+        is_bastion = f"'{bastion_role}' in (tags.Roles | default('')).split(',')"
+        public     = "public_ipv4_address[0] | default('')"
+        private    = "private_ipv4_addresses[0] | default('')"
+
+        return {
+            "plugin": AZURE_DELEGATE,
+            "include_vm_resource_groups": [resource_group],
+            "hostnames": ["name"],
+            "default_host_filters": [],
+            "keyed_groups": [
+                {"key": "(tags.Roles | default('')).split(',') | select | list", "prefix": "", "separator": ""},
+                {"key": "tags.Cloud | default('')", "prefix": "", "separator": ""},
+            ],
+            "conditional_groups": {
+                "workloads": f"'{bastion_role}' not in (tags.Roles | default('')).split(',')",
+            },
+            "hostvar_expressions": {
+                "internal_ip": private,
+                "public_ip": public,
+                "ansible_host": f"{public} if ({is_bastion}) else {private}",
+                "ansible_port": f"{bastion_port} if ({is_bastion}) else {workload_port}",
+                "bastion_ssh_port": f"{bastion_port}",
+                "ansible_python_interpreter": "'/usr/bin/python3'",
                 "oilscope_cloud": "tags.Cloud | default('')",
             },
         }
