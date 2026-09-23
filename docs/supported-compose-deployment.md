@@ -37,7 +37,8 @@ on each VM through its runtime identity.
 
 ## Deployment order
 
-Run database migrations against the managed database before starting History. Then run:
+The aggregate playbook applies database migrations from the `infra` VM before starting
+History. Run:
 
 ```bash
 cd infrastructure/ansible
@@ -47,9 +48,9 @@ ansible-playbook -i inventory/oilscope.aws.yml playbooks/deploy_workloads.yml
 Use `inventory/oilscope.gcp.yml` for GCP. The aggregate playbook deploys workloads in
 this order: RabbitMQ and Redis, History, Fetcher, UI and its edge proxy.
 
-The managed database is not a Compose workload. RabbitMQ and Redis are independent
-Compose projects on the `infra` VM, so they have separate lifecycle and persistent
-volumes.
+The managed database is not a Compose workload. Its immutable database image is used
+only as a one-shot migration runner. RabbitMQ and Redis are independent Compose projects
+on the `infra` VM, so they have separate lifecycle and persistent volumes.
 
 ## Runtime variables
 

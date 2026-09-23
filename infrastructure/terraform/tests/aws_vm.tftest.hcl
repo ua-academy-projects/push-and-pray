@@ -22,6 +22,7 @@ variables {
     }
   }
   instance_profile_names = {
+    bastion = "bastion-runtime"
     infra   = "infra-runtime"
     history = "history-runtime"
     fetcher = "fetcher-runtime"
@@ -54,9 +55,9 @@ run "public_ui_private_infra" {
   assert {
     condition = (
       aws_instance.vms["fetcher"].iam_instance_profile == "fetcher-runtime" &&
-      !contains(keys(var.instance_profile_names), "bastion")
+      aws_instance.vms["bastion"].iam_instance_profile == "bastion-runtime"
     )
-    error_message = "Application VMs must use their assigned identity; bastion must not get a runtime role."
+    error_message = "Every VM must use its assigned runtime identity for monitoring."
   }
 
   assert {

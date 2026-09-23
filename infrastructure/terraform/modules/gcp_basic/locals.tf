@@ -3,7 +3,7 @@ locals {
 
   service_accounts = {
     for name, vm in var.config.vms : name => vm
-    if lookup(vm, "cloud", var.config.default_cloud) == "gcp" && vm.role != "bastion"
+    if lookup(vm, "cloud", var.config.default_cloud) == "gcp"
   }
 
   secret_ids = toset(flatten([

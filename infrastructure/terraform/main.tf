@@ -36,6 +36,15 @@ module "aws_database" {
   password_secret_arn = module.aws_basic[0].secret_arns[local.config.services.database.password_secret_id]
 }
 
+module "aws_monitoring" {
+  source = "./modules/aws_monitoring"
+  count  = contains(local.enabled_clouds, "aws") && local.config.monitoring.enabled ? 1 : 0
+
+  config     = local.config
+  role_names = module.aws_basic[0].role_names
+  vms        = module.aws_vm[0].vms
+}
+
 module "gcp_basic" {
   source = "./modules/gcp_basic"
   count  = contains(local.enabled_clouds, "gcp") ? 1 : 0
@@ -68,4 +77,13 @@ module "gcp_database" {
   password_secret_id = module.gcp_basic[0].secret_ids[local.config.services.database.password_secret_id]
 
   depends_on = [module.gcp_network]
+}
+
+module "gcp_monitoring" {
+  source = "./modules/gcp_monitoring"
+  count  = contains(local.enabled_clouds, "gcp") && local.config.monitoring.enabled ? 1 : 0
+
+  config                 = local.config
+  service_account_emails = module.gcp_basic[0].service_account_emails
+  vms                    = module.gcp_vm[0].vms
 }

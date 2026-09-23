@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_migrations_runtime_environment:
+  DOCKER_CONFIG: "{{ database_migrations_docker_config_dir }}"

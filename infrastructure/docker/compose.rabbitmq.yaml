@@ -9,9 +9,14 @@ services:
       RABBITMQ_DEFAULT_USER: oil_tracker
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
       RABBITMQ_DEFAULT_VHOST: oil_tracker
+    command:
+      - sh
+      - -ec
+      - rabbitmq-plugins enable --offline rabbitmq_prometheus && exec rabbitmq-server
     ports:
       - "${RABBITMQ_LAN_IP:?RABBITMQ_LAN_IP is required}:5672:5672"
       - "${RABBITMQ_LAN_IP:?RABBITMQ_LAN_IP is required}:15672:15672"
+      - "127.0.0.1:15692:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -20,6 +25,10 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/rabbitmq
 
 volumes:
   rabbitmq_data:

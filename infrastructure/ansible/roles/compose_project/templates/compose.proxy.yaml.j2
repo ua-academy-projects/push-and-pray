@@ -32,6 +32,10 @@ services:
     stop_grace_period: 20s
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/traefik
 
 networks:
   oilscope-edge:

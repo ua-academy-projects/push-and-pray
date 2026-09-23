@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate monitoring agent inputs
+  ansible.builtin.assert:
+    that:
+      - oilscope_cloud in ['aws', 'gcp']
+      - monitoring_agent_interval_seconds | int >= 60
+    fail_msg: Monitoring requires a supported cloud and an interval of at least 60 seconds.
+  when: monitoring_agent_enabled | bool
+
+- name: Configure the AWS monitoring agent
+  ansible.builtin.include_tasks: aws.yml
+  when:
+    - monitoring_agent_enabled | bool
+    - oilscope_cloud == 'aws'
+
+- name: Configure the GCP monitoring agent
+  ansible.builtin.include_tasks: gcp.yml
+  when:
+    - monitoring_agent_enabled | bool
+    - oilscope_cloud == 'gcp'

@@ -1,18 +1,39 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Deploy RabbitMQ and Redis
+- name: Deploy infrastructure services and database migrations
   hosts: infra
   become: true
   gather_facts: true
   force_handlers: true
   any_errors_fatal: true
+  pre_tasks:
+    - name: Validate Terraform service endpoints
+      ansible.builtin.assert:
+        that:
+          - service_endpoints_path | length > 0
+          - oilscope_cloud in oilscope_service_endpoints
+        fail_msg: >-
+          Export OILSCOPE_SERVICE_ENDPOINTS with the JSON file generated from
+          terraform output -json service_endpoints.
 
   roles:
     - role: host_baseline
 
     - role: docker_engine
 
+    - role: monitoring_agent
+
     - role: resolve_secrets
+
+    - role: registry_auth
+      vars:
+        registry_auth_registry: >-
+          {{ oilscope_config.registry.repository
+             | regex_replace('/.*$', '') }}
+        registry_auth_username: >-
+          {{ oilscope_config.registry.username | default('') }}
+        registry_auth_token: >-
+          {{ resolve_secrets_result.GHCR_TOKEN | default('') }}
 
     - role: compose_project
       vars:
@@ -31,3 +52,18 @@
     - role: redis
       vars:
         redis_password: "{{ resolve_secrets_result.REDIS_PASSWORD }}"
+
+    - role: database_migrations
+      vars:
+        database_migrations_host: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.host }}
+        database_migrations_port: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.port }}
+        database_migrations_name: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.name }}
+        database_migrations_username: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.username }}
+        database_migrations_ssl_mode: >-
+          {{ oilscope_service_endpoints[oilscope_cloud].database.ssl_mode }}
+        database_migrations_password: >-
+          {{ resolve_secrets_result.POSTGRES_PASSWORD }}

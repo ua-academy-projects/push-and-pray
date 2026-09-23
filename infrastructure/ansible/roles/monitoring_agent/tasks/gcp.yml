@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read installed package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Download the Ops Agent installer
+  ansible.builtin.get_url:
+    url: "{{ monitoring_agent_gcp_install_script_url }}"
+    dest: "{{ monitoring_agent_gcp_install_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: "'google-cloud-ops-agent' not in ansible_facts.packages"
+
+- name: Install the Google Cloud Ops Agent
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ monitoring_agent_gcp_install_script_path }}"
+      - --also-install
+  when: "'google-cloud-ops-agent' not in ansible_facts.packages"
+  changed_when: true
+
+- name: Install the Ops Agent configuration
+  ansible.builtin.template:
+    src: google-cloud-ops-agent.yaml.j2
+    dest: "{{ monitoring_agent_gcp_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Google Cloud Ops Agent
+
+- name: Enable and start the Google Cloud Ops Agent
+  ansible.builtin.systemd_service:
+    name: google-cloud-ops-agent
+    enabled: true
+    state: started

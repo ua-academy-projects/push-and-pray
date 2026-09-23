@@ -3,7 +3,7 @@ locals {
 
   roles = {
     for name, vm in var.config.vms : name => vm
-    if lookup(vm, "cloud", var.config.default_cloud) == "aws" && vm.role != "bastion"
+    if lookup(vm, "cloud", var.config.default_cloud) == "aws"
   }
 
   secret_ids = toset(flatten([

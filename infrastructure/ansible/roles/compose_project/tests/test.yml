@@ -18,12 +18,16 @@
           /tmp/oilscope-compose-project-test/{{ compose_project_workload }}
         compose_project_owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
         compose_project_group: "{{ lookup('ansible.builtin.pipe', 'id -gn') }}"
+        compose_project_public_endpoint:
+          domain: oilscope.example.com
+          acme_email: example-operator@example.com
       loop:
         - rabbitmq
         - redis
         - history
         - fetcher
         - ui
+        - proxy
       loop_control:
         loop_var: compose_project_workload
 
@@ -51,3 +55,4 @@
         - history
         - fetcher
         - ui
+        - proxy

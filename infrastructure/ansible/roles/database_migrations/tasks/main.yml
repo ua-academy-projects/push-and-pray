@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the managed database migration configuration
+  ansible.builtin.assert:
+    that:
+      - database_migrations_image | length > 0
+      - database_migrations_host | length > 0
+      - database_migrations_port | int > 0
+      - database_migrations_name | length > 0
+      - database_migrations_username | length > 0
+      - database_migrations_password | length > 0
+      - database_migrations_ssl_mode | length > 0
+    fail_msg: >-
+      Database migrations require an image and complete managed PostgreSQL
+      connection settings.
+
+- name: Pull the database migration image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - pull
+      - "{{ database_migrations_image }}"
+  environment:
+    DOCKER_CONFIG: "{{ database_migrations_docker_config_dir }}"
+  register: database_migrations_pull
+  changed_when: >-
+    'Downloaded newer image' in database_migrations_pull.stdout or
+    'Downloaded newer image' in database_migrations_pull.stderr
+
+- name: Apply managed PostgreSQL migrations securely
+  block:
+    - name: Write the transient migration environment
+      ansible.builtin.copy:
+        content: |
+          PGHOST={{ database_migrations_host }}
+          PGPORT={{ database_migrations_port }}
+          PGDATABASE={{ database_migrations_name }}
+          PGUSER={{ database_migrations_username }}
+          PGPASSWORD={{ database_migrations_password }}
+          PGSSLMODE={{ database_migrations_ssl_mode }}
+        dest: "{{ database_migrations_env_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Run pending managed PostgreSQL migrations
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --rm
+          - --label
+          - oilscope.component=database-migrations
+          - --env-file
+          - "{{ database_migrations_env_file }}"
+          - "{{ database_migrations_image }}"
+          - petroscope-migrate
+      environment: "{{ database_migrations_runtime_environment }}"
+      register: database_migrations_run
+      changed_when: "'Applying ' in database_migrations_run.stdout"
+
+  always:
+    - name: Remove the transient migration environment
+      ansible.builtin.file:
+        path: "{{ database_migrations_env_file }}"
+        state: absent

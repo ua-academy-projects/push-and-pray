@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the CloudWatch Agent architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] in monitoring_agent_aws_architectures
+    fail_msg: >-
+      CloudWatch Agent is not configured for architecture
+      {{ ansible_facts['architecture'] }}.
+
+- name: Download the CloudWatch Agent package
+  ansible.builtin.get_url:
+    url: >-
+      {{ monitoring_agent_aws_package_base_url }}/{{
+        monitoring_agent_aws_architectures[ansible_facts['architecture']]
+      }}/latest/amazon-cloudwatch-agent.deb
+    dest: "{{ monitoring_agent_aws_package_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the CloudWatch Agent
+  ansible.builtin.apt:
+    deb: "{{ monitoring_agent_aws_package_path }}"
+    state: present
+
+- name: Install the CloudWatch Agent configuration
+  ansible.builtin.template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: "{{ monitoring_agent_aws_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply CloudWatch Agent configuration
+
+- name: Install the CloudWatch Prometheus scrape configuration
+  ansible.builtin.template:
+    src: prometheus.yaml.j2
+    dest: "{{ monitoring_agent_aws_prometheus_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply CloudWatch Agent configuration
+  when: oilscope_role == 'infra'

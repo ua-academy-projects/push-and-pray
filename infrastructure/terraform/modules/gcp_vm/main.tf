@@ -43,13 +43,9 @@ resource "google_compute_instance" "vms" {
     }
   }
 
-  dynamic "service_account" {
-    for_each = each.value.role == "bastion" ? [] : [var.service_account_emails[each.key]]
-
-    content {
-      email  = service_account.value
-      scopes = ["cloud-platform"]
-    }
+  service_account {
+    email  = var.service_account_emails[each.key]
+    scopes = ["cloud-platform"]
   }
 
   shielded_instance_config {

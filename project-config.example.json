@@ -83,6 +83,18 @@
     "username": "example-operator",
     "image_sha": "0123456789abcdef0123456789abcdef01234567"
   },
+  "monitoring": {
+    "enabled": true,
+    "metrics_interval_seconds": 60,
+    "log_retention_days": 7,
+    "alert_email": "example-operator@example.com",
+    "ui_health_path": "/health",
+    "thresholds": {
+      "cpu_percent": 85,
+      "memory_percent": 85,
+      "disk_percent": 85
+    }
+  },
   "network": {
     "vpc_cidr": "10.0.0.0/16",
     "management_subnet_cidr": "10.0.0.0/28",
@@ -148,12 +160,15 @@
       "username": "oil_tracker",
       "vhost": "oil_tracker",
       "queue": "price_observations",
-      "image": "rabbitmq:4-management"
+      "image": "rabbitmq:4-management",
+      "metrics_port": 15692
     },
     "redis": {
       "port": 6379,
       "database": 0,
-      "image": "redis:8-alpine"
+      "image": "redis:8-alpine",
+      "metrics_port": 9121,
+      "exporter_image": "oliver006/redis_exporter:v1.89.0-alpine"
     }
   },
   "vms": {

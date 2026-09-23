@@ -20,6 +20,7 @@
     "ssh_users",
     "ansible",
     "registry",
+    "monitoring",
     "network",
     "services",
     "vms"
@@ -104,6 +105,65 @@
         "image_sha": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "monitoring": {
+      "description": "Shared settings for host metrics and centralized system/application logs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "metrics_interval_seconds",
+        "log_retention_days",
+        "alert_email",
+        "ui_health_path",
+        "thresholds"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "metrics_interval_seconds": {
+          "description": "Host metric collection interval. Values below 60 seconds would create high-resolution AWS metrics.",
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 300
+        },
+        "log_retention_days": {
+          "description": "Retention supported by both CloudWatch Logs and Cloud Logging.",
+          "type": "integer",
+          "enum": [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 2192, 2557, 2922, 3288, 3653]
+        },
+        "alert_email": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        },
+        "ui_health_path": {
+          "type": "string",
+          "pattern": "^/[^ ]*$"
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu_percent", "memory_percent", "disk_percent"],
+          "properties": {
+            "cpu_percent": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+            },
+            "memory_percent": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+            },
+            "disk_percent": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+            }
+          }
         }
       }
     },
@@ -312,8 +372,9 @@
             "management_port",
             "username",
             "vhost",
-            "queue"
-            ,"image"
+            "queue",
+            "image",
+            "metrics_port"
           ],
           "properties": {
             "amqp_port": {
@@ -338,13 +399,16 @@
             "image": {
               "type": "string",
               "minLength": 1
+            },
+            "metrics_port": {
+              "$ref": "#/$defs/port"
             }
           }
         },
         "redis": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["port", "database", "image"],
+          "required": ["port", "database", "image", "metrics_port", "exporter_image"],
           "properties": {
             "port": {
               "$ref": "#/$defs/port"
@@ -354,6 +418,13 @@
               "minimum": 0
             },
             "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "metrics_port": {
+              "$ref": "#/$defs/port"
+            },
+            "exporter_image": {
               "type": "string",
               "minLength": 1
             }

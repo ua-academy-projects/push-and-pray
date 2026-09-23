@@ -1,0 +1,81 @@
+{
+  "agent": {
+    "metrics_collection_interval": {{ monitoring_agent_interval_seconds }},
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "namespace": "OilScope/{{ oilscope_config.environment }}",
+    "aggregation_dimensions": [["InstanceId"]],
+    "append_dimensions": {
+      "InstanceId": "${aws:InstanceId}",
+      "InstanceType": "${aws:InstanceType}"
+    },
+    "metrics_collected": {
+      "cpu": {
+        "measurement": ["cpu_usage_active"],
+        "metrics_collection_interval": {{ monitoring_agent_interval_seconds }},
+        "totalcpu": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent"],
+        "metrics_collection_interval": {{ monitoring_agent_interval_seconds }}
+      },
+      "disk": {
+        "measurement": ["used_percent"],
+        "metrics_collection_interval": {{ monitoring_agent_interval_seconds }},
+        "resources": ["/"],
+        "ignore_file_system_types": ["sysfs", "devtmpfs", "tmpfs", "overlay", "squashfs"]
+      }
+    }
+  },
+  "logs": {
+{% if oilscope_role == 'infra' %}
+    "metrics_collected": {
+      "prometheus": {
+        "cluster_name": "{{ oilscope_config.name_prefix }}-{{ oilscope_config.environment }}",
+        "log_group_name": "/oilscope/{{ oilscope_config.environment }}/prometheus",
+        "prometheus_config_path": "{{ monitoring_agent_aws_prometheus_config_path }}",
+        "emf_processor": {
+          "metric_declaration_dedup": true,
+          "metric_namespace": "OilScope/{{ oilscope_config.environment }}",
+          "metric_declaration": [
+            {
+              "source_labels": ["job"],
+              "label_matcher": "^rabbitmq$",
+              "dimensions": [["job"]],
+              "metric_selectors": [
+                "^rabbitmq_connections$",
+                "^rabbitmq_consumers$",
+                "^rabbitmq_queue_messages_ready$",
+                "^rabbitmq_queue_messages_unacked$"
+              ]
+            },
+            {
+              "source_labels": ["job"],
+              "label_matcher": "^redis$",
+              "dimensions": [["job"]],
+              "metric_selectors": [
+                "^redis_up$",
+                "^redis_connected_clients$",
+                "^redis_memory_used_bytes$",
+                "^redis_keyspace_(hits|misses)_total$"
+              ]
+            }
+          ]
+        }
+      }
+    },
+{% endif %}
+    "logs_collected": {
+      "journald": {
+        "collect_list": [
+          {
+            "log_group_name": "/oilscope/{{ oilscope_config.environment }}/journald",
+            "log_stream_name": "{instance_id}",
+            "priority": "info"
+          }
+        ]
+      }
+    }
+  }
+}

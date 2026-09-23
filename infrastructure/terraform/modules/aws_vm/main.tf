@@ -3,7 +3,7 @@ resource "aws_instance" "vms" {
 
   ami                  = data.aws_ami.images[each.value.image].id
   instance_type        = var.config.sizes[each.value.machine_type].aws
-  iam_instance_profile = each.value.role == "bastion" ? null : var.instance_profile_names[each.key]
+  iam_instance_profile = var.instance_profile_names[each.key]
 
   subnet_id                   = each.value.assign_public_ip ? var.network.management_subnet_id : var.network.vm_subnet_id
   private_ip                  = try(each.value.internal_ips.aws, each.value.internal_ip)

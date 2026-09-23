@@ -9,9 +9,14 @@ services:
       RABBITMQ_DEFAULT_USER: "{{ oilscope_config.services.rabbitmq.username }}"
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
       RABBITMQ_DEFAULT_VHOST: "{{ oilscope_config.services.rabbitmq.vhost }}"
+    command:
+      - sh
+      - -ec
+      - rabbitmq-plugins enable --offline rabbitmq_prometheus && exec rabbitmq-server
     ports:
       - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:{{ oilscope_config.services.rabbitmq.amqp_port }}:5672"
       - "${RABBITMQ_BIND_ADDRESS:-0.0.0.0}:{{ oilscope_config.services.rabbitmq.management_port }}:15672"
+      - "127.0.0.1:{{ oilscope_config.services.rabbitmq.metrics_port }}:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -21,6 +26,10 @@ services:
       retries: 20
       start_period: 20s
     stop_grace_period: 30s
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/rabbitmq
 
 volumes:
   rabbitmq_data:

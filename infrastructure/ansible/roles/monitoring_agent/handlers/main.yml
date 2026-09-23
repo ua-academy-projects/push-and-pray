@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Apply CloudWatch Agent configuration
+  ansible.builtin.command:
+    argv:
+      - /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+      - -a
+      - fetch-config
+      - -m
+      - ec2
+      - -s
+      - -c
+      - "file:{{ monitoring_agent_aws_config_path }}"
+  changed_when: true
+
+- name: Restart Google Cloud Ops Agent
+  ansible.builtin.systemd_service:
+    name: google-cloud-ops-agent
+    enabled: true
+    state: restarted

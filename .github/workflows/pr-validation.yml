@@ -144,17 +144,30 @@ jobs:
 
       - name: Apply database migrations
         run: |
-          for migration in database/migrations/*.sql; do
-            echo "Applying ${migration}"
+          docker run --rm --network host \
+            -e PGHOST=127.0.0.1 \
+            -e PGPORT=5432 \
+            -e PGUSER=oil_tracker \
+            -e PGDATABASE=oil_tracker \
+            -e PGPASSWORD="${DB_PASSWORD}" \
+            -e PGSSLMODE=disable \
+            petroscope-postgres:local \
+            petroscope-migrate
 
-            docker compose \
-              -f infrastructure/docker/compose.database.yaml \
-              exec -T postgres \
-              psql \
-                -v ON_ERROR_STOP=1 \
-                -U oil_tracker \
-                -d oil_tracker < "${migration}"
-          done
+          second_run="$(
+            docker run --rm --network host \
+              -e PGHOST=127.0.0.1 \
+              -e PGPORT=5432 \
+              -e PGUSER=oil_tracker \
+              -e PGDATABASE=oil_tracker \
+              -e PGPASSWORD="${DB_PASSWORD}" \
+              -e PGSSLMODE=disable \
+              petroscope-postgres:local \
+              petroscope-migrate
+          )"
+
+          echo "${second_run}"
+          grep -q 'applied=0' <<< "${second_run}"
 
       - name: Verify database schema
         run: |
@@ -165,7 +178,20 @@ jobs:
               -v ON_ERROR_STOP=1 \
               -U oil_tracker \
               -d oil_tracker \
-              -c "SELECT source_observed_at FROM price_observations LIMIT 0;"
+              -c "SELECT source_observed_at FROM price_observations LIMIT 0; \
+                  SELECT count(*) FROM schema_migrations;"
+
+          migration_count="$(
+            docker compose \
+              -f infrastructure/docker/compose.database.yaml \
+              exec -T postgres \
+              psql -At \
+                -U oil_tracker \
+                -d oil_tracker \
+                -c 'SELECT count(*) FROM schema_migrations;'
+          )"
+          expected_count="$(find database/migrations -name '*.sql' | wc -l)"
+          test "${migration_count}" -eq "${expected_count}"
 
       - name: Stop PostgreSQL
         if: always()

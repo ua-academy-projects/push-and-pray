@@ -30,4 +30,6 @@ ansible-playbook -i inventory/oilscope.aws.yml playbooks/deploy_workloads.yml
 ```
 
 Use `inventory/oilscope.gcp.yml` for GCP. The managed PostgreSQL instance is operated
-through RDS or Cloud SQL and does not have a Compose project on a VM.
+through RDS or Cloud SQL and does not have a Compose project on a VM. The `infra`
+playbook runs the database image once to apply pending migrations before application
+workloads start.

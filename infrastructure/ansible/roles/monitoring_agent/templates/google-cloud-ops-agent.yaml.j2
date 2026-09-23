@@ -1,0 +1,47 @@
+# Managed by Ansible.
+logging:
+  receivers:
+    journald:
+      type: systemd_journald
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: [journald]
+
+metrics:
+  receivers:
+    hostmetrics:
+      type: hostmetrics
+      collection_interval: {{ monitoring_agent_interval_seconds }}s
+{% if oilscope_role == 'infra' %}
+    application_prometheus:
+      type: prometheus
+      config:
+        scrape_configs:
+          - job_name: rabbitmq
+            scrape_interval: {{ monitoring_agent_interval_seconds }}s
+            static_configs:
+              - targets:
+                  - 127.0.0.1:{{ oilscope_config.services.rabbitmq.metrics_port }}
+            metric_relabel_configs:
+              - source_labels: [__name__]
+                regex: rabbitmq_(connections|consumers|queue_messages_ready|queue_messages_unacked)
+                action: keep
+          - job_name: redis
+            scrape_interval: {{ monitoring_agent_interval_seconds }}s
+            static_configs:
+              - targets:
+                  - 127.0.0.1:{{ oilscope_config.services.redis.metrics_port }}
+            metric_relabel_configs:
+              - source_labels: [__name__]
+                regex: redis_(up|connected_clients|memory_used_bytes|keyspace_hits_total|keyspace_misses_total)
+                action: keep
+{% endif %}
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: [hostmetrics]
+{% if oilscope_role == 'infra' %}
+      application_prometheus:
+        receivers: [application_prometheus]
+{% endif %}

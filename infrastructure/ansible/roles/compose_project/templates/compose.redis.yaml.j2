@@ -21,6 +21,29 @@ services:
       retries: 20
       start_period: 10s
     stop_grace_period: 20s
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/redis
+
+  redis-exporter:
+    image: "{{ oilscope_config.services.redis.exporter_image }}"
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    ports:
+      - "127.0.0.1:{{ oilscope_config.services.redis.metrics_port }}:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: oilscope/redis-exporter
 
 volumes:
   redis_data:

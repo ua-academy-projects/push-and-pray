@@ -20,6 +20,8 @@
 
     - role: docker_engine
 
+    - role: monitoring_agent
+
     - role: compose_project
       vars:
         compose_project_workload: "{{ oilscope_role }}"

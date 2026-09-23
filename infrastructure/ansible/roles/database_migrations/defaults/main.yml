@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_migrations_image: >-
+  {{ oilscope_config.registry.repository }}/database:{{ oilscope_config.registry.image_sha }}
+database_migrations_host: ""
+database_migrations_port: "{{ oilscope_config.services.database.port }}"
+database_migrations_name: "{{ oilscope_config.services.database.name }}"
+database_migrations_username: "{{ oilscope_config.services.database.username }}"
+database_migrations_password: ""
+database_migrations_ssl_mode: "{{ oilscope_config.services.database.ssl_mode }}"
+database_migrations_docker_config_dir: /run/oilscope/docker-auth
+database_migrations_env_file: /run/oilscope/database-migrations.env

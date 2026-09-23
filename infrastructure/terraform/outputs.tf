@@ -47,3 +47,11 @@ output "service_endpoints" {
     } : {},
   )
 }
+
+output "monitoring" {
+  description = "Provider destinations for host metrics and centralized logs."
+  value = merge(
+    try({ aws = module.aws_monitoring[0].destination }, {}),
+    try({ gcp = module.gcp_monitoring[0].destination }, {}),
+  )
+}

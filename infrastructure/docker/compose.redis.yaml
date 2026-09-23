@@ -20,6 +20,29 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/redis
+
+  redis-exporter:
+    image: ${REDIS_EXPORTER_IMAGE:-oliver006/redis_exporter:v1.89.0-alpine}
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    ports:
+      - "127.0.0.1:9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: petroscope/redis-exporter
 
 volumes:
   redis_data:
