@@ -13,7 +13,7 @@ history_rabbitmq_password: ""
 history_managed_db_enabled: >-
   {{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_db.enabled
      | default(false) }}
-history_infra_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+history_infra_host: "{{ hostvars[groups['infra'][0]].internal_ip }}"
 
 managed_db_host: "{{ managed_db_host_value | default('') }}"
 history_database_host: >-

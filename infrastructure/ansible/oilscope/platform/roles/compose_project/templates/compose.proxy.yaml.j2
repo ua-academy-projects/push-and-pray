@@ -13,7 +13,7 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
       - >-
         --certificatesresolvers.letsencrypt.acme.email={{
-          compose_project_config.vms.ui.public_endpoint.acme_email }}
+          (compose_project_config.vms.values() | selectattr('public_endpoint', 'defined') | first).public_endpoint.acme_email }}
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--ping=true"
       - "--log.level=INFO"

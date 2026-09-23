@@ -1,7 +1,7 @@
 http:
   routers:
     ui:
-      rule: "Host(`{{ compose_project_config.vms.ui.public_endpoint.hostname }}`)"
+      rule: "Host(`{{ (compose_project_config.vms.values() | selectattr('public_endpoint', 'defined') | first).public_endpoint.hostname }}`)"
       entryPoints:
         - websecure
       service: ui

@@ -19,7 +19,7 @@ fetcher_compose_environment: {}
 fetcher_managed_db_enabled: >-
   {{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_db.enabled
      | default(false) }}
-fetcher_infra_host: "{{ hostvars[groups['database'][0]].internal_ip }}"
+fetcher_infra_host: "{{ hostvars[groups['infra'][0]].internal_ip }}"
 
 managed_db_host: "{{ managed_db_host_value | default('') }}"
 fetcher_database_host: >-
