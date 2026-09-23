@@ -64,8 +64,8 @@ resource "aws_vpc_security_group_ingress_rule" "history_api" {
 
   security_group_id            = aws_security_group.roles["history"].id
   referenced_security_group_id = aws_security_group.roles["ui"].id
-  from_port                    = var.config.service_ports.history_api
-  to_port                      = var.config.service_ports.history_api
+  from_port                    = var.config.services.history.port
+  to_port                      = var.config.services.history.port
   ip_protocol                  = "tcp"
 }
 
@@ -77,7 +77,7 @@ resource "aws_vpc_security_group_ingress_rule" "postgresql" {
 
   security_group_id            = aws_security_group.roles["database"].id
   referenced_security_group_id = aws_security_group.roles[each.value].id
-  from_port                    = var.config.service_ports.postgresql
-  to_port                      = var.config.service_ports.postgresql
+  from_port                    = var.config.services.database.port
+  to_port                      = var.config.services.database.port
   ip_protocol                  = "tcp"
 }

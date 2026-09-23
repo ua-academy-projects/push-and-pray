@@ -8,4 +8,4 @@ history_postgres_password: ""
 history_health_retries: 30
 history_health_delay: 2
 history_docker_config_dir: /run/oilscope/docker-auth
-history_host_port: "{{ oilscope_config.service_ports.history_api }}"
+history_host_port: "{{ oilscope_config.services.history.port }}"

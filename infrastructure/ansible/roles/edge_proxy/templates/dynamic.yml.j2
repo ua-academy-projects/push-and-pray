@@ -1,7 +1,7 @@
 http:
   routers:
     ui:
-      rule: "Host(`{{ edge_proxy_public_endpoint.hostname }}`)"
+      rule: "Host(`{{ edge_proxy_public_endpoint.domain }}`)"
       entryPoints:
         - websecure
       service: ui

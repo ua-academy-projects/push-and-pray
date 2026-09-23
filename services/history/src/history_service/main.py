@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from . import models  # noqa: F401
 from .config import get_settings
 from .database import Base, engine, get_db
-from .messaging import PGMQConsumer
 from .models import PriceObservation
+from .rabbitmq_messaging import RabbitMQConsumer
 from .repository import (
     insert_batch,
     latest_observations,
@@ -36,7 +36,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-pgmq_consumer = PGMQConsumer(settings)
+rabbitmq_consumer = RabbitMQConsumer(settings)
 
 
 @asynccontextmanager
@@ -45,12 +45,12 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
-    await pgmq_consumer.start()
+    await rabbitmq_consumer.start()
 
     try:
         yield
     finally:
-        await pgmq_consumer.stop()
+        await rabbitmq_consumer.stop()
 
 
 app = FastAPI(
@@ -67,23 +67,10 @@ def health(
 ) -> dict[str, str]:
     db.execute(text("SELECT 1"))
 
-    extension_installed = db.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_extension
-                WHERE extname = 'pgmq'
-            )
-            """
-        )
-    ).scalar_one()
-
     return {
         "status": "ok",
         "database": "connected",
-        "pgmq_extension": ("installed" if extension_installed else "missing"),
-        "pgmq_consumer": ("ready" if pgmq_consumer.is_ready else "not_ready"),
+        "rabbitmq": "ready" if rabbitmq_consumer.is_ready else "not_ready",
     }
 
 

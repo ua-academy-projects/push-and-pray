@@ -21,7 +21,7 @@
     "ansible",
     "registry",
     "network",
-    "service_ports",
+    "services",
     "vms"
   ],
   "properties": {
@@ -141,20 +141,82 @@
         }
       }
     },
-    "service_ports": {
+    "services": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql"],
+      "required": ["history", "database", "rabbitmq", "redis"],
       "properties": {
-        "history_api": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": {
+            "port": {
+              "$ref": "#/$defs/port"
+            }
+          }
         },
-        "postgresql": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port", "name", "username"],
+          "properties": {
+            "port": {
+              "$ref": "#/$defs/port"
+            },
+            "name": {
+              "$ref": "#/$defs/service_identifier"
+            },
+            "username": {
+              "$ref": "#/$defs/service_identifier"
+            }
+          }
+        },
+        "rabbitmq": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "amqp_port",
+            "management_port",
+            "username",
+            "vhost",
+            "queue"
+          ],
+          "properties": {
+            "amqp_port": {
+              "$ref": "#/$defs/port"
+            },
+            "management_port": {
+              "$ref": "#/$defs/port"
+            },
+            "username": {
+              "$ref": "#/$defs/service_identifier"
+            },
+            "vhost": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?:/|[A-Za-z0-9._-]+)$"
+            },
+            "queue": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        },
+        "redis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port", "database"],
+          "properties": {
+            "port": {
+              "$ref": "#/$defs/port"
+            },
+            "database": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
         }
       }
     },
@@ -188,6 +250,15 @@
     }
   },
   "$defs": {
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "service_identifier": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]*$"
+    },
     "abstract_label": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
@@ -417,9 +488,9 @@
         "public_endpoint": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["hostname", "acme_email"],
+          "required": ["domain", "acme_email"],
           "properties": {
-            "hostname": {
+            "domain": {
               "type": "string",
               "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
             },

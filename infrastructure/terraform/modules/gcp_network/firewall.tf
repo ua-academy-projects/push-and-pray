@@ -51,7 +51,7 @@ resource "google_compute_firewall" "history_api" {
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.config.service_ports.history_api)]
+    ports    = [tostring(var.config.services.history.port)]
   }
 }
 
@@ -69,6 +69,6 @@ resource "google_compute_firewall" "postgresql" {
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(var.config.service_ports.postgresql)]
+    ports    = [tostring(var.config.services.database.port)]
   }
 }

@@ -8,4 +8,4 @@ ui_postgres_password: ""
 ui_health_retries: 30
 ui_health_delay: 2
 ui_docker_config_dir: /run/oilscope/docker-auth
-ui_history_port: "{{ oilscope_config.service_ports.history_api }}"
+ui_history_port: "{{ oilscope_config.services.history.port }}"

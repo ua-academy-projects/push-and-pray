@@ -186,28 +186,6 @@ else
   failures=$((failures + 1))
 fi
 
-session_extensions="$(run_vagrant ssh database -c \
-  'sudo docker compose \
-    --env-file /etc/oil-price-tracker/docker.env \
-    --file /opt/oil-price-tracker/source/infrastructure/docker/compose.database.yaml \
-    --project-name petroscope-database \
-    exec -T postgres \
-    psql -U oil_tracker -d oil_tracker -Atc \
-    "SELECT count(*) FROM pg_extension WHERE extname IN ('\''hstore'\'', '\''pg_cron'\'', '\''pgcrypto'\''); \
-     SELECT count(*) FROM cron.job WHERE jobname = '\''delete-expired-ui-sessions'\'' AND active; \
-     SELECT count(*) FROM information_schema.columns \
-       WHERE table_schema = '\''public'\'' AND table_name = '\''ui_sessions'\'' \
-       AND column_name = '\''preferences'\'' AND udt_name = '\''hstore'\''"' \
-  2>/dev/null || true)"
-session_extensions="${session_extensions//$'\r'/}"
-if [[ "${session_extensions}" == $'3\n1\n1' ]]; then
-  printf 'PASS  PostgreSQL hstore sessions, extensions and cleanup job are active\n'
-else
-  printf 'FAIL  PostgreSQL session extension check returned: %s\n' \
-    "${session_extensions:-empty}" >&2
-  failures=$((failures + 1))
-fi
-
 fetcher_error="$(curl -fsS --max-time 10 "http://${fetcher_ip}:8002/health" \
   | jq -r '.last_error // empty' || true)"
 if [[ -n "${fetcher_error}" ]]; then

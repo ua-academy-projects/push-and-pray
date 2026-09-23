@@ -9,7 +9,7 @@ services:
     init: true
     environment:
       # yamllint disable rule:line-length
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-{{ oilscope_config.service_ports.postgresql }}}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-{{ oilscope_config.services.database.port }}}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       PGMQ_VISIBILITY_TIMEOUT_SECONDS: ${PGMQ_VISIBILITY_TIMEOUT_SECONDS:-60}
@@ -18,7 +18,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: UTC
     ports:
-      - "${HISTORY_BIND_ADDRESS:-0.0.0.0}:${HISTORY_HOST_PORT:-{{ oilscope_config.service_ports.history_api }}}:8001"
+      - "${HISTORY_BIND_ADDRESS:-0.0.0.0}:${HISTORY_HOST_PORT:-{{ oilscope_config.services.history.port }}}:8001"
     healthcheck:
       test:
         - CMD

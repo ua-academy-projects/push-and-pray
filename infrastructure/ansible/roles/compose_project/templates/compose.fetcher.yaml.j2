@@ -11,7 +11,7 @@ services:
       OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
       DATA_PROVIDER: ${DATA_PROVIDER:-oilpriceapi}
       # yamllint disable rule:line-length
-      DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-{{ oilscope_config.service_ports.postgresql }}}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
+      DATABASE_URL: postgres://${POSTGRES_USER:-oil_tracker}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:-{{ oilscope_config.services.database.port }}}/${POSTGRES_DB:-oil_tracker}?sslmode=${DATABASE_SSLMODE:-disable}
       # yamllint enable rule:line-length
       PGMQ_QUEUE: ${PGMQ_QUEUE:-price_observations}
       FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}

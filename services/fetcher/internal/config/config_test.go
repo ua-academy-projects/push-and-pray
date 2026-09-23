@@ -27,10 +27,7 @@ func TestParseHours(t *testing.T) {
 func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 	t.Setenv("DATA_PROVIDER", "oilpriceapi")
 	t.Setenv("OILPRICEAPI_KEY", "test-key")
-	t.Setenv(
-		"DATABASE_URL",
-		"postgres://oil_tracker:test@localhost:5432/oil_tracker?sslmode=disable",
-	)
+	t.Setenv("RABBITMQ_URL", "amqp://oil_tracker:test@localhost:5672/oil_tracker")
 
 	configuration, err := Load()
 	if err != nil {
@@ -53,13 +50,22 @@ func TestLoadOilPriceAPIConfiguration(t *testing.T) {
 
 	if configuration.QueueName != "price_observations" {
 		t.Fatalf(
-			"unexpected PGMQ queue: %s",
+			"unexpected RabbitMQ queue: %s",
 			configuration.QueueName,
 		)
 	}
 
-	if configuration.DatabaseURL == "" {
-		t.Fatal("DATABASE_URL should not be empty")
+	if configuration.RabbitMQURL == "" {
+		t.Fatal("RABBITMQ_URL should not be empty")
+	}
+}
+
+func TestLoadRequiresRabbitMQURL(t *testing.T) {
+	t.Setenv("DATA_PROVIDER", "mock")
+	t.Setenv("RABBITMQ_URL", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load should fail when RABBITMQ_URL is empty")
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 type Config struct {
 	OilPriceAPIKey string
 	DataProvider   string
-	DatabaseURL    string
+	RabbitMQURL    string
 	QueueName      string
 	CronHours      []int
 	Timezone       *time.Location
@@ -32,12 +32,9 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("OILPRICEAPI_KEY is required when DATA_PROVIDER=oilpriceapi")
 	}
 
-	databaseURL := strings.TrimSpace(env(
-		"DATABASE_URL",
-		"postgres://oil_tracker:change-me@localhost:5432/oil_tracker?sslmode=disable",
-	))
-	if databaseURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL must not be empty")
+	rabbitMQURL := strings.TrimSpace(os.Getenv("RABBITMQ_URL"))
+	if rabbitMQURL == "" {
+		return Config{}, fmt.Errorf("RABBITMQ_URL is required")
 	}
 
 	hours, err := ParseHours(env("FETCH_CRON_HOURS", "0,6,12,18"))
@@ -63,8 +60,8 @@ func Load() (Config, error) {
 	return Config{
 		OilPriceAPIKey: apiKey,
 		DataProvider:   provider,
-		DatabaseURL:    databaseURL,
-		QueueName:      env("PGMQ_QUEUE", "price_observations"),
+		RabbitMQURL:    rabbitMQURL,
+		QueueName:      env("RABBITMQ_QUEUE", "price_observations"),
 		CronHours:      hours,
 		Timezone:       location,
 		FetchOnStartup: fetchOnStartup,

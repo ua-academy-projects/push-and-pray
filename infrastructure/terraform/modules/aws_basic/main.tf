@@ -25,8 +25,9 @@ resource "aws_iam_instance_profile" "profiles" {
 resource "aws_secretsmanager_secret" "secrets" {
   for_each = local.secret_ids
 
-  name = each.value
-  tags = var.config.common_labels
+  name                    = each.value
+  recovery_window_in_days = var.config.environment == "dev" ? 0 : 30
+  tags                    = var.config.common_labels
 }
 
 resource "aws_iam_role_policy" "readers" {

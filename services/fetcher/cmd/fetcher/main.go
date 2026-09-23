@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -13,11 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
-
 	"oil-price-tracker/fetcher/internal/config"
-	"oil-price-tracker/fetcher/internal/pgmq"
 	"oil-price-tracker/fetcher/internal/provider"
+	"oil-price-tracker/fetcher/internal/rabbitmq"
 	"oil-price-tracker/fetcher/internal/schedule"
 	"oil-price-tracker/fetcher/internal/service"
 )
@@ -42,22 +39,10 @@ func main() {
 		}
 	}
 
-	database, err := sql.Open("pgx", configuration.DatabaseURL)
-	if err != nil {
-		slog.Error("open PostgreSQL connection", "error", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	if err := database.Ping(); err != nil {
-		slog.Error("connect to PostgreSQL", "error", err)
-		os.Exit(1)
-	}
-
 	collector := service.New(
 		priceProvider,
-		pgmq.Publisher{
-			DB:        database,
+		rabbitmq.Publisher{
+			URL:       configuration.RabbitMQURL,
 			QueueName: configuration.QueueName,
 		},
 	)
@@ -141,7 +126,7 @@ func main() {
 				"status":   "ok",
 				"provider": configuration.DataProvider,
 				"running":  running,
-				"delivery": "pgmq",
+				"delivery": "rabbitmq",
 				"queue":    configuration.QueueName,
 				"schedule": map[string]any{
 					"hours":    configuration.CronHours,

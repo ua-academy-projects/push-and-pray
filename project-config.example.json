@@ -89,9 +89,26 @@
     "workload_subnet_cidr": "10.0.1.0/26",
     "ui_public_ports": [80, 443]
   },
-  "service_ports": {
-    "history_api": 8001,
-    "postgresql": 5432
+  "services": {
+    "history": {
+      "port": 8001
+    },
+    "database": {
+      "port": 5432,
+      "name": "oil_tracker",
+      "username": "oil_tracker"
+    },
+    "rabbitmq": {
+      "amqp_port": 5672,
+      "management_port": 15672,
+      "username": "oil_tracker",
+      "vhost": "oil_tracker",
+      "queue": "price_observations"
+    },
+    "redis": {
+      "port": 6379,
+      "database": 0
+    }
   },
   "vms": {
     "bastion": {
@@ -122,6 +139,8 @@
       "network_tags": ["infra"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -138,6 +157,7 @@
       "network_tags": ["history"],
       "secret_mappings": {
         "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "GHCR_TOKEN": "example-ghcr-token"
       }
     },
@@ -153,7 +173,7 @@
       "assign_public_ip": false,
       "network_tags": ["fetcher"],
       "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
+        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
         "OILPRICEAPI_KEY": "example-api-key",
         "GHCR_TOKEN": "example-ghcr-token"
       }
@@ -173,11 +193,11 @@
       "assign_public_ip": true,
       "network_tags": ["ui"],
       "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
+        "REDIS_PASSWORD": "example-redis-password",
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "public_endpoint": {
-        "hostname": "oilscope.example.com",
+        "domain": "oilscope.example.com",
         "acme_email": "example-operator@example.com"
       }
     }

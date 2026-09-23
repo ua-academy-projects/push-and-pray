@@ -3,9 +3,9 @@
 - name: Validate the public UI endpoint
   ansible.builtin.assert:
     that:
-      - edge_proxy_public_endpoint.hostname | default('') | length > 0
+      - edge_proxy_public_endpoint.domain | default('') | length > 0
       - edge_proxy_public_endpoint.acme_email | default('') | length > 0
-    fail_msg: The edge proxy requires the UI hostname and ACME email address.
+    fail_msg: The edge proxy requires the UI domain and ACME email address.
 
 - name: Check whether the shared edge network already exists
   ansible.builtin.command:
