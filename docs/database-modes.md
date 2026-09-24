@@ -5,9 +5,10 @@ defined beside `default_cloud` and `default_location` in `project-config.json`.
 
 | `database_mode` | `default_cloud` | PostgreSQL | Messaging | UI sessions |
 | --- | --- | --- | --- | --- |
-| `postgres_extensions` | `aws` or `gcp` | PostgreSQL container on the `database` VM | PGMQ | PostgreSQL hstore/pg_cron |
+| `postgres_extensions` | `aws`, `gcp`, or `azure` | PostgreSQL container on the `database` VM | PGMQ | PostgreSQL hstore/pg_cron |
 | `managed` | `aws` | Private Amazon RDS for PostgreSQL | RabbitMQ on `history` | Redis on `ui` |
 | `managed` | `gcp` | Private Cloud SQL for PostgreSQL | RabbitMQ on `history` | Redis on `ui` |
+| `managed` | `azure` | Private PostgreSQL Flexible Server | RabbitMQ on `history` | Redis on `ui` |
 
 Self-managed mode:
 
@@ -36,7 +37,11 @@ Managed GCP (Cloud SQL):
 }
 ```
 
-There is no separate RDS/Cloud SQL switch. In managed mode `default_cloud` is
+For Azure, use `default_cloud: "azure"` with `database_mode: "managed"`; see
+[Azure configuration](azure.md) for private networking and administrator-password
+handoff to the existing secret workflow.
+
+There is no separate provider-specific database switch. In managed mode `default_cloud` is
 the only provider selector. Database-consuming workload VMs must use that cloud
 and the default location; Terraform rejects mixed-cloud managed topologies
 because they cannot satisfy the private-connectivity requirement.

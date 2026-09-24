@@ -63,3 +63,38 @@ moved {
   from = module.aws_key_pair.aws_key_pair.bootstrap
   to   = module.aws_vm.aws_key_pair.bootstrap
 }
+
+module "azure_network" {
+  source = "./modules/azure/network"
+
+  config = local.config
+}
+
+module "azure_vm" {
+  source = "./modules/azure/vm"
+
+  config                     = local.config
+  resource_group_names       = module.azure_network.resource_group_names
+  management_subnet_ids      = module.azure_network.management_subnet_ids
+  workload_subnet_ids        = module.azure_network.workload_subnet_ids
+  network_security_group_ids = module.azure_network.network_security_group_ids
+}
+
+module "azure_database" {
+  source = "./modules/azure/database"
+
+  config                         = local.config
+  resource_group_name            = module.azure_network.default_resource_group_name
+  delegated_subnet_id            = module.azure_network.database_subnet_id
+  private_dns_zone_id            = module.azure_network.database_private_dns_zone_id
+  administrator_password         = var.azure_database_admin_password
+  administrator_password_version = var.azure_database_admin_password_version
+}
+
+module "azure_monitoring" {
+  source = "./modules/azure/monitoring"
+
+  config               = local.config
+  vms                  = module.azure_vm.vms
+  resource_group_names = module.azure_network.resource_group_names
+}

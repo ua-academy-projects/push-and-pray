@@ -18,7 +18,15 @@ response is reused.
 `oilscope.platform.oilscope` does not talk to either cloud itself. It reads
 the project configuration, resolves `vm.cloud` with `default_cloud` as the
 fallback, and hands each non-empty cloud subset to `google.cloud.gcp_compute`
-or `amazon.aws.aws_ec2`.
+or `amazon.aws.aws_ec2`, or `azure.azcollection.azure_rm`.
+
+Azure uses the same role groups and bastion SSH routing, with the username from
+`ssh_users`. See [Azure configuration](../../../docs/azure.md) for mappings,
+authentication, Key Vault, and manual checks. After installing the collections,
+install the Python dependencies from the installed
+`ansible_collections/azure/azcollection/requirements.txt` as well. Azure discovery
+is scoped to the generated resource groups, VM names, and application/environment
+tags; its VM UUID is used for replacement-safe SSH host aliases.
 
 The wrapper exists because `gcp_compute` can neither read the project
 configuration nor evaluate Jinja in its own configuration file — a template

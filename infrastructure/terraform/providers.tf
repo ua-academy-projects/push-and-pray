@@ -11,5 +11,12 @@ provider "aws" {
   allowed_account_ids = [local.config.clouds.aws.account_id]
 }
 
-# Authentication is read by the provider from CLOUDFLARE_API_TOKEN.
 provider "cloudflare" {}
+
+provider "azurerm" {
+  features {}
+}
+
+provider "azapi" {
+  skip_provider_registration = true
+}

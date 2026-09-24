@@ -7,3 +7,4 @@ secret_versions_generated_source_envs:
   - REDIS_PASSWORD
 secret_versions_gcloud: gcloud
 secret_versions_aws: aws
+secret_versions_azure: az

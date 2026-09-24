@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) Push and Pray team
-"""Derive GCP and AWS inventory settings from the shared project configuration."""
+"""Derive GCP, AWS, and Azure inventory from the shared project configuration."""
 
 import hashlib
 import json
@@ -30,7 +30,7 @@ author:
 description:
   - Reads the same project configuration JSON as Terraform, resolves each VM's
     effective cloud, and delegates discovery to C(google.cloud.gcp_compute) and
-    C(amazon.aws.aws_ec2) for the clouds that have matching VMs.
+    C(amazon.aws.aws_ec2) and C(azure.azcollection.azure_rm) for matching VMs.
   - Provider projects, regions, zones, names, labels, and tags are derived from
     the shared configuration rather than repeated in the inventory source.
 extends_documentation_fragment:
@@ -88,6 +88,7 @@ options:
 requirements:
   - google.cloud collection
   - amazon.aws collection
+  - azure.azcollection collection and its Python requirements
   - google-auth
   - requests
   - boto3
@@ -105,6 +106,7 @@ cache_timeout: 300
 DELEGATES = {
     "gcp": "google.cloud.gcp_compute",
     "aws": "amazon.aws.aws_ec2",
+    "azure": "azure.azcollection.azure_rm",
 }
 display = Display()
 
@@ -244,12 +246,17 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             cloud = vm.get("cloud", default_cloud)
             if cloud not in selected:
                 raise AnsibleParserError(f"vms.{name} selects unsupported cloud {cloud!r}")
-            selected[cloud][name] = vm
+            selected[cloud][name] = (
+                {"location": config["default_location"], **vm}
+                if cloud == "azure" else vm
+            )
 
         for cloud, vms in selected.items():
             workload_locations = {
                 vm["location"] for vm in vms.values() if vm.get("role") != bastion_role
             }
+            if cloud == "azure" and config.get("database_mode") == "managed" and default_cloud == cloud:
+                workload_locations.add(config["default_location"])
             selected[cloud] = {
                 name: vm for name, vm in vms.items()
                 if vm["location"] in workload_locations
@@ -289,6 +296,14 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 }
                 if cloud == "gcp":
                     context["oilscope_project_id"] = config["clouds"]["gcp"]["project_id"]
+                if cloud == "azure":
+                    context["oilscope_key_vault_name"] = config.get("clouds", {}).get("azure", {}).get("key_vault_name", "")
+                    context["ansible_python_interpreter"] = "/usr/bin/python3.12"
+                    # Discovery and grouping have finished; preserve raw values under safe names.
+                    host = self.inventory.hosts[hostname]
+                    for variable in ("name", "tags"):
+                        if variable in host.vars:
+                            context[f"azure_{variable}"] = host.vars.pop(variable)
                 if vm["role"] == bastion_role:
                     context["bastion_ssh_port"] = int(vm["ssh_port"])
                     context["ansible_port"] = int(
@@ -299,7 +314,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 host_vars = self.inventory.hosts[hostname].get_vars()
                 id_key = (
                     plain(self.get_option("vars_prefix")) + "id"
-                    if cloud == "gcp" else "aws_instance_id"
+                    if cloud == "gcp" else (
+                        "azure_instance_id" if cloud == "azure" else "aws_instance_id"
+                    )
                 )
                 instance_id = host_vars.get(id_key)
                 if not instance_id:
@@ -428,12 +445,49 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             },
         }
 
+    def _azure_settings(self, config, vms, common):
+        names = self._resource_names(config, vms)
+        prefix = f"{config['name_prefix']}-{config['environment']}"
+        resource_groups = sorted({
+            prefix + "-rg" + (
+                "" if vm["location"] == config["default_location"] else "-" + vm["location"]
+            )
+            for vm in vms.values()
+        })
+        is_bastion = f"tags.role | default('') == {common['bastion_role']!r}"
+        public = "(public_ipv4_address | default([]) | first | default(''))"
+        private = "(private_ipv4_addresses | first)"
+        return {
+            "plugin": DELEGATES["azure"],
+            "auth_source": "auto",
+            "include_vm_resource_groups": resource_groups,
+            "hostnames": ["name"],
+            "include_host_filters": [
+                f"name in {names!r} and "
+                f"(tags.application | default('')) == {common['application']!r} and "
+                f"(tags.environment | default('')) == {common['environment']!r}"
+            ],
+            "keyed_groups": [{"key": "tags.role", "prefix": "", "separator": ""}],
+            "conditional_groups": {
+                "workloads": f"tags.role is defined and not ({is_bastion})",
+            },
+            "hostvar_expressions": {
+                "internal_ip": private,
+                "public_ip": public,
+                "ansible_host": f"{public} if {is_bastion} else {private}",
+                "azure_instance_id": "vmid",
+                "oilscope_role": "tags.role | default('')",
+                "oilscope_cloud": "'azure'",
+            },
+        }
+
     def _build_settings(self, config):
         selected = self._effective_vms(config)
         common = self._common(config)
         builders = {
             "gcp": self._gcp_settings,
             "aws": self._aws_settings,
+            "azure": self._azure_settings,
         }
         return {
             cloud: builders[cloud](config, vms, common)
@@ -443,7 +497,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
     def _write_settings(self, cloud, settings):
         digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
-        suffixes = {"gcp": "gcp", "aws": "aws_ec2"}
+        suffixes = {"gcp": "gcp", "aws": "aws_ec2", "azure": "azure_rm"}
         generated = os.path.join(
             tempfile.gettempdir(), f"oilscope-{digest[:16]}.{suffixes[cloud]}.yml"
         )

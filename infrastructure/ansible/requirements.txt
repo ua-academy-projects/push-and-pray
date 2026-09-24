@@ -10,3 +10,5 @@ google-auth>=2.0.0
 requests>=2.25.0
 boto3>=1.34.0
 botocore>=1.34.0
+# Azure SDK versions must match the installed azure.azcollection; additionally
+# install that collection's requirements.txt (see inventory/README.md).

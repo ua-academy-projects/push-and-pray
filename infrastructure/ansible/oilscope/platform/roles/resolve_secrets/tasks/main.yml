@@ -48,3 +48,38 @@
   loop: "{{ resolve_secrets_aws_values.results | default([]) }}"
   no_log: true
   when: resolve_secrets_cloud == 'aws'
+
+- name: Require the Azure secret vault
+  ansible.builtin.assert:
+    that: resolve_secrets_key_vault_name | length > 0
+    fail_msg: Set clouds.azure.key_vault_name to the existing application Key Vault.
+  when: resolve_secrets_cloud == 'azure'
+
+- name: Read Azure application secrets
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_azure }}"
+      - keyvault
+      - secret
+      - show
+      - "--vault-name={{ resolve_secrets_key_vault_name }}"
+      - "--name={{ resolve_secrets_name_prefix }}-{{ resolve_secrets_environment }}-{{ item.value.secret_id }}"
+      - --query=value
+      - --output=tsv
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  register: resolve_secrets_azure_values
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: resolve_secrets_cloud == 'azure'
+
+- name: Resolve Azure application secrets
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | combine({
+           item.item.value.runtime_env: item.stdout
+         }) }}
+  loop: "{{ resolve_secrets_azure_values.results | default([]) }}"
+  no_log: true
+  when: resolve_secrets_cloud == 'azure'

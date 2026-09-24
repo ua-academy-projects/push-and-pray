@@ -130,6 +130,33 @@
       {{ secret_versions_catalog_list | selectattr('cloud', 'eq', 'gcp') | list }}
     secret_versions_aws_catalog: >-
       {{ secret_versions_catalog_list | selectattr('cloud', 'eq', 'aws') | list }}
+    secret_versions_azure_catalog: >-
+      {{ secret_versions_catalog_list | selectattr('cloud', 'eq', 'azure') | unique(attribute='secret_id') | list }}
+
+- name: Require the Azure secret vault
+  ansible.builtin.assert:
+    that: secret_versions_config.clouds.azure.key_vault_name | default('') | length > 0
+    fail_msg: Set clouds.azure.key_vault_name to the existing application Key Vault.
+  when: secret_versions_azure_catalog | length > 0
+
+- name: Look for Azure secrets
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_azure }}"
+      - keyvault
+      - secret
+      - show
+      - "--vault-name={{ secret_versions_config.clouds.azure.key_vault_name }}"
+      - "--name={{ item.secret_id }}"
+      - --query=id
+      - --output=tsv
+  loop: "{{ secret_versions_catalog_list | selectattr('cloud', 'eq', 'azure') | list }}"
+  register: secret_versions_azure_containers
+  changed_when: false
+  failed_when:
+    - secret_versions_azure_containers.rc != 0
+    - "'SecretNotFound' not in secret_versions_azure_containers.stderr"
+  check_mode: false
 
 - name: Look for GCP secret containers
   ansible.builtin.command:
@@ -177,7 +204,8 @@
          ~ '/' ~ item.item.secret_id }}
   loop: >-
     {{ (secret_versions_gcp_containers.results | default([]))
-       + (secret_versions_aws_containers.results | default([])) }}
+       + (secret_versions_aws_containers.results | default([]))
+       + (secret_versions_azure_containers.results | default([])) }}
   loop_control:
     label: "{{ secret_versions_result_key }}"
   when: item.rc == 0
@@ -293,6 +321,32 @@
          else secret_versions_generated_values[item.source_env] }}
     stdin_add_newline: false
   loop: "{{ secret_versions_aws_catalog }}"
+  changed_when: true
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - >-
+      lookup('ansible.builtin.env', item.source_env) | length > 0 or
+      item.source_env in secret_versions_generated_values
+
+- name: Add Azure secret versions
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_azure }}"
+      - keyvault
+      - secret
+      - set
+      - "--vault-name={{ secret_versions_config.clouds.azure.key_vault_name }}"
+      - "--name={{ item.secret_id }}"
+      - --file=/dev/stdin
+      - --encoding=utf-8
+      - --output=none
+    stdin: >-
+      {{ lookup('ansible.builtin.env', item.source_env)
+         if lookup('ansible.builtin.env', item.source_env) | length > 0
+         else secret_versions_generated_values[item.source_env] }}
+    stdin_add_newline: false
+  loop: "{{ secret_versions_azure_catalog }}"
   changed_when: true
   no_log: true
   when:

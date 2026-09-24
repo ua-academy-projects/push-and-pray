@@ -43,7 +43,7 @@
   ansible.builtin.assert:
     that:
       - oilscope_cloud is defined
-      - oilscope_cloud in ['aws', 'gcp']
+      - oilscope_cloud in ['aws', 'gcp', 'azure']
     fail_msg: >-
       host_baseline requires oilscope_cloud from the
       oilscope.platform.oilscope inventory plugin.

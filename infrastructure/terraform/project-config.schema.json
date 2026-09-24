@@ -47,6 +47,17 @@
       "additionalProperties": false,
       "required": ["gcp", "aws"],
       "properties": {
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key_vault_name": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$",
+              "description": "Existing Key Vault used by the Ansible secret workflow; no authentication fields belong in project config."
+            }
+          }
+        },
         "gcp": {
           "type": "object",
           "additionalProperties": false,
@@ -150,7 +161,7 @@
         },
         "database_subnet_cidrs": {
           "type": "array",
-          "description": "Two private CIDRs used for AWS RDS subnets in distinct availability zones.",
+          "description": "Two private CIDRs for AWS RDS; Azure Flexible Server delegates the first CIDR (at least /28).",
           "items": { "type": "string", "minLength": 1 },
           "minItems": 2,
           "maxItems": 2,
@@ -206,7 +217,7 @@
   "$defs": {
     "cloud": {
       "type": "string",
-      "enum": ["gcp", "aws"]
+      "enum": ["gcp", "aws", "azure"]
     },
     "logical_name": {
       "type": "string",
@@ -332,6 +343,12 @@
       "additionalProperties": false,
       "required": ["gcp", "aws"],
       "properties": {
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sku_name"],
+          "properties": { "sku_name": { "type": "string", "minLength": 1 } }
+        },
         "gcp": {
           "type": "object",
           "additionalProperties": false,
@@ -351,6 +368,12 @@
       "additionalProperties": false,
       "required": ["gcp", "aws"],
       "properties": {
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["vm_size"],
+          "properties": { "vm_size": { "type": "string", "minLength": 1 } }
+        },
         "gcp": {
           "type": "object",
           "additionalProperties": false,
@@ -380,6 +403,10 @@
       "additionalProperties": false,
       "required": ["gcp", "aws"],
       "properties": {
+        "azure": {
+          "type": "string",
+          "enum": ["Standard_LRS", "StandardSSD_LRS", "Premium_LRS"]
+        },
         "gcp": {
           "type": "string",
           "enum": ["pd-standard", "pd-balanced", "pd-ssd"]
@@ -395,6 +422,18 @@
       "additionalProperties": false,
       "required": ["gcp", "aws"],
       "properties": {
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["publisher", "offer", "sku", "version", "min_disk_size_gb"],
+          "properties": {
+            "publisher": { "type": "string", "minLength": 1 },
+            "offer": { "type": "string", "minLength": 1 },
+            "sku": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 },
+            "min_disk_size_gb": { "type": "integer", "minimum": 1 }
+          }
+        },
         "gcp": {
           "type": "object",
           "additionalProperties": false,
@@ -424,6 +463,12 @@
       "additionalProperties": false,
       "required": ["gcp", "aws"],
       "properties": {
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["region"],
+          "properties": { "region": { "type": "string", "minLength": 1 } }
+        },
         "gcp": {
           "type": "object",
           "additionalProperties": false,

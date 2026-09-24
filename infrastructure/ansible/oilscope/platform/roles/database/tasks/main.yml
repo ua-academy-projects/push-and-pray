@@ -26,7 +26,7 @@
     resolve_secrets_mappings: "{{ database_required_secrets }}"
   when: >-
     (database_postgres_password | length == 0 and
-     (database_mode == 'postgres_extensions' or oilscope_cloud == 'gcp')) or
+     (database_mode == 'postgres_extensions' or oilscope_cloud in ['gcp', 'azure'])) or
     database_history_postgres_password | length == 0 or
     (database_mode == 'postgres_extensions' and
      (database_fetcher_postgres_password | length == 0 or
@@ -393,7 +393,19 @@
           application_role,
           application_password
         );
+        {% if oilscope_cloud == 'azure' %}
+        EXECUTE format('GRANT USAGE, CREATE ON SCHEMA public TO %I', application_role);
+        EXECUTE format(
+          'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I',
+          application_role
+        );
+        EXECUTE format(
+          'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I',
+          application_role
+        );
+        {% else %}
         EXECUTE format('GRANT %I TO %I', '{{ database_postgres_user }}', application_role);
+        {% endif %}
       END
       $application_role$;
     stdin_add_newline: true

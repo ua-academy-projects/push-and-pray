@@ -25,6 +25,9 @@
     "size": "micro"
   },
   "clouds": {
+    "azure": {
+      "key_vault_name": "example-oilscope-secrets"
+    },
     "gcp": {
       "project_id": "example-project-12345"
     },
@@ -34,44 +37,27 @@
   },
   "locations": {
     "europe": {
-      "gcp": {
-        "region": "europe-west1",
-        "zone": "europe-west1-b"
-      },
-      "aws": {
-        "region": "eu-central-1",
-        "availability_zone": "eu-central-1a"
-      }
+      "gcp": { "region": "europe-west1", "zone": "europe-west1-b" },
+      "aws": { "region": "eu-central-1", "availability_zone": "eu-central-1a" },
+      "azure": { "region": "northeurope" }
     },
     "north_america": {
-      "gcp": {
-        "region": "us-central1",
-        "zone": "us-central1-a"
-      },
-      "aws": {
-        "region": "us-east-1",
-        "availability_zone": "us-east-1a"
-      }
+      "gcp": { "region": "us-central1", "zone": "us-central1-a" },
+      "aws": { "region": "us-east-1", "availability_zone": "us-east-1a" },
+      "azure": { "region": "eastus" }
     },
     "europe_west": {
-      "gcp": {
-        "region": "europe-west2",
-        "zone": "europe-west2-a"
-      },
-      "aws": {
-        "region": "eu-west-2",
-        "availability_zone": "eu-west-2a"
-      }
+      "gcp": { "region": "europe-west2", "zone": "europe-west2-a" },
+      "aws": { "region": "eu-west-2", "availability_zone": "eu-west-2a" },
+      "azure": { "region": "uksouth" }
     },
     "asia_pacific": {
-      "gcp": {
-        "region": "asia-southeast1",
-        "zone": "asia-southeast1-a"
-      },
+      "gcp": { "region": "asia-southeast1", "zone": "asia-southeast1-a" },
       "aws": {
         "region": "ap-southeast-1",
         "availability_zone": "ap-southeast-1a"
-      }
+      },
+      "azure": { "region": "southeastasia" }
     }
   },
   "provider_mappings": {
@@ -82,7 +68,8 @@
         },
         "aws": {
           "instance_type": "t3.micro"
-        }
+        },
+        "azure": { "vm_size": "Standard_B1s" }
       },
       "small": {
         "gcp": {
@@ -90,7 +77,8 @@
         },
         "aws": {
           "instance_type": "t3.small"
-        }
+        },
+        "azure": { "vm_size": "Standard_B1ms" }
       },
       "medium": {
         "gcp": {
@@ -98,7 +86,8 @@
         },
         "aws": {
           "instance_type": "t3.medium"
-        }
+        },
+        "azure": { "vm_size": "Standard_B2s" }
       },
       "large": {
         "gcp": {
@@ -106,21 +95,25 @@
         },
         "aws": {
           "instance_type": "t3.large"
-        }
+        },
+        "azure": { "vm_size": "Standard_B2ms" }
       }
     },
     "disk_types": {
       "standard": {
         "gcp": "pd-standard",
-        "aws": "standard"
+        "aws": "standard",
+        "azure": "Standard_LRS"
       },
       "balanced": {
         "gcp": "pd-balanced",
-        "aws": "gp3"
+        "aws": "gp3",
+        "azure": "StandardSSD_LRS"
       },
       "ssd": {
         "gcp": "pd-ssd",
-        "aws": "gp2"
+        "aws": "gp2",
+        "azure": "Premium_LRS"
       }
     },
     "images": {
@@ -130,6 +123,13 @@
         },
         "aws": {
           "ssm_parameter": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+        },
+        "azure": {
+          "publisher": "Canonical",
+          "offer": "ubuntu-24_04-lts",
+          "sku": "server",
+          "version": "latest",
+          "min_disk_size_gb": 30
         }
       },
       "ubuntu-22.04": {
@@ -138,6 +138,13 @@
         },
         "aws": {
           "ssm_parameter": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"
+        },
+        "azure": {
+          "publisher": "Canonical",
+          "offer": "0001-com-ubuntu-server-jammy",
+          "sku": "22_04-lts-gen2",
+          "version": "latest",
+          "min_disk_size_gb": 30
         }
       }
     },
@@ -148,7 +155,8 @@
         },
         "aws": {
           "instance_class": "db.t4g.micro"
-        }
+        },
+        "azure": { "sku_name": "B_Standard_B1ms" }
       },
       "small": {
         "gcp": {
@@ -156,7 +164,8 @@
         },
         "aws": {
           "instance_class": "db.t4g.small"
-        }
+        },
+        "azure": { "sku_name": "B_Standard_B2s" }
       },
       "medium": {
         "gcp": {
@@ -164,7 +173,8 @@
         },
         "aws": {
           "instance_class": "db.t4g.medium"
-        }
+        },
+        "azure": { "sku_name": "GP_Standard_D2s_v3" }
       },
       "large": {
         "gcp": {
@@ -172,7 +182,8 @@
         },
         "aws": {
           "instance_class": "db.t4g.large"
-        }
+        },
+        "azure": { "sku_name": "GP_Standard_D4s_v3" }
       }
     }
   },
@@ -186,8 +197,8 @@
   },
   "cloudflare": {
     "enabled": true,
-    "zone_id": "0123456789abcdef0123456789abcdef",
-    "hostname": "oilscope.example.com",
+    "zone_id": "example_id",
+    "hostname": "example.com",
     "proxied": true,
     "acme_email": "example-operator@example.com"
   },
