@@ -18,6 +18,13 @@ locals {
       vm.role == "ui" ? [
         { name = "ui-web", ports = [for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ui_public_ports) : tostring(port)], sources = ["0.0.0.0/0"] }
       ] : [],
+      vm.role == "database" ? [
+        { name = "k3s-api", ports = ["6443"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["history", "fetcher", "ui"], peer.role)] }
+      ] : [],
+      [for rule in [
+        { name = "k3s-vxlan", protocol = "Udp", ports = ["8472"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["database", "history", "fetcher", "ui"], peer.role)] },
+        { name = "k3s-kubelet", protocol = "Tcp", ports = ["10250"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["database", "history", "fetcher", "ui"], peer.role)] }
+      ] : rule if contains(["database", "history", "fetcher", "ui"], vm.role)],
     )
   }
 }
@@ -38,7 +45,7 @@ resource "azurerm_network_security_group" "vm" {
       priority                   = 100 + tonumber(security_rule.key)
       direction                  = "Inbound"
       access                     = "Allow"
-      protocol                   = "Tcp"
+      protocol                   = try(security_rule.value.protocol, "Tcp")
       source_port_range          = "*"
       destination_port_ranges    = security_rule.value.ports
       source_address_prefixes    = security_rule.value.sources

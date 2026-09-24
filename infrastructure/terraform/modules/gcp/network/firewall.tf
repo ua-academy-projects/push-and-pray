@@ -51,6 +51,47 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
+resource "google_compute_firewall" "k3s_api" {
+  for_each = {
+    for location, roles in local.roles_by_location : location => roles
+    if contains(roles, "database") && length(setintersection(roles, toset(["history", "fetcher", "ui"]))) > 0
+  }
+
+  name    = "${local.resource_prefix}-allow-k3s-api${local.location_suffixes[each.key]}"
+  network = google_compute_network.main[each.key].id
+
+  source_tags = [for role in ["history", "fetcher", "ui"] : local.network_tags[each.key][role] if contains(each.value, role)]
+  target_tags = [local.network_tags[each.key].database]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443"]
+  }
+}
+
+resource "google_compute_firewall" "k3s_nodes" {
+  for_each = {
+    for location, roles in local.roles_by_location : location => roles
+    if length(setintersection(roles, toset(["database", "history", "fetcher", "ui"]))) > 0
+  }
+
+  name    = "${local.resource_prefix}-allow-k3s-nodes${local.location_suffixes[each.key]}"
+  network = google_compute_network.main[each.key].id
+
+  source_tags = [for role in ["database", "history", "fetcher", "ui"] : local.network_tags[each.key][role] if contains(each.value, role)]
+  target_tags = [for role in ["database", "history", "fetcher", "ui"] : local.network_tags[each.key][role] if contains(each.value, role)]
+
+  allow {
+    protocol = "udp"
+    ports    = ["8472"]
+  }
+
+  allow {
+    protocol = "tcp"
+    ports    = ["10250"]
+  }
+}
+
 resource "google_compute_firewall" "database_postgresql" {
   for_each = {
     for location, roles in local.roles_by_location : location => roles

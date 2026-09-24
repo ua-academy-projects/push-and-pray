@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install K3s server
+  hosts: database
+  become: true
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.k3s
+      k3s_mode: server
+
+- name: Join K3s agents
+  hosts: history:fetcher:ui
+  become: true
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.k3s
+      k3s_mode: agent

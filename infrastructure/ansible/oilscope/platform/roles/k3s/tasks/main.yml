@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check whether K3s is installed
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ 'k3s' if k3s_mode == 'server' else 'k3s-agent' }}.service"
+  register: k3s_service_file
+
+- name: Download K3s installer
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/oilscope-k3s-install.sh
+    mode: '0755'
+  when: not k3s_service_file.stat.exists
+
+- name: Install K3s server
+  ansible.builtin.command:
+    cmd: /bin/sh /tmp/oilscope-k3s-install.sh
+    creates: /etc/systemd/system/k3s.service
+  environment:
+    INSTALL_K3S_EXEC: "server --node-ip {{ internal_ip }} --advertise-address {{ internal_ip }} --disable traefik --disable servicelb"
+  no_log: true
+  when: k3s_mode == 'server'
+
+- name: Start K3s server
+  ansible.builtin.systemd_service:
+    name: k3s
+    enabled: true
+    state: started
+  when: k3s_mode == 'server'
+
+- name: Wait for K3s node token
+  ansible.builtin.wait_for:
+    path: /var/lib/rancher/k3s/server/node-token
+    timeout: 120
+  when: k3s_mode == 'server'
+
+- name: Read K3s node token
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: k3s_node_token
+  no_log: true
+  when: k3s_mode == 'server'
+
+- name: Install K3s agent
+  ansible.builtin.command:
+    cmd: /bin/sh /tmp/oilscope-k3s-install.sh
+    creates: /etc/systemd/system/k3s-agent.service
+  environment:
+    K3S_URL: "https://{{ hostvars[groups['database'][0]].internal_ip }}:6443"
+    K3S_TOKEN: "{{ hostvars[groups['database'][0]].k3s_node_token.content | b64decode | trim }}"
+    INSTALL_K3S_EXEC: "agent --node-ip {{ internal_ip }}"
+  no_log: true
+  when: k3s_mode == 'agent'
+
+- name: Start K3s agent
+  ansible.builtin.systemd_service:
+    name: k3s-agent
+    enabled: true
+    state: started
+  when: k3s_mode == 'agent'

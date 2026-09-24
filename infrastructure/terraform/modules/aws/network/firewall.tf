@@ -58,6 +58,39 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
   ip_protocol                  = "tcp"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "k3s_api" {
+  for_each = local.k3s_agents
+
+  region                       = local.locations[each.value.location].region
+  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "database" : "${each.value.location}/database"].id
+  referenced_security_group_id = aws_security_group.role[each.key].id
+  from_port                    = 6443
+  to_port                      = 6443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_vxlan" {
+  for_each = local.k3s_node_pairs
+
+  region                       = local.locations[each.value.location].region
+  security_group_id            = aws_security_group.role[each.value.target_key].id
+  referenced_security_group_id = aws_security_group.role[each.value.source_key].id
+  from_port                    = 8472
+  to_port                      = 8472
+  ip_protocol                  = "udp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_kubelet" {
+  for_each = local.k3s_node_pairs
+
+  region                       = local.locations[each.value.location].region
+  security_group_id            = aws_security_group.role[each.value.target_key].id
+  referenced_security_group_id = aws_security_group.role[each.value.source_key].id
+  from_port                    = 10250
+  to_port                      = 10250
+  ip_protocol                  = "tcp"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "database_postgresql" {
   for_each = {
     for key, instance in local.role_instances : key => instance

@@ -24,4 +24,23 @@ locals {
       }
     } : {}
   ]...)
+
+  k3s_agents = {
+    for key, instance in local.role_instances : key => instance
+    if contains(["history", "fetcher", "ui"], instance.role) && contains(
+      keys(local.role_instances),
+      instance.location == var.config.default_location ? "database" : "${instance.location}/database"
+    )
+  }
+
+  k3s_node_pairs = merge({}, [
+    for target_key, target in local.role_instances : {
+      for source_key, source in local.role_instances : "${target_key}:${source_key}" => {
+        target_key = target_key
+        source_key = source_key
+        location   = target.location
+      }
+      if source_key != target_key && source.location == target.location && contains(["database", "history", "fetcher", "ui"], source.role)
+    } if contains(["database", "history", "fetcher", "ui"], target.role)
+  ]...)
 }
