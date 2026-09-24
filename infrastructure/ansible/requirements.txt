@@ -1,9 +1,16 @@
 # Controller-side Python requirements for the OilScope Ansible tooling.
 #
-# The oilscope_cloud inventory plugin delegates to google.cloud.gcp_compute and
-# amazon.aws.aws_ec2; each talks to its provider's API through these libraries.
+# The oilscope_cloud inventory plugin delegates to google.cloud.gcp_compute,
+# amazon.aws.aws_ec2 and azure.azcollection.azure_rm; each talks to its
+# provider's API through these libraries.
 #
 #     pip install -r infrastructure/ansible/requirements.txt
+#
+# azure_rm imports the whole Azure SDK its collection pins, not just the part it
+# uses, so on a controller that deploys to Azure also install that list - into
+# the environment Ansible runs from:
+#
+#     pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
 #
 # GCP authenticates with Application Default Credentials:
 #     gcloud auth application-default login
@@ -11,7 +18,11 @@
 # AWS authenticates through the standard boto3 chain - environment variables, a
 # shared credentials file, or an instance role.
 #
+# Azure authenticates with a service principal from the environment or the
+# az login session.
+#
 google-auth>=2.0.0
 requests>=2.25.0
 boto3>=1.34.0
 botocore>=1.34.0
+azure-identity>=1.19.0

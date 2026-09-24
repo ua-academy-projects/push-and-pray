@@ -24,22 +24,29 @@ that speaks to that provider:
 | --- | --- | --- |
 | `gcp` | `google.cloud.gcp_compute` | `google.cloud` |
 | `aws` | `amazon.aws.aws_ec2` | `amazon.aws` |
+| `azure` | `azure.azcollection.azure_rm` | `azure.azcollection` |
 
 Hosts from every cloud land in one inventory, in the same role groups.
 
-The wrapper exists because neither discovery plugin can read the project
-configuration, and neither evaluates Jinja in its own configuration file — a
+The wrapper exists because no discovery plugin can read the project
+configuration, and none evaluates Jinja in its own configuration file — a
 template expression placed there is sent to the API as literal text.
 
-| Derived from the JSON | Becomes on GCP | Becomes on AWS |
-| --- | --- | --- |
-| `clouds.<cloud>.project_id` | the project queried | — |
-| `clouds.<cloud>.zone` | the zone queried | — |
-| `clouds.<cloud>.region` | — | the region queried |
-| `name_prefix` | `labels.application` filter | `tag:application` filter |
-| `environment` | `labels.environment` filter | `tag:environment` filter |
-| the cloud's own name | `labels.cloud` filter | `tag:cloud` filter |
-| `ssh_port` of that cloud's bastion | that bastion's `ansible_port` | same |
+| Derived from the JSON | Becomes on GCP | Becomes on AWS | Becomes on Azure |
+| --- | --- | --- | --- |
+| `clouds.<cloud>.project_id` | the project queried | — | — |
+| `clouds.<cloud>.subscription_id` | — | — | the subscription queried |
+| `name_prefix` + `environment` | — | — | the resource group `<name_prefix>-<environment>-rg` queried |
+| `clouds.<cloud>.zone` | the zone queried | — | — |
+| `clouds.<cloud>.region` | — | the region queried | — |
+| `name_prefix` | `labels.application` filter | `tag:application` filter | `tags.application` condition |
+| `environment` | `labels.environment` filter | `tag:environment` filter | `tags.environment` condition |
+| the cloud's own name | `labels.cloud` filter | `tag:cloud` filter | `tags.cloud` condition |
+| `ssh_port` of that cloud's bastion | that bastion's `ansible_port` | same | same |
+
+`azure_rm` has no server-side filter: it lists every VM in the resource group
+and the tag conditions are applied on the controller, together with its
+default filter that drops VMs which are not running.
 
 ## Which clouds are queried
 
@@ -73,6 +80,18 @@ pip install -r infrastructure/ansible/requirements.txt
 ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
 gcloud auth application-default login
 ```
+
+For Azure, the `azure_rm` plugin imports the whole Azure SDK its collection
+pins, and `az login` provides the credential:
+
+```sh
+pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
+az login
+```
+
+Install that list into the Python environment Ansible runs from. It pins its
+own `azure-cli-core`, so keep it away from the environment the `az` command
+itself lives in.
 
 `requirements.yml` installs the `google.cloud` collection, which provides the
 `gcp_compute` plugin this one delegates to. `requirements.txt` installs the
@@ -155,19 +174,22 @@ For the bastion, `bastion_ssh_port` is always the final port from
 
 When `database.mode` is `managed`, the plugin also asks the cloud hosting the
 `infra` VM where the database is - the Private Service Connect endpoint
-address on GCP, the RDS endpoint on AWS, both named after `name_prefix` and
-`environment` the way Terraform names them - and sets
+address on GCP, the RDS endpoint on AWS, the address of the private endpoint
+`<name_prefix>-<environment>-database-endpoint` on Azure, all named after
+`name_prefix` and `environment` the way Terraform names them - and sets
 `oilscope_managed_database_host` and `oilscope_managed_database_port` on the
 `all` group. The group variables turn those into `oilscope_database_host`,
 which every workload role reads. Terraform state is never opened.
 
-The lookup needs the Compute Engine API on GCP or `rds:DescribeDBInstances` on
-AWS. Set `discover_database: false` in the inventory file, or
+The lookup needs the Compute Engine API on GCP, `rds:DescribeDBInstances` on
+AWS, or Reader on the resource group on Azure. Set `discover_database: false` in the inventory file, or
 `OILSCOPE_DISCOVER_DATABASE=false`, to skip it and pass
 `-e oilscope_managed_database_host=<address>` instead.
 
-Raw instance fields from the API are prefixed with `gcp_`, because two of them
-— `name` and `tags` — collide with names Ansible reserves.
+Raw instance fields from the API are prefixed with `gcp_` or `aws_`, because
+two of them — `name` and `tags` — collide with names Ansible reserves.
+`azure_rm` has no prefix option, so Azure hosts carry `name`, `tags` and the
+rest of its fields unprefixed.
 
 ## SSH
 
@@ -265,4 +287,11 @@ nothing in it. Check against GCP directly rather than trusting the graph:
 
 ```sh
 gcloud compute instances list --format="table(name,zone,labels)"
+```
+
+`azure_rm` behaves the same way: a resource group that does not exist, or a
+credential without Reader on it, yields an empty inventory and exit status 0.
+
+```sh
+az vm list -g oilscope-dev-rg --query "[].{name:name, tags:tags}" -o table
 ```

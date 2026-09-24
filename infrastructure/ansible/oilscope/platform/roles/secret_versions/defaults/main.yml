@@ -12,6 +12,7 @@ secret_versions_only: []
 secret_versions_supported_clouds:
   - gcp
   - aws
+  - azure
 
 # --- GCP ------------------------------------------------------------------
 # Falls back to $GOOGLE_PROJECT, then to clouds.gcp.project_id.
@@ -22,3 +23,8 @@ secret_versions_gcloud: gcloud
 # Falls back to clouds.aws.region.
 secret_versions_region: ""
 secret_versions_aws_cli: aws
+
+# --- Azure ----------------------------------------------------------------
+# Falls back to clouds.azure.key_vault_name.
+secret_versions_key_vault_name: ""
+secret_versions_az_cli: az

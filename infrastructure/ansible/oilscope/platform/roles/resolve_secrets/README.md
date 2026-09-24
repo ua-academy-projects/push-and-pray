@@ -7,8 +7,8 @@ deployment play, not on `localhost`.
 
 Which cloud a host is on comes from `oilscope_cloud`, which the dynamic
 inventory stamps on every host. That name selects a task file — `tasks/fetch-
-gcp.yml` or `tasks/fetch-aws.yml` — so supporting another provider means adding
-a file, not a conditional.
+gcp.yml`, `tasks/fetch-aws.yml` or `tasks/fetch-azure.yml` — so supporting
+another provider means adding a file, not a conditional.
 
 Terraform creates the containers and grants each workload access only to its
 own secrets; `secret_versions` writes values into them from an operator's
@@ -23,7 +23,7 @@ containers.
   ever requested — never another workload's, and never a sibling VM that
   happens to share the same `role`.
 - Authentication is the instance's own attached identity: a service account
-  on GCP, an instance role on AWS. No credential is supplied by the operator
+  on GCP, an instance role on AWS, a user-assigned managed identity on Azure. No credential is supplied by the operator
   or stored on the host.
 - Nothing is written to disk. The result exists only as an in-memory fact
   for the duration of the play.
@@ -37,18 +37,19 @@ containers.
 The host must carry an identity granted read access to the secrets in its own
 `secret_mappings`. `infrastructure/terraform/modules/<cloud>/secrets.tf` grants
 it automatically: `roles/secretmanager.secretAccessor` per secret on GCP, an
-inline role policy listing the secret ARNs on AWS.
+inline role policy listing the secret ARNs on AWS, `Key Vault Secrets User` per
+secret on Azure.
 
 ### How each cloud is read
 
-| | GCP | AWS |
-| --- | --- | --- |
-| Credential | bearer token from the metadata server | instance role, via IMDS |
-| Transport | two `uri` calls from the host | `aws secretsmanager get-secret-value` on the host |
-| Host dependency | none | the AWS CLI |
+| | GCP | AWS | Azure |
+| --- | --- | --- | --- |
+| Credential | bearer token from the metadata server | instance role, via IMDS | managed identity token from IMDS |
+| Transport | two `uri` calls from the host | `aws secretsmanager get-secret-value` on the host | two `uri` calls from the host |
+| Host dependency | none | the AWS CLI | none |
 
-GCP's Secret Manager accepts a plain bearer token, so nothing has to be
-installed. Every AWS API call must be SigV4-signed, which is impractical to do
+GCP's Secret Manager and Azure Key Vault accept a plain bearer token, so
+nothing has to be installed. Every AWS API call must be SigV4-signed, which is impractical to do
 from `uri`, so the CLI does the signing — and obtains the instance role through
 IMDS on its own, including the IMDSv2 token exchange these instances require.
 `host_baseline` installs it on AWS hosts.
@@ -91,6 +92,18 @@ AWS only:
 
 - `resolve_secrets_region`: target region. Falls back to `clouds.aws.region`.
 - `resolve_secrets_aws_cli`: path to the CLI; defaults to `aws`.
+
+Azure only:
+
+- `resolve_secrets_key_vault_name`: target vault. Falls back to
+  `clouds.azure.key_vault_name`.
+- `resolve_secrets_azure_token_url`: the instance metadata token endpoint.
+- `resolve_secrets_azure_identity_id`: resource ID of the user-assigned
+  identity to read with. Defaults to the one named after the VM in
+  `<name_prefix>-<environment>-rg`. Always named in the request, because a VM
+  may carry a second identity - enabling Azure Monitor from the portal adds a
+  system-assigned one - which holds no grant on the vault.
+- `resolve_secrets_azure_keyvault_api_version`: Key Vault data-plane API version.
 
 ## Output
 

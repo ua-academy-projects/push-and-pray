@@ -103,6 +103,39 @@
       },
       "secret_version_managers": ["arn:aws:iam::123456789012:role/example-ci"],
       "budget_usd": 20
+    },
+    "azure": {
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "region": "swedencentral",
+      "zone": "1",
+      "network_cidr": "10.2.0.0/16",
+      "subnets": {
+        "management": "10.2.0.0/28",
+        "workload": "10.2.1.0/26",
+        "database": ["10.2.2.0/28"]
+      },
+      "machine_sizes": {
+        "tiny": "Standard_B2ats_v2",
+        "small": "Standard_B2als_v2",
+        "medium": "Standard_B2as_v2",
+        "large": "Standard_B4als_v2"
+      },
+      "database_sizes": {
+        "small": "B_Standard_B1ms",
+        "medium": "B_Standard_B2s",
+        "large": "GP_Standard_D2ds_v4"
+      },
+      "disk_types": {
+        "standard": "Standard_LRS",
+        "balanced": "StandardSSD_LRS",
+        "fast": "Premium_LRS"
+      },
+      "images": {
+        "ubuntu-lts": "Canonical:ubuntu-26_04-lts:server:latest"
+      },
+      "key_vault_name": "oilscope-dev-kv-example",
+      "secret_version_managers": ["11111111-1111-1111-1111-111111111111"],
+      "budget_usd": 20
     }
   },
   "vms": {

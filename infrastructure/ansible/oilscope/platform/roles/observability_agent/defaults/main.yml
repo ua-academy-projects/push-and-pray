@@ -10,6 +10,7 @@ observability_agent_cloud: "{{ oilscope_cloud | default('') }}"
 observability_agent_supported_clouds:
   - gcp
   - aws
+  - azure
 
 # Project configuration JSON. AWS derives the region and the log group from it;
 # GCP needs nothing, the Ops Agent reads the project from the metadata server.
@@ -55,3 +56,17 @@ observability_agent_aws_cloudwatch_service: amazon-cloudwatch-agent
 observability_agent_aws_cloudwatch_config_path: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 observability_agent_aws_cloudwatch_ctl: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
 observability_agent_aws_cloudwatch_interval_seconds: 60
+
+# --- Azure: Azure Monitor Agent, installed by the cloud ----------------------
+# Microsoft ships the agent only as a VM extension, so it arrives from the
+# Azure side together with the data collection rule that tells it what to
+# send. It reads syslog, not the journal: this role makes the journal forward
+# to rsyslog and checks that the agent is there.
+observability_agent_azure_service: azuremonitoragent
+observability_agent_azure_syslog_package: rsyslog
+observability_agent_azure_syslog_service: rsyslog
+observability_agent_azure_journald_config_path: /etc/systemd/journald.conf.d/oilscope-forward-to-syslog.conf
+
+# Refuse a host without the agent, as the other clouds fail when the package
+# cannot be installed. Turn off to deploy before the collection rule exists.
+observability_agent_azure_require_agent: true

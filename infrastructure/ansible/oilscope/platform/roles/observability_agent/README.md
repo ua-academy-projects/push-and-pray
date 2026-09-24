@@ -8,9 +8,14 @@ structured log entries with the application's own severity.
 | --- | --- | --- |
 | `gcp` | Ops Agent, `systemd_journald` receiver → Cloud Logging | Ops Agent, built-in `hostmetrics` → Cloud Monitoring |
 | `aws` | Fluent Bit, `systemd` input → CloudWatch Logs | CloudWatch agent → CloudWatch Metrics |
+| `azure` | Azure Monitor Agent, syslog via rsyslog → Log Analytics | Azure Monitor Agent → Azure Monitor Metrics |
 
 One cloud needs two packages because the CloudWatch agent cannot read the
-journal. The cloud comes from `oilscope_cloud`, which the dynamic inventory
+journal. Azure needs none from this role: the Azure Monitor Agent exists only
+as a VM extension, so it is installed from the Azure side together with the
+data collection rule. It cannot read the journal either, so the role makes the
+journal forward to rsyslog and refuses a host where the agent is not running
+(`observability_agent_azure_require_agent`). The cloud comes from `oilscope_cloud`, which the dynamic inventory
 stamps on every host; one task file per cloud, selected by name, so adding a
 provider adds a file and not a branch.
 

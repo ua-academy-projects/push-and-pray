@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install rsyslog
+  become: true
+  ansible.builtin.apt:
+    name: "{{ observability_agent_azure_syslog_package }}"
+    state: present
+    install_recommends: false
+
+- name: Create the journal drop-in directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ observability_agent_azure_journald_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The agent's syslog source is rsyslog; without forwarding, container output
+# stays in the journal and never reaches the workspace.
+- name: Forward the journal to syslog
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ observability_agent_azure_journald_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      [Journal]
+      ForwardToSyslog=yes
+  notify: Restart the journal for syslog forwarding
+
+- name: Enable and start rsyslog
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ observability_agent_azure_syslog_service }}"
+    enabled: true
+    state: started
+
+- name: Check the Azure Monitor Agent
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ observability_agent_azure_service }}"
+  register: observability_agent_azure_agent
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a host the Azure Monitor Agent is missing on
+  ansible.builtin.assert:
+    that: observability_agent_azure_agent.stdout | trim == 'active'
+    fail_msg: >-
+      {{ observability_agent_azure_service }} is not running on
+      {{ inventory_hostname }}; associate the VM with the data collection
+      rule, which installs the AzureMonitorLinuxAgent extension, or set
+      observability_agent_azure_require_agent to false
+    quiet: true
+  when: observability_agent_azure_require_agent | bool

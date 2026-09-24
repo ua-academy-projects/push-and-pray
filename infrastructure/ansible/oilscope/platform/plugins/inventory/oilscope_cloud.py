@@ -28,8 +28,9 @@ author:
 description:
   - Reads the project configuration JSON that Terraform also reads, works out
     which clouds actually host workloads, and hands each one to the discovery
-    plugin that speaks to it - C(google.cloud.gcp_compute) for GCP and
-    C(amazon.aws.aws_ec2) for AWS. Hosts from every cloud land in one inventory.
+    plugin that speaks to it - C(google.cloud.gcp_compute) for GCP,
+    C(amazon.aws.aws_ec2) for AWS and C(azure.azcollection.azure_rm) for
+    Azure. Hosts from every cloud land in one inventory.
   - A cloud is skipped when it hosts no workload. Terraform applies the same
     rule - a bastion with nothing to reach is not built, so there is nothing to
     discover either.
@@ -38,12 +39,13 @@ description:
     without cross-cloud networking a bastion cannot reach the other provider.
   - When the configuration runs the database as a managed service, the plugin
     also asks the cloud hosting the C(infra) VM where that database is - the
-    Private Service Connect endpoint address on GCP, the RDS endpoint on AWS -
-    and publishes it to every host as C(oilscope_managed_database_host) and
-    C(oilscope_managed_database_port). Terraform state is never read.
-  - The wrapper exists because neither discovery plugin reads that file, and
-    neither evaluates Jinja in its own configuration - a template expression
-    there reaches the API as literal text.
+    Private Service Connect endpoint address on GCP, the RDS endpoint on AWS,
+    the private endpoint address on Azure - and publishes it to every host as
+    C(oilscope_managed_database_host) and C(oilscope_managed_database_port).
+    Terraform state is never read.
+  - The wrapper exists because no discovery plugin reads that file, and none
+    evaluates Jinja in its own configuration - a template expression there
+    reaches the API as literal text.
 extends_documentation_fragment:
   - inventory_cache
 options:
@@ -96,6 +98,19 @@ options:
         which authenticates the way boto3 does.
     type: str
     default: application
+  azure_auth_source:
+    description:
+      - Passed straight through to C(azure.azcollection.azure_rm) as its
+        C(auth_source). C(auto) tries a service principal from the environment
+        first and falls back to the C(az login) session.
+    type: str
+    default: auto
+    choices:
+      - auto
+      - cli
+      - env
+      - credential_file
+      - msi
   discover_database:
     description:
       - Whether to look the managed database endpoint up. Off, the variables
@@ -109,13 +124,18 @@ options:
 requirements:
   - google.cloud collection, google-auth and requests, for GCP discovery
   - amazon.aws collection and boto3, for AWS discovery
-  - the Compute Engine API (GCP) or C(rds:DescribeDBInstances) (AWS) for the
-    managed database lookup
+  - azure.azcollection collection and the Azure SDK its requirements.txt lists,
+    for Azure discovery
+  - the Compute Engine API (GCP), C(rds:DescribeDBInstances) (AWS) or Reader on
+    the resource group (Azure) for the managed database lookup
 notes:
   - GCP authenticates with Application Default Credentials. Run
     C(gcloud auth application-default login) on the controller first.
   - AWS authenticates through the standard boto3 chain - environment variables,
     a shared credentials file, or an instance role.
+  - Azure authenticates with a service principal from the environment or the
+    C(az login) session. Every Azure resource sits in the resource group
+    C(<name_prefix>-<environment>-rg) of C(clouds.azure.subscription_id).
 """
 
 EXAMPLES = r"""
@@ -131,11 +151,21 @@ cache_timeout: 300
 DELEGATES = {
     "gcp": "google.cloud.gcp_compute",
     "aws": "amazon.aws.aws_ec2",
+    "azure": "azure.azcollection.azure_rm",
 }
 
 COLLECTIONS = {
     "gcp": "google.cloud",
     "aws": "amazon.aws",
+    "azure": "azure.azcollection",
+}
+
+# Each delegate claims a settings file only by the end of its name, and
+# azure_rm refuses any other name outright instead of passing.
+SETTINGS_SUFFIXES = {
+    "gcp": "gcp.yml",
+    "aws": "aws.yml",
+    "azure": "azure_rm.yml",
 }
 
 display = Display()
@@ -299,7 +329,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     # ---------------------------------------------------------------- settings
 
     def _build_settings(self, config, cloud):
-        builders = {"gcp": self._gcp_settings, "aws": self._aws_settings}
+        builders = {
+            "gcp": self._gcp_settings,
+            "aws": self._aws_settings,
+            "azure": self._azure_settings,
+        }
 
         return builders[cloud](config, cloud)
 
@@ -376,6 +410,62 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             },
         }
 
+    def _azure_settings(self, config, cloud):
+        profile = config["clouds"][cloud]
+        subscription_id = self._require(profile, "subscription_id", f"clouds.{cloud}")
+        bastion_role = plain(self.get_option("bastion_role"))
+        bastion_port, bastion_final_port, workload_port = self._connect_ports(config, cloud)
+        name_prefix = self._require(config, "name_prefix", "the configuration root")
+        environment = self._require(config, "environment", "the configuration root")
+
+        # azure_rm filters nothing on the API side, so the labels the other two
+        # clouds send as a query become an include condition here. A tag the VM
+        # does not carry must not raise, or the host would be skipped silently
+        # for the wrong reason.
+        matches = " and ".join(
+            f"tags.{key} | default('') == '{value}'"
+            for key, value in (
+                ("application", name_prefix),
+                ("environment", environment),
+                ("cloud", cloud),
+            )
+        )
+
+        is_bastion = f"tags.role | default('') == '{bastion_role}'"
+        # azure_rm lists addresses; the documented public_ipv4_addresses was
+        # renamed to public_ipv4_address and kept as a list.
+        public = "public_ipv4_address | first | default('')"
+        private = "private_ipv4_addresses | first"
+
+        return {
+            "plugin": DELEGATES[cloud],
+            "auth_source": plain(self.get_option("azure_auth_source")),
+            "subscription_id": plain(subscription_id),
+            "include_vm_resource_groups": [self._azure_resource_group(config)],
+            "include_host_filters": [matches],
+            "hostnames": ["name"],
+            "keyed_groups": [{"key": "tags.role", "prefix": "", "separator": ""}],
+            "conditional_groups": {
+                "workloads": f"tags.role is defined and tags.role != '{bastion_role}'"
+            },
+            "hostvar_expressions": {
+                "internal_ip": private,
+                "public_ip": public,
+                "ansible_host": f"({public}) if {is_bastion} else {private}",
+                "ansible_port": f"{bastion_port} if {is_bastion} else {workload_port}",
+                "oilscope_role": "tags.role | default('')",
+                "oilscope_cloud": f"'{cloud}'",
+                "oilscope_ssh_port": f"{bastion_final_port} if {is_bastion} else {workload_port}",
+            },
+        }
+
+    def _azure_resource_group(self, config):
+        """The one resource group every Azure resource of this environment sits in.
+
+        Derived rather than configured, the way every other resource name is.
+        """
+        return f"{self._resource_prefix(config)}-rg"
+
     # ---------------------------------------------------------------- database
 
     def _database_managed(self, config):
@@ -416,7 +506,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             return
 
         cloud = self._infra_cloud(config)
-        lookups = {"gcp": self._gcp_database, "aws": self._aws_database}
+        lookups = {
+            "gcp": self._gcp_database,
+            "aws": self._aws_database,
+            "azure": self._azure_database,
+        }
         host, port = lookups[cloud](config)
 
         inventory.set_variable("all", "oilscope_managed_database_host", host)
@@ -509,9 +603,86 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return endpoint["Address"], int(endpoint.get("Port", 5432))
 
+    def _azure_database(self, config):
+        """Address of the private endpoint in front of the flexible server.
+
+        The Azure counterpart of the GCP lookup: the server itself has no
+        address in the network, the endpoint's network interface does. The
+        endpoint only names that interface, so it takes two requests.
+        """
+        try:
+            import requests
+            from azure.core.exceptions import ClientAuthenticationError
+            from azure.identity import DefaultAzureCredential
+        except ImportError as error:
+            raise AnsibleParserError(
+                f"the managed database lookup on Azure needs azure-identity and requests: {error}"
+            ) from error
+
+        profile = config["clouds"]["azure"]
+        subscription_id = self._require(profile, "subscription_id", "clouds.azure")
+        resource_group = self._azure_resource_group(config)
+        name = f"{self._resource_prefix(config)}-database-endpoint"
+        management = "https://management.azure.com"
+
+        try:
+            token = DefaultAzureCredential().get_token(f"{management}/.default")
+        except ClientAuthenticationError as error:
+            raise AnsibleParserError(
+                f"could not authenticate to Azure for the managed database lookup: {error}"
+            ) from error
+
+        headers = {"Authorization": f"Bearer {token.token}"}
+
+        def get(resource_id, api_version, what):
+            response = requests.get(
+                f"{management}{resource_id}",
+                params={"api-version": api_version},
+                headers=headers,
+                timeout=30,
+            )
+
+            if response.status_code == 404:
+                raise AnsibleParserError(
+                    f"{what} does not exist in {subscription_id}/{resource_group}; "
+                    "create it first, or set discover_database to false"
+                )
+
+            if response.status_code != 200:
+                raise AnsibleParserError(
+                    f"could not read {what}: HTTP {response.status_code} {response.text[:200]}"
+                )
+
+            return response.json().get("properties", {})
+
+        endpoint = get(
+            f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+            f"/providers/Microsoft.Network/privateEndpoints/{name}",
+            "2024-05-01",
+            f"the managed database endpoint {name!r}",
+        )
+        interfaces = endpoint.get("networkInterfaces") or []
+
+        if not interfaces:
+            raise AnsibleParserError(f"the endpoint {name!r} has no network interface yet")
+
+        interface = get(interfaces[0]["id"], "2024-05-01", f"the network interface of {name!r}")
+        addresses = [
+            ip_config.get("properties", {}).get("privateIPAddress")
+            for ip_config in interface.get("ipConfigurations", [])
+        ]
+        address = next((address for address in addresses if address), None)
+
+        if not address:
+            raise AnsibleParserError(f"the endpoint {name!r} carries no address yet")
+
+        return address, int(config.get("service_ports", {}).get("postgresql", 5432))
+
     def _write_settings(self, settings, cloud):
         digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
-        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.{cloud}.yml")
+        generated = os.path.join(
+            tempfile.gettempdir(), f"oilscope-{digest[:16]}.{SETTINGS_SUFFIXES[cloud]}"
+        )
 
         try:
             with open(generated, "w") as handle:

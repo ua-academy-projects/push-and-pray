@@ -7,6 +7,7 @@ managed_database_credentials_config_path: ""
 managed_database_credentials_supported_clouds:
   - gcp
   - aws
+  - azure
 
 # --- GCP ------------------------------------------------------------------
 # The application role is created through the Cloud SQL Admin API with the
@@ -21,3 +22,13 @@ managed_database_credentials_project_id: ""
 # keeps into the project's own container, the one the workloads read.
 managed_database_credentials_aws_cli: aws
 managed_database_credentials_region: ""
+
+# --- Azure ----------------------------------------------------------------
+# The flexible server's administrator is the application role, as on AWS, but
+# Azure keeps no copy of its password: it goes the GCP way, from the
+# environment or Key Vault into the server, through the Resource Manager API.
+managed_database_credentials_az_cli: az
+managed_database_credentials_key_vault_name: ""
+managed_database_credentials_azure_api_version: "2024-08-01"
+managed_database_credentials_azure_poll_retries: 60
+managed_database_credentials_azure_poll_delay: 10

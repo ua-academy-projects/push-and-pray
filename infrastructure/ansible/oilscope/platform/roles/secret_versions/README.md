@@ -7,9 +7,9 @@ APIs, not host configuration.
 
 A container exists on every cloud its readers are placed on, so the role works
 out, per container, which clouds hold it and uploads the same value to each.
-Which tool does the writing is chosen by file name — `tasks/upload-gcp.yml` or
-`tasks/upload-aws.yml` — so supporting another provider means adding a file,
-not a conditional.
+Which tool does the writing is chosen by file name — `tasks/upload-gcp.yml`,
+`tasks/upload-aws.yml` or `tasks/upload-azure.yml` — so supporting another
+provider means adding a file, not a conditional.
 
 Terraform creates the containers and grants access to them, and never carries a
 payload — see [docs/secrets.md](../../../../../../docs/secrets.md). This role is
@@ -20,7 +20,8 @@ the other half: the payload, and nothing else.
 - Values are read from the process environment, and from nowhere else. Nothing
   is written to disk.
 - The payload reaches the cloud CLI on stdin — `--data-file=-` for `gcloud`,
-  `--secret-string file:///dev/stdin` for `aws` — so it never becomes a command
+  `--secret-string file:///dev/stdin` for `aws`, `--file /dev/stdin` for
+  `az` — so it never becomes a command
   argument and cannot appear in `ps` output or a shell history.
   `stdin_add_newline` is off, because a trailing newline would become part of
   the stored value.
@@ -43,12 +44,17 @@ to the current value:
 | --- | --- | --- | --- |
 | GCP | `gcloud` | `roles/secretmanager.secretVersionAdder` | `clouds.gcp.secret_version_managers` |
 | AWS | `aws` | `secretsmanager:PutSecretValue` | `clouds.aws.secret_version_managers` |
+| Azure | `az` | a custom role with `Microsoft.KeyVault/vaults/secrets/setSecret/action` | `clouds.azure.secret_version_managers` |
+
+Azure has no built-in role that writes a secret without reading it; `Key Vault
+Secrets Officer` would do the job but also reads every value.
 
 A cloud that holds no container needs neither its tool nor a credential: the
 role only touches the clouds the catalog names.
 
 The containers must already exist: `terraform apply` creates them from the same
-configuration file this role reads.
+configuration file this role reads. Azure is the exception - Key Vault has no
+secret without a value, so the first upload creates it.
 
 ## Required variables
 
@@ -73,6 +79,12 @@ AWS only:
 
 - `secret_versions_region`: target region. Falls back to `clouds.aws.region`.
 - `secret_versions_aws_cli`: path to the `aws` executable.
+
+Azure only:
+
+- `secret_versions_key_vault_name`: target vault. Falls back to
+  `clouds.azure.key_vault_name`.
+- `secret_versions_az_cli`: path to the `az` executable.
 
 ## Which variable holds which value
 

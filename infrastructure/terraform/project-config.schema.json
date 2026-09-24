@@ -129,7 +129,7 @@
       }
     },
     "database": {
-      "$comment": "Where PostgreSQL runs. self-hosted keeps the container on the infra VM, with the queue in PGMQ and the UI sessions in a table. managed moves it to the cloud's service - Cloud SQL on GCP, RDS on AWS - in the database subnet of the cloud that hosts the infra VM; the queue then goes to RabbitMQ and the sessions to Redis, both on that same VM. The block is always present so switching is a one-word change; the sizing fields are read only in managed mode.",
+      "$comment": "Where PostgreSQL runs. self-hosted keeps the container on the infra VM, with the queue in PGMQ and the UI sessions in a table. managed moves it to the cloud's service - Cloud SQL on GCP, RDS on AWS, Azure Database for PostgreSQL flexible server on Azure - in the database subnet of the cloud that hosts the infra VM; the queue then goes to RabbitMQ and the sessions to Redis, both on that same VM. The block is always present so switching is a one-word change; the sizing fields are read only in managed mode.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -157,7 +157,7 @@
           "$ref": "#/$defs/resource_label"
         },
         "storage_gb": {
-          "$comment": "Initial disk size. Both clouds grow it automatically from here.",
+          "$comment": "Initial disk size. Every cloud grows it automatically from here. Azure offers only fixed sizes starting at 32 GB and rounds up to the next one.",
           "type": "integer",
           "minimum": 10
         },
@@ -171,7 +171,7 @@
           "pattern": "^[a-z_][a-z0-9_]{0,62}$"
         },
         "backup_retention_days": {
-          "$comment": "0 turns automated backups off. An AWS free-tier account refuses anything above 1.",
+          "$comment": "0 turns automated backups off. An AWS free-tier account refuses anything above 1. Azure cannot turn backups off and keeps them at least 7 days, so it raises anything lower to 7.",
           "type": "integer",
           "minimum": 0,
           "maximum": 35
@@ -203,6 +203,9 @@
               }
             },
             {
+              "$ref": "#/$defs/not_azure_fields"
+            },
+            {
               "$comment": "GCP names a principal as type:identifier.",
               "properties": {
                 "secret_version_managers": {
@@ -224,6 +227,9 @@
               "not": {
                 "required": ["project_id"]
               }
+            },
+            {
+              "$ref": "#/$defs/not_azure_fields"
             },
             {
               "$comment": "An AWS budget is scoped to the account behind the credentials, so there is nothing to name.",
@@ -257,6 +263,51 @@
               }
             }
           ]
+        },
+        "azure": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/cloud_profile"
+            },
+            {
+              "$comment": "Azure resources are addressed by subscription; every one of this environment sits in the resource group <name_prefix>-<environment>-rg, which is derived and not configured.",
+              "required": ["subscription_id", "network_cidr", "key_vault_name"]
+            },
+            {
+              "$comment": "A budget is created on the subscription itself, so there is no billing account to name, and there is no project.",
+              "not": {
+                "anyOf": [
+                  { "required": ["project_id"] },
+                  { "required": ["billing_account"] }
+                ]
+              }
+            },
+            {
+              "$comment": "An Azure zone is a number within the region. The database takes one subnet, which the private endpoint in front of the server sits in.",
+              "properties": {
+                "zone": {
+                  "pattern": "^[1-3]$"
+                },
+                "subnets": {
+                  "properties": {
+                    "database": {
+                      "maxItems": 1
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "$comment": "Azure names a principal by its Entra object ID.",
+              "properties": {
+                "secret_version_managers": {
+                  "items": {
+                    "$ref": "#/$defs/uuid"
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -280,7 +331,20 @@
     },
     "cloud_name": {
       "type": "string",
-      "enum": ["gcp", "aws"]
+      "enum": ["gcp", "aws", "azure"]
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "not_azure_fields": {
+      "$comment": "Fields only an Azure profile carries.",
+      "not": {
+        "anyOf": [
+          { "required": ["subscription_id"] },
+          { "required": ["key_vault_name"] }
+        ]
+      }
     },
     "resource_label": {
       "$comment": "Key into one of a cloud profile's lookup maps. Never a provider-specific identifier.",
@@ -316,17 +380,26 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
         },
+        "subscription_id": {
+          "$comment": "Azure only.",
+          "$ref": "#/$defs/uuid"
+        },
+        "key_vault_name": {
+          "$comment": "Azure only. A vault name is global across all of Azure and stays reserved while a deleted vault is soft-deleted, so it cannot be derived from name_prefix and environment the way every other name is.",
+          "type": "string",
+          "pattern": "^[a-zA-Z](?!.*--)[a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$"
+        },
         "region": {
           "type": "string",
           "minLength": 1
         },
         "zone": {
-          "$comment": "GCP places instances here; AWS also binds its subnets to it, since an AWS subnet cannot span availability zones.",
+          "$comment": "GCP places instances here; AWS also binds its subnets to it, since an AWS subnet cannot span availability zones. On Azure it is the zone number within the region, and the VMs, their public addresses and the NAT gateway are pinned to it.",
           "type": "string",
           "minLength": 1
         },
         "network_cidr": {
-          "$comment": "AWS only. An AWS VPC carries its own range and every subnet must fall inside it; a GCP network has no range of its own.",
+          "$comment": "AWS and Azure. An AWS VPC and an Azure virtual network carry their own range and every subnet must fall inside it; a GCP network has no range of its own.",
           "type": "string",
           "minLength": 1
         },
@@ -344,7 +417,7 @@
               "minLength": 1
             },
             "database": {
-              "$comment": "Ranges reserved for a managed database. Created only in managed mode, never routed to the internet. GCP needs one, for the Private Service Connect endpoint; AWS needs two in different availability zones, because a DB subnet group must span two even for a single instance.",
+              "$comment": "Ranges reserved for a managed database. Created only in managed mode, never routed to the internet. GCP needs one, for the Private Service Connect endpoint; Azure needs one, for the private endpoint; AWS needs two in different availability zones, because a DB subnet group must span two even for a single instance.",
               "type": "array",
               "minItems": 1,
               "maxItems": 2,
@@ -361,7 +434,7 @@
           "$ref": "#/$defs/label_map"
         },
         "database_sizes": {
-          "$comment": "Abstract size label to this provider's managed database tier, for example small to db-f1-micro or db.t4g.micro.",
+          "$comment": "Abstract size label to this provider's managed database tier, for example small to db-f1-micro, db.t4g.micro or B_Standard_B1ms.",
           "$ref": "#/$defs/label_map"
         },
         "disk_types": {
@@ -469,7 +542,7 @@
       }
     },
     "secret_mappings": {
-      "$comment": "Maps application environment variable names to non-secret secret-store IDs.",
+      "$comment": "Maps application environment variable names to non-secret secret-store IDs. Azure Key Vault refuses an underscore in a secret name; use hyphens on a VM placed there.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[A-Z][A-Z0-9_]*$"
@@ -511,7 +584,7 @@
           "$ref": "#/$defs/resource_label"
         },
         "internal_ip": {
-          "$comment": "Must sit inside the hosting cloud's matching subnet. AWS reserves the first four addresses and the last address of every subnet.",
+          "$comment": "Must sit inside the hosting cloud's matching subnet. AWS and Azure reserve the first four addresses and the last address of every subnet.",
           "type": "string",
           "minLength": 1
         },

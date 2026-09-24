@@ -12,11 +12,13 @@ host_baseline_packages:
 # Packages only one provider's hosts need, keyed by cloud so adding a provider
 # adds an entry and not a conditional. AWS signs every Secrets Manager request,
 # so its hosts need a client able to do that with the instance role; GCP accepts
-# a bearer token from the metadata server and needs nothing extra.
+# a bearer token from the metadata server and needs nothing extra, and so does
+# Azure Key Vault.
 host_baseline_packages_by_cloud:
   gcp: []
   aws:
     - awscli
+  azure: []
 
 host_baseline_cloud: "{{ oilscope_cloud | default('') }}"
 
