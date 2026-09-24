@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Included from main.yml only when oilscope_cloud == 'azure' and this VM has an
+# entry in monitoring_agent_config.value.agent_configurations.
+#
+# Nothing is installed here. The Azure Monitor Agent is a VM extension whose
+# configuration lives in cloud-side data collection rules, not in a file on the
+# host, so Terraform owns the extension, the rules and the associations. This
+# role's job on Azure is to make sure the files those rules read exist, and to
+# confirm the agent Terraform installed is actually running - a second owner
+# writing a competing rule is exactly what would make telemetry ambiguous.
+- name: Select this VM's agent wiring
+  ansible.builtin.set_fact:
+    monitoring_agent_azure: >-
+      {{ monitoring_agent_config.value.agent_configurations[oilscope_vm_key] }}
+
+- name: Refuse an agent configuration owned by something other than Terraform
+  ansible.builtin.fail:
+    msg: >-
+      the Terraform outputs say this VM's Azure Monitor Agent is owned by
+      '{{ monitoring_agent_azure.ownership | default('') }}', which this role
+      does not implement. Only 'terraform' ownership is supported; refresh
+      {{ terraform_outputs_path }} from the applied deployment.
+  when: monitoring_agent_azure.ownership | default('') != 'terraform'
+
+# The rules point at fixed paths. An agent that starts before they exist logs
+# a missing-file error every interval, so the directory is created here even
+# though application_monitoring also creates it for the collector.
+- name: Create the log directory the data collection rules read
+  become: true
+  ansible.builtin.file:
+    path: "{{ monitoring_agent_azure.log_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Wait for the Azure Monitor Agent service to report active
+  become: true
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ monitoring_agent_azure_service }}"
+  register: monitoring_agent_azure_status
+  changed_when: false
+  # The extension is installed by the same apply that created this VM, and the
+  # guest agent can take a while to hand it over on first boot - longer than
+  # the few seconds an IAM propagation needs on the other two clouds.
+  retries: 12
+  delay: 10
+  until: monitoring_agent_azure_status.stdout == 'active'
+
+# A running agent with no association collects nothing, and that failure is
+# invisible from the host: the rule lives in Azure, not here. The association
+# directory only appears once the agent has fetched its configuration.
+- name: Confirm the agent fetched a data collection configuration
+  become: true
+  ansible.builtin.find:
+    paths: "{{ monitoring_agent_azure_state_dir }}"
+    patterns: "*.json"
+    recurse: true
+    file_type: file
+  register: monitoring_agent_azure_state
+  changed_when: false
+  retries: 12
+  delay: 10
+  until: monitoring_agent_azure_state.matched | int > 0

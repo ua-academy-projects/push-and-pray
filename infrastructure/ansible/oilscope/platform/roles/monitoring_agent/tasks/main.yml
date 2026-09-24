@@ -8,9 +8,9 @@
 - name: Require a known cloud
   ansible.builtin.fail:
     msg: >-
-      oilscope_cloud '{{ oilscope_cloud | default('') }}' is not gcp or
-      aws
-  when: (oilscope_cloud | default('')) not in ['gcp', 'aws']
+      oilscope_cloud '{{ oilscope_cloud | default('') }}' is not
+      {{ monitoring_agent_supported_clouds | join(', ') }}
+  when: (oilscope_cloud | default('')) not in monitoring_agent_supported_clouds
 
 - name: Select the current cloud's monitoring output
   ansible.builtin.set_fact:
@@ -35,20 +35,37 @@
     - monitoring_agent_configured
     - oilscope_cloud == 'gcp'
 
+- name: Verify the agent Terraform installed on Azure
+  ansible.builtin.include_tasks: azure.yml
+  when:
+    - monitoring_agent_configured
+    - oilscope_cloud == 'azure'
+
+# The disable path used to be a pair of AWS-or-else ternaries, which meant a
+# third cloud silently followed GCP's unit name and install path. Each cloud
+# now names its own, and Azure's removal is an ARM operation rather than a
+# local service stop - so it has its own task file on this side too.
 - name: Locate a previously installed monitoring agent
   ansible.builtin.stat:
-    path: >-
-      {{ '/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl'
-         if oilscope_cloud == 'aws' else '/lib/systemd/system/google-cloud-ops-agent.service' }}
+    path: "{{ monitoring_agent_marker_paths[oilscope_cloud] }}"
   register: monitoring_agent_previous
-  when: not monitoring_agent_configured
+  when:
+    - not monitoring_agent_configured
+    - oilscope_cloud in monitoring_agent_service_names
 
 - name: Stop an agent when this VM no longer has monitoring configuration
   become: true
   ansible.builtin.systemd_service:
-    name: "{{ 'amazon-cloudwatch-agent' if oilscope_cloud == 'aws' else monitoring_agent_gcp_service }}"
+    name: "{{ monitoring_agent_service_names[oilscope_cloud] }}"
     enabled: false
     state: stopped
   when:
     - not monitoring_agent_configured
+    - oilscope_cloud in monitoring_agent_service_names
     - monitoring_agent_previous.stat.exists | default(false)
+
+- name: Remove the Azure Monitor Agent when this VM no longer has monitoring configuration
+  ansible.builtin.include_tasks: azure_disable.yml
+  when:
+    - not monitoring_agent_configured
+    - oilscope_cloud == 'azure'

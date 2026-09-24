@@ -24,3 +24,20 @@ requests>=2.25.0
 # until it doesn't.
 boto3>=1.35.0
 botocore>=1.35.0
+
+# The azure.azcollection.azure_rm inventory plugin used by
+# inventory/oilscope-azure.yml is not pinned here, and deliberately so: that
+# collection's module_utils imports its entire SDK surface inside one try
+# block, so a partial install leaves the plugin unusable with a message that
+# names none of the packages actually missing. Install the collection's own
+# requirements file instead, after installing the collection:
+#
+#     ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+#     pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
+#
+# (adjust the path if collections are installed somewhere other than the
+# default; `ansible-galaxy collection list azure.azcollection` prints it.)
+#
+# Azure credentials come from ARM_* environment variables or `az login`; the
+# Azure CLI is also what the controller-side secret upload and the managed
+# migration's administrator read use.

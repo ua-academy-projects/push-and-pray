@@ -1,5 +1,5 @@
 locals {
-  enabled         = var.config.default_cloud == "gcp" && var.config.default_db == "cloud"
+  enabled         = var.config.default_cloud == "gcp" && var.config.managed_database
   resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
   settings        = local.enabled ? var.config.database_profile_map[var.config.database_profile].gcp : null
   region          = local.enabled ? var.config.region_map[var.config.region].gcp.region : null

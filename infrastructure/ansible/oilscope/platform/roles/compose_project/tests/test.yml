@@ -5,7 +5,7 @@
   connection: local
   gather_facts: false
   tasks:
-    # compose.fetcher.yaml.j2/compose.history.yaml.j2 read oilscope_database_mode/
+    # compose.fetcher.yaml.j2/compose.history.yaml.j2 read oilscope_managed_database/
     # oilscope_broker_ca/oilscope_database_ca, which the real deployment playbooks
     # set via the database_connection/broker_connection roles before compose_project
     # runs. Those roles need real inventory groups, SSH access to slurp a live
@@ -15,7 +15,7 @@
     # regressions in compose_project itself without standing up the whole chain.
     - name: Fake the shared connection facts compose_project's templates expect
       ansible.builtin.set_fact:
-        oilscope_database_mode: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).default_db }}"
+        oilscope_managed_database: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).managed_database }}"
         oilscope_broker_ca:
           content: "{{ 'test-only-broker-ca' | b64encode }}"
         oilscope_database_ca:

@@ -66,7 +66,8 @@ add-on.
 
 ### Why the TTL is short
 
-The address is a reserved AWS Elastic IP / GCP static address, so it survives
+The address is a reserved AWS Elastic IP, GCP static address or Azure static
+Standard public IP, so it survives
 the stop/start cycle used to hold costs down. It does change on a
 destroy-then-apply, which allocates a new one. 60 seconds bounds how long
 resolvers keep answering with the previous, now-dead address; Cloudflare does

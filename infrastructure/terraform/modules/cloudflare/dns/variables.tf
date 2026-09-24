@@ -28,3 +28,9 @@ variable "gcp_vms" {
   type        = map(object({ public_ip = optional(string) }))
   default     = {}
 }
+
+variable "azure_vms" {
+  description = "Created Azure VMs keyed by VM configuration name; only the public address is read."
+  type        = map(object({ public_ip = optional(string) }))
+  default     = {}
+}

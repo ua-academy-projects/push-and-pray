@@ -16,8 +16,8 @@ live deployed or verified in this work.
 
 ## Decisions to preserve
 
-- `default_db` is required: `application` means PostgreSQL in a database VM
-  container; `cloud` means AWS RDS or GCP Cloud SQL. It selects only database
+- `managed_database` is a required boolean: `false` means PostgreSQL in a database VM
+  container; `true` means AWS RDS, GCP Cloud SQL, or Azure PostgreSQL. It selects only database
   hosting. Cloud mode forbids database-role VMs.
 - Use RabbitMQ for Fetcher-to-History messages and Redis for UI sessions in
   both database modes and on both providers. No SQS, Pub/Sub, PGMQ, or

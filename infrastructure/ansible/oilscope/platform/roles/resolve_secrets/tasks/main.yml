@@ -30,11 +30,11 @@
 - name: Require a supported cloud
   ansible.builtin.fail:
     msg: >-
-      oilscope_cloud '{{ oilscope_cloud | default('') }}' is not 'gcp' or
-      'aws'.
+      oilscope_cloud '{{ oilscope_cloud | default('') }}' is not 'gcp',
+      'aws' or 'azure'.
   when:
     - resolve_secrets_mappings | length > 0
-    - (oilscope_cloud | default('')) not in ['gcp', 'aws']
+    - (oilscope_cloud | default('')) not in ['gcp', 'aws', 'azure']
 
 - name: Resolve secrets on GCP
   ansible.builtin.include_tasks: gcp.yml
@@ -47,3 +47,9 @@
   when:
     - resolve_secrets_mappings | length > 0
     - oilscope_cloud == 'aws'
+
+- name: Resolve secrets on Azure
+  ansible.builtin.include_tasks: azure.yml
+  when:
+    - resolve_secrets_mappings | length > 0
+    - oilscope_cloud == 'azure'

@@ -10,9 +10,9 @@
       {{ application_monitoring_outputs[oilscope_cloud ~ '_monitoring'].value
          .collector_configurations | default({}) }}
 
-- name: Expose each Docker service log to CloudWatch Agent
+- name: Expose each Docker service log to the cloud's log agent
   when:
-    - oilscope_cloud == 'aws'
+    - oilscope_cloud in ['aws', 'azure']
     - oilscope_role != 'bastion'
     - application_monitoring_project.monitoring.enabled | default(true) | bool
     - application_monitoring_project.monitoring.service_logs_enabled | default(false) | bool

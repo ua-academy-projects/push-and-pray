@@ -1,9 +1,10 @@
 # Resolve secrets role
 
 Resolves the secret values permitted for the current host from Secret
-Manager (GCP) or Secrets Manager (AWS), using the workload VM's own attached
-identity — its service account on GCP, its instance role on AWS — never the
-operator's credentials. It runs on the workload host itself, as part of a
+Manager (GCP), Secrets Manager (AWS) or Key Vault (Azure), using the workload
+VM's own attached identity — its service account on GCP, its instance role on
+AWS, its user-assigned managed identity on Azure — never the operator's
+credentials. It runs on the workload host itself, as part of a
 deployment play, not on `localhost`.
 
 Terraform creates the containers and grants each workload access only to its
@@ -18,9 +19,17 @@ containers.
 - Only the secrets listed in the current host's own `secret_mappings` are
   ever requested — never another workload's, and never a sibling VM that
   happens to share the same `role`.
-- Authentication is the instance's attached service account, obtained from
-  the metadata server. No credential is supplied by the operator or stored
-  on the host.
+- Authentication is the instance's attached identity, obtained from the
+  metadata server. No credential is supplied by the operator or stored on
+  the host. On Azure the token is requested for one identity by client ID
+  rather than letting IMDS choose, and for the Key Vault audience
+  specifically — a token minted for ARM does not open a secret.
+- On Azure the secret's address comes from the catalog Terraform exports
+  (`secret_resource_names.azure`), not from the secret ID: the versionless
+  data-plane URI a workload reads is a different string from the ARM scope
+  its read grant was written against, and neither can be derived from the
+  other. A mapped secret missing from that catalog fails the play rather
+  than being guessed at.
 - Nothing is written to disk. The result exists only as an in-memory fact
   for the duration of the play.
 - Every task that could carry a token or a secret value is marked `no_log`,

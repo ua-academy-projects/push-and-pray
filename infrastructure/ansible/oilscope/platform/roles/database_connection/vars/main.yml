@@ -4,3 +4,13 @@ database_connection_ca_dir: /etc/oilscope/database-tls
 database_connection_ca_file: "{{ database_connection_ca_dir }}/ca-bundle.pem"
 database_connection_container_ca_dir: /run/oilscope/database-tls
 database_connection_container_ca_file: "{{ database_connection_container_ca_dir }}/ca-bundle.pem"
+
+# Where individually published roots are staged before being assembled into
+# the single bundle above. Only used by a provider that publishes no bundle of
+# its own.
+database_connection_ca_roots_dir: "{{ database_connection_ca_dir }}/roots"
+
+# base64 of "-----BEGIN", which every PEM file starts with. Comparing the
+# base64 rather than the decoded bytes is what lets a DER root - which is not
+# text and would fail to decode - be told apart without decoding it.
+database_connection_pem_base64_prefix: LS0tLS1CRUdJTi

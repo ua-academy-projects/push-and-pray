@@ -1,5 +1,5 @@
 locals {
-  cloud_sql_enabled = var.config.default_cloud == "gcp" && var.config.default_db == "cloud"
+  cloud_sql_enabled = var.config.default_cloud == "gcp" && var.config.managed_database
 
   enabled = anytrue([
     for vm in values(var.config.vms) : try(vm.cloud, var.config.default_cloud) == "gcp"

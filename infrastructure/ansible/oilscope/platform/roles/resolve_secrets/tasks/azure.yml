@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Key Vault's data plane takes a bearer token, like GCP Secret Manager and
+# unlike Secrets Manager's SigV4 - so this needs no CLI on the VM. The token
+# comes from IMDS, which is link-local and must never be reached through a
+# proxy, and it is minted for the Key Vault audience specifically: a token for
+# ARM will not open a secret.
+
+- name: Read the deployment's Terraform outputs
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_outputs: >-
+      {{ lookup('ansible.builtin.file', resolve_secrets_outputs_path) | from_json }}
+  no_log: true
+
+# Terraform exports the versionless URI for every mapped secret; rebuilding one
+# from a vault name and an ID here would be a second, drifting source of truth
+# - and a data-plane URI is not the ARM scope the read grant was written
+# against, so the two cannot be derived from each other.
+- name: Select this deployment's secret catalog and managed identity
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_catalog: >-
+      {{ resolve_secrets_azure_outputs.secret_resource_names.value.azure | default({}) }}
+    resolve_secrets_azure_client_id: >-
+      {{ resolve_secrets_azure_outputs.azure_deployment.value.identities[oilscope_vm_key].client_id }}
+
+- name: Require a catalog entry for every mapped secret
+  ansible.builtin.fail:
+    msg: >-
+      the Terraform outputs at {{ resolve_secrets_outputs_path }} list no Key
+      Vault URI for {{ resolve_secrets_azure_unlisted | join(', ') }}. Export
+      them again from the applied deployment rather than guessing a URI.
+  vars:
+    resolve_secrets_azure_unlisted: >-
+      {{ resolve_secrets_mappings.values() | unique
+         | reject('in', resolve_secrets_azure_catalog) | sort | list }}
+  when: resolve_secrets_azure_unlisted | length > 0
+
+# The VM carries exactly one user-assigned identity, but IMDS is asked for that
+# one by client ID rather than left to pick: an implicit choice would silently
+# follow whatever identity is attached next.
+- name: Request a Key Vault token for this VM's managed identity
+  vars:
+    resolve_secrets_azure_token_query: >-
+      {{ [
+           'api-version=' ~ resolve_secrets_azure_imds_api_version,
+           'resource=' ~ (resolve_secrets_azure_audience | urlencode),
+           'client_id=' ~ (resolve_secrets_azure_client_id | urlencode),
+         ] | join('&') }}
+  ansible.builtin.uri:
+    url: "{{ resolve_secrets_azure_imds_url }}?{{ resolve_secrets_azure_token_query }}"
+    headers:
+      Metadata: "true"
+    use_proxy: false
+    return_content: true
+  register: resolve_secrets_azure_token
+  no_log: true
+  # A role assignment made in the same apply can take a few seconds to reach
+  # the token service - same reasoning as the AWS retry loop.
+  retries: 5
+  delay: 5
+  until: resolve_secrets_azure_token.status == 200
+
+- name: Extract the access token
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_access_token: >-
+      {{ (resolve_secrets_azure_token.content | from_json).access_token }}
+  no_log: true
+
+- name: Read each mapped secret's current version
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_azure_catalog[item.value] }}?api-version={{ resolve_secrets_azure_api_version }}
+    headers:
+      Authorization: "Bearer {{ resolve_secrets_azure_access_token }}"
+    validate_certs: true
+    return_content: true
+  register: resolve_secrets_azure_read
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  # A grant written against a secret that has no version yet is not the same
+  # as a missing grant; both surface here, and both are worth retrying briefly
+  # before failing.
+  retries: 5
+  delay: 5
+  until: resolve_secrets_azure_read.status == 200
+
+- name: Merge the resolved secrets into the result
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | combine({
+           item.item.key: (item.content | from_json).value
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_azure_read.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Discard the access token
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_access_token: ""
+    resolve_secrets_azure_token: {}
+  no_log: true

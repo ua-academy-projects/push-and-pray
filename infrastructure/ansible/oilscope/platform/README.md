@@ -28,7 +28,7 @@ Run from the repository root, through `infrastructure/ansible/deploy.sh`
 rather than `ansible-playbook` directly, using whichever inventory matches
 the configuration's `default_cloud` — see
 [inventory/README.md](../../inventory/README.md) for setup and the
-`oilscope_cloud`/`oilscope_vm_key` contract both inventories expose:
+`oilscope_cloud`/`oilscope_vm_key` contract all three inventories expose:
 
 ```bash
 # GCP
@@ -39,6 +39,11 @@ infrastructure/ansible/deploy.sh oilscope.platform.deploy_workloads \
 # AWS
 infrastructure/ansible/deploy.sh oilscope.platform.deploy_workloads \
   -i infrastructure/ansible/inventory/oilscope-aws.yml \
+  -e project_config_path=/absolute/path/project-config.json
+
+# Azure
+infrastructure/ansible/deploy.sh oilscope.platform.deploy_workloads \
+  -i infrastructure/ansible/inventory/oilscope-azure.yml \
   -e project_config_path=/absolute/path/project-config.json
 ```
 

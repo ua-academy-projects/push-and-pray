@@ -1,9 +1,9 @@
 # Monitoring agent role
 
 Installs and configures the cloud-native monitoring agent on an existing
-OilScope workload VM: the CloudWatch Agent on AWS, the Ops Agent on GCP. It
-runs on the workload host itself, as part of a deployment play, not on
-`localhost`.
+OilScope workload VM: the CloudWatch Agent on AWS, the Ops Agent on GCP. On
+Azure it installs nothing and verifies instead — see below. It runs on the
+workload host itself, as part of a deployment play, not on `localhost`.
 
 Terraform (`infrastructure/terraform/modules/aws/monitoring`,
 `modules/gcp/monitoring`) grants each VM's existing identity the permissions
@@ -14,6 +14,27 @@ rendered configuration and writes it to disk unchanged, then starts/restarts
 the agent service. It never re-derives thresholds, intervals, or log paths
 itself, and it never opens a cloud API connection to fetch this data -
 Terraform has already validated and rendered it.
+
+## Azure inverts the split
+
+The Azure Monitor Agent is a VM extension whose configuration lives in
+cloud-side data collection rules, not in a file on the host. There is nothing
+for this role to write, and a second owner creating its own rule is exactly
+what would make telemetry ambiguous. So on Azure, Terraform owns the
+extension, the rules and the associations, and this role:
+
+- creates the log directory the rules read, so an agent that starts before the
+  first deployment does not log a missing file every interval;
+- waits for `azuremonitoragent.service` to report active;
+- confirms the agent actually fetched a data collection configuration — a
+  running agent with no association collects nothing, and that failure is
+  invisible from the host, because the rule lives in Azure;
+- refuses an `agent_configurations` entry whose `ownership` is not
+  `terraform`, rather than assuming it.
+
+Disabling monitoring on Azure is likewise a Terraform operation. Stopping the
+service here would be undone by the next apply or reboot, so the role reports
+a leftover extension instead of pretending to have removed it.
 
 ## What it guarantees
 

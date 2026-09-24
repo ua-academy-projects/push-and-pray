@@ -27,6 +27,15 @@
     oilscope_preflight_config: >-
       {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
 
+- name: Require an explicit boolean database hosting setting
+  ansible.builtin.assert:
+    that:
+      - oilscope_preflight_config.managed_database is defined
+      - oilscope_preflight_config.managed_database is boolean
+    fail_msg: >-
+      Set managed_database to JSON true for managed PostgreSQL or false for
+      PostgreSQL on a database VM. Strings such as "yes" or "no" are not valid.
+
 - name: Determine this configuration's effective clouds
   ansible.builtin.set_fact:
     oilscope_preflight_clouds: >-

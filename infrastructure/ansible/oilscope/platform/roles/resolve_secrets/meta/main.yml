@@ -3,13 +3,14 @@
 galaxy_info:
   author: Push and Pray team
   description: >-
-    Resolve secret values for the current host from Secret Manager (GCP) or
-    Secrets Manager (AWS), using its attached identity
+    Resolve secret values for the current host from Secret Manager (GCP),
+    Secrets Manager (AWS) or Key Vault (Azure), using its attached identity
   license: GPL-2.0-or-later
   min_ansible_version: "2.17"
   galaxy_tags:
     - gcp
     - aws
+    - azure
     - secrets
     - security
 

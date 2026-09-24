@@ -3,20 +3,28 @@ output "gcp_database_connection" {
   value       = module.gcp_database.connection
 }
 
+output "azure_database_connection" {
+  description = "Managed Azure database connection metadata, without password values; null outside Azure cloud database mode."
+  value       = module.azure_database.connection
+}
+
 locals {
   vm_names = merge(
     { for name, vm in module.gcp_vm.vms : name => vm.name },
     { for name, vm in module.aws_vm.vms : name => vm.name },
+    { for name, vm in module.azure_vm.vms : name => vm.name },
   )
 
   vm_internal_ips = merge(
     { for name, vm in module.gcp_vm.vms : name => vm.internal_ip },
     { for name, vm in module.aws_vm.vms : name => vm.internal_ip },
+    { for name, vm in module.azure_vm.vms : name => vm.internal_ip },
   )
 
   vm_public_ips = merge(
     { for name, vm in module.gcp_vm.vms : name => vm.public_ip },
     { for name, vm in module.aws_vm.vms : name => vm.public_ip },
+    { for name, vm in module.azure_vm.vms : name => vm.public_ip },
   )
 }
 
@@ -83,14 +91,16 @@ output "secret_ids" {
   value = sort(distinct(concat(
     module.gcp_secrets.secret_ids,
     module.aws_secrets.secret_ids,
+    module.azure_secrets.secret_ids,
   )))
 }
 
 output "secret_resource_names" {
-  description = "Fully qualified secret resource names by cloud and secret ID."
+  description = "Fully qualified secret resource names by cloud and secret ID. Azure entries are versionless Key Vault URIs; the ARM scope a grant uses is not the same string."
   value = {
-    gcp = module.gcp_secrets.secret_resource_names
-    aws = module.aws_secrets.secret_resource_names
+    gcp   = module.gcp_secrets.secret_resource_names
+    aws   = module.aws_secrets.secret_resource_names
+    azure = module.azure_secrets.secret_resource_names
   }
 }
 
@@ -104,7 +114,7 @@ output "workload_secret_access" {
 }
 
 output "budgets" {
-  value = { aws = module.aws_budget.summary, gcp = module.gcp_budget.summary }
+  value = { aws = module.aws_budget.summary, gcp = module.gcp_budget.summary, azure = module.azure_budget.summary }
 }
 
 output "dns" {
@@ -136,5 +146,34 @@ output "gcp_monitoring" {
     uptime_check_id          = module.gcp_monitoring.uptime_check_id
     agent_configurations     = module.gcp_monitoring.agent_configurations
     collector_configurations = module.gcp_monitoring.collector_configurations
+  }
+}
+
+output "azure_monitoring" {
+  description = "Azure monitoring identifiers and non-secret agent wiring for deployment."
+  value = {
+    workspace_id             = module.azure_monitoring.workspace_id
+    action_group_id          = module.azure_monitoring.action_group_id
+    workbook_id              = module.azure_monitoring.workbook_id
+    availability_test_id     = module.azure_monitoring.availability_test_id
+    alert_ids                = module.azure_monitoring.alert_ids
+    agent_configurations     = module.azure_monitoring.agent_configurations
+    collector_configurations = module.azure_monitoring.collector_configurations
+  }
+}
+
+output "azure_deployment" {
+  description = "Non-secret Azure deployment provenance and the managed identity each workload runs as; the inventory plugin scopes its discovery from the project configuration, not from here."
+  value = {
+    subscription_id     = try(local.config.clouds.azure.subscription_id, null)
+    resource_group_name = module.azure_network.resource_group_name
+    location            = module.azure_network.location
+    key_vault           = module.azure_secrets.vault
+    identities = {
+      for name, vm in module.azure_vm.vms : name => {
+        client_id   = vm.identity_client_id
+        resource_id = vm.identity_resource_id
+      }
+    }
   }
 }

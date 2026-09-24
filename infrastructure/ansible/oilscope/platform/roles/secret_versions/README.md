@@ -23,6 +23,26 @@ cloud fails immediately rather than guessing where to write.
   through `--data-file=-`. On AWS, since the CLI has no stdin equivalent for
   `--secret-string`, it goes through a private (`0600`) temporary file passed
   as `file://...`, deleted unconditionally once the upload finishes or fails.
+  Azure uses the same temporary-file approach, via `az keyvault secret set
+  --file`.
+- A cloud this role has no implementation for is rejected by name before any
+  value is read. It used to match no dispatch condition, upload nothing, and
+  still report every task green.
+
+## Azure is the one that creates the secret
+
+On AWS and GCP, Terraform creates a value-free container and this role only
+ever writes a version into one that already exists — it refuses to create.
+
+Key Vault has no container: `azurerm_key_vault_secret` requires a value, and a
+placeholder would be worse than nothing, because a workload reading too early
+would get a *successful* read of the wrong credential. So on Azure Terraform
+creates the read grants and this role's first upload creates the secret itself.
+
+That makes a typo dangerous here in a way it is not on the other two clouds: it
+would create a real secret nothing grants access to, and quietly leave the
+intended one empty. Every upload is therefore checked against the catalog
+Terraform exported before anything is written.
   Either way, no trailing newline is added - one would become part of the
   stored value.
 - Every task that touches a value is marked `no_log`, so it stays out of the

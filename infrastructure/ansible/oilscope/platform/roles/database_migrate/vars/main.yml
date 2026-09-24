@@ -1,3 +1,11 @@
 ---
 database_migrate_dir: /opt/oilscope/migrate
 database_migrate_project: oilscope-migrate
+
+# Clouds whose administrator secret this role knows how to read. Checked before
+# dispatch so an unimplemented provider fails by name instead of falling into
+# another cloud's undefined register.
+database_migrate_supported_clouds:
+  - aws
+  - gcp
+  - azure

@@ -29,11 +29,11 @@
 
         - name: Fail if the role did not reject the unsupported cloud
           ansible.builtin.fail:
-            msg: monitoring_agent unexpectedly accepted oilscope_cloud=azure.
+            msg: monitoring_agent unexpectedly accepted oilscope_cloud=digitalocean.
       rescue:
         - name: Confirm the unsupported cloud was rejected
           ansible.builtin.debug:
-            msg: Correctly rejected oilscope_cloud=azure.
+            msg: Correctly rejected oilscope_cloud=digitalocean.
 
 # tasks/aws.yml does real work now (downloads and installs a package, writes
 # root-owned files, starts a systemd service) - only safe to run for real

@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Key Vault has no value-free container, so unlike AWS and GCP there is nothing
+# for Terraform to have created and nothing to describe first. Writing a secret
+# here creates it. That makes a typo dangerous in a way it is not on the other
+# two clouds - it would create a real secret nothing grants access to, and
+# quietly leave the intended one empty - so every upload is checked against the
+# catalog Terraform exported before anything is written.
+- name: Read the deployment's Terraform outputs
+  ansible.builtin.set_fact:
+    secret_versions_azure_outputs: >-
+      {{ lookup('ansible.builtin.file', secret_versions_outputs_file) | from_json }}
+  no_log: true
+
+- name: Select the vault and the secret catalog
+  ansible.builtin.set_fact:
+    secret_versions_azure_vault: >-
+      {{ secret_versions_azure_outputs.azure_deployment.value.key_vault.name }}
+    secret_versions_azure_catalog: >-
+      {{ secret_versions_azure_outputs.secret_resource_names.value.azure | default({}) }}
+
+- name: Refuse to create a secret Terraform granted nobody access to
+  ansible.builtin.fail:
+    msg: >-
+      {{ secret_versions_azure_unlisted | join(', ') }}
+      {{ 'is' if (secret_versions_azure_unlisted | length == 1) else 'are' }}
+      not in the deployment's Key Vault catalog. Apply Terraform first, or
+      refresh {{ secret_versions_outputs_file }} from the applied deployment.
+  vars:
+    secret_versions_azure_unlisted: >-
+      {{ secret_versions_catalog | map(attribute='secret_id')
+         | reject('in', secret_versions_azure_catalog) | sort | list }}
+  when: secret_versions_azure_unlisted | length > 0
+
+# `az keyvault secret set --value` would put the credential in the process
+# arguments, where ps and the shell history can see it. --file reads it from a
+# private file instead, the same shape as the AWS path and for the same reason.
+- name: Upload every value through a private temporary file
+  when: not ansible_check_mode
+  block:
+    - name: Create a private temporary file for secret payloads
+      ansible.builtin.tempfile:
+        state: file
+        suffix: oilscope-secret
+      register: secret_versions_azure_tempfile
+
+    - name: Write each value and add a new version
+      ansible.builtin.include_tasks: set_secret_version.yml
+      loop: "{{ secret_versions_catalog }}"
+      loop_control:
+        loop_var: secret_versions_item
+        label: "{{ secret_versions_item.secret_id }}"
+  always:
+    - name: Remove the private temporary file
+      ansible.builtin.file:
+        path: "{{ secret_versions_azure_tempfile.path }}"
+        state: absent
+      when: >-
+        secret_versions_azure_tempfile is defined
+        and secret_versions_azure_tempfile.path is defined

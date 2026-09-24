@@ -10,10 +10,13 @@ locals {
   hostname = try(var.config.vms[local.ui_vm_key].public_endpoint.hostname, "")
 
   public_ips = {
-    aws = { for name, vm in var.aws_vms : name => vm.public_ip }
-    gcp = { for name, vm in var.gcp_vms : name => vm.public_ip }
+    aws   = { for name, vm in var.aws_vms : name => vm.public_ip }
+    gcp   = { for name, vm in var.gcp_vms : name => vm.public_ip }
+    azure = { for name, vm in var.azure_vms : name => vm.public_ip }
   }
-  ip_address = coalesce(try(local.public_ips[var.config.default_cloud][local.ui_vm_key], ""), "")
+  # An absent VM and an unassigned address both have to reach the address
+  # precondition below, so neither may leave coalesce with nothing to return.
+  ip_address = try(coalesce(local.public_ips[var.config.default_cloud][local.ui_vm_key], ""), "")
 }
 
 data "cloudflare_zone" "selected" {

@@ -14,7 +14,12 @@ login. It uses the configured database image tag, which must contain the current
 migration files and runner. Build/publish that image before deployment.
 
 The controller retrieves secrets with its existing operator identity: AWS CLI
-`secretsmanager get-secret-value`, or `gcloud secrets versions access`. The
+`secretsmanager get-secret-value`, `gcloud secrets versions access`, or
+`az keyvault secret show` against the versionless URI Terraform exported.
+Azure's is read as JSON rather than `tsv`, because `tsv` escapes tabs and
+newlines and would silently alter a password containing them. A cloud with no
+branch here is rejected by name; it used to fall through to GCP's register,
+which under `no_log` produced a diagnostic naming the wrong provider. The
 operator must have read access to the exported administrator secret and the
 POSTGRES_PASSWORD secrets of the Fetcher/History VMs — UI has no PostgreSQL
 credential of its own since its session store moved to Redis. AWS KMS

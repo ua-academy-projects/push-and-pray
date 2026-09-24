@@ -3,6 +3,19 @@
 # Project configuration JSON - the same file the Terraform configuration reads.
 secret_versions_config_file: ""
 
+# Azure only: the vault name and the secret catalog come from the applied
+# deployment's Terraform outputs, because Key Vault has no container for this
+# role to look up by ID the way AWS and GCP do.
+secret_versions_outputs_file: "{{ terraform_outputs_path | default('') }}"
+
+# Clouds this role can actually write a version to. A configuration selecting
+# anything else is rejected before any value is read, so an unimplemented
+# backend can never be reported as a successful upload.
+secret_versions_supported_clouds:
+  - aws
+  - gcp
+  - azure
+
 # GCP only. Falls back to $GOOGLE_PROJECT, then to clouds.gcp.project_id in
 # the configuration. AWS needs no equivalent: the region is always derived
 # from region_map in the configuration.

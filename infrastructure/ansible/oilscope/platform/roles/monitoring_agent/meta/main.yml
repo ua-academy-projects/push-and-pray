@@ -4,7 +4,8 @@ galaxy_info:
   author: Push and Pray team
   description: >-
     Install and configure the cloud-native monitoring agent (CloudWatch
-    Agent on AWS, Ops Agent on GCP) on an existing OilScope workload VM
+    Agent on AWS, Ops Agent on GCP), or verify the Terraform-installed one
+    (Azure Monitor Agent), on an existing OilScope workload VM
   license: GPL-2.0-or-later
   min_ansible_version: "2.17"
   platforms:
@@ -14,6 +15,7 @@ galaxy_info:
   galaxy_tags:
     - aws
     - gcp
+    - azure
     - monitoring
 
 dependencies: []

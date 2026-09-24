@@ -15,3 +15,14 @@ collections:
   # keep working after `tags` is removed.
   - name: amazon.aws
     version: ">=11.2.0"
+
+  # Provides the azure_rm inventory plugin used by
+  # inventory/oilscope-azure.yml. >=4.0.0 for the hostvar_expressions,
+  # conditional_groups and include_host_filters option set oilscope_azure
+  # generates, and for plain_host_names.
+  #
+  # Unlike the other two, this collection's module_utils imports the whole
+  # Azure SDK surface in a single try block, so its own requirements.txt has to
+  # be installed as well - see requirements.txt here for the command.
+  - name: azure.azcollection
+    version: ">=4.0.0"

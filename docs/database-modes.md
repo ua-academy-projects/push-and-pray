@@ -1,15 +1,16 @@
 # Database modes and coordinated cutover
 
-## What `default_db` selects, and what it doesn't
+## What `managed_database` selects, and what it doesn't
 
-`default_db` (`application` or `cloud`, required in every configuration)
+`managed_database` (`false` for self-hosted or `true` for managed PostgreSQL,
+required in every configuration)
 selects **only where PostgreSQL runs**: the self-hosted container on
-the database VM, or the managed RDS/Cloud SQL instance chosen by
+the database VM, or the managed RDS/Cloud SQL/Azure PostgreSQL instance chosen by
 `default_cloud`.
 
 RabbitMQ (Fetcher-to-History messaging, on the History VM) and Redis (UI
 session storage, on the UI VM) run in **both** database modes, on both
-clouds. Switching `default_db` never provisions or removes them, and never
+clouds. Switching `managed_database` never provisions or removes them, and never
 touches their data — see ["Database-mode switch, or the first cutover from
 PGMQ/SQL sessions"](#database-mode-switch-or-the-first-cutover-from-pgmqsql-sessions)
 below for what does.
@@ -47,19 +48,44 @@ selected tier's actual pricing and regional availability against
 [Cloud SQL instance settings](https://docs.cloud.google.com/sql/docs/postgres/instance-settings)
 before a live deployment.
 
+## Azure Flexible Server sizing
+
+Cloud mode on Azure is a low-cost *development* profile like the GCP one, not
+a Free Tier commitment: the shipped `economy` profile is a burstable
+`B_Standard_B1ms`, 32 GiB storage on the `P4` tier, seven days of backup
+retention, no geo-redundant backup, no storage autogrow and no high
+availability. Burstable SKUs support no high availability at all, so
+`high_availability` has to stay `Disabled` on this profile.
+
+Two numbers cannot be carried over from the other clouds. Flexible Server's
+smallest storage is 32 GiB, not RDS's 20 GiB, and its minimum backup retention
+is **seven days**, not one — there is no one-day equivalent to switch off. Both
+are billed.
+
+Azure's administrator login is not a PostgreSQL superuser. Review the existing
+role and grant SQL against that before assuming a migration that succeeds on
+RDS succeeds here. Verify the selected major version, SKU and storage tier are
+actually offered in the target location before applying — provider support is
+not regional availability. See
+[Flexible Server compute and storage](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-compute-storage).
+
 ## VM sizing and single-host availability for RabbitMQ/Redis
 
 RabbitMQ shares the History VM; Redis shares the UI VM, in both database
 modes. `rabbitmq.memory_mb`/`redis.memory_mb` (plus `redis.maxmemory_mb`) in
 the project JSON are ceilings on the *broker/cache container*, not the whole
 VM — the History/UI application process and OS overhead still need their own
-headroom on the same instance. With the shipped example's sizing (`history`
-on `t3.small`/`e2-small`, ~2 GiB RAM, `rabbitmq.memory_mb: 768`; `ui` on
-`t3.micro`/`e2-micro`, ~1 GiB RAM, `redis.memory_mb: 256`), that leaves
-roughly 1.3 GiB for History plus OS, and roughly 750 MiB for UI plus OS.
-These are illustrative, not a sizing guarantee — raise the VM's `size_map`
-tier (and the corresponding `memory_mb`/`maxmemory_mb`) if the application or
-broker/cache workload grows.
+headroom on the same instance. Every VM in both shipped examples is on the
+`micro` tier, and that tier is not the same size on every cloud: `t3.micro`
+and `e2-micro` are ~1 GiB, while `Standard_B1ms` is ~2 GiB. So with
+`rabbitmq.memory_mb: 768` on History, AWS and GCP leave roughly 250 MiB for
+History plus OS against Azure's roughly 1.3 GiB; with `redis.memory_mb: 256`
+on UI, they leave roughly 750 MiB against Azure's roughly 1.8 GiB.
+
+History on a 1 GiB instance is tight, and the Azure Monitor Agent adds to that
+where monitoring is on. These are illustrative, not a sizing guarantee — raise
+the VM's `size_map` tier (and the corresponding `memory_mb`/`maxmemory_mb`) if
+the application or broker/cache workload grows.
 
 Neither RabbitMQ nor Redis runs with clustering or replication in this
 architecture — each is a single Compose service on a single VM, by deliberate
@@ -83,6 +109,13 @@ requirement, the server's identity is actually verified.
   certificate output is not a complete trust bundle on its own. Validate the
   pinned provider's exact shared-CA behavior during implementation rather
   than assuming it.
+- **Azure**: the server's own FQDN in the linked private DNS zone satisfies
+  hostname verification, but there is no single published bundle to trust
+  against. Flexible Server chains to DigiCert Global Root G2 or Microsoft RSA
+  Root CA 2017, so `azure_database_connection` reports `ca_bundle_url: null`
+  and lists both roots in `ca_certificate_urls`; deployment assembles one PEM
+  from that list. Do not substitute a guessed single-URL equivalent. See
+  [Azure PostgreSQL TLS](https://learn.microsoft.com/en-us/azure/postgresql/security/security-tls).
 
 RabbitMQ connections between the Fetcher/History VMs are also
 authenticated TLS with certificate verification and mounted trust material —
@@ -103,8 +136,8 @@ RabbitMQ/Redis state — get this classification right before doing anything:
 | --- | --- | --- | --- |
 | New image tag, config-only change, restarting a crashed service | No | No | [Routine redeploy](#routine-redeploy) |
 | Standing up a new deployment from nothing | N/A (created fresh) | N/A (created fresh) | [Fresh deployment](#fresh-deployment) |
-| `default_db` or the selected `database_profile` changes on an existing deployment | Yes | **Yes** | [Database-mode switch, or the first cutover](#database-mode-switch-or-the-first-cutover-from-pgmqsql-sessions) |
-| An existing deployment still on PGMQ/PostgreSQL sessions moves to RabbitMQ/Redis, even with no `default_db` change | No | **Yes** (first-time creation, but nothing is migrated in) | Same procedure, "first cutover" case |
+| `managed_database` or the selected `database_profile` changes on an existing deployment | Yes | **Yes** | [Database-mode switch, or the first cutover](#database-mode-switch-or-the-first-cutover-from-pgmqsql-sessions) |
+| An existing deployment still on PGMQ/PostgreSQL sessions moves to RabbitMQ/Redis, even with no `managed_database` change | No | **Yes** (first-time creation, but nothing is migrated in) | Same procedure, "first cutover" case |
 
 ## Routine redeploy
 
@@ -327,7 +360,7 @@ half-completed switch. Diagnose the failed stage in place: resuming means
 repeating that step, not starting over from step 1, unless the failure
 itself left step 1's stopped state in doubt (check `docker compose ... ps`
 on all three VMs again before resuming). Switching back to the previous
-`default_db`/profile does not restore data, queue messages, or sessions
+`managed_database`/profile does not restore data, queue messages, or sessions
 already discarded by completed steps — it creates fresh state on the old
 side too, for the same reason step 3 doesn't transfer data forward.
 

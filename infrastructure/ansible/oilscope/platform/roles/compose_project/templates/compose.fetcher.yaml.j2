@@ -16,7 +16,7 @@ services:
       OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}
       DATA_PROVIDER: ${DATA_PROVIDER:-oilpriceapi}
       # yamllint disable rule:line-length
-      DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD_URL:?POSTGRES_PASSWORD_URL is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:?DATABASE_PORT is required}/${POSTGRES_DB:?POSTGRES_DB is required}?sslmode=${DATABASE_SSLMODE:?DATABASE_SSLMODE is required}{{ '&sslrootcert=${DATABASE_SSLROOTCERT:?DATABASE_SSLROOTCERT is required}' if oilscope_database_mode == 'cloud' else '' }}
+      DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD_URL:?POSTGRES_PASSWORD_URL is required}@${DATABASE_HOST:?DATABASE_HOST is required}:${DATABASE_PORT:?DATABASE_PORT is required}/${POSTGRES_DB:?POSTGRES_DB is required}?sslmode=${DATABASE_SSLMODE:?DATABASE_SSLMODE is required}{{ '&sslrootcert=${DATABASE_SSLROOTCERT:?DATABASE_SSLROOTCERT is required}' if oilscope_managed_database else '' }}
       # yamllint enable rule:line-length
       FETCH_CRON_HOURS: ${FETCH_CRON_HOURS:-0,6,12,18}
       FETCH_TIMEZONE: ${FETCH_TIMEZONE:-UTC}
@@ -38,7 +38,7 @@ services:
       - "${FETCHER_BIND_ADDRESS:-0.0.0.0}:${FETCHER_HOST_PORT:-8002}:8002"
     labels:
       oilscope.broker-ca: "{{ oilscope_broker_ca.content | hash('sha256') }}"
-{% if oilscope_database_mode == 'cloud' %}
+{% if oilscope_managed_database %}
       oilscope.database-ca-sha256: "{{ oilscope_database_ca.stat.checksum }}"
 {% endif %}
     volumes:
@@ -48,7 +48,7 @@ services:
         read_only: true
         bind:
           create_host_path: false
-{% if oilscope_database_mode == 'cloud' %}
+{% if oilscope_managed_database %}
       - type: bind
         source: "{{ database_connection_ca_dir }}"
         target: "{{ database_connection_container_ca_dir }}"

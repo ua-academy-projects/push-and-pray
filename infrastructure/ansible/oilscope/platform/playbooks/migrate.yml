@@ -18,7 +18,7 @@
     - name: Skip application mode and non-primary History hosts
       ansible.builtin.meta: end_host
       when: >-
-        database_migrate_config.default_db != 'cloud'
+        not database_migrate_config.managed_database
 
     - name: Gather migration host facts
       ansible.builtin.setup:

@@ -4,7 +4,8 @@
 # e.g. the repository's project-config.example.json, or a real one.
 #
 # In real use, oilscope_vm_key and oilscope_cloud come from the dynamic
-# inventory plugin (oilscope_gcp / oilscope_aws). This static test inventory
+# inventory plugin (oilscope_gcp / oilscope_aws / oilscope_azure). This static
+# test inventory
 # has no plugin behind it, so they're set directly as host vars on
 # oilscope-dev-bastion in ./inventory instead, exercising a host with a
 # "bastion" vms entry, which has no secret_mappings per the schema.

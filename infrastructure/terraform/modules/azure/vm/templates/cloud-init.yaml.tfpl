@@ -1,0 +1,35 @@
+#cloud-config
+
+users:
+%{ for username, public_key in ssh_users ~}
+  - name: ${username}
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    lock_passwd: true
+    no_user_group: true
+    ssh_authorized_keys:
+      - ${public_key}
+%{ endfor ~}
+%{ if ssh_port != null ~}
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/00-oilscope-bastion.conf
+    permissions: "0644"
+    content: |
+      Port ${ssh_port}
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitEmptyPasswords no
+      PermitRootLogin no
+      AllowTcpForwarding yes
+      AllowAgentForwarding no
+      GatewayPorts no
+      X11Forwarding no
+      PermitTunnel no
+
+runcmd:
+  - [systemctl, daemon-reload]
+  - [sh, -c, "systemctl is-active --quiet ssh.socket && systemctl restart ssh.socket || systemctl restart ssh.service"]
+%{ endif ~}

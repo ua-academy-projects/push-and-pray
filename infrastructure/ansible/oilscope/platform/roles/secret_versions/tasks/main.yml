@@ -29,6 +29,18 @@
   ansible.builtin.set_fact:
     secret_versions_cloud: "{{ secret_versions_effective_clouds[0] }}"
 
+# Before this guard existed, a cloud with no dispatch below simply matched
+# neither `when`, so the role built a catalog, reported every task green and
+# uploaded nothing - a silent no-op reported as success. Reject here, before
+# any catalog or value work, rather than at the dispatch.
+- name: Require a cloud this role can actually upload to
+  ansible.builtin.fail:
+    msg: >-
+      '{{ secret_versions_cloud }}' has no secret-upload implementation in this
+      role ({{ secret_versions_supported_clouds | join(', ') }} do). Nothing
+      was uploaded.
+  when: secret_versions_cloud not in secret_versions_supported_clouds
+
 # The unit of upload is the container. One container is usually read by several
 # workloads, so the mappings are collapsed to (container, workload) pairs first.
 - name: Collect the container and workload pairs
@@ -140,3 +152,7 @@
 - name: Upload secret versions to AWS
   ansible.builtin.include_tasks: aws.yml
   when: secret_versions_cloud == 'aws'
+
+- name: Upload secret versions to Azure
+  ansible.builtin.include_tasks: azure.yml
+  when: secret_versions_cloud == 'azure'

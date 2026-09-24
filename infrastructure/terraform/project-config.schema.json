@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "default_cloud",
-    "default_db",
+    "managed_database",
     "region",
     "environment",
     "name_prefix",
@@ -157,7 +157,8 @@
               "items": {
                 "enum": [
                   "aws",
-                  "gcp"
+                  "gcp",
+                  "azure"
                 ]
               },
               "uniqueItems": true,
@@ -246,13 +247,9 @@
       "$ref": "#/$defs/cloud_name",
       "description": "Which cloud this apply targets. Single-cloud-per-apply: every VM in `vms` deploys here."
     },
-    "default_db": {
-      "type": "string",
-      "enum": [
-        "application",
-        "cloud"
-      ],
-      "description": "Database hosting mode: application uses PostgreSQL on the database VM; cloud uses managed PostgreSQL on the selected default_cloud."
+    "managed_database": {
+      "type": "boolean",
+      "description": "Required database hosting selector: true provisions managed PostgreSQL in default_cloud; false runs PostgreSQL in a database-role VM."
     },
     "database_profile": {
       "type": "string",
@@ -326,9 +323,9 @@
         "pattern": "^[a-z][a-z0-9_.-]*$"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/per_cloud_string"
+        "$ref": "#/$defs/per_cloud_image"
       },
-      "description": "Abstract image keys (e.g. \"ubuntu-26.04\") to native image reference per cloud. For aws this must be an SSM parameter path starting with /, which the aws module resolves to an AMI ID. Direct AMI IDs are not supported."
+      "description": "Abstract image keys (e.g. \"ubuntu-26.04\") to native image reference per cloud. For aws this must be an SSM parameter path starting with /, which the aws module resolves to an AMI ID. Direct AMI IDs are not supported. For azure it is the marketplace publisher/offer/sku/version."
     },
     "clouds": {
       "type": "object",
@@ -362,6 +359,82 @@
             "project_id": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+            }
+          }
+        },
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subscription_id",
+            "resource_group_name",
+            "vnet_cidr",
+            "admin_username",
+            "key_vault"
+          ],
+          "properties": {
+            "subscription_id": {
+              "description": "Which subscription to deploy into. Not a credential: the token still comes from the environment or az login.",
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+            },
+            "resource_group_name": {
+              "description": "Resource group Terraform creates and owns. The inventory plugin scopes its discovery to it, so it is configuration rather than only an output.",
+              "type": "string",
+              "pattern": "^[-\\w._()]{1,90}[-\\w_()]$"
+            },
+            "vnet_cidr": {
+              "type": "string",
+              "minLength": 1
+            },
+            "admin_username": {
+              "description": "Which ssh_users entry Azure provisions as the VM's platform administrator. Every other entry is created by cloud-init.",
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+            },
+            "key_vault": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "soft_delete_retention_days",
+                "purge_protection_enabled"
+              ],
+              "properties": {
+                "name": {
+                  "description": "Globally unique vault name. Omit to derive one from name_prefix, environment, subscription and resource group.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z](?!.*--)[A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
+                },
+                "soft_delete_retention_days": {
+                  "description": "A deleted vault, and its name, stay reserved for this long.",
+                  "type": "integer",
+                  "minimum": 7,
+                  "maximum": 90
+                },
+                "purge_protection_enabled": {
+                  "description": "With purge protection on, a deleted vault cannot be purged early and its name is unavailable for the whole retention period.",
+                  "type": "boolean"
+                }
+              }
+            },
+            "postgres_network": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "subnet_cidr",
+                "private_dns_zone_name"
+              ],
+              "properties": {
+                "subnet_cidr": {
+                  "description": "Delegated to Microsoft.DBforPostgreSQL/flexibleServers and carrying nothing else; /28 or larger, inside vnet_cidr and not overlapping the management or workload subnet.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "private_dns_zone_name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*\\.postgres\\.database\\.azure\\.com$"
+                }
+              }
             }
           }
         },
@@ -730,6 +803,52 @@
               "type": "string"
             }
           }
+        },
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "monthly_amount": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 100
+            },
+            "currency": {
+              "description": "Azure bills in the subscription's own currency and the budget resource takes no currency argument; this records the expected one.",
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "default": "USD"
+            },
+            "actual_thresholds": {
+              "description": "Absolute currency amounts (in the budget's own currency) at which to notify \u2014 not fractions of monthly_amount.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "email_recipients": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "format": "email"
+              }
+            },
+            "start_date": {
+              "description": "First of a month, UTC. Azure requires a start date and a computed one would replace the budget on every apply.",
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-01T00:00:00Z$"
+            }
+          }
         }
       }
     },
@@ -779,12 +898,12 @@
     {
       "if": {
         "required": [
-          "default_db",
+          "managed_database",
           "default_cloud"
         ],
         "properties": {
-          "default_db": {
-            "const": "cloud"
+          "managed_database": {
+            "const": true
           },
           "default_cloud": {
             "const": "aws"
@@ -843,12 +962,66 @@
     },
     {
       "if": {
+        "properties": {
+          "default_cloud": {
+            "const": "azure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "required": [
+              "azure"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
         "required": [
-          "default_db"
+          "default_cloud",
+          "managed_database"
         ],
         "properties": {
-          "default_db": {
-            "const": "cloud"
+          "default_cloud": {
+            "const": "azure"
+          },
+          "managed_database": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "properties": {
+              "azure": {
+                "required": [
+                  "postgres_network"
+                ]
+              }
+            }
+          },
+          "service_ports": {
+            "properties": {
+              "postgresql": {
+                "const": 5432
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "managed_database"
+        ],
+        "properties": {
+          "managed_database": {
+            "const": true
           }
         }
       },
@@ -894,14 +1067,14 @@
       "if": {
         "required": [
           "default_cloud",
-          "default_db"
+          "managed_database"
         ],
         "properties": {
           "default_cloud": {
             "const": "gcp"
           },
-          "default_db": {
-            "const": "cloud"
+          "managed_database": {
+            "const": true
           }
         }
       },
@@ -938,6 +1111,74 @@
         },
         "gcp": {
           "$ref": "#/$defs/cloud_database_gcp"
+        },
+        "azure": {
+          "$ref": "#/$defs/cloud_database_azure"
+        }
+      }
+    },
+    "cloud_database_azure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sku_name",
+        "postgres_version",
+        "storage_mb",
+        "storage_tier",
+        "backup_retention_days",
+        "high_availability",
+        "standby_availability_zone"
+      ],
+      "properties": {
+        "sku_name": {
+          "type": "string",
+          "pattern": "^(B|GP|MO)_Standard_[A-Za-z0-9_]+$"
+        },
+        "postgres_version": {
+          "type": "string",
+          "const": "18"
+        },
+        "storage_mb": {
+          "type": "integer",
+          "minimum": 32768
+        },
+        "storage_tier": {
+          "type": "string",
+          "enum": [
+            "P4",
+            "P6",
+            "P10",
+            "P15",
+            "P20",
+            "P30"
+          ]
+        },
+        "backup_retention_days": {
+          "description": "Flexible Server accepts 7-35 days; there is no one-day RDS equivalent.",
+          "type": "integer",
+          "minimum": 7,
+          "maximum": 35
+        },
+        "high_availability": {
+          "type": "string",
+          "enum": [
+            "Disabled",
+            "SameZone",
+            "ZoneRedundant"
+          ]
+        },
+        "standby_availability_zone": {
+          "description": "Required by ZoneRedundant high availability; null otherwise. Burstable SKUs support no high availability at all.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "1",
+            "2",
+            "3",
+            null
+          ]
         }
       }
     },
@@ -1047,7 +1288,8 @@
       "type": "string",
       "enum": [
         "gcp",
-        "aws"
+        "aws",
+        "azure"
       ]
     },
     "per_cloud_string": {
@@ -1055,7 +1297,8 @@
       "additionalProperties": false,
       "required": [
         "gcp",
-        "aws"
+        "aws",
+        "azure"
       ],
       "properties": {
         "gcp": {
@@ -1065,6 +1308,58 @@
         "aws": {
           "type": "string",
           "minLength": 1
+        },
+        "azure": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "per_cloud_image": {
+      "$comment": "Images are the one map whose branches are not all strings: an Azure marketplace image is addressed by four coordinates, so it has a definition of its own rather than widening per_cloud_string.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gcp",
+        "aws",
+        "azure"
+      ],
+      "properties": {
+        "gcp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aws": {
+          "type": "string",
+          "minLength": 1
+        },
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "publisher",
+            "offer",
+            "sku",
+            "version"
+          ],
+          "properties": {
+            "publisher": {
+              "type": "string",
+              "minLength": 1
+            },
+            "offer": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sku": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -1073,9 +1368,32 @@
       "additionalProperties": false,
       "required": [
         "gcp",
-        "aws"
+        "aws",
+        "azure"
       ],
       "properties": {
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "location",
+            "availability_zone"
+          ],
+          "properties": {
+            "location": {
+              "type": "string",
+              "minLength": 1
+            },
+            "availability_zone": {
+              "type": "string",
+              "enum": [
+                "1",
+                "2",
+                "3"
+              ]
+            }
+          }
+        },
         "gcp": {
           "type": "object",
           "additionalProperties": false,

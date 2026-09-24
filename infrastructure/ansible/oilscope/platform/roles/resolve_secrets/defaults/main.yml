@@ -8,3 +8,12 @@ resolve_secrets_project_id: ""
 resolve_secrets_metadata_url: >-
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 resolve_secrets_secretmanager_url: https://secretmanager.googleapis.com/v1
+
+# Azure only. Unlike the other two clouds, the secret's address is not derived
+# from its ID here - it is read from the catalog Terraform exports, together
+# with the managed identity this VM's token must be minted for.
+resolve_secrets_outputs_path: "{{ terraform_outputs_path | default('') }}"
+resolve_secrets_azure_imds_url: http://169.254.169.254/metadata/identity/oauth2/token
+resolve_secrets_azure_imds_api_version: "2018-02-01"
+resolve_secrets_azure_audience: https://vault.azure.net
+resolve_secrets_azure_api_version: "7.4"

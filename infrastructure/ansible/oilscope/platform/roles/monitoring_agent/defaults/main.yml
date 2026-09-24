@@ -28,3 +28,26 @@ monitoring_agent_gcp_install_script_url: https://dl.google.com/cloudagents/add-g
 monitoring_agent_gcp_version: "2.*.*"
 monitoring_agent_gcp_config_path: /etc/google-cloud-ops-agent/config.yaml
 monitoring_agent_gcp_service: google-cloud-ops-agent.service
+
+# Azure: the Monitor Agent, installed by Terraform as a VM extension rather
+# than by this role. These paths are what the VM shows for it.
+monitoring_agent_azure_service: azuremonitoragent.service
+monitoring_agent_azure_state_dir: /etc/opt/microsoft/azuremonitoragent/config-cache
+
+# One entry per implemented cloud, so a disable path can never fall through to
+# another cloud's unit name or install marker.
+monitoring_agent_supported_clouds:
+  - aws
+  - gcp
+  - azure
+
+monitoring_agent_marker_paths:
+  aws: /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl
+  gcp: /lib/systemd/system/google-cloud-ops-agent.service
+  azure: /lib/systemd/system/azuremonitoragent.service
+
+# Azure is absent on purpose: its agent is removed by Terraform destroying the
+# extension, not by stopping a service the next apply would restart.
+monitoring_agent_service_names:
+  aws: amazon-cloudwatch-agent
+  gcp: google-cloud-ops-agent.service

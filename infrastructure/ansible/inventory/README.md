@@ -1,7 +1,7 @@
 # Inventory
 
-`oilscope.yml` (GCP) and `oilscope-aws.yml` (AWS) build the deployment
-inventory from live cloud state, so a `terraform apply` that replaces a VM or
+`oilscope.yml` (GCP), `oilscope-aws.yml` (AWS) and `oilscope-azure.yml`
+(Azure) build the deployment inventory from live cloud state, so a `terraform apply` that replaces a VM or
 changes an address is picked up without editing a host list. Use whichever
 one matches `default_cloud` in your project configuration.
 
@@ -16,18 +16,18 @@ response is reused.
 
 ## How it fits together
 
-Neither `oilscope.platform.oilscope_gcp` nor `oilscope.platform.oilscope_aws`
-talks to its cloud directly. Each reads the project configuration, derives the
-settings below, and hands them to the matching upstream plugin —
-`google.cloud.gcp_compute` or `amazon.aws.aws_ec2` — which performs the
-discovery.
+None of `oilscope.platform.oilscope_gcp`, `oilscope.platform.oilscope_aws` or
+`oilscope.platform.oilscope_azure` talks to its cloud directly. Each reads the
+project configuration, derives the settings below, and hands them to the
+matching upstream plugin — `google.cloud.gcp_compute`, `amazon.aws.aws_ec2` or
+`azure.azcollection.azure_rm` — which performs the discovery.
 
-The wrapper exists because neither upstream plugin can read the project
+The wrapper exists because no upstream plugin can read the project
 configuration or evaluate Jinja in its own configuration file — a template
 expression placed there is sent to the API as literal text.
 
-Both wrappers expose the same contract on every host, regardless of cloud:
-`oilscope_cloud` (`gcp` or `aws`), `oilscope_vm_key` (this VM's key in the
+All three wrappers expose the same contract on every host, regardless of cloud:
+`oilscope_cloud` (`gcp`, `aws` or `azure`), `oilscope_vm_key` (this VM's key in the
 configuration's `vms` object, recovered from the instance's own name/tag —
 not from `inventory_hostname`, which a custom `hostnames` setting or a static
 test inventory could give an unrelated value), `oilscope_role`, `internal_ip`,
@@ -77,6 +77,27 @@ bastion directly, while the `ProxyCommand` keeps using the configured
 | `environment` | the `tag:environment` filter |
 | `ssh_port` of the VM whose `role` is `bastion` | the bastion's `bastion_ssh_port` |
 
+### Azure (`oilscope-azure.yml`)
+
+| Derived from the JSON | Becomes |
+| --- | --- |
+| `clouds.azure.subscription_id` | the subscription queried |
+| `clouds.azure.resource_group_name` | the only resource group searched |
+| `region_map[region].azure.location` | part of the single include filter |
+| `name_prefix` | the `tags.application` check in that filter |
+| `environment` | the `tags.environment` check in that filter |
+| `ssh_port` of the VM whose `role` is `bastion` | the bastion's `bastion_ssh_port` |
+
+Azure differs from the other two in one way worth knowing: `azure_rm`'s
+`include_host_filters` entries are **ORed**, so location, application and
+environment are combined into one `and` expression rather than listed
+separately. Three entries would admit any VM matching any one of them — the
+opposite of what the other two clouds' filter lists do.
+
+`plain_host_names` is on, so a host appears under its VM name rather than a
+name with a hash suffix. That is presentation only: `oilscope_vm_key` is still
+derived from the VM's own `name`, never from the inventory alias.
+
 Everything else — the grouping rules, the host-variable expressions, the
 workload SSH port — lives in each plugin's defaults. Changing those means
 editing the plugin and rebuilding the collection, not editing this directory.
@@ -114,7 +135,32 @@ separate login step: `amazon.aws` authenticates through the standard boto3
 credential chain, so whatever already makes the AWS CLI work on your machine
 (`~/.aws/credentials`, `AWS_PROFILE`, an assumed role, ...) is enough.
 
-### Both
+### Azure
+
+```sh
+ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
+az login
+```
+
+`requirements.yml` installs `azure.azcollection`, which provides the
+`azure_rm` plugin `oilscope_azure` delegates to. Its Python dependencies are
+**not** in this repository's `requirements.txt`, unlike the other two clouds:
+that collection's `module_utils` imports its whole SDK surface inside a single
+`try` block, so a partial install leaves the plugin unusable with a message
+naming none of the packages actually missing. Install its own requirements
+file, as above.
+
+`az login` is one way to authenticate; `ARM_SUBSCRIPTION_ID`, `ARM_CLIENT_ID`,
+`ARM_TENANT_ID` and `ARM_CLIENT_SECRET` in the environment are another, and
+`auth_source: auto` accepts either.
+
+**`OILSCOPE_SSH_KEY` is required on Azure.** With it unset the shared helper
+falls back to `~/.ssh/google_compute_engine`, a gcloud-managed key that is
+never provisioned on an Azure VM — so every host fails to authenticate with a
+message about the key, not about the cloud.
+
+### All three
 
 This repository's own collection must also be installed, because there is no
 `ansible.cfg` pointing Ansible at the working copy:
@@ -128,7 +174,8 @@ installed copy, not the files you just edited.
 
 ## Pointing it at your configuration
 
-Neither `oilscope.yml` nor `oilscope-aws.yml` carries a path of its own,
+None of `oilscope.yml`, `oilscope-aws.yml` or `oilscope-azure.yml` carries a
+path of its own,
 because the project configuration does not live in the same place for
 everyone. The path is resolved in three steps, weakest first:
 
@@ -166,6 +213,12 @@ ansible-inventory \
 # AWS
 ansible-inventory \
   -i infrastructure/ansible/inventory/oilscope-aws.yml \
+  -e project_config_path=/absolute/path/project-config.json \
+  --graph
+
+# Azure
+ansible-inventory \
+  -i infrastructure/ansible/inventory/oilscope-azure.yml \
   -e project_config_path=/absolute/path/project-config.json \
   --graph
 ```
@@ -234,7 +287,11 @@ values their `ProxyCommand` is built from.
 Raw instance fields from the GCP API are prefixed with `gcp_`, because two of
 them — `name` and `tags` — collide with names Ansible reserves. AWS's raw
 instance fields carry no prefix; `aws_ec2` doesn't have the same collision
-(tags are read through `ec2_tags`, not `tags`).
+(tags are read through `ec2_tags`, not `tags`). Azure's are unprefixed too,
+and include `name`, `tags`, `id`, `location`, `resource_group`, `powerstate`,
+`private_ipv4_addresses` (a list) and `public_ipv4_address` (a single value,
+absent entirely on a private VM). Azure hosts additionally carry
+`oilscope_vm_id`, the VM's ARM resource ID.
 
 ## SSH
 
@@ -242,16 +299,19 @@ instance fields carry no prefix; `aws_ec2` doesn't have the same collision
 or the controller's own login name if that isn't set - but it can also come from
 `-e ansible_user=...`, a host var, or anywhere else Ansible reads it from.
 Whatever the source, it must resolve to one of the usernames in the
-configuration's `ssh_users`: both clouds only ever create the accounts listed
-there (via GCP instance metadata / AWS cloud-init), never the operator's own
-local account by name. `preflight.yml`'s second play checks the *effective*
+configuration's `ssh_users`: all three clouds only ever create the accounts
+listed there (via GCP instance metadata, or cloud-init on AWS and Azure),
+never the operator's own local account by name. On Azure one of those names
+is additionally the platform administrator, named by
+`clouds.azure.admin_username`. `preflight.yml`'s second play checks the *effective*
 `ansible_user` for every real target host individually - not by re-deriving
 it from `OILSCOPE_SSH_USER`/`$USER` itself, which would miss a `-e` or
 host-var override - and fails before any real connection is attempted if it
 doesn't match. Set `OILSCOPE_SSH_KEY` to the matching private key - there's
-no default that's correct for both clouds, since GCP operators traditionally
+no default that's correct for every cloud, since GCP operators traditionally
 used the key `gcloud compute ssh` manages at `~/.ssh/google_compute_engine`,
-and AWS has no equivalent auto-managed key at all.
+and neither AWS nor Azure has an equivalent auto-managed key at all. On both
+of those, `OILSCOPE_SSH_KEY` is effectively required.
 
 The bastion is normally reached on its external address at the final port read
 from `vms.bastion.ssh_port` in the project config. Every workload is reached on
@@ -264,9 +324,17 @@ path on every inventory, ad-hoc and playbook command.
 The non-default port belongs to the bastion alone; applying it globally would
 break every workload connection.
 
-Terraform does not configure `sshd`. A newly created bastion therefore starts
-on port 22, and Ansible changes it to the final configured port. Use this
-bootstrap sequence whenever the bastion has not yet been configured.
+On AWS and GCP, Terraform does not configure `sshd`. A newly created bastion
+therefore starts on port 22, and Ansible changes it to the final configured
+port. Use this bootstrap sequence whenever the bastion has not yet been
+configured.
+
+**Azure needs none of it.** Its bastion's cloud-init writes the sshd drop-in
+during first boot, so the VM serves `vms.bastion.ssh_port` from the start and
+the network security group only ever opens that port. There is no window in
+which 22 is both needed and open, nothing to enable and nothing to close
+afterwards — skip to step 3 and confirm connectivity. `bootstrap_bastion.yml`
+is still safe to run there; it just has nothing to change.
 
 **AWS caveat:** unlike GCP's firewall, the AWS bastion security group
 (`modules/aws/network/security_groups.tf`) only ever opens the *final*
@@ -302,7 +370,8 @@ infrastructure/ansible/deploy.sh oilscope.platform.bootstrap_bastion \
 unset OILSCOPE_BASTION_CONNECT_PORT
 ```
 
-Substitute `-i infrastructure/ansible/inventory/oilscope-aws.yml` on AWS.
+Substitute `-i infrastructure/ansible/inventory/oilscope-aws.yml` on AWS, or
+`oilscope-azure.yml` on Azure.
 
 3. Confirm a new Ansible connection works on the final configured port.
 
@@ -342,13 +411,16 @@ final configured port and then reaches workload SSH on port 22.
 | Symptom | Cause |
 | --- | --- |
 | `No inventory was parsed`, doubled path in the message | not run from the repository root |
-| `unknown plugin 'oilscope.platform.oilscope_gcp'` / `'...oilscope_aws'` | this repository's collection is not installed, or was not rebuilt |
+| `unknown plugin 'oilscope.platform.oilscope_gcp'` / `'...oilscope_aws'` / `'...oilscope_azure'` | this repository's collection is not installed, or was not rebuilt |
 | `unknown plugin 'google.cloud.gcp_compute'` | `requirements.yml` not installed |
 | `unknown plugin 'amazon.aws.aws_ec2'` | `requirements.yml` not installed |
+| `unknown plugin 'azure.azcollection.azure_rm'` | `requirements.yml` not installed |
 | `cannot start: ... library (google-auth)` | `requirements.txt` not installed (GCP) |
 | `No module named 'boto3'` / `'botocore'` | `requirements.txt` not installed (AWS) |
+| `Failed to get credentials. Either pass as parameters, set environment variables, ... or log in with Azure CLI` | no `az login` session and no `ARM_*` in the environment |
+| an Azure import error naming one SDK package | the collection's own `requirements.txt` was not installed - install all of it, not the one package named |
 | `... is not a key in this configuration's vms` | the inventory and the project configuration have drifted apart - wrong `project_config_path`, or a VM was renamed |
-| **Empty `@all`, exit status 0** | GCP: `clouds.gcp.project_id` or the zone/labels don't match reality. AWS: the region, or the `application`/`environment` tags, don't match reality |
+| **Empty `@all`, exit status 0** | GCP: `clouds.gcp.project_id` or the zone/labels don't match reality. AWS: the region, or the `application`/`environment` tags, don't match reality. Azure: `clouds.azure.resource_group_name`, the location, or the `application`/`environment` tags don't match reality |
 | `'nnn' is not one of this configuration's ssh_users` | `OILSCOPE_SSH_USER` (or your local username) isn't a key in `ssh_users` - the preflight play catches this before any connection is attempted |
 | `Permission denied (publickey)` | the account is absent from `ssh_users`, or `OILSCOPE_SSH_KEY` doesn't point at the matching private key |
 
@@ -366,4 +438,16 @@ aws ec2 describe-instances \
   --filters Name=tag:application,Values=<name_prefix> Name=tag:environment,Values=<environment> \
   --query 'Reservations[].Instances[].{Name:Tags[?Key==`Name`]|[0].Value,State:State.Name,Role:Tags[?Key==`role`]|[0].Value}' \
   --output table
+
+# Azure
+az vm list -g <resource_group_name> -d \
+  --query '[].{Name:name,Location:location,Power:powerState,Role:tags.role,Env:tags.environment}' \
+  --output table
 ```
+
+Azure's single ANDed include filter makes a partial match invisible in a
+different way from the other two: one wrong tag or the wrong location and
+*every* host disappears at once, rather than some subset surviving. If the
+graph is empty but `az vm list` shows the VMs, compare `location` and the
+`application`/`environment` tags in that output against the project
+configuration before looking anywhere else.

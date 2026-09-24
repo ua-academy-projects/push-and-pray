@@ -142,6 +142,15 @@ AWS:
 | creates | `aws_iam_role_policy` — one `secretsmanager:GetSecretValue` grant per workload, scoped to that workload's own secrets |
 | never creates | a secret *version* — the payload |
 
+Azure:
+
+| Terraform | |
+| --- | --- |
+| creates | `azurerm_key_vault` — one RBAC-authorized vault, explicit soft-delete retention and purge policy |
+| creates | `azurerm_role_assignment` — one `Key Vault Secrets User` grant per (workload, secret) pair, scoped to `<vault ARM ID>/secrets/<name>` |
+| creates | `azurerm_role_assignment` — `Key Vault Secrets Officer` on the vault per configured version manager |
+| never creates | `azurerm_key_vault_secret` for a workload secret — the payload |
+
 The last row of each table is the whole point. A secret value passed into
 Terraform ends up in three places you cannot fully control: the configuration
 file, the plan file, and the state file. State lives in a bucket, plans get
@@ -159,7 +168,21 @@ deliberately not `secretAccessor` — see below). AWS has no equivalent
 Terraform-managed grant yet; whoever uploads a version on AWS needs
 `secretsmanager:PutSecretValue` (and `DescribeSecret`, since the uploader
 checks a container exists before writing to it) from their own broader AWS
-identity, not from anything this repository's Terraform grants.
+identity, not from anything this repository's Terraform grants. Azure's
+`azure_secret_version_managers` is the closest equivalent, but Key Vault has no
+add-a-version-only role: it grants `Key Vault Secrets Officer` on the vault,
+which can read as well as write. Name the deployment controller there, never a
+workload identity.
+
+Azure also needs one thing the other two do not. Secrets Manager and Secret
+Manager let Terraform create an empty *container*, so a read before the first
+version fails cleanly. Key Vault has no container — `azurerm_key_vault_secret`
+requires a value. Writing a placeholder would be worse than nothing: a workload
+reading too early would get a *successful* read of the wrong credential instead
+of an error. So on Azure the grants exist before the secrets do, and the first
+version is written out of band like everywhere else. If a subscription refuses a
+role assignment at a scope whose secret does not yet exist, upload the values
+first and then apply.
 
 ## Who can read what
 
@@ -178,15 +201,24 @@ terraform output workload_secret_access
 ```
 
 Each workload VM runs as its own identity — a service account on GCP, an
-instance role on AWS — and is granted only the secrets listed against it.
-There is no project-wide (GCP) or account-wide (AWS) read grant, so a
-compromised VM reaches its own credentials and nothing else. This is also why the
+instance role on AWS, a user-assigned managed identity on Azure — and is
+granted only the secrets listed against it. There is no project-wide (GCP),
+account-wide (AWS) or vault-wide (Azure) read grant, so a compromised VM
+reaches its own credentials and nothing else. This is also why the
 database passwords are separate secrets rather than one shared value: a single
 password would hand every workload the same blast radius.
 
 `terraform output secret_ids` lists the containers, and
 `terraform output secret_resource_names` gives their fully qualified names.
 None of the three outputs exposes a value.
+
+On Azure that name is the versionless data-plane URI
+(`https://<vault>.vault.azure.net/secrets/<name>`). It is not the ARM scope a
+grant is written against (`<vault ARM ID>/secrets/<name>`) — two different
+strings for the same secret, and using one where the other belongs fails in a
+way that is easy to misread. Key Vault names are also case-insensitive and
+accept only `[A-Za-z0-9-]`, so a secret ID containing `_`, which the shared
+schema allows for AWS and GCP, cannot be used on Azure.
 
 ## Storing a value
 
@@ -252,6 +284,21 @@ AWS has no `secret_version_managers` equivalent: Terraform grants no one
 write access to a secret's versions. Whoever uploads needs
 `secretsmanager:PutSecretValue` from their own broader AWS identity.
 
+Azure has `azure_secret_version_managers`, taking Entra object IDs rather than
+IAM members:
+
+```hcl
+azure_secret_version_managers = [
+  "00000000-0000-0000-0000-000000000000",
+]
+```
+
+It is a weaker guarantee than GCP's, and knowingly so: Key Vault has no
+add-a-version-only role, so this grants `Key Vault Secrets Officer` on the
+vault, which can read as well as write. Name the deployment controller there,
+never a workload identity. Leave it empty and whoever uploads needs that role
+from their own broader Azure identity.
+
 ## Uploading every value at once
 
 Doing that by hand for every secret is where a value eventually ends up in the
@@ -310,14 +357,26 @@ collide, every container keeps the fully qualified name
 Every value and every container is checked before the first version is added. A
 missing one fails the play with the full list, before anything is written.
 Half-rotated is the state that costs an evening — one service on the new
-password, three on the old. On both clouds, the container itself must already
-exist — this role only ever writes a version into what Terraform already
-created; it never creates a container.
+password, three on the old. On AWS and GCP the container itself must already
+exist — the role only ever writes a version into what Terraform created, and
+never creates one.
+
+Azure is the exception, because Key Vault has no value-free container to
+create: there, Terraform creates the read grants and this role's first upload
+creates the secret. A typo would therefore create a real secret nothing grants
+access to, and quietly leave the intended one empty — so every Azure upload is
+checked against the catalog Terraform exported (`secret_resource_names.azure`
+in `terraform_outputs_path`) before anything is written, and an unlisted ID
+fails the play.
+
+A cloud the role has no implementation for is now rejected by name before any
+value is read. It used to match no dispatch condition, upload nothing, and
+still report every task green.
 
 Every task that touches a value carries `no_log`, so the payload stays out of
 the Ansible output and any callback log at every verbosity, and no trailing
 newline is ever added (`stdin_add_newline: false` on GCP; a plain, unmodified
-file write on AWS) because it would become part of the stored value. The
+file write on AWS and Azure) because it would become part of the stored value. The
 sensitive tasks are also skipped explicitly in check mode rather than being
 left to the module: a check-mode skip result carries the module arguments,
 and `-vvv` prints those
@@ -335,15 +394,25 @@ ansible-playbook oilscope.platform.upload_secret_versions \
 
 Adding a version requires `roles/secretmanager.secretVersionAdder` (GCP) or
 `secretsmanager:PutSecretValue` (AWS), so whoever runs this does not need to
-be able to read what is already stored.
+be able to read what is already stored. On Azure it requires `Key Vault
+Secrets Officer`, which does include read — Key Vault offers no narrower
+write-only role.
 
 ## Rotation
 
-Adding a version does not remove the old one. Both Secret Manager and Secrets
-Manager keep every version until it is destroyed, and consumers that ask for
-the latest one pick up the new value on their next read.
+Adding a version does not remove the old one. Secret Manager, Secrets Manager
+and Key Vault all keep every version until it is destroyed or disabled, and
+consumers that ask for the latest one pick up the new value on their next
+read.
 
 ```bash
+# Azure
+az keyvault secret set --vault-name <vault> --name oilscope-dev-db-password-ui \
+  --file /path/to/private/file --encoding utf-8
+# and to retire the previous version
+az keyvault secret set-attributes --vault-name <vault> \
+  --name oilscope-dev-db-password-ui --version <old-version> --enabled false
+
 # GCP
 printf '%s' "${NEW_VALUE}" | gcloud secrets versions add SECRET_ID --data-file=-
 gcloud secrets versions list SECRET_ID
@@ -383,6 +452,16 @@ is no undo, and the values are not in state to be recovered from. Before
 destroying a project that anyone else relies on, confirm the values exist
 somewhere else first.
 
+Azure destroys differently, and it is worth knowing which way. Terraform owns
+no workload secret there, so `destroy` removes the grants and the vault, not
+the individual secrets — but removing the vault takes them with it. The vault
+then enters soft delete for `clouds.azure.key_vault.soft_delete_retention_days`
+(7–90), during which its **name stays reserved**, and with
+`purge_protection_enabled` it cannot be released early. The provider is
+configured to recover a soft-deleted vault rather than purge one, so a redeploy
+under the same name reattaches to the old vault instead of failing — including
+the secrets it still holds.
+
 ## Managed database administrator credentials
 
 The database modules manage administrator credentials separately from workload
@@ -397,8 +476,17 @@ a 32-character password, creates `oil_tracker_admin`, and writes a JSON secret
 with `username` and `password` under `<prefix>-<environment>-database-admin`.
 `gcp_database_connection.admin_secret_id` exports the secret resource name only.
 
-The GCP generated password, SQL user password, and secret payload are stored in
-sensitive Terraform state. Sensitive marking hides normal CLI output; it does
+Azure works like GCP: Terraform generates a 32-character password, sets it as
+the Flexible Server administrator login `oil_tracker_admin`, and writes a JSON
+secret with `username` and `password` under
+`<prefix>-<environment>-database-admin` in the deployment's own Key Vault.
+`azure_database_connection.admin_secret_id` exports the versionless secret URI
+only, and no workload identity is granted access to that secret. Note that
+Azure's administrator is not a PostgreSQL superuser — check the role and grant
+SQL against that before assuming an RDS-shaped bootstrap works.
+
+The GCP and Azure generated passwords, SQL user passwords, and secret payloads
+are stored in sensitive Terraform state. Sensitive marking hides normal CLI output; it does
 not encrypt state or remove the values. Restrict backend access and protect
 state backups. No secret values belong in project JSON, outputs, logs, or Git.
 Keep password changes under Terraform management so the SQL account and secret

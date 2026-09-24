@@ -5,7 +5,8 @@ Fetcher, History, or UI Compose file. Run with privilege escalation so the role
 can install the public CA bundle under `/etc/oilscope/database-tls`.
 
 Required input: `project_config_path`, the controller's project JSON file.
-`default_db` is read explicitly, without an omitted-mode fallback.
+`managed_database` is a required JSON boolean: `true` selects managed PostgreSQL,
+and `false` selects the self-hosted database VM. There is no omitted-mode fallback.
 
 In application mode, the role selects the database inventory host's internal
 IP and the configured PostgreSQL service port. The database/user names remain
@@ -28,7 +29,15 @@ but valid file cannot be detected automatically, so refresh it from the correct
 backend/workspace. This step does not make the full managed deployment ready.
 
 The role selects `<default_cloud>_database_connection.value`, using the host,
-port, database, TLS mode, and public CA URL exported by the AWS/GCP module.
+port, database, TLS mode, and trust material exported by that cloud's module.
+AWS and GCP each publish one maintained bundle, named by `ca_bundle_url`.
+Azure publishes none — Flexible Server chains to DigiCert Global Root G2 or
+Microsoft RSA Root Certificate Authority 2017 — so its output sets
+`ca_bundle_url` to null and names both roots in `ca_certificate_urls`, which
+the role downloads and assembles into the same single PEM at the same path.
+One of those roots is served as PEM and the other as DER; both are handled
+without installing anything on the VM, because PEM is base64 DER between
+armour lines and `slurp` already returns base64.
 A missing/null output or a mode other than `verify-full` stops the role rather
 than falling back to the database VM or unverified TLS.
 

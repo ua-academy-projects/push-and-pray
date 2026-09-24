@@ -267,11 +267,37 @@ def gcp_payload(config, metrics, timestamp):
     }
 
 
+def azure_records(config, metrics, timestamp):
+    """One flat record per measurement.
+
+    Azure has no per-VM custom metric namespace to publish into, so these are
+    ingested as logs by the Azure Monitor Agent. The data collection rule
+    declares exactly these columns, and nested values would not ingest - so
+    this is a row per metric rather than one object carrying them all, unlike
+    the EMF event AWS takes.
+    """
+    moment = dt.datetime.fromtimestamp(timestamp, dt.UTC).isoformat().replace("+00:00", "Z")
+    return [
+        {
+            "Timestamp": moment,
+            "VMKey": config["vm_key"],
+            "Role": config["role"],
+            "Metric": key,
+            "Value": float(value),
+        }
+        for key, value in metrics.items()
+    ]
+
+
 def publish(config, metrics):
     now = time.time()
     if config["cloud"] == "aws":
         with Path("/var/log/oilscope/application-metrics.jsonl").open("a") as destination:
             destination.write(json.dumps(emf(config, metrics, now)) + "\n")
+    elif config["cloud"] == "azure":
+        with Path(config["destination"]).open("a") as destination:
+            for record in azure_records(config, metrics, now):
+                destination.write(json.dumps(record) + "\n")
     elif config["cloud"] == "gcp":
         status, token = request_json(
             "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",

@@ -1,7 +1,7 @@
 # GCP database
 
 Creates private Cloud SQL PostgreSQL when `default_cloud` is `gcp` and
-`default_db` is `cloud`. Inputs are `config` and `network`, like the AWS database
+`managed_database` is `true`. Inputs are `config` and `network`, like the AWS database
 module. Disabled mode creates no database resources and returns null.
 
 The module reads every sizing field directly from

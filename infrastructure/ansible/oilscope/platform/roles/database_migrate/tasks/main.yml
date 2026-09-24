@@ -28,6 +28,9 @@
     - name: Read the database administrator secret
       ansible.builtin.include_tasks: read_secret.yml
       vars:
+        # AWS names the reference admin_secret_arn; GCP and Azure both call it
+        # admin_secret_id, though Azure's is a versionless Key Vault URI rather
+        # than a resource name.
         database_migrate_secret_id: >-
           {{ oilscope_database_connection.admin_secret_arn if database_connection_config.default_cloud == 'aws'
              else oilscope_database_connection.admin_secret_id }}
@@ -89,4 +92,5 @@
         database_migrate_secret_value: ""
         database_migrate_aws_secret: {}
         database_migrate_gcp_secret: {}
+        database_migrate_azure_secret: {}
       no_log: true

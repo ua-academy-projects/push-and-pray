@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Included from main.yml only when oilscope_cloud == 'azure' and this VM has no
+# agent configuration.
+#
+# Stopping the service locally would be the wrong cleanup and a misleading one:
+# Terraform owns the extension, so the next apply reinstalls it and the next
+# reboot restarts it. Terraform removing the extension is the real disable -
+# this only reports whether that has happened yet, so a half-disabled VM is
+# visible instead of looking clean.
+- name: Look for an Azure Monitor Agent left behind on this VM
+  become: true
+  ansible.builtin.stat:
+    path: "{{ monitoring_agent_marker_paths.azure }}"
+  register: monitoring_agent_azure_previous
+
+- name: Report an agent Terraform has not removed yet
+  ansible.builtin.debug:
+    msg: >-
+      This VM has no monitoring configuration, but the Azure Monitor Agent
+      extension is still installed. Terraform owns that extension: re-apply
+      with monitoring disabled to remove it. Stopping the service here would
+      be undone by the next apply or reboot.
+  when: monitoring_agent_azure_previous.stat.exists

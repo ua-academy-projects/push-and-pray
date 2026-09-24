@@ -7,7 +7,7 @@
 
 - name: Select database hosting mode
   ansible.builtin.set_fact:
-    oilscope_database_mode: "{{ database_connection_config.default_db }}"
+    oilscope_managed_database: "{{ database_connection_config.managed_database }}"
 
 - name: Resolve the application database connection
   ansible.builtin.set_fact:
@@ -16,10 +16,10 @@
       port: "{{ database_connection_config.service_ports.postgresql }}"
       database: oil_tracker
       sslmode: disable
-  when: oilscope_database_mode == 'application'
+  when: not oilscope_managed_database
 
 - name: Resolve the managed database connection
-  when: oilscope_database_mode == 'cloud'
+  when: oilscope_managed_database
   block:
     - name: Read refreshed Terraform outputs from the controller
       ansible.builtin.include_vars:
@@ -52,6 +52,9 @@
         group: root
         mode: "0755"
 
+    # AWS and GCP each publish one maintained bundle. Azure publishes none, and
+    # Flexible Server chains to either of two roots, so its connection output
+    # names the roots instead and the bundle is assembled below.
     - name: Refresh the provider's public database CA bundle
       ansible.builtin.get_url:
         url: "{{ oilscope_database_connection.ca_bundle_url }}"
@@ -61,6 +64,65 @@
         mode: "0644"
         validate_certs: true
         force: true
+      when: oilscope_database_connection.ca_bundle_url | default('', true) | length > 0
+
+    - name: Assemble a CA bundle from the provider's named roots
+      when:
+        - oilscope_database_connection.ca_bundle_url | default('', true) | length == 0
+        - oilscope_database_connection.ca_certificate_urls | default([]) | length > 0
+      block:
+        - name: Create the staging directory for individual roots
+          ansible.builtin.file:
+            path: "{{ database_connection_ca_roots_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Download each configured root
+          ansible.builtin.get_url:
+            url: "{{ item }}"
+            dest: "{{ database_connection_ca_roots_dir }}/{{ '%02d' | format(index) }}.crt"
+            owner: root
+            group: root
+            mode: "0644"
+            validate_certs: true
+            force: true
+          loop: "{{ oilscope_database_connection.ca_certificate_urls }}"
+          loop_control:
+            index_var: index
+            label: "{{ item }}"
+
+        - name: Read each downloaded root
+          ansible.builtin.slurp:
+            src: "{{ database_connection_ca_roots_dir }}/{{ '%02d' | format(index) }}.crt"
+          loop: "{{ oilscope_database_connection.ca_certificate_urls }}"
+          loop_control:
+            index_var: index
+            label: "{{ item }}"
+          register: database_connection_roots
+
+        # A root is published either already PEM-armoured or as raw DER, and
+        # Azure's two are one of each. PEM *is* base64 DER between armour
+        # lines, and slurp already returns base64 - so a DER root only needs
+        # wrapping, and no openssl has to be installed on the VM to convert it.
+        # The test is on the base64 itself: decoding DER as text would fail.
+        - name: Assemble one PEM bundle from the roots
+          ansible.builtin.copy:
+            dest: "{{ database_connection_ca_file }}"
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              {% for root in database_connection_roots.results %}
+              {% if root.content is search('^' ~ database_connection_pem_base64_prefix) %}
+              {{ root.content | b64decode | trim }}
+              {% else %}
+              -----BEGIN CERTIFICATE-----
+              {{ root.content | regex_replace('(.{64})', '\1\n') | trim }}
+              -----END CERTIFICATE-----
+              {% endif %}
+              {% endfor %}
 
     - name: Identify the installed CA bundle for Compose reconciliation
       ansible.builtin.stat:
@@ -75,7 +137,7 @@
       DATABASE_PORT: "{{ oilscope_database_connection.port | string }}"
       POSTGRES_DB: "{{ oilscope_database_connection.database }}"
       POSTGRES_USER: >-
-        {{ 'oil_tracker_' ~ oilscope_vm_key if oilscope_database_mode == 'cloud' else 'oil_tracker' }}
+        {{ 'oil_tracker_' ~ oilscope_vm_key if oilscope_managed_database else 'oil_tracker' }}
       DATABASE_SSLMODE: "{{ oilscope_database_connection.sslmode }}"
       DATABASE_SSLROOTCERT: >-
-        {{ database_connection_container_ca_file if oilscope_database_mode == 'cloud' else '' }}
+        {{ database_connection_container_ca_file if oilscope_managed_database else '' }}

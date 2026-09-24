@@ -10,6 +10,13 @@ variable "project_config_path" {
   }
 }
 
+//for Azure
+variable "azure_secret_version_managers" {
+  description = "Entra object IDs allowed to write new secret versions. Key Vault has no add-version-only role, so this grants Key Vault Secrets Officer on the vault: name the deployment controller, never a workload identity."
+  type        = list(string)
+  default     = []
+}
+
 //for GCP
 variable "secret_version_managers" {
   description = "IAM members allowed to add new versions to every secret. Adding a version does not grant reading one."

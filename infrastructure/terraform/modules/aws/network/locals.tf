@@ -14,6 +14,6 @@ locals {
   rds_enabled = (
     local.enabled &&
     var.config.default_cloud == "aws" &&
-    var.config.default_db == "cloud"
+    var.config.managed_database
   )
 }

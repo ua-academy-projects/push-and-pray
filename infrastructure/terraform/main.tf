@@ -68,6 +68,44 @@ module "gcp_budget" {
   depends_on = [module.gcp_monitoring]
 }
 
+module "azure_network" {
+  source = "./modules/azure/network"
+
+  config = local.config
+}
+
+module "azure_vm" {
+  source = "./modules/azure/vm"
+
+  config  = local.config
+  network = module.azure_network
+}
+
+module "azure_secrets" {
+  source = "./modules/azure/secrets"
+
+  config                  = local.config
+  network                 = module.azure_network
+  vms                     = module.azure_vm.vms
+  secret_version_managers = var.azure_secret_version_managers
+}
+
+module "azure_database" {
+  source = "./modules/azure/database"
+
+  config  = local.config
+  network = module.azure_network
+  vault   = module.azure_secrets.vault
+}
+
+module "azure_budget" {
+  source = "./modules/azure/budget"
+
+  name              = "${local.config.name_prefix}-${local.config.environment}-group-monthly"
+  settings          = try(local.raw_config.budgets.azure, {})
+  resource_group_id = module.azure_network.resource_group_id
+}
+
 module "aws_monitoring" {
   source = "./modules/aws/monitoring"
 
@@ -84,11 +122,21 @@ module "gcp_monitoring" {
   database = module.gcp_database.monitoring
 }
 
+module "azure_monitoring" {
+  source = "./modules/azure/monitoring"
+
+  config   = local.config
+  network  = module.azure_network
+  vms      = module.azure_vm.vms
+  database = module.azure_database.monitoring
+}
+
 module "cloudflare_dns" {
   source = "./modules/cloudflare/dns"
 
-  config  = local.config
-  aws_vms = module.aws_vm.vms
-  gcp_vms = module.gcp_vm.vms
+  config    = local.config
+  aws_vms   = module.aws_vm.vms
+  gcp_vms   = module.gcp_vm.vms
+  azure_vms = module.azure_vm.vms
 }
 

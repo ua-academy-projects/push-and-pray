@@ -322,15 +322,64 @@ pg_cron: those SQL files were retired to `database/migrations/retired/` and are
 no longer applied on a fresh deployment. Running the cloud SQL profile alone
 does not complete managed deployment.
 
-AWS RDS and [GCP Cloud SQL](infrastructure/terraform/modules/gcp/database/README.md)
+AWS RDS, [GCP Cloud SQL](infrastructure/terraform/modules/gcp/database/README.md)
+and [Azure PostgreSQL Flexible Server](infrastructure/terraform/modules/azure/database/README.md)
 Terraform modules now expose private database connection metadata using explicit
 JSON database profiles. Cloud SQL includes private services access, private DNS,
-shared-CA TLS, and an administrator secret. Ansible now resolves connections/CA
-bundles and runs managed migrations with per-VM restricted runtime logins before
-History starts, and deploys RabbitMQ (on the History VM) and Redis (on the UI
-VM) in both database modes. See [credential handling](docs/secrets.md#managed-database-administrator-credentials)
-for the GCP Terraform-state exception. No infrastructure was deployed as part
-of implementing these modules.
+shared-CA TLS, and an administrator secret; Flexible Server uses a delegated
+subnet, a linked private DNS zone and a Key Vault administrator secret. Ansible
+now resolves connections/CA bundles and runs managed migrations with per-VM
+restricted runtime logins before History starts, and deploys RabbitMQ (on the
+History VM) and Redis (on the UI VM) in both database modes. See
+[credential handling](docs/secrets.md#managed-database-administrator-credentials)
+for the GCP and Azure Terraform-state exception. No infrastructure was deployed
+as part of implementing these modules.
+
+### Selecting database hosting
+
+Set the required JSON boolean `managed_database` to `true` for provider-managed
+PostgreSQL or `false` for PostgreSQL in Docker on a database-role VM. Use JSON
+booleans, not strings such as `"yes"` or `"no"`. Managed mode requires a
+`database_profile` and forbids database-role VMs; self-hosted mode requires a
+database-role VM. See [database modes](docs/database-modes.md) before changing
+the value on an existing deployment. The container's internal migration profile
+names (`application` and `cloud`) remain unchanged.
+
+### Selecting a cloud
+
+`default_cloud` accepts `aws`, `gcp` or `azure`, and every `*_map` in the
+project JSON carries a branch for all three. The VM definitions stay neutral:
+adding Azure needs no change to `vms`, `network`, `rabbitmq`, `redis`,
+`registry`, `service_ports` or `ssh_users`.
+
+Three things are worth knowing before the first run.
+
+**Every plan in this root now needs an Azure subscription.** The `azurerm`
+provider configures itself whenever it appears in a configuration, even when
+every Azure resource is `count = 0`, so an AWS-only or GCP-only
+`terraform plan` fails with `unable to build authorizer for Resource Manager
+API` unless you have run `az login` or exported `ARM_*`. Set
+`ARM_SUBSCRIPTION_ID` (or fill in `clouds.azure.subscription_id`) even for
+deployments that never touch Azure. Credentials themselves still come from the
+environment or the Azure CLI, never from the project JSON.
+
+**Ansible follows the same selection.** `inventory/oilscope-azure.yml` wraps
+`azure.azcollection.azure_rm`, and the per-cloud task files behind
+`oilscope_cloud` now cover all three. Two Azure-specific setup steps are easy
+to miss: that collection's Python dependencies are not in this repository's
+`requirements.txt` (install the collection's own requirements file — see
+[inventory/README.md](infrastructure/ansible/inventory/README.md)), and
+`OILSCOPE_SSH_KEY` must be set, because the shared fallback is a
+gcloud-managed key that no Azure VM ever carries.
+
+**Azure places VMs by address, not by role.** AWS puts the bastion and the UI
+in the management subnet; GCP puts only the bastion there. The Azure network
+module instead selects the subnet whose CIDR contains each VM's `internal_ip`,
+so a VM block shaped for either cloud deploys unchanged — but it does not
+reconcile the two, and a UI address valid on GCP is still invalid on AWS.
+Azure also reserves the first four and the last address of every subnet, which
+is why both examples now use `10.0.0.0/24` and `10.0.1.0/24` with host
+addresses from `.10` up.
 
 Run migration-runner checks without PostgreSQL using
 `python3 -m unittest discover -s database/tests -v`. These stub the database commands
