@@ -1,5 +1,5 @@
 locals {
-    resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
+  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
 
-    selected_vms = var.selected_vms
+  selected_vms = var.selected_vms
 }

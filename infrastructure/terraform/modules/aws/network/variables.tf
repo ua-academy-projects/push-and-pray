@@ -1,12 +1,12 @@
 variable "config" {
-    type = any
+  type = any
 }
 
 variable "has_selected_vms" {
-    type = bool
+  type = bool
 }
 
 variable "vpc_cidr_block" {
-    type = string
-    default = "10.0.0.0/16"
+  type    = string
+  default = "10.0.0.0/16"
 }

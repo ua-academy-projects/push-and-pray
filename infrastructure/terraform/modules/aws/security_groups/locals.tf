@@ -18,12 +18,15 @@ locals {
   }
 
   tag_present = {
-    for tag in ["infra", "history", "fetcher", "ui"] :
+    for tag in ["infra", "history", "fetcher", "ui", "k3s_server", "k3s_agent"] :
     tag => anytrue([for vm in local.selected_vms : contains(vm.roles, tag)])
   }
 
   workload_tags_present = [
-    for role in ["infra", "history", "fetcher", "ui"] : role
+    for role in ["infra", "history", "fetcher", "ui", "k3s_server", "k3s_agent"] : role
     if local.tag_present[role]
   ]
+
+  # k3s nodes present on this cloud (drives the intra-cluster rules below).
+  k3s_present = local.tag_present["k3s_server"] || local.tag_present["k3s_agent"]
 }

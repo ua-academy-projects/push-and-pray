@@ -1,20 +1,20 @@
 locals {
-    resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
+  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
 
-    selected_vms = var.selected_vms
+  selected_vms = var.selected_vms
 
-    merged_common_tags = merge(
-        {
-            Application = var.config.name_prefix
-            Environment = var.config.environment
-            ManagedBy   = "terraform"
-        },
-        var.config.common_labels,
-    )
+  merged_common_tags = merge(
+    {
+      Application = var.config.name_prefix
+      Environment = var.config.environment
+      ManagedBy   = "terraform"
+    },
+    var.config.common_labels,
+  )
 
-    instance_user_data = {
-        for name, vm in local.selected_vms : name => templatefile("${path.module}/templates/user-data.yaml.tftpl", {
-            ssh_users = var.config.ssh_users
-        })
-    }
+  instance_user_data = {
+    for name, vm in local.selected_vms : name => templatefile("${path.module}/templates/user-data.yaml.tftpl", {
+      ssh_users = var.config.ssh_users
+    })
+  }
 }

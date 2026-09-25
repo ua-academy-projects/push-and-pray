@@ -1,19 +1,19 @@
 variable "config" {
-    type = any
+  type = any
 }
 
 variable "has_selected_vms" {
-    type = bool
+  type = bool
 }
 
 variable "vpc_id" {
-    type = string
+  type = string
 }
 
 variable "management_subnet_id" {
-    type = string
+  type = string
 }
 
 variable "workload_subnet_id" {
-    type = string
+  type = string
 }

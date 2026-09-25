@@ -183,7 +183,9 @@
       "additionalProperties": false,
       "required": [
         "history_api",
-        "postgresql"
+        "postgresql",
+        "rabbitmq",
+        "redis"
       ],
       "properties": {
         "history_api": {
@@ -192,6 +194,16 @@
           "maximum": 65535
         },
         "postgresql": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "rabbitmq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "redis": {
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
@@ -434,7 +446,9 @@
           "infra",
           "history",
           "fetcher",
-          "ui"
+          "ui",
+          "k3s_server",
+          "k3s_agent"
         ]
       }
     },

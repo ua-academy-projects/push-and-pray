@@ -1,22 +1,22 @@
 variable "config" {
-    type = any
+  type = any
 }
 
 variable "has_selected_vms" {
-    type = bool
+  type = bool
 }
 
 variable "vpc_id" {
-    type = string
-    default = null
+  type    = string
+  default = null
 }
 
-variable "database_subnet_ids"{
-    type = list(string)
-    default = []
+variable "database_subnet_ids" {
+  type    = list(string)
+  default = []
 }
 
 variable "db_password_secret_id" {
-    type = string
-    default = null
+  type    = string
+  default = null
 }

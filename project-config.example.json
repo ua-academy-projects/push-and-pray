@@ -79,7 +79,9 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "rabbitmq": 5672,
+    "redis": 6379
   },
   "monitoring": {
     "notification_email": "hasdfasd@gmail.com",

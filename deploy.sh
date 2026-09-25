@@ -36,8 +36,6 @@ ansible-galaxy collection install /tmp/oilscope-platform-*.tar.gz --force >/dev/
 
 ansible-playbook oilscope.platform.bootstrap_bastion -i inventory/oilscope.yml -e project_config_path="$CONFIG"
 ansible-playbook oilscope.platform.upload_secret_versions -i inventory/oilscope.yml -e secret_versions_config_file="$CONFIG"
-ansible-playbook oilscope.platform.deploy_workloads -i inventory/oilscope.yml \
+ansible-playbook oilscope.platform.k3s -i inventory/oilscope.yml \
   -e project_config_path="$CONFIG" \
-  -e managed_db_host_value="$managed_db_host" \
-  -e cloudflared_tunnel_token_value="$tunnel_token" \
-  -e cloudflare_dns_token_value="$cf_token"
+  -e k3s_datastore_host="$managed_db_host"

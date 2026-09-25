@@ -19,5 +19,5 @@ output "network_tags" {
 }
 
 output "network_self_link" {
-  value       = try(google_compute_network.main[0].self_link, null)
+  value = try(google_compute_network.main[0].self_link, null)
 }

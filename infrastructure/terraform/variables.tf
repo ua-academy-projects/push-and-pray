@@ -10,8 +10,8 @@ variable "project_config_path" {
 }
 
 variable "cloudflare_api_token" {
-  type        = string
-  default     = null
-  sensitive   = true
+  type      = string
+  default   = null
+  sensitive = true
 }
 

@@ -346,7 +346,16 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         auth_kind = plain(self.get_option("auth_kind"))
         vars_prefix = plain(self.get_option("gcp_vars_prefix"))
 
-        is_bastion = f"'{bastion_role}' in (gcp_tags['items'] | default([]))"
+        # GCP network tags are stamped as "<prefix>-<env>-<role>" with underscores
+        # sanitized to hyphens (k3s_server -> ...-k3s-server). Normalize them back
+        # to plain role names so groups match playbook `hosts:` and bastion checks.
+        roles_expr = (
+            "(gcp_tags['items'] | default([]) "
+            f"| map('regex_replace', '^{name_prefix}-{environment}-', '') "
+            "| map('replace', '-', '_') | list)"
+        )
+
+        is_bastion = f"'{bastion_role}' in {roles_expr}"
         has_public = "networkInterfaces[0].accessConfigs | default([])"
         public = "networkInterfaces[0].accessConfigs[0].natIP"
         private = "networkInterfaces[0].networkIP"
@@ -364,10 +373,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "hostnames": ["name"],
             "vars_prefix": vars_prefix,
             "keyed_groups": [
-                {"key": "gcp_tags['items'] | default([])", "prefix": "", "separator": ""},
+                {"key": roles_expr, "prefix": "", "separator": ""},
                 {"key": "labels.cloud", "prefix": "", "separator": ""},
             ],
-            "groups": {"workloads": f"'{bastion_role}' not in (gcp_tags['items'] | default([]))"},
+            "groups": {"workloads": f"'{bastion_role}' not in {roles_expr}"},
             "compose": {
                 "internal_ip": private,
                 "public_ip": f"{public} if {has_public} else ''",
@@ -475,4 +484,18 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             except (AnsibleError, KeyError) as option_error:
                 display.vvv(f"{delegate_name} rejected the {option} option: {option_error}")
 
-        delegate.parse(inventory, loader, generated, cache=cache)
+        # A delegate can raise while emitting a deprecation *after* it has already
+        # discovered and added its hosts — e.g. amazon.aws aws_ec2 on ansible-core
+        # 2.21 throws "Event.msg must be str instead of dict" from its own
+        # 'tags'-deprecation path. Letting that abort parse() skips
+        # _apply_connection_settings, so hosts never get ansible_user / the SSH key
+        # and every connection fails with "Permission denied (publickey)". One
+        # cloud's delegate failing must not sink the whole inventory: log it and keep
+        # the hosts it managed to add.
+        try:
+            delegate.parse(inventory, loader, generated, cache=cache)
+        except Exception as delegate_error:  # noqa: BLE001 - resilience across clouds
+            display.warning(
+                f"{delegate_name} inventory delegate raised; continuing with the "
+                f"hosts discovered so far: {delegate_error}"
+            )

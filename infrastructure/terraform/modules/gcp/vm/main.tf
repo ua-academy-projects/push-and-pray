@@ -6,9 +6,11 @@ resource "google_compute_instance" "workload" {
   machine_type              = var.config.machine_types[each.value.machine_type]["gcp"]
   allow_stopping_for_update = true
 
+  # GCP network tags forbid underscores, so sanitize role names (k3s_server ->
+  # k3s-server). Must match the values in the network module's network_tags map.
   tags = [
     for tag in each.value.roles :
-    "${local.resource_prefix}-${tag}"
+    "${local.resource_prefix}-${replace(tag, "_", "-")}"
   ]
 
 

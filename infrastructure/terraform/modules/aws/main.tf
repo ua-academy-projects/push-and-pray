@@ -1,18 +1,18 @@
 module "network" {
   source = "./network"
 
-  config            = var.config
-  has_selected_vms  = local.has_selected_vms
+  config           = var.config
+  has_selected_vms = local.has_selected_vms
 }
 
 module "routing" {
   source = "./routing"
 
-  config                = var.config
-  has_selected_vms      = local.has_selected_vms
-  vpc_id                = module.network.vpc_id
-  management_subnet_id  = module.network.management_subnet_id
-  workload_subnet_id    = module.network.workload_subnet_id
+  config               = var.config
+  has_selected_vms     = local.has_selected_vms
+  vpc_id               = module.network.vpc_id
+  management_subnet_id = module.network.management_subnet_id
+  workload_subnet_id   = module.network.workload_subnet_id
 }
 
 module "security_groups" {
@@ -48,8 +48,8 @@ module "vm" {
   workload_subnet_id     = module.network.workload_subnet_id
   security_group_ids     = module.security_groups.security_group_ids
   instance_profile_names = module.iam.instance_profile_names
-  allocation_ids          = module.addresses.allocation_ids
-  public_ips              = module.addresses.public_ips
+  allocation_ids         = module.addresses.allocation_ids
+  public_ips             = module.addresses.public_ips
 }
 
 module "secrets" {

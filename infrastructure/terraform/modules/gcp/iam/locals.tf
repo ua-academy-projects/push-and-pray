@@ -7,7 +7,7 @@ locals {
     {
       Application = var.config.name_prefix
       Environment = var.config.environment
-      ManagedBy = "terraform"
+      ManagedBy   = "terraform"
     },
     var.config.common_labels
   )

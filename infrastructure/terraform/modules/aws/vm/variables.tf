@@ -1,35 +1,35 @@
 variable "config" {
-    type = any
+  type = any
 }
 
 variable "selected_vms" {
-    description = "VMs assigned to this cloud, cloud-filtered by the parent module."
-    type        = any
+  description = "VMs assigned to this cloud, cloud-filtered by the parent module."
+  type        = any
 }
 
 variable "management_subnet_id" {
-    type = string
+  type = string
 }
 
 variable "workload_subnet_id" {
-    type = string
+  type = string
 }
 
 variable "security_group_ids" {
-    type = map(string)
+  type = map(string)
 }
 
 variable "instance_profile_names" {
-    description = "Instance profile name per VM key, from the iam module."
-    type        = map(string)
+  description = "Instance profile name per VM key, from the iam module."
+  type        = map(string)
 }
 
 variable "allocation_ids" {
-    description = "EIP allocation ID per VM key with assign_public_ip = true, from the addresses module."
-    type        = map(string)
+  description = "EIP allocation ID per VM key with assign_public_ip = true, from the addresses module."
+  type        = map(string)
 }
 
 variable "public_ips" {
-    description = "EIP public IP address per VM key with assign_public_ip = true, from the addresses module."
-    type        = map(string)
+  description = "EIP public IP address per VM key with assign_public_ip = true, from the addresses module."
+  type        = map(string)
 }

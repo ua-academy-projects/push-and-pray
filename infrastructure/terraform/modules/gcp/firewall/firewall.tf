@@ -77,7 +77,7 @@ resource "google_compute_firewall" "rabbitmq" {
 
   allow {
     protocol = "tcp"
-    ports    = ["5672"]
+    ports    = [tostring(var.config.service_ports.rabbitmq)]
   }
 }
 
@@ -96,6 +96,27 @@ resource "google_compute_firewall" "redis" {
 
   allow {
     protocol = "tcp"
-    ports    = ["6379"]
+    ports    = [tostring(var.config.service_ports.redis)]
+  }
+}
+
+# Intra-cluster traffic between k3s nodes: API server (6443), kubelet (10250)
+# and flannel VXLAN (8472/udp). Both k3s tags are source and target.
+resource "google_compute_firewall" "k3s_cluster" {
+  count   = local.k3s_present && length(local.k3s_tags) > 0 ? 1 : 0
+  name    = "${local.resource_prefix}-allow-k3s-cluster"
+  network = var.network_id
+
+  source_tags = local.k3s_tags
+  target_tags = local.k3s_tags
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443", "10250"]
+  }
+
+  allow {
+    protocol = "udp"
+    ports    = ["8472"]
   }
 }

@@ -30,7 +30,7 @@ resource "azurerm_subnet" "database" {
   name                 = "${local.resource_prefix}-database"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.main[0].name
-  address_prefixes     = [cidrsubnet(var.vnet_cidr, 8, 2)] # 10.0.2.0/24
+  address_prefixes     = [cidrsubnet(var.vnet_cidr, 8, 2)]
 
   delegation {
     name = "postgres"

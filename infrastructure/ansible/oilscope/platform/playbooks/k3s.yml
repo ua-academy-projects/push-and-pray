@@ -1,0 +1,24 @@
+---
+- name : Provision the k3s control plane
+  hosts: k3s_server
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+    - role: oilscope.platform.k3s
+      vars:
+        k3s_node_role: server
+- name: Join the k3s agent to the cluster
+  hosts: k3s_agent
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s
+      vars:
+        k3s_node_role: agent
