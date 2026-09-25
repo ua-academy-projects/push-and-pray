@@ -6,3 +6,7 @@ provider "google" {
 provider "aws" {
   region = local.config.regions[local.config.location].aws
 }
+
+provider "azurerm" {
+  features {}
+}

@@ -6,6 +6,16 @@ variables {
     bastion = "bastion@example-project-12345.iam.gserviceaccount.com"
     ui      = "ui@example-project-12345.iam.gserviceaccount.com"
   }
+  vms = {
+    bastion = {
+      name = "oilscope-dev-bastion"
+      role = "bastion"
+    }
+    ui = {
+      name = "oilscope-dev-ui"
+      role = "ui"
+    }
+  }
 }
 
 run "grants_agent_roles_and_configures_retention" {
@@ -26,5 +36,13 @@ run "grants_agent_roles_and_configures_retention" {
   assert {
     condition     = length(google_project_iam_member.agents) == 4
     error_message = "Each VM service account must receive log writer and metric writer roles."
+  }
+
+  assert {
+    condition = (
+      length(google_monitoring_uptime_check_config.ui) == 1 &&
+      length(google_monitoring_alert_policy.system) == 5
+    )
+    error_message = "Monitoring must configure UI availability plus VM and database alerts."
   }
 }

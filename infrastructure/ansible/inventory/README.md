@@ -1,8 +1,9 @@
 # Inventory
 
-`oilscope.yml` builds the deployment inventory from live Compute Engine state,
-so a `terraform apply` that replaces a VM or changes an address is picked up
-without editing a host list.
+The `oilscope.gcp.yml`, `oilscope.aws.yml`, and `oilscope.azure.yml` sources
+build the deployment inventory from live cloud state, so a `terraform apply`
+that replaces a VM or changes an address is picked up without editing a host
+list.
 
 Every environment-specific value is derived from the project configuration
 JSON that Terraform also reads, so this file is identical for every
@@ -15,9 +16,9 @@ response is reused.
 
 ## How it fits together
 
-The local `oilscope_gcp` inventory plugin does not talk to GCP itself. It reads the
-project configuration, derives the settings below, and hands them to
-`google.cloud.gcp_compute`, which performs the discovery.
+The local inventory plugins do not call cloud APIs themselves. They read the
+project configuration and delegate discovery to `google.cloud.gcp_compute`,
+`amazon.aws.aws_ec2`, or `azure.azcollection.azure_rm`.
 
 The wrapper exists because `gcp_compute` can neither read the project
 configuration nor evaluate Jinja in its own configuration file — a template
@@ -43,52 +44,36 @@ name the missing piece:
 ```sh
 pip install -r infrastructure/ansible/requirements.txt
 ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
 gcloud auth application-default login
+az login
 ```
 
-`requirements.yml` installs the `google.cloud` collection, which provides the
-`gcp_compute` plugin this one delegates to. `requirements.txt` installs the
-Python libraries that plugin imports at run time — `google-auth` and
-`requests`. `ansible-galaxy` installs collections, never Python packages, so
-neither file covers for the other.
-
-This repository's own collection must also be installed, because there is no
-`ansible.cfg` pointing Ansible at the working copy:
-
-```sh
-cd infrastructure/ansible/oilscope/platform && ansible-galaxy collection build --force && ansible-galaxy collection install oilscope-platform-*.tar.gz --force
-```
-
-Repeat that after every change to the plugin or to a role — Ansible reads the
-installed copy, not the files you just edited.
+`requirements.yml` installs all three cloud collections. `requirements.txt`
+installs the direct controller libraries. Azure keeps its larger SDK set in
+the collection-level requirements file, which is why it has a separate pip
+command. `ansible-galaxy` installs collections, never their Python packages.
 
 ## Pointing it at your configuration
 
-`oilscope.yml` carries no path of its own, because the project configuration
-does not live in the same place for everyone. The path is resolved in three
-steps, weakest first:
-
-1. the plugin's default, `../../terraform/env/dev.json`, relative to this
-   directory;
-2. the `OILSCOPE_PROJECT_CONFIG` environment variable;
-3. a `project_config_path` key written into the inventory file.
+The committed inventory sources carry no configuration path because it does
+not live in the same place for everyone. Set `OILSCOPE_PROJECT_CONFIG`, or add
+`project_config_path` to a private inventory source. A value in the source
+takes precedence over the environment variable.
 
 So a configuration kept elsewhere needs no edit to a committed file:
 
 ```sh
-OILSCOPE_PROJECT_CONFIG=infrastructure/terraform/env/mine.json \
-  ansible-inventory -i infrastructure/ansible/inventory/oilscope.yml --graph
+OILSCOPE_PROJECT_CONFIG=.venv/bootstrap_gcp/project-config.json \
+  ansible-inventory -i infrastructure/ansible/inventory/oilscope.azure.yml --graph
 ```
 
 Export it once and every later command picks it up. An absolute path is used as
 given; a relative one is tried against the working directory first, then
 against this directory, so a path typed from the repository root works.
 
-Adding `project_config_path` back into `oilscope.yml` would pin the path for
-everyone **and** make the variable ineffective, since a value set in the file
-wins over the environment. Keep personal paths in the variable, or in a local
-`*oilscope.yml` of your own — the filename only has to end in `oilscope.yml`
-for the plugin to claim it, and `local.oilscope.yml` is already ignored by git.
+An absolute path is used as given. A relative path is tried against the current
+working directory first and then relative to the selected inventory source.
 
 ## Usage
 

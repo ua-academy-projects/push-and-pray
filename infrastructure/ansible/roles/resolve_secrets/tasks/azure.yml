@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the Azure Key Vault endpoint
+  ansible.builtin.assert:
+    that:
+      - resolve_secrets_azure_key_vault_uri | length > 0
+      - resolve_secrets_azure_key_vault_uri is match('^https://[^/]+\.vault\.azure\.net/?$')
+    fail_msg: >-
+      Terraform service_endpoints.azure.secret_store.vault_uri must contain
+      the Azure Key Vault URI.
+
+- name: Fetch a Key Vault token from Azure Instance Metadata Service
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_azure_metadata_url
+         ~ '?api-version=' ~ resolve_secrets_azure_metadata_api_version
+         ~ '&resource=' ~ (resolve_secrets_azure_key_vault_resource | urlencode)
+         ~ (('&client_id=' ~ (resolve_secrets_azure_managed_identity_client_id
+                              | urlencode))
+            if resolve_secrets_azure_managed_identity_client_id | length > 0
+            else '') }}
+    method: GET
+    headers:
+      Metadata: "true"
+    return_content: true
+    use_proxy: false
+  register: resolve_secrets_azure_token
+  no_log: true
+
+- name: Access each mapped Azure Key Vault secret
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_azure_key_vault_uri | regex_replace('/$', '')
+         ~ '/secrets/' ~ item.value
+         ~ '?api-version=' ~ resolve_secrets_azure_key_vault_api_version }}
+    method: GET
+    headers:
+      Authorization: >-
+        Bearer {{ resolve_secrets_azure_token.json.access_token }}
+    return_content: true
+  register: resolve_secrets_azure_accessed
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Build the resolved Azure secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result
+         | combine({item.item.key: item.json.value}) }}
+  no_log: true
+  loop: "{{ resolve_secrets_azure_accessed.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

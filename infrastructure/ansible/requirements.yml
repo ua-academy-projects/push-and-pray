@@ -10,3 +10,6 @@ collections:
 
   - name: google.cloud
     version: ">=1.14.0,<2.0.0"
+
+  - name: azure.azcollection
+    version: ">=3.21.0,<4.0.0"

@@ -5,3 +5,14 @@ resolve_secrets_metadata_url: >-
 resolve_secrets_secretmanager_url: https://secretmanager.googleapis.com/v1
 resolve_secrets_aws_boto3_package: python3-boto3
 resolve_secrets_python: /usr/bin/python3
+
+resolve_secrets_azure_metadata_url: >-
+  http://169.254.169.254/metadata/identity/oauth2/token
+resolve_secrets_azure_metadata_api_version: "2018-02-01"
+resolve_secrets_azure_key_vault_resource: https://vault.azure.net
+resolve_secrets_azure_key_vault_api_version: "2025-07-01"
+resolve_secrets_azure_managed_identity_client_id: >-
+  {{ azure_managed_identity_client_id | default('') }}
+resolve_secrets_azure_key_vault_uri: >-
+  {{ (((oilscope_service_endpoints | default({})).get('azure', {})).get('secret_store', {}).get('vault_uri', ''))
+     | default('', true) }}

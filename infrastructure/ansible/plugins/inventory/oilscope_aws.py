@@ -141,9 +141,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "the project configuration must define a 'vms' object"
             )
 
-        if default_cloud not in ("gcp", "aws"):
+        if default_cloud not in ("gcp", "aws", "azure"):
             raise AnsibleParserError(
-                "the project configuration must define 'default_cloud' as 'gcp' or 'aws'"
+                "the project configuration must define 'default_cloud' as "
+                "'gcp', 'aws' or 'azure'"
             )
 
         return any(

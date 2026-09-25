@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) Push and Pray team
-"""Derive gcp_compute settings from the shared project configuration JSON."""
+"""Derive azure_rm settings from the shared project configuration JSON."""
 
 import hashlib
 import json
@@ -18,21 +18,17 @@ try:
 except ImportError:  # pragma: no cover - PyYAML ships with ansible-core
     HAS_YAML = False
 
-# DO NOT DELETE BECAUSE PLUGIN WILL FAIL
+# Ansible requires this metadata at module load time.
 DOCUMENTATION = r"""
-name: oilscope_gcp
-short_description: OilScope inventory derived from the project configuration
+name: oilscope_azure
+short_description: OilScope Azure inventory derived from the project configuration
 version_added: "0.1.0"
 author:
   - Push and Pray team
 description:
-  - Derives the GCP project, zone, C(application) and C(environment) label
-    filters from the project configuration JSON that
-    Terraform also reads, then hands them to C(google.cloud.gcp_compute), which
-    performs the discovery. No environment value is repeated here.
-  - The wrapper exists because C(gcp_compute) neither reads that file nor
-    evaluates Jinja in its own configuration - a template expression there
-    reaches the API as literal text.
+  - Derives the Azure resource group and VM tag filters from the project
+    configuration JSON that Terraform also reads, then hands them to
+    C(azure.azcollection.azure_rm), which performs discovery.
 extends_documentation_fragment:
   - inventory_cache
 options:
@@ -42,7 +38,7 @@ options:
     type: str
     required: true
     choices:
-      - oilscope_gcp
+      - oilscope_azure
   project_config_path:
     description:
       - Path to the project configuration JSON.
@@ -51,56 +47,49 @@ options:
     required: true
     env:
       - name: OILSCOPE_PROJECT_CONFIG
-  auth_kind:
-    description:
-      - Passed straight through to C(gcp_compute).
-    type: str
-    default: application
-  vars_prefix:
-    description:
-      - Prefix for the raw instance fields C(gcp_compute) copies into host
-        variables; without one its C(name) and C(tags) collide with reserved
-        names.
-    type: str
-    default: gcp_
 requirements:
-  - google.cloud collection
-  - google-auth
-  - requests
+  - azure.azcollection collection
+  - Python packages from azure.azcollection/requirements.txt
 notes:
-  - Authenticates with Application Default Credentials. Run
-    C(gcloud auth application-default login) on the controller first.
+  - Uses the active Azure CLI session. Run C(az login) and select the target
+    subscription with C(az account set) before discovery.
 """
 
 EXAMPLES = r"""
-# inventory/oilscope.gcp.yml
-plugin: oilscope_gcp
+# inventory/oilscope.azure.yml
+plugin: oilscope_azure
 cache: false
 """
 
-DELEGATE = "google.cloud.gcp_compute"
+DELEGATE = "azure.azcollection.azure_rm"
 display = Display()
+
 
 def plain(value):
     return str(value)
 
 
 class InventoryModule(BaseInventoryPlugin, Cacheable):
-    NAME = "oilscope_gcp"
+    NAME = "oilscope_azure"
 
     def verify_file(self, path):
-        return super().verify_file(path) and path.endswith(("oilscope.gcp.yml", "oilscope.gcp.yaml"))
+        return super().verify_file(path) and path.endswith(
+            ("oilscope.azure.yml", "oilscope.azure.yaml")
+        )
 
     def parse(self, inventory, loader, path, cache=True):
         super().parse(inventory, loader, path, cache=cache)
         self._read_config_data(path)
 
         if not HAS_YAML:
-            raise AnsibleParserError("the oilscope_gcp inventory plugin requires PyYAML")
+            raise AnsibleParserError(
+                "the oilscope_azure inventory plugin requires PyYAML"
+            )
 
         config = self._load_project_config(path)
-        if not self._uses_gcp(config):
+        if not self._uses_azure(config):
             return
+
         settings = self._build_settings(config)
         generated = self._write_settings(settings)
 
@@ -119,7 +108,6 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             return os.path.normpath(configured)
 
         from_cwd = os.path.abspath(configured)
-
         if os.path.isfile(from_cwd):
             return from_cwd
 
@@ -144,7 +132,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return config
 
-    def _uses_gcp(self, config):
+    def _uses_azure(self, config):
         vms = config.get("vms")
         default_cloud = config.get("default_cloud")
 
@@ -161,7 +149,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return any(
             isinstance(vm, dict)
-            and vm.get("cloud", default_cloud) == "gcp"
+            and vm.get("cloud", default_cloud) == "azure"
             for vm in vms.values()
         )
 
@@ -178,63 +166,56 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     def _build_settings(self, config):
         name_prefix = self._require(config, "name_prefix")
         environment = self._require(config, "environment")
-        location = self._require(config, "location")
+        resource_group = f"{name_prefix}-{environment}"
 
-        try:
-            project_id = config["gcp"]["project_id"]
-            zone = config["zones"][location]["gcp"]
-        except (KeyError, TypeError) as error:
-            raise AnsibleParserError(
-                "could not resolve gcp.project_id or the GCP zone for the selected location"
-            ) from error
-
-        if not isinstance(project_id, str) or not project_id:
-            raise AnsibleParserError("gcp.project_id must be a non-empty string")
-
-        if not isinstance(zone, str) or not zone:
-            raise AnsibleParserError(f"zones.{location}.gcp must be a non-empty string")
-
-        bastion_role = "bastion"
-        auth_kind = plain(self.get_option("auth_kind"))
-        vars_prefix = plain(self.get_option("vars_prefix"))
-
-        is_bastion = f"labels.role | default('') == '{bastion_role}'"
-        has_public = "networkInterfaces[0].accessConfigs | default([])"
-        public = "networkInterfaces[0].accessConfigs[0].natIP"
-        private = "networkInterfaces[0].networkIP"
+        tag_filter = (
+            f"tags.application is defined and "
+            f"tags.application == '{name_prefix}' and "
+            f"tags.environment is defined and "
+            f"tags.environment == '{environment}'"
+        )
+        is_bastion = "tags.role | default('') == 'bastion'"
+        private_ip = "private_ipv4_addresses | first"
+        public_ip = "(public_ipv4_address | first) | default('')"
 
         return {
             "plugin": DELEGATE,
-            "projects": [plain(project_id)],
-            "zones": [plain(zone)],
-            "filters": [
-                f"labels.application = {plain(name_prefix)}",
-                f"labels.environment = {plain(environment)}",
-            ],
-            "auth_kind": auth_kind,
+            "auth_source": "cli",
+            "include_vm_resource_groups": [resource_group],
+            "include_host_filters": [tag_filter],
             "hostnames": ["name"],
-            "vars_prefix": vars_prefix,
-            "keyed_groups": [{"key": "labels.role", "prefix": "", "separator": ""}],
-            "groups": {"vms": f"labels.role is defined and labels.role != '{bastion_role}'"},
-            "compose": {
-                "internal_ip": private,
-                "public_ip": f"{public} if {has_public} else ''",
-                "ansible_host": f"{public} if {is_bastion} else {private}",
-                "oilscope_role": "labels.role | default('')",
-                "oilscope_cloud": "'gcp'",
+            "plain_host_names": True,
+            "fail_on_template_errors": True,
+            "keyed_groups": [
+                {"key": "tags.role", "prefix": "", "separator": ""}
+            ],
+            "conditional_groups": {
+                "vms": "tags.role is defined and tags.role != 'bastion'"
+            },
+            "hostvar_expressions": {
+                "internal_ip": private_ip,
+                "public_ip": public_ip,
+                "ansible_host": f"({public_ip}) if {is_bastion} else {private_ip}",
+                "oilscope_role": "tags.role | default('')",
+                "oilscope_cloud": "'azure'",
             },
         }
 
     def _write_settings(self, settings):
-        digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode("utf-8")).hexdigest()
-        generated = os.path.join(tempfile.gettempdir(), f"oilscope-{digest[:16]}.gcp.yml")
+        digest = hashlib.sha256(
+            json.dumps(settings, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        generated = os.path.join(
+            tempfile.gettempdir(), f"oilscope-{digest[:16]}.azure_rm.yml"
+        )
 
         try:
             with open(generated, "w") as handle:
                 yaml.safe_dump(settings, handle, default_flow_style=False)
         except OSError as write_error:
             raise AnsibleParserError(
-                f"could not write the generated gcp_compute settings to {generated}: {write_error}"
+                f"could not write generated azure_rm settings to {generated}: "
+                f"{write_error}"
             ) from write_error
 
         return generated
@@ -247,7 +228,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         if delegate is None:
             raise AnsibleParserError(
                 f"the {DELEGATE} inventory plugin is unavailable; "
-                "install the google.cloud collection"
+                "install azure.azcollection and its Python requirements"
             )
 
         for option in ("cache", "cache_plugin", "cache_connection", "cache_timeout"):

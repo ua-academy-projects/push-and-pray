@@ -35,4 +35,5 @@ locals {
 
   region                 = var.config.regions[var.config.location].aws
   availability_alarm_arn = local.region == "us-east-1" ? aws_sns_topic.alerts.arn : aws_sns_topic.availability[0].arn
+  database_identifier    = "${local.resource_prefix}-postgresql"
 }

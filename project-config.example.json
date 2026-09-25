@@ -12,44 +12,52 @@
   "regions": {
     "us-east": {
       "gcp": "us-east1",
-      "aws": "us-east-1"
+      "aws": "us-east-1",
+      "azure": "eastus"
     },
     "eu-west": {
       "gcp": "europe-west1",
-      "aws": "eu-west-1"
+      "aws": "eu-west-1",
+      "azure": "westeurope"
     }
   },
 
   "zones": {
     "us-east": {
       "gcp": "us-east1-b",
-      "aws": "us-east-1a"
+      "aws": "us-east-1a",
+      "azure": "1"
     },
     "eu-west": {
       "gcp": "europe-west1-b",
-      "aws": "eu-west-1a"
+      "aws": "eu-west-1a",
+      "azure": "1"
     }
   },
 
   "sizes": {
     "micro": {
       "gcp": "e2-micro",
-      "aws": "t2.micro"
+      "aws": "t2.micro",
+      "azure": "Standard_B1s"
     },
     "small": {
       "gcp": "e2-small",
-      "aws": "t2.small"
+      "aws": "t2.small",
+      "azure": "Standard_B1ms"
     }
   },
 
   "disk_types": {
     "balanced": {
       "gcp": "pd-balanced",
-      "aws": "gp3"
+      "aws": "gp3",
+      "azure": "StandardSSD_LRS"
     },
     "ssd": {
       "gcp": "pd-ssd",
-      "aws": "io2"
+      "aws": "io2",
+      "azure": "Premium_LRS"
     }
   },
 
@@ -63,6 +71,12 @@
           "099720109477"
         ],
         "name_pattern": "ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"
+      },
+      "azure": {
+        "publisher": "Canonical",
+        "offer": "ubuntu-26_04-lts",
+        "sku": "server",
+        "version": "latest"
       }
     }
   },
@@ -124,6 +138,9 @@
       },
       "gcp": {
         "private_service_cidr": "10.10.0.0/24"
+      },
+      "azure": {
+        "delegated_subnet_cidr": "10.0.4.0/28"
       }
     },
     "ui_public_ports": [80, 443]
@@ -152,6 +169,15 @@
         "disk_size_gb": 10,
         "availability_type": "ZONAL",
         "backup_enabled": false
+      },
+      "azure": {
+        "version": "17",
+        "sku_name": "B_Standard_B1ms",
+        "storage_mb": 32768,
+        "backup_retention_days": 7,
+        "geo_redundant_backup_enabled": false,
+        "high_availability_mode": "Disabled",
+        "auto_grow_enabled": true
       }
     },
     "rabbitmq": {
@@ -245,7 +271,8 @@
       "image": "ubuntu-26.04",
       "internal_ip": "10.0.1.8",
       "internal_ips": {
-        "aws": "10.0.0.5"
+        "aws": "10.0.0.5",
+        "azure": "10.0.0.6"
       },
       "boot_disk": {
         "size_gb": 10,

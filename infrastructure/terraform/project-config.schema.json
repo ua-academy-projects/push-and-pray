@@ -193,7 +193,7 @@
         "database_connectivity": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["aws", "gcp"],
+          "required": ["aws", "gcp", "azure"],
           "properties": {
             "aws": {
               "type": "object",
@@ -228,6 +228,18 @@
               "required": ["private_service_cidr"],
               "properties": {
                 "private_service_cidr": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "azure": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["delegated_subnet_cidr"],
+              "properties": {
+                "delegated_subnet_cidr": {
+                  "description": "Dedicated subnet delegated to Azure Database for PostgreSQL Flexible Server.",
                   "type": "string",
                   "minLength": 1
                 }
@@ -272,7 +284,8 @@
             "password_secret_id",
             "ssl_mode",
             "aws",
-            "gcp"
+            "gcp",
+            "azure"
           ],
           "properties": {
             "port": {
@@ -286,7 +299,8 @@
             },
             "password_secret_id": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9_-]+$"
+              "pattern": "^[A-Za-z0-9-]+$",
+              "maxLength": 127
             },
             "ssl_mode": {
               "type": "string",
@@ -358,6 +372,48 @@
                   "enum": ["ZONAL", "REGIONAL"]
                 },
                 "backup_enabled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "azure": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "sku_name",
+                "storage_mb",
+                "backup_retention_days",
+                "geo_redundant_backup_enabled",
+                "high_availability_mode",
+                "auto_grow_enabled"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+                },
+                "sku_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "storage_mb": {
+                  "type": "integer",
+                  "minimum": 32768
+                },
+                "backup_retention_days": {
+                  "type": "integer",
+                  "minimum": 7,
+                  "maximum": 35
+                },
+                "geo_redundant_backup_enabled": {
+                  "type": "boolean"
+                },
+                "high_availability_mode": {
+                  "type": "string",
+                  "enum": ["Disabled", "SameZone", "ZoneRedundant"]
+                },
+                "auto_grow_enabled": {
                   "type": "boolean"
                 }
               }
@@ -477,7 +533,7 @@
     },
     "cloud": {
       "type": "string",
-      "enum": ["gcp", "aws"]
+      "enum": ["gcp", "aws", "azure"]
     },
     "gcp_settings": {
       "type": "object",
@@ -512,6 +568,10 @@
         "aws": {
           "type": "string",
           "minLength": 1
+        },
+        "azure": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -525,6 +585,9 @@
         },
         "aws": {
           "$ref": "#/$defs/aws_image"
+        },
+        "azure": {
+          "$ref": "#/$defs/azure_image"
         }
       }
     },
@@ -554,6 +617,29 @@
           }
         },
         "name_pattern": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "azure_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publisher", "offer", "sku", "version"],
+      "properties": {
+        "publisher": {
+          "type": "string",
+          "minLength": 1
+        },
+        "offer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
           "type": "string",
           "minLength": 1
         }
@@ -627,7 +713,8 @@
       },
       "additionalProperties": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9_-]+$"
+        "pattern": "^[A-Za-z0-9-]+$",
+        "maxLength": 127
       }
     },
     "vm": {

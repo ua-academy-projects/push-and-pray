@@ -18,7 +18,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             view   = "timeSeries"
             period = 300
             metrics = [[{
-              expression = "SEARCH('{${local.namespace}} MetricName=\"${chart.metric}\"', 'Average', 300)"
+              expression = "SEARCH('{${local.namespace},InstanceId} MetricName=\"${chart.metric}\"', 'Average', 300)"
               id         = replace(chart.metric, "_", "")
               region     = local.region
             }]]
@@ -48,6 +48,20 @@ resource "aws_cloudwatch_dashboard" "main" {
               [".", "redis_connected_clients", ".", "."],
               [".", "redis_memory_used_bytes", ".", "."],
             ]
+          }
+        },
+        {
+          type = "metric", width = 24, height = 6
+          properties = {
+            title = "RDS PostgreSQL", region = local.region, view = "timeSeries", stat = "Average", period = 300
+            metrics = [
+              ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", local.database_identifier, { yAxis = "left" }],
+              [".", "FreeStorageSpace", ".", ".", { yAxis = "right" }],
+            ]
+            yAxis = {
+              left  = { min = 0, max = 100, label = "CPU %" }
+              right = { min = 0, label = "Free bytes" }
+            }
           }
         },
       ],

@@ -87,3 +87,38 @@ module "gcp_monitoring" {
   service_account_emails = module.gcp_basic[0].service_account_emails
   vms                    = module.gcp_vm[0].vms
 }
+
+module "azure_basic" {
+  source = "./modules/azure_basic"
+  count  = contains(local.enabled_clouds, "azure") ? 1 : 0
+
+  config = local.config
+}
+
+module "azure_network" {
+  source = "./modules/azure_network"
+  count  = contains(local.enabled_clouds, "azure") ? 1 : 0
+
+  config = local.config
+}
+
+module "azure_vm" {
+  source = "./modules/azure_vm"
+  count  = contains(local.enabled_clouds, "azure") ? 1 : 0
+
+  config = local.config
+}
+
+module "azure_database" {
+  source = "./modules/azure_database"
+  count  = contains(local.enabled_clouds, "azure") ? 1 : 0
+
+  config = local.config
+}
+
+module "azure_monitoring" {
+  source = "./modules/azure_monitoring"
+  count  = contains(local.enabled_clouds, "azure") && local.config.monitoring.enabled ? 1 : 0
+
+  config = local.config
+}

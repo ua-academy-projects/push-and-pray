@@ -83,3 +83,37 @@ resource "aws_cloudwatch_metric_alarm" "redis" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
   ok_actions          = [aws_sns_topic.alerts.arn]
 }
+
+resource "aws_cloudwatch_metric_alarm" "database_cpu" {
+  alarm_name          = "${local.resource_prefix}-database-cpu-high"
+  alarm_description   = "RDS CPU utilization exceeds the configured threshold."
+  namespace           = "AWS/RDS"
+  metric_name         = "CPUUtilization"
+  dimensions          = { DBInstanceIdentifier = local.database_identifier }
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = var.config.monitoring.thresholds.cpu_percent
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 2
+  statistic           = "Average"
+  treat_missing_data  = "missing"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "database_storage" {
+  alarm_name          = "${local.resource_prefix}-database-storage-low"
+  alarm_description   = "RDS free storage is below 20 percent of allocated storage."
+  namespace           = "AWS/RDS"
+  metric_name         = "FreeStorageSpace"
+  dimensions          = { DBInstanceIdentifier = local.database_identifier }
+  comparison_operator = "LessThanThreshold"
+  threshold           = var.config.services.database.aws.allocated_storage_gb * 1024 * 1024 * 1024 * 0.2
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 2
+  statistic           = "Average"
+  treat_missing_data  = "missing"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+}

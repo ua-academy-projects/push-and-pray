@@ -1,10 +1,12 @@
 # Controller-side Python requirements for the OilScope Ansible tooling.
 #
-# The google.cloud.gcp_compute inventory plugin used by
-# inventory/oilscope.gcp.yml talks to the Compute Engine API through these
-# libraries, authenticating with Application Default Credentials:
+# The GCP and AWS inventory plugins use the libraries declared below. Azure's
+# SDK dependencies are maintained by azure.azcollection itself and must be
+# installed from that collection's requirements.txt after ansible-galaxy:
 #
 #     pip install -r infrastructure/ansible/requirements.txt
+#     ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+#     pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
 #     gcloud auth application-default login
 #
 ansible-core==2.21.4
