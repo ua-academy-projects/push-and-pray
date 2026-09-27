@@ -29,3 +29,9 @@ provider "aws" {
 provider "cloudflare" {
   api_token = try(local.config.cloudflare.api_token, null)
 }
+
+provider "azurerm" {
+  features {}
+
+  subscription_id = try(local.config.clouds.azure.subscription_id, null)
+}

@@ -1,8 +1,9 @@
 # Controller-side Python requirements for the OilScope Ansible tooling.
 #
-# The multi-cloud inventory wrapper delegates to the GCP and AWS inventory
-# plugins. GCP uses Application Default Credentials and AWS uses the standard
-# AWS SDK credential chain:
+# The multi-cloud inventory wrapper delegates to the GCP, AWS and Azure
+# inventory plugins. Install azure.azcollection from requirements.yml, then
+# install that collection's pinned Python requirements as documented in the
+# inventory README. Azure authentication uses the Azure CLI by default.
 #
 #     pip install -r infrastructure/ansible/requirements.txt
 #     gcloud auth application-default login

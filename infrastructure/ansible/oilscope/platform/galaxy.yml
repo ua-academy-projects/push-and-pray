@@ -38,6 +38,8 @@ tags:
   - infrastructure
   - docker
   - gcp
+  - aws
+  - azure
 # Collections that this collection requires to be installed for it to be usable. The key of the dict is the
 # collection label 'namespace.name'. The value is a version range
 # L(specifiers,https://python-semanticversion.readthedocs.io/en/latest/#requirement-specification). Multiple version
@@ -45,6 +47,7 @@ tags:
 dependencies:
   amazon.aws: ">=9.0.0"
   google.cloud: ">=1.14.0"
+  azure.azcollection: ">=3.21.0"
 
 # The URL of the originating SCM repository
 repository: http://example.com/repository

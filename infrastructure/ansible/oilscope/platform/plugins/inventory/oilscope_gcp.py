@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Discover OilScope instances in GCP and AWS from the project JSON."""
+"""Discover OilScope instances in GCP, AWS and Azure from the project JSON."""
 
 import json
 import os
@@ -11,12 +11,12 @@ from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
 
 DOCUMENTATION = r"""
 name: oilscope_gcp
-short_description: Discover OilScope VMs in GCP and AWS
+short_description: Discover OilScope VMs in GCP, AWS and Azure
 version_added: "0.1.0"
 description:
   - Reads the same project JSON as Terraform.
   - Uses C(default_cloud) and each VM's optional C(cloud) override.
-  - Delegates discovery to the standard GCP and AWS inventory plugins.
+  - Delegates discovery to the standard GCP, AWS and Azure inventory plugins.
 extends_documentation_fragment:
   - inventory_cache
 options:
@@ -36,6 +36,7 @@ requirements:
   - amazon.aws
   - google-auth
   - boto3
+  - azure.azcollection
 """
 
 EXAMPLES = r"""
@@ -46,6 +47,7 @@ cache: false
 DELEGATES = {
     "gcp": "google.cloud.gcp_compute",
     "aws": "amazon.aws.aws_ec2",
+    "azure": "azure.azcollection.azure_rm",
 }
 
 
@@ -66,6 +68,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         builders = {
             "gcp": self._gcp_settings,
             "aws": self._aws_settings,
+            "azure": self._azure_settings,
         }
 
         try:
@@ -201,6 +204,83 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "cache": bool(self.get_option("cache")),
         }
 
+    def _azure_settings(self, config):
+        cloud = "azure"
+        cloud_config = config["clouds"][cloud]
+        bastion_port = self._bastion_port(config)
+        resource_prefix = f"{config['name_prefix']}-{config['environment']}"
+        primary_region = config["location"]["region"]
+        region_keys = {
+            vm.get("azure_region", primary_region)
+            for vm in config["vms"].values()
+            if vm.get("cloud", config["default_cloud"]) == cloud
+        }
+        if not region_keys:
+            region_keys = {primary_region}
+        resource_groups = sorted(
+            f"{resource_prefix}-rg"
+            if region_key == primary_region
+            else f"{resource_prefix}-{region_key}-rg"
+            for region_key in region_keys
+        )
+        ssh_user = sorted(config["ssh_users"])[0]
+        public_ip = "(public_ipv4_address | default([]) | first) | default('')"
+        private_ip = "(private_ipv4_addresses | default([]) | first) | default('')"
+        is_bastion = "tags.role | default('') == 'bastion'"
+
+        settings = {
+            "plugin": DELEGATES[cloud],
+            "auth_source": "auto",
+            "include_vm_resource_groups": resource_groups,
+            "plain_host_names": True,
+            "hostnames": ["name"],
+            "include_host_filters": [
+                (
+                    f"tags.application | default('') == '{config['name_prefix']}' "
+                    f"and tags.environment | default('') == '{config['environment']}' "
+                    "and tags.cloud | default('') == 'azure'"
+                )
+            ],
+            "keyed_groups": self._groups("tags"),
+            "conditional_groups": {
+                "workloads": "tags.role is defined and tags.role != 'bastion'"
+            },
+            "hostvar_expressions": {
+                "internal_ip": private_ip,
+                "public_ip": public_ip,
+                "ansible_host": f"{public_ip} if {is_bastion} else {private_ip}",
+                "ansible_user": f"'{ssh_user}'",
+                "bastion_ssh_port": str(bastion_port),
+                "oilscope_role": "tags.role | default('')",
+                "oilscope_cloud": "tags.cloud | default('azure')",
+                "oilscope_region": "location",
+                "azure_resource_group": "resource_group",
+                "azure_vm_id": "id",
+                "azure_identity_client_id": "tags.identity_client | default('')",
+                "azure_identity_resource_id": "tags.identity_resource | default('')",
+                "azure_secret_vault_uri": "tags.secret_vault_uri | default('')",
+                "database_mode": "tags.database_mode | default('self_hosted')",
+                "database_cloud": "tags.database_cloud | default('azure')",
+                "database_host": "tags.database_host | default('')",
+                "database_port": "tags.database_port | default('5432') | int",
+                "database_name": "tags.database_name | default('oil_tracker')",
+                "database_user": "tags.database_user | default('oil_tracker')",
+                "database_sslmode": "tags.database_sslmode | default('disable')",
+                "database_secret_reference": "tags.database_secret | default('')",
+                "queue_backend": "tags.queue_backend | default('pgmq')",
+                "queue_host": "tags.queue_host | default('')",
+                "queue_port": "tags.queue_port | default('5672') | int",
+                "queue_username": "tags.queue_username | default('oilscope')",
+                "queue_vhost": "tags.queue_vhost | default('oilscope')",
+                "queue_secret_reference": "tags.queue_secret | default('')",
+            },
+            "cache": bool(self.get_option("cache")),
+        }
+        subscription_id = cloud_config.get("subscription_id")
+        if subscription_id:
+            settings["subscription_id"] = subscription_id
+        return settings
+
     @staticmethod
     def _groups(source):
         return [
@@ -212,7 +292,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
     def _delegate(inventory, loader, settings, cloud, cache):
         from ansible.plugins.loader import inventory_loader
 
-        suffix = ".gcp.yml" if cloud == "gcp" else ".aws_ec2.yml"
+        suffixes = {
+            "gcp": ".gcp.yml",
+            "aws": ".aws_ec2.yml",
+            "azure": ".azure_rm.yml",
+        }
+        suffix = suffixes[cloud]
         descriptor, generated = tempfile.mkstemp(prefix="oilscope-", suffix=suffix)
         os.close(descriptor)
 

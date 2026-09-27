@@ -5,17 +5,16 @@
     secret_versions_config: >-
       {{ lookup('ansible.builtin.file', secret_versions_config_file) | from_json }}
 
-- name: Start with an empty GCP secret catalog
+- name: Start with empty cloud secret catalogs
   ansible.builtin.set_fact:
-    secret_versions_pairs: []
+    secret_versions_gcp_pairs: []
+    secret_versions_azure_pairs: []
     secret_versions_catalog: []
 
-# The unit of upload is the container. Only VMs selected for GCP use Google
-# Secret Manager, so AWS mappings are deliberately excluded.
-- name: Collect the container and workload pairs
+- name: Collect GCP secret and workload pairs
   ansible.builtin.set_fact:
-    secret_versions_pairs: >-
-      {{ secret_versions_pairs | default([])
+    secret_versions_gcp_pairs: >-
+      {{ secret_versions_gcp_pairs
          + (secret_versions_vm.value.secret_mappings | default({}) | dict2items
             | map(attribute='value') | unique | list
             | zip_longest([], fillvalue=secret_versions_vm.key) | list) }}
@@ -27,17 +26,30 @@
     (secret_versions_vm.value.cloud
      | default(secret_versions_config.default_cloud)) == 'gcp'
 
-# The variable name comes from the container ID, not from the key side of
-# secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
-# different secret on every workload and one shell cannot hold them all.
-- name: Derive a variable name for every container
+- name: Collect Azure secret and workload pairs
+  ansible.builtin.set_fact:
+    secret_versions_azure_pairs: >-
+      {{ secret_versions_azure_pairs
+         + (secret_versions_vm.value.secret_mappings | default({}) | dict2items
+            | map(attribute='value') | unique | list
+            | zip_longest([], fillvalue=secret_versions_vm.key) | list) }}
+  loop: "{{ secret_versions_config.vms | dict2items }}"
+  loop_control:
+    loop_var: secret_versions_vm
+    label: "{{ secret_versions_vm.key }}"
+  when: >-
+    (secret_versions_vm.value.cloud
+     | default(secret_versions_config.default_cloud)) == 'azure'
+
+- name: Derive a variable name for every secret
   ansible.builtin.set_fact:
     secret_versions_ids: >-
-      {{ secret_versions_pairs | map(attribute='0') | unique | sort | list }}
+      {{ (secret_versions_gcp_pairs + secret_versions_azure_pairs)
+         | map(attribute='0') | unique | sort | list }}
     secret_versions_prefix: >-
       {{ secret_versions_config.name_prefix }}-{{ secret_versions_config.environment }}-
 
-- name: Prepare the short and the fully qualified variable names
+- name: Prepare short and fully qualified variable names
   ansible.builtin.set_fact:
     secret_versions_short_names: >-
       {{ secret_versions_ids
@@ -47,11 +59,7 @@
       {{ secret_versions_ids
          | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
 
-# Dropping the project prefix only stays safe while it keeps every name
-# distinct. If two containers would collapse onto one variable, all of them
-# keep the full name: a shorter prompt is not worth writing a value into the
-# wrong container.
-- name: Choose the variable names
+- name: Choose unambiguous variable names
   ansible.builtin.set_fact:
     secret_versions_variables: >-
       {{ secret_versions_short_names
@@ -59,22 +67,42 @@
             == (secret_versions_short_names | length)
          else secret_versions_full_names }}
 
-- name: Build the upload catalog
+- name: Map secret IDs to operator environment variables
+  ansible.builtin.set_fact:
+    secret_versions_variable_by_id: >-
+      {{ dict(secret_versions_ids | zip(secret_versions_variables)) }}
+
+- name: Build the GCP upload catalog
   ansible.builtin.set_fact:
     secret_versions_catalog: >-
-      {{ secret_versions_catalog | default([]) + [{
-           'secret_id': secret_versions_entry.0,
-           'variable': secret_versions_entry.1,
-           'read_by': secret_versions_pairs
-                      | selectattr('0', 'eq', secret_versions_entry.0)
+      {{ secret_versions_catalog + [{
+           'cloud': 'gcp',
+           'secret_id': item,
+           'variable': secret_versions_variable_by_id[item],
+           'read_by': secret_versions_gcp_pairs
+                      | selectattr('0', 'eq', item)
                       | map(attribute='1') | sort | list
          }] }}
-  loop: "{{ secret_versions_ids | zip(secret_versions_variables) | list }}"
+  loop: "{{ secret_versions_gcp_pairs | map(attribute='0') | unique | sort | list }}"
   loop_control:
-    loop_var: secret_versions_entry
-    label: "{{ secret_versions_entry.0 }}"
+    label: "{{ item }}"
 
-- name: Keep only the requested containers
+- name: Build the Azure upload catalog
+  ansible.builtin.set_fact:
+    secret_versions_catalog: >-
+      {{ secret_versions_catalog + [{
+           'cloud': 'azure',
+           'secret_id': item,
+           'variable': secret_versions_variable_by_id[item],
+           'read_by': secret_versions_azure_pairs
+                      | selectattr('0', 'eq', item)
+                      | map(attribute='1') | sort | list
+         }] }}
+  loop: "{{ secret_versions_azure_pairs | map(attribute='0') | unique | sort | list }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Keep only the requested secrets
   ansible.builtin.set_fact:
     secret_versions_catalog: >-
       {{ secret_versions_catalog
@@ -86,27 +114,38 @@
             | list) }}
   when: secret_versions_only | length > 0
 
-
-- name: Show which variable feeds which container
+- name: Show which variable feeds which cloud secret
   ansible.builtin.debug:
     msg: >-
-      {{ item.variable }} -> {{ item.secret_id }}
+      {{ item.variable }} -> {{ item.cloud }}:{{ item.secret_id }}
       (read by {{ item.read_by | join(', ') }})
   loop: "{{ secret_versions_catalog }}"
   loop_control:
-    label: "{{ item.secret_id }}"
+    label: "{{ item.cloud }}:{{ item.secret_id }}"
 
-- name: Resolve the target project
+- name: Resolve the target GCP project
   ansible.builtin.set_fact:
     secret_versions_project: >-
       {{ secret_versions_project_id
          | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-         | default(secret_versions_config.clouds.gcp.project_id
+         | default((secret_versions_config.clouds.gcp | default({})).project_id
                    | default(''), true) }}
 
-# Everything is checked before anything is written. A value that turns out to
-# be missing halfway through leaves some workloads on the new credential and
-# some on the old one, which is worse than not having started.
+- name: Resolve the Azure subscription and resource group
+  ansible.builtin.set_fact:
+    secret_versions_azure_subscription_id: >-
+      {{ lookup('ansible.builtin.env', 'AZURE_SUBSCRIPTION_ID')
+         | default((secret_versions_config.clouds.azure | default({})).subscription_id
+                   | default(''), true) }}
+    secret_versions_azure_resource_group: >-
+      {{ secret_versions_config.name_prefix }}-{{ secret_versions_config.environment }}-rg
+
+- name: Prepare Azure CLI subscription arguments
+  ansible.builtin.set_fact:
+    secret_versions_azure_subscription_args: >-
+      {{ ['--subscription', secret_versions_azure_subscription_id]
+         if secret_versions_azure_subscription_id | length > 0 else [] }}
+
 - name: Find values that are not in the environment
   ansible.builtin.set_fact:
     secret_versions_absent: >-
@@ -122,10 +161,10 @@
   ansible.builtin.fail:
     msg: >-
       Required secret source variables are missing or empty:
-      {{ secret_versions_absent | join(', ') }}
+      {{ secret_versions_absent | unique | join(', ') }}
   when: secret_versions_absent | default([]) | length > 0
 
-- name: Look for the containers
+- name: Look for the GCP secret containers
   ansible.builtin.command:
     argv:
       - "{{ secret_versions_gcloud }}"
@@ -134,21 +173,52 @@
       - "{{ item.secret_id }}"
       - "--project={{ secret_versions_project }}"
       - "--format=value(name)"
-  loop: "{{ secret_versions_catalog }}"
+  loop: "{{ secret_versions_catalog | selectattr('cloud', 'eq', 'gcp') | list }}"
   loop_control:
     label: "{{ item.secret_id }}"
-  register: secret_versions_describe
+  register: secret_versions_gcp_describe
   changed_when: false
   failed_when: false
   check_mode: false
 
-# secretVersionAdder allows adding a version without reading the metadata, so a
-# permission error is not proof that the container is missing.
-# --data-file=- takes the payload from stdin, so it never becomes a command
-# argument and cannot appear in ps output or a shell history. no_log keeps it
-# out of the Ansible output and any callback log, and stdin_add_newline is off
-# because a trailing newline would become part of the stored value.
-- name: Add a new version to every container
+- name: Find the Azure application Key Vault
+  ansible.builtin.command:
+    argv: >-
+      {{ [secret_versions_azure_cli, 'keyvault', 'list',
+          '--resource-group', secret_versions_azure_resource_group,
+          '--query', "[?tags.service=='application-secrets'].name | [0]",
+          '--output', 'tsv'] + secret_versions_azure_subscription_args }}
+  register: secret_versions_azure_vault
+  changed_when: false
+  check_mode: false
+  when: >-
+    secret_versions_catalog | selectattr('cloud', 'eq', 'azure') | list | length > 0
+
+- name: Require the Azure application Key Vault
+  ansible.builtin.assert:
+    that:
+      - secret_versions_azure_vault.stdout | default('') | trim | length > 0
+    fail_msg: >-
+      No Terraform-managed application Key Vault was found in
+      {{ secret_versions_azure_resource_group }}.
+  when: >-
+    secret_versions_catalog | selectattr('cloud', 'eq', 'azure') | list | length > 0
+
+- name: Get an Azure Key Vault access token
+  ansible.builtin.command:
+    argv: >-
+      {{ [secret_versions_azure_cli, 'account', 'get-access-token',
+          '--resource', 'https://vault.azure.net',
+          '--query', 'accessToken', '--output', 'tsv']
+         + secret_versions_azure_subscription_args }}
+  register: secret_versions_azure_token
+  changed_when: false
+  no_log: true
+  check_mode: false
+  when: >-
+    secret_versions_catalog | selectattr('cloud', 'eq', 'azure') | list | length > 0
+
+- name: Add a new version to every GCP secret
   ansible.builtin.command:
     argv:
       - "{{ secret_versions_gcloud }}"
@@ -161,22 +231,50 @@
       - "--format=value(name)"
     stdin: "{{ lookup('ansible.builtin.env', item.variable) }}"
     stdin_add_newline: false
-  loop: "{{ secret_versions_catalog }}"
+  loop: "{{ secret_versions_catalog | selectattr('cloud', 'eq', 'gcp') | list }}"
   loop_control:
     label: "{{ item.secret_id }}"
-  register: secret_versions_added
+  register: secret_versions_gcp_added
   changed_when: true
   no_log: true
-  # Not check_mode - a skipped-in-check-mode result carries the module
-  # arguments, and at -vvv Ansible prints those uncensored even under no_log.
   when: not ansible_check_mode
 
-- name: Report the new versions
+- name: Add a new version to every Azure secret
+  ansible.builtin.uri:
+    url: >-
+      https://{{ secret_versions_azure_vault.stdout | trim }}.vault.azure.net/secrets/{{ item.secret_id }}?api-version={{ secret_versions_azure_keyvault_api_version }}
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ secret_versions_azure_token.stdout | trim }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      value: "{{ lookup('ansible.builtin.env', item.variable) }}"
+    status_code: 200
+    return_content: false
+  loop: "{{ secret_versions_catalog | selectattr('cloud', 'eq', 'azure') | list }}"
+  loop_control:
+    label: "{{ item.secret_id }}"
+  register: secret_versions_azure_added
+  changed_when: true
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Report the new GCP versions
   ansible.builtin.debug:
     msg: >-
-      {{ item.item.secret_id }} <- ${{ item.item.variable }}
+      gcp:{{ item.item.secret_id }} <- ${{ item.item.variable }}
       (version {{ item.stdout | trim | regex_replace('^.*/', '') }})
-  loop: "{{ secret_versions_added.results | default([]) }}"
+  loop: "{{ secret_versions_gcp_added.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.secret_id }}"
+  when: not ansible_check_mode
+
+- name: Report the new Azure versions
+  ansible.builtin.debug:
+    msg: >-
+      azure:{{ item.item.secret_id }} <- ${{ item.item.variable }}
+  loop: "{{ secret_versions_azure_added.results | default([]) }}"
   loop_control:
     label: "{{ item.item.secret_id }}"
   when: not ansible_check_mode

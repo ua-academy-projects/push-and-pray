@@ -11,7 +11,8 @@ database VM. `managed` creates private PostgreSQL in the cloud selected by the
 VM whose role is `database`:
 
 - Amazon RDS when that VM selects AWS;
-- Cloud SQL when that VM selects GCP.
+- Cloud SQL when that VM selects GCP;
+- Azure Database for PostgreSQL Flexible Server when that VM selects Azure.
 
 In managed mode the former database VM is retained. Ansible stops its
 PostgreSQL container without deleting `postgres_data`, starts durable RabbitMQ,
@@ -25,6 +26,8 @@ variables as before.
   spans two AZs. TCP 5432 is accepted only from the application and migration
   runner security groups.
 - Cloud SQL has no public IPv4 address and uses Private Services Access.
+- Azure PostgreSQL has no public network access and uses a delegated subnet and
+  private DNS zone.
 - RabbitMQ TCP 5672 is accepted only from Fetcher and History. Its management
   port 15672 is bound to loopback on the VM.
 - AWS creates one NAT Gateway by default so private workload VMs can download
@@ -42,8 +45,9 @@ external OilPriceAPI value and, when required by a private registry, GHCR token
 still come from the operator. Secret payloads must not be placed in tfvars,
 project JSON, inventory, or Git.
 
-The existing secret-version workflow can populate GCP application secrets. AWS
-application secret containers use names such as:
+The existing secret-version workflow can populate GCP Secret Manager and Azure
+Key Vault application secrets. AWS application secret containers use names such
+as:
 
 ```text
 oilscope/dev/external-api-key

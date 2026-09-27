@@ -14,6 +14,7 @@ locals {
   managed_database_enabled = var.database_mode == "managed"
   aws_managed_database     = local.managed_database_enabled && local.database_cloud == "aws"
   gcp_managed_database     = local.managed_database_enabled && local.database_cloud == "gcp"
+  azure_managed_database   = local.managed_database_enabled && local.database_cloud == "azure"
 
   database_client_clouds = toset([
     for vm in values(local.config.vms) : lookup(vm, "cloud", local.config.default_cloud)
@@ -23,11 +24,13 @@ locals {
   database_host = (
     local.aws_managed_database ? module.aws_rds.address :
     local.gcp_managed_database ? module.gcp_cloud_sql.private_ip_address :
+    local.azure_managed_database ? module.azure_postgresql.fqdn :
     local.database_internal_ip
   )
   database_secret_reference = (
     local.aws_managed_database ? module.aws_rds.master_user_secret_arn :
     local.gcp_managed_database ? module.gcp_cloud_sql.credentials_secret_id :
+    local.azure_managed_database ? module.azure_postgresql.credentials_secret_id :
     try(local.database_vm.secret_mappings.POSTGRES_PASSWORD, "")
   )
   rabbitmq_secret_reference = try(local.database_vm.secret_mappings.RABBITMQ_PASSWORD, "rabbitmq-password")

@@ -4,7 +4,7 @@ locals {
     if vm.role == "ui"
   }
   ui_vm_name = try(one(keys(local.ui_vm_entries)), null)
-  ui_vm      = try(merge(module.gcp_vm.vms, module.aws_vm.vms)[local.ui_vm_name], null)
+  ui_vm      = try(merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs)[local.ui_vm_name], null)
   ui_hostname = try(
     local.ui_vm_entries[local.ui_vm_name].public_endpoint.hostname,
     null,

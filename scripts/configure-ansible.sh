@@ -16,6 +16,7 @@ Environment variables:
   OILSCOPE_SSH_USER        Optional SSH user override
   AWS_PROFILE              Optional named AWS CLI profile
   GOOGLE_CLOUD_PROJECT     Required only when the configuration selects GCP
+  AZURE_SUBSCRIPTION_ID    Optional Azure subscription override
 EOF
 }
 
@@ -51,6 +52,7 @@ else
   ssh_key=""
   for key_candidate in \
     "${HOME}/.ssh/terraform-access" \
+    "${HOME}/.ssh/azure-terraform-access" \
     "${HOME}/.ssh/terraform_ed25519" \
     "${HOME}/.ssh/google_compute_engine"; do
     if [[ -f "${key_candidate}" ]]; then
@@ -139,6 +141,18 @@ if grep -qx gcp <<<"${selected_clouds}"; then
   gcloud auth application-default print-access-token >/dev/null
 fi
 
+if grep -qx azure <<<"${selected_clouds}"; then
+  require_command az
+  if ! python3 -c 'import azure.identity, azure.mgmt.compute' >/dev/null 2>&1; then
+    fail "Azure Ansible Python dependencies are missing. Install azure.azcollection and its requirements.txt in ${ansible_venv}."
+  fi
+  if ! ansible-doc -t inventory azure.azcollection.azure_rm >/dev/null 2>&1; then
+    fail "The azure.azcollection collection is missing. Install infrastructure/ansible/requirements.yml."
+  fi
+  step "Checking Azure CLI credentials"
+  az account show >/dev/null
+fi
+
 step "Building and installing the repository's Ansible collection"
 mkdir -p "${collections_root}"
 collection_build_dir="$(mktemp -d)"
@@ -182,9 +196,11 @@ print(len(hostvars), len(bastion), len(workloads))
 PY
 })"
 read -r inventory_hosts bastion_hosts workload_hosts <<<"${inventory_counts}"
+selected_cloud_count="$(wc -l <<<"${selected_clouds}" | tr -d ' ')"
 
 [[ "${inventory_hosts}" -gt 0 ]] || fail "Dynamic inventory returned no hosts."
-[[ "${bastion_hosts}" -eq 1 ]] || fail "Dynamic inventory must contain exactly one bastion host."
+[[ "${bastion_hosts}" -eq "${selected_cloud_count}" ]] || \
+  fail "Dynamic inventory must contain one bastion for every selected cloud."
 [[ "${workload_hosts}" -gt 0 ]] || fail "Dynamic inventory returned no workload hosts."
 
 ansible-inventory "${ansible_args[@]}" --graph
@@ -214,6 +230,13 @@ if grep -qx aws <<<"${selected_clouds}"; then
   ansible 'cloud_aws:&workloads:!ui' "${ansible_args[@]}" \
     -m ansible.builtin.uri \
     -a 'url=https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb method=HEAD status_code=200 timeout=20'
+fi
+
+if grep -qx azure <<<"${selected_clouds}"; then
+  step "Checking outbound HTTPS from private Azure workloads through the NAT Gateway"
+  ansible 'cloud_azure:&workloads:!ui' "${ansible_args[@]}" \
+    -m ansible.builtin.uri \
+    -a 'url=https://mcr.microsoft.com/v2/ method=GET status_code=200 timeout=20'
 fi
 
 if [[ "${preflight_only}" == true ]]; then

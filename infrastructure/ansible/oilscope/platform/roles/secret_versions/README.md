@@ -1,9 +1,8 @@
 # Secret versions role
 
-Adds a new Secret Manager version to every container declared in the project
-configuration, taking each value from the environment of the operator running
-the play. It runs on `localhost`: this is an operator task against the Google
-API, not host configuration.
+Adds a new GCP Secret Manager or Azure Key Vault version for every secret used
+by workloads in those clouds. Values come from the environment of the operator
+running the play. It runs on `localhost`, not on a workload VM.
 
 Terraform creates the containers and grants access to them, and never carries a
 payload — see [docs/secrets.md](../../../../../../docs/secrets.md). This role is
@@ -28,7 +27,7 @@ adds nothing.
 
 ## Requirements
 
-`gcloud`, authenticated as a principal holding
+For GCP, `gcloud` must be authenticated as a principal holding
 `roles/secretmanager.secretVersionAdder` on the containers. That role permits
 adding a version and not reading one, so rotation does not require access to
 the current value. Terraform grants it from the `secret_version_managers`
@@ -36,6 +35,10 @@ variable.
 
 The containers must already exist: `terraform apply` creates them from the same
 configuration file this role reads.
+
+For Azure, `az login` must be active and the account must have `Set` permission
+on the Terraform-managed application Key Vault. The role locates that vault by
+its `service=application-secrets` tag.
 
 ## Required variables
 
@@ -49,6 +52,9 @@ configuration file this role reads.
 - `secret_versions_only`: list of container IDs or variable names to upload.
   Defaults to all of them; use it to rotate one credential.
 - `secret_versions_gcloud`: path to the `gcloud` executable.
+- `secret_versions_azure_cli`: path to the `az` executable.
+- `secret_versions_azure_keyvault_api_version`: Key Vault data-plane API
+  version.
 
 ## Which variable holds which value
 

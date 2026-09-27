@@ -17,3 +17,11 @@
 
   roles:
     - role: oilscope.platform.aws_cloudwatch_agent
+
+- name: Configure the Azure Monitor Agent
+  hosts: cloud_azure
+  gather_facts: false
+  any_errors_fatal: true
+
+  roles:
+    - role: oilscope.platform.azure_monitor_agent

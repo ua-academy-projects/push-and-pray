@@ -12,3 +12,7 @@ collections:
   # Live AWS EC2 discovery.
   - name: amazon.aws
     version: ">=9.0.0"
+
+  # Live Azure VM discovery and Azure Monitor Agent extension management.
+  - name: azure.azcollection
+    version: ">=3.21.0"

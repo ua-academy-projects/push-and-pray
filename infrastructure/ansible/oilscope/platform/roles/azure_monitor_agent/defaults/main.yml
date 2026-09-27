@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+azure_monitor_agent_extension_name: AzureMonitorLinuxAgent
+azure_monitor_agent_publisher: Microsoft.Azure.Monitor
+azure_monitor_agent_type: AzureMonitorLinuxAgent
+azure_monitor_agent_version: "1.0"

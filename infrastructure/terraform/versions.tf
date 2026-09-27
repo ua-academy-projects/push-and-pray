@@ -23,5 +23,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.24.0"
     }
+
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
   }
 }

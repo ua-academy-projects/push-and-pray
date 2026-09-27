@@ -3,7 +3,8 @@
 Resolves the secret values permitted for the current host from the selected
 cloud's secret manager. GCP access uses the workload VM service account and
 metadata token. AWS access uses the controller's standard AWS SDK credential
-chain, which is also required by the dynamic inventory.
+chain, which is also required by the dynamic inventory. Azure access uses the
+VM's user-assigned managed identity and the Key Vault REST API.
 
 Terraform creates the containers and grants each workload access only to its
 own secrets; `secret_versions` writes values into them from an operator's
@@ -19,7 +20,8 @@ containers.
   happens to share the same `role`.
 - GCP authentication comes from the attached service account. AWS
   authentication follows `AWS_PROFILE` or the normal SDK credential chain;
-  credentials are never written to a workload host.
+  Azure authentication comes from instance metadata. Credentials are never
+  written to a workload host.
 - Nothing is written to disk. The result exists only as an in-memory fact
   for the duration of the play.
 - Every task that could carry a token or a secret value is marked `no_log`,
@@ -33,6 +35,10 @@ GCP hosts need `roles/secretmanager.secretAccessor`, granted by
 `gcp-secrets` and `gcp-cloud-sql`. AWS controllers need
 `secretsmanager:GetSecretValue`; the EC2 runtime role receives the same
 least-privilege access for future in-host retrieval.
+
+Azure hosts need `Get` and `List` permissions on the application Key Vault and,
+in managed mode, on the database Key Vault. Terraform grants both permissions
+to each VM's user-assigned identity.
 
 In managed mode the role replaces `POSTGRES_PASSWORD` with the RDS-managed or
 Cloud SQL credential secret and resolves the generated RabbitMQ password.
@@ -62,6 +68,10 @@ never resolve to a sibling's secrets even in that case.
   `$GOOGLE_PROJECT`, then to `clouds.gcp.project_id` in the configuration.
 - `resolve_secrets_metadata_url`: the instance metadata token endpoint.
 - `resolve_secrets_secretmanager_url`: the Secret Manager REST API base URL.
+- `resolve_secrets_azure_metadata_url`: the Azure instance metadata token
+  endpoint.
+- `resolve_secrets_azure_keyvault_api_version`: the Key Vault data-plane API
+  version.
 
 ## Output
 

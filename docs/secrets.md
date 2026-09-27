@@ -1,8 +1,9 @@
 # Secrets
 
-Deployment credentials live in Google Secret Manager. Terraform creates the
-containers and decides who may read them; it never sees, stores or transports a
-value.
+Deployment credentials live in the selected cloud secret service: Google
+Secret Manager, AWS Secrets Manager or Azure Key Vault. Terraform creates the
+containers or vault and decides who may read them; operator-supplied
+application values are uploaded separately and do not pass through Terraform.
 
 ## Where the catalog comes from
 
@@ -24,7 +25,7 @@ The key is the environment variable the application expects; the value is the
 Secret Manager container ID. Both halves are non-secret, which is why the whole
 mapping can live in a file the repository reads.
 
-`infrastructure/terraform/modules/gcp-secrets/main.tf` creates containers from mappings prepared in that module's `locals.tf` for
+`infrastructure/terraform/modules/gcp/gcp-secrets/main.tf` creates containers from mappings prepared in that module's `locals.tf` for
 VMs selected for GCP into the set of containers to create, and into the list
 of (workload, secret) pairs to grant.
 Giving a workload a new secret is a one-line change to that JSON — the

@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-oilscope_bastion_address: "{{ hostvars[groups['bastion'][0]].ansible_host }}"
-oilscope_bastion_ssh_port: "{{ hostvars[groups['bastion'][0]].bastion_ssh_port }}"
+oilscope_cloud_bastions: >-
+  {{ groups['bastion'] | intersect(groups['cloud_' ~ oilscope_cloud]) }}
+oilscope_bastion_address: >-
+  {{ hostvars[oilscope_cloud_bastions | first].ansible_host }}
+oilscope_bastion_ssh_port: >-
+  {{ hostvars[oilscope_cloud_bastions | first].bastion_ssh_port }}
 
 ansible_ssh_common_args: >-
   {{ oilscope_ssh_base_args }}

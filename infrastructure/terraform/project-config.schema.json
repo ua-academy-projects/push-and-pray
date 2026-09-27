@@ -101,7 +101,8 @@
       "type": "string",
       "enum": [
         "gcp",
-        "aws"
+        "aws",
+        "azure"
       ]
     },
     "clouds": {
@@ -114,6 +115,9 @@
         },
         "aws": {
           "$ref": "#/$defs/aws_cloud"
+        },
+        "azure": {
+          "$ref": "#/$defs/azure_cloud"
         }
       }
     },
@@ -255,6 +259,27 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "default_cloud": {
+            "const": "azure"
+          }
+        },
+        "required": [
+          "default_cloud"
+        ]
+      },
+      "then": {
+        "properties": {
+          "clouds": {
+            "required": [
+              "azure"
+            ]
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -352,6 +377,78 @@
         }
       }
     },
+    "azure_cloud": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subscription_id",
+        "regions",
+        "zones",
+        "machine_types",
+        "disk_types",
+        "images",
+        "network"
+      ],
+      "properties": {
+        "subscription_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "regions": {
+          "$ref": "#/$defs/lookup_dictionary"
+        },
+        "zones": {
+          "$ref": "#/$defs/lookup_dictionary"
+        },
+        "machine_types": {
+          "$ref": "#/$defs/lookup_dictionary"
+        },
+        "disk_types": {
+          "$ref": "#/$defs/lookup_dictionary"
+        },
+        "images": {
+          "$ref": "#/$defs/regional_images"
+        },
+        "network": {
+          "$ref": "#/$defs/azure_network"
+        },
+        "regional_networks": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/lookup_key"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/azure_network"
+          }
+        }
+      }
+    },
+    "azure_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "management_subnet_cidr",
+        "workload_subnet_cidr",
+        "vnet_cidr"
+      ],
+      "properties": {
+        "management_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "boot_disk": {
       "type": "object",
       "additionalProperties": false,
@@ -434,8 +531,12 @@
           "type": "string",
           "enum": [
             "gcp",
-            "aws"
+            "aws",
+            "azure"
           ]
+        },
+        "azure_region": {
+          "$ref": "#/$defs/lookup_key"
         },
         "role": {
           "type": "string",
@@ -513,6 +614,10 @@
               "format": "ipv4"
             },
             "gcp": {
+              "type": "string",
+              "format": "ipv4"
+            },
+            "azure": {
               "type": "string",
               "format": "ipv4"
             }

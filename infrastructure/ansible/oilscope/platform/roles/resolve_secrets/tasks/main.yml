@@ -10,7 +10,7 @@
     resolve_secrets_project: >-
       {{ resolve_secrets_project_id
         | default(lookup('ansible.builtin.env', 'GOOGLE_PROJECT'), true)
-        | default(resolve_secrets_config.clouds.gcp.project_id
+        | default((resolve_secrets_config.clouds.gcp | default({})).project_id
                   | default(''), true) }}
 
 - name: Derive this VM's configuration key
@@ -36,7 +36,7 @@
     resolve_secrets_region: >-
       {{ oilscope_region
          | default(
-             resolve_secrets_config.clouds.aws.regions[
+             (resolve_secrets_config.clouds.aws | default({})).regions[
                resolve_secrets_config.location.region
              ] | default(''),
              true
@@ -124,6 +124,89 @@
     label: "{{ item.key }}"
   when: resolve_secrets_cloud == 'aws'
 
+- name: Validate the Azure managed identity setting
+  ansible.builtin.assert:
+    that:
+      - azure_identity_client_id | default('') | length > 0
+    fail_msg: >-
+      Azure secret access requires the VM identity client ID from Terraform
+      VM tags.
+  when:
+    - resolve_secrets_cloud == 'azure'
+    - >-
+      resolve_secrets_mappings | length > 0 or
+      (resolve_secrets_database_mode == 'managed' and
+       resolve_secrets_database_secret_reference | length > 0)
+
+- name: Validate the Azure application Key Vault setting
+  ansible.builtin.assert:
+    that:
+      - azure_secret_vault_uri | default('') | length > 0
+    fail_msg: >-
+      Mapped Azure application secrets require the Key Vault URI from
+      Terraform VM tags.
+  when:
+    - resolve_secrets_cloud == 'azure'
+    - resolve_secrets_mappings | length > 0
+
+- name: Fetch an Azure Key Vault token from instance metadata
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_azure_metadata_url
+         ~ '?api-version=2018-02-01'
+         ~ '&resource=https%3A%2F%2Fvault.azure.net'
+         ~ '&client_id=' ~ (azure_identity_client_id | urlencode) }}
+    headers:
+      Metadata: "true"
+    return_content: true
+  register: resolve_secrets_azure_token
+  no_log: true
+  when:
+    - resolve_secrets_cloud == 'azure'
+    - >-
+      resolve_secrets_mappings | length > 0 or
+      (resolve_secrets_database_mode == 'managed' and
+       resolve_secrets_database_secret_reference | length > 0)
+
+- name: Extract the Azure Key Vault access token
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_access_token: >-
+      {{ (resolve_secrets_azure_token.content | from_json).access_token }}
+  no_log: true
+  when:
+    - resolve_secrets_cloud == 'azure'
+    - resolve_secrets_azure_token is not skipped
+
+- name: Access each mapped Azure secret
+  ansible.builtin.uri:
+    url: >-
+      {{ azure_secret_vault_uri | regex_replace('/?$', '/')
+         ~ 'secrets/' ~ item.value
+         ~ '?api-version=' ~ resolve_secrets_azure_keyvault_api_version }}
+    headers:
+      Authorization: "Bearer {{ resolve_secrets_azure_access_token }}"
+    return_content: true
+  register: resolve_secrets_azure_accessed
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: resolve_secrets_cloud == 'azure'
+
+- name: Build the resolved Azure secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: (item.content | from_json).value
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_azure_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - resolve_secrets_cloud == 'azure'
+    - item is not skipped
+
 - name: Access the managed AWS database credentials
   ansible.builtin.set_fact:
     resolve_secrets_database_credentials: >-
@@ -161,6 +244,30 @@
   no_log: true
   when:
     - resolve_secrets_cloud == 'gcp'
+    - resolve_secrets_database_mode == 'managed'
+
+- name: Access the managed Azure database credentials
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_database_secret_reference
+         ~ ('&' if '?' in resolve_secrets_database_secret_reference else '?')
+         ~ 'api-version=' ~ resolve_secrets_azure_keyvault_api_version }}
+    headers:
+      Authorization: "Bearer {{ resolve_secrets_azure_access_token }}"
+    return_content: true
+  register: resolve_secrets_azure_database
+  no_log: true
+  when:
+    - resolve_secrets_cloud == 'azure'
+    - resolve_secrets_database_mode == 'managed'
+
+- name: Decode the managed Azure database credentials
+  ansible.builtin.set_fact:
+    resolve_secrets_database_credentials: >-
+      {{ ((resolve_secrets_azure_database.content | from_json).value) | from_json }}
+  no_log: true
+  when:
+    - resolve_secrets_cloud == 'azure'
     - resolve_secrets_database_mode == 'managed'
 
 - name: Add the managed PostgreSQL password

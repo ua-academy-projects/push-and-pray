@@ -49,7 +49,7 @@ class ConfigurationTests(unittest.TestCase):
         if (TF / "config/dev.json").exists():
             paths.append(TF / "config/dev.json")
         for path in paths:
-            for cloud in ("aws", "gcp"):
+            for cloud in ("aws", "gcp", "azure"):
                 for location in LOCATIONS:
                     with self.subTest(file=path.name, cloud=cloud, location=location):
                         config = copy.deepcopy(read_json(path))
@@ -61,14 +61,17 @@ class ConfigurationTests(unittest.TestCase):
                         provider = config["clouds"][cloud]
                         region = provider["regions"][location]
                         zone = provider["zones"][location]
-                        self.assertTrue(zone.startswith(region))
+                        if cloud == "azure":
+                            self.assertRegex(zone, r"^[1-3]$")
+                        else:
+                            self.assertTrue(zone.startswith(region))
                         for vm in config["vms"].values():
                             self.assertTrue(provider["machine_types"][vm["machine_type"]])
                             self.assertTrue(provider["disk_types"][vm["boot_disk"]["type"]])
                             self.assertTrue(provider["images"][location][vm["image"]])
 
     def test_cloud_specific_subnets_and_addresses(self):
-        for cloud in ("aws", "gcp"):
+        for cloud in ("aws", "gcp", "azure"):
             network = dict(self.example["network"])
             network.update(self.example["clouds"][cloud].get("network", {}))
             nets = [
@@ -78,7 +81,7 @@ class ConfigurationTests(unittest.TestCase):
             self.assertFalse(nets[0].overlaps(nets[1]))
             seen = set()
             for vm in self.example["vms"].values():
-                public_roles = {"bastion", "ui"} if cloud == "aws" else {"bastion"}
+                public_roles = {"bastion", "ui"} if cloud in {"aws", "azure"} else {"bastion"}
                 subnet = nets[0 if vm["role"] in public_roles else 1]
                 address = ipaddress.ip_address(
                     vm.get("internal_ips", {}).get(cloud, vm["internal_ip"])
@@ -86,7 +89,7 @@ class ConfigurationTests(unittest.TestCase):
                 self.assertIn(address, subnet)
                 self.assertNotIn(address, seen)
                 seen.add(address)
-                if cloud == "aws":
+                if cloud in {"aws", "azure"}:
                     self.assertLessEqual(subnet.prefixlen, 28)
                     self.assertGreaterEqual(int(address) - int(subnet.network_address), 4)
                 self.assertNotEqual(address, subnet.broadcast_address)
@@ -113,10 +116,33 @@ class ModuleStructureTests(unittest.TestCase):
             1,
         )
 
-    def test_flat_modules_and_declared_inputs(self):
+    def test_grouped_modules_and_declared_inputs(self):
         main = (TF / "main.tf").read_text()
-        modules = dict(re.findall(r'module\s+"(\w+)"\s*\{\s*source\s*=\s*"([^"]+)"', main))
-        self.assertEqual(len(modules), 12)
+        modules = dict(
+            re.findall(r'module\s+"([\w-]+)"\s*\{\s*source\s*=\s*"([^"]+)"', main)
+        )
+        expected_modules = {
+            "gcp_apis",
+            "iam",
+            "aws_network",
+            "aws_security",
+            "aws_rds",
+            "aws_secrets",
+            "aws_vm",
+            "gcp_network",
+            "gcp_security",
+            "gcp_cloud_sql",
+            "gcp_vm",
+            "gcp_secrets",
+            "azure_network",
+            "azure_security",
+            "azure_identity",
+            "azure_postgresql",
+            "azure_vm",
+            "aws-monitoring",
+            "gcp-monitoring",
+        }
+        self.assertEqual(set(modules), expected_modules)
         for name, source in modules.items():
             directory = TF / source
             self.assertTrue(directory.is_dir(), name)
@@ -126,15 +152,15 @@ class ModuleStructureTests(unittest.TestCase):
             referenced = set(re.findall(r"\bvar\.(\w+)", text))
             self.assertFalse(referenced - declared, (name, referenced - declared))
         outputs = (TF / "outputs.tf").read_text()
-        for module, output in re.findall(r"\bmodule\.(\w+)\.(\w+)", main + outputs):
+        for module, output in re.findall(r"\bmodule\.([\w-]+)\.(\w+)", main + outputs):
             text = "\n".join(p.read_text() for p in (TF / modules[module]).glob("*.tf"))
             self.assertRegex(text, rf'output\s+"{output}"')
 
     def test_templates_retained_but_not_attached(self):
-        template_dir = TF / "modules/gcp-vm/templates"
+        template_dir = TF / "modules/gcp/gcp-vm/templates"
         for name in ("run.sh", "cloud-config.yaml.tftpl", "bastion-startup.sh.tftpl"):
             self.assertTrue((template_dir / name).exists())
-        for module in ("aws-vm", "gcp-vm"):
+        for module in ("aws/aws-vm", "gcp/gcp-vm"):
             text = "\n".join(p.read_text() for p in (TF / "modules" / module).glob("*.tf"))
             self.assertNotIn("templatefile(", text)
             self.assertNotRegex(text, r"\buser_data\s*=")
@@ -148,12 +174,25 @@ class InventorySettingsTests(unittest.TestCase):
         tree = ast.parse(path.read_text())
         cls = next(node for node in tree.body if isinstance(node, ast.ClassDef))
         cls.bases = []
-        keep = {"_location", "_bastion_port", "_gcp_settings", "_aws_settings", "_groups"}
+        keep = {
+            "_location",
+            "_bastion_port",
+            "_gcp_settings",
+            "_aws_settings",
+            "_azure_settings",
+            "_groups",
+        }
         cls.body = [
             node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name in keep
         ]
         module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
-        namespace = {"DELEGATES": {"aws": "amazon.aws.aws_ec2", "gcp": "google.cloud.gcp_compute"}}
+        namespace = {
+            "DELEGATES": {
+                "aws": "amazon.aws.aws_ec2",
+                "gcp": "google.cloud.gcp_compute",
+                "azure": "azure.azcollection.azure_rm",
+            }
+        }
         exec(compile(module, str(path), "exec"), namespace)  # noqa: S102
         plugin = namespace["InventoryModule"]()
         plugin.get_option = lambda name: False
@@ -166,6 +205,14 @@ class InventorySettingsTests(unittest.TestCase):
             )
             self.assertEqual(
                 plugin._gcp_settings(config)["zones"], [config["clouds"]["gcp"]["zones"][location]]
+            )
+            azure = plugin._azure_settings(config)
+            self.assertEqual(
+                azure["include_vm_resource_groups"],
+                [f"{config['name_prefix']}-{config['environment']}-rg"],
+            )
+            self.assertEqual(
+                azure["hostvar_expressions"]["oilscope_region"], "location"
             )
 
 

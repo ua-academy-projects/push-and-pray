@@ -143,6 +143,47 @@ variable "gcp_cloud_sql_deletion_protection" {
   default     = false
 }
 
+variable "azure_enable_nat_gateway" {
+  description = "Create an Azure NAT Gateway for private workload VM outbound access."
+  type        = bool
+  default     = true
+}
+
+variable "azure_database_subnet_cidr" {
+  description = "Private delegated subnet used by Azure Database for PostgreSQL Flexible Server."
+  type        = string
+  default     = "10.2.2.0/24"
+}
+
+variable "azure_postgresql_version" {
+  description = "Azure Database for PostgreSQL Flexible Server version."
+  type        = string
+  default     = "17"
+}
+
+variable "azure_postgresql_sku_name" {
+  description = "Azure Database for PostgreSQL Flexible Server SKU."
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "azure_postgresql_storage_mb" {
+  description = "Azure PostgreSQL storage size in MiB."
+  type        = number
+  default     = 32768
+}
+
+variable "azure_postgresql_backup_retention_days" {
+  description = "Azure PostgreSQL backup retention period."
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = var.azure_postgresql_backup_retention_days >= 7 && var.azure_postgresql_backup_retention_days <= 35
+    error_message = "azure_postgresql_backup_retention_days must be between 7 and 35."
+  }
+}
+
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID that owns the UI hostname. Null disables Terraform-managed UI DNS."
   type        = string

@@ -11,3 +11,5 @@ secret_versions_project_id: ""
 secret_versions_only: []
 
 secret_versions_gcloud: gcloud
+secret_versions_azure_cli: az
+secret_versions_azure_keyvault_api_version: "7.4"

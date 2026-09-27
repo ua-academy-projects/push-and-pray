@@ -6,29 +6,47 @@ metadata from the selected database workload and `database_mode`.
 Modules do not call other modules. Root passes subnet IDs, security-group IDs,
 and runtime identities between them; these resource dependencies are necessary.
 
-| Module | Responsibility |
+Provider-specific modules are grouped by cloud:
+
+```text
+modules/
+├── aws/
+├── gcp/
+├── azure/
+└── iam/
+```
+
+| Module path | Responsibility |
 | --- | --- |
-| aws-network | VPC, subnets, Internet Gateway and routing |
-| aws-security | Per-VM security groups and traffic rules |
-| aws-vm | EC2, SSH key pair and optional additional disks |
-| aws-rds | Private RDS PostgreSQL, DB subnet group and least-privilege ingress |
-| aws-secrets | AWS application secret containers and generated RabbitMQ credential |
-| gcp-network | VPC, subnets, router and Cloud NAT |
-| gcp-security | GCP firewall rules |
-| gcp-vm | Compute Engine instances, public IPs and optional disks |
-| gcp-cloud-sql | Private Cloud SQL PostgreSQL and its credential secret |
+| aws/aws-network | VPC, subnets, Internet Gateway and routing |
+| aws/aws-security | Per-VM security groups and traffic rules |
+| aws/aws-vm | EC2, SSH key pair and optional additional disks |
+| aws/aws-rds | Private RDS PostgreSQL, DB subnet group and least-privilege ingress |
+| aws/aws-secrets | AWS application secret containers and generated RabbitMQ credential |
+| aws/aws-monitoring | CloudWatch alarms, SNS notifications and dashboard |
+| gcp/gcp-network | VPC, subnets, router and Cloud NAT |
+| gcp/gcp-security | GCP firewall rules |
+| gcp/gcp-vm | Compute Engine instances, public IPs and optional disks |
+| gcp/gcp-cloud-sql | Private Cloud SQL PostgreSQL and its credential secret |
 | iam | AWS EC2 role/profile and GCP service accounts |
-| gcp-apis | Enable GCP services when GCP VMs are selected |
-| gcp-secrets | GCP secret containers and scoped IAM grants |
+| gcp/gcp-apis | Enable GCP services when GCP VMs are selected |
+| gcp/gcp-secrets | GCP secret containers and scoped IAM grants |
+| gcp/gcp-monitoring | Cloud Monitoring alerts, email notifications and dashboard |
+| azure/azure-network | Resource group, VNet, subnets and optional NAT Gateway |
+| azure/azure-security | Per-VM network security groups and ingress rules |
+| azure/azure-identity | Per-VM managed identities and the application Key Vault |
+| azure/azure-vm | Azure Linux VMs, NICs, public IPs and optional disks |
+| azure/azure-postgresql | Private PostgreSQL Flexible Server and credential Key Vault secret |
 
 ## Database modes
 
 `database_mode` defaults to `self_hosted`.
 
 - `self_hosted` keeps PostgreSQL 18 and PGMQ on the existing database VM.
-- `managed` creates RDS when the database VM selects AWS, or Cloud SQL when it
-  selects GCP. The former database VM keeps its disk, stops its PostgreSQL
-  container, runs RabbitMQ, and acts as the private migration runner.
+- `managed` creates RDS when the database VM selects AWS, Cloud SQL when it
+  selects GCP, or PostgreSQL Flexible Server when it selects Azure. The former
+  database VM keeps its disk, stops its PostgreSQL container, runs RabbitMQ,
+  and acts as the private migration runner.
 
 The database VM and all database clients must select the same cloud because no
 cross-cloud private routing is created. See
@@ -40,13 +58,13 @@ Keep the real file at `config/dev.json` or pass another external path.
 The sanitized example is `../../project-config.example.json`.
 Each cloud has five named locations:
 
-| Key | AWS region | GCP region |
-| --- | --- | --- |
-| europe-west | eu-west-1 | europe-west1 |
-| europe-central | eu-central-1 | europe-west3 |
-| america-east | us-east-1 | us-east1 |
-| america-west | us-west-2 | us-west1 |
-| asia-southeast | ap-southeast-1 | asia-southeast1 |
+| Key | AWS region | GCP region | Azure region |
+| --- | --- | --- | --- |
+| europe-west | eu-west-1 | europe-west1 | westeurope |
+| europe-central | eu-central-1 | europe-west3 | germanywestcentral |
+| america-east | us-east-1 | us-east1 | eastus |
+| america-west | us-west-2 | us-west1 | westus2 |
+| asia-southeast | ap-southeast-1 | asia-southeast1 | southeastasia |
 
 Set both keys together:
 ```json
@@ -65,6 +83,8 @@ Independent regional deployments need separate configs and backend prefixes.
 `default_cloud` and optional `vms.<name>.cloud` still select the provider.
 No VPN or cross-cloud routes are created. A module with no matching VMs has
 no managed resources. Provider/backend authentication is a separate requirement.
+If Azure workloads are selected without an Azure bastion, root configuration
+adds a separate `azure-bastion` from the existing bastion template.
 
 ## Images and addresses
 
@@ -75,10 +95,10 @@ SSM `current` and GCP image families track upstream updates; use an exact AMI
 or image version when the OS image must be pinned. Availability has not been
 verified against a live cloud account. Machine-size dictionaries are unchanged.
 
-AWS has optional `clouds.aws.network` overrides and per-VM `internal_ips.aws`.
-The examples use an AWS management /28 and valid private addresses, preserving
-the existing GCP network and addresses. AWS reserves the first four addresses
-and the last address in each subnet; AWS IPv4 subnets must be /28 or larger.
+AWS and Azure have cloud-specific network overrides and per-VM private IPs.
+The examples use different CIDRs (`10.0.0.0/16` and `10.2.0.0/16`) so their
+networks do not overlap. Both platforms reserve the first four addresses and
+the last address in each subnet.
 
 ## Optional disks and dynamic blocks
 
@@ -124,7 +144,7 @@ Set `cloudflare_zone_id` and put the API token in the ignored local
 `config/dev.json` file under `cloudflare.api_token`. The token needs Zone DNS
 Edit permission for that zone. Terraform then manages one proxied `A` record
 using `vms.ui.public_endpoint.hostname` and the current public IP of the UI VM,
-regardless of whether that VM is in AWS or GCP.
+regardless of whether that VM is in AWS, GCP or Azure.
 
 ```bash
 terraform -chdir=infrastructure/terraform plan \

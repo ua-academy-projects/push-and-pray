@@ -113,6 +113,63 @@
         "workload_subnet_cidr": "10.0.1.0/26",
         "vpc_cidr": "10.0.0.0/16"
       }
+    },
+    "azure": {
+      "subscription_id": null,
+      "regions": {
+        "default": "westeurope",
+        "europe-west": "westeurope",
+        "europe-central": "germanywestcentral",
+        "america-east": "eastus",
+        "america-west": "westus2",
+        "asia-southeast": "southeastasia"
+      },
+      "zones": {
+        "default": "1",
+        "europe-west": "1",
+        "europe-central": "1",
+        "america-east": "1",
+        "america-west": "1",
+        "asia-southeast": "1"
+      },
+      "machine_types": {
+        "micro": "Standard_F1als_v7",
+        "small": "Standard_F2als_v7"
+      },
+      "disk_types": {
+        "balanced": "StandardSSD_LRS"
+      },
+      "images": {
+        "default": {
+          "ubuntu-2404": "Canonical:ubuntu-24_04-lts:server:latest",
+          "ubuntu-2204": "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
+        },
+        "europe-west": {
+          "ubuntu-2404": "Canonical:ubuntu-24_04-lts:server:latest",
+          "ubuntu-2204": "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
+        },
+        "europe-central": {
+          "ubuntu-2404": "Canonical:ubuntu-24_04-lts:server:latest",
+          "ubuntu-2204": "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
+        },
+        "america-east": {
+          "ubuntu-2404": "Canonical:ubuntu-24_04-lts:server:latest",
+          "ubuntu-2204": "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
+        },
+        "america-west": {
+          "ubuntu-2404": "Canonical:ubuntu-24_04-lts:server:latest",
+          "ubuntu-2204": "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
+        },
+        "asia-southeast": {
+          "ubuntu-2404": "Canonical:ubuntu-24_04-lts:server:latest",
+          "ubuntu-2204": "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
+        }
+      },
+      "network": {
+        "management_subnet_cidr": "10.2.0.0/28",
+        "workload_subnet_cidr": "10.2.1.0/26",
+        "vnet_cidr": "10.2.0.0/16"
+      }
     }
   },
   "environment": "dev",
@@ -163,7 +220,8 @@
         "192.0.2.10/32"
       ],
       "internal_ips": {
-        "aws": "10.0.0.10"
+        "aws": "10.0.0.10",
+        "azure": "10.2.0.10"
       }
     },
     "infra": {
@@ -185,7 +243,8 @@
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "internal_ips": {
-        "aws": "10.0.1.10"
+        "aws": "10.0.1.10",
+        "azure": "10.2.1.10"
       }
     },
     "history": {
@@ -207,7 +266,8 @@
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "internal_ips": {
-        "aws": "10.0.1.11"
+        "aws": "10.0.1.11",
+        "azure": "10.2.1.11"
       }
     },
     "fetcher": {
@@ -230,7 +290,8 @@
         "GHCR_TOKEN": "example-ghcr-token"
       },
       "internal_ips": {
-        "aws": "10.0.1.12"
+        "aws": "10.0.1.12",
+        "azure": "10.2.1.12"
       }
     },
     "ui": {
@@ -255,7 +316,8 @@
         "acme_email": "example-operator@example.com"
       },
       "internal_ips": {
-        "aws": "10.0.0.11"
+        "aws": "10.0.0.11",
+        "azure": "10.2.0.11"
       }
     }
   }

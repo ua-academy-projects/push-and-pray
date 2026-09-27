@@ -1,6 +1,10 @@
 output "bastion_public_ip" {
   description = "Bastion public IP."
-  value       = try(merge(module.gcp_vm.vms, module.aws_vm.vms)["bastion"].public_ip, null)
+  value = try(
+    merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs)["bastion"].public_ip,
+    merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs)["azure-bastion"].public_ip,
+    null,
+  )
 }
 
 output "aws_nat_gateway_public_ip" {
@@ -8,10 +12,29 @@ output "aws_nat_gateway_public_ip" {
   value       = module.aws_network.nat_public_ip
 }
 
+output "azure_nat_gateway_public_ip" {
+  description = "Public egress IP of the primary-region Azure NAT Gateway, or null when disabled."
+  value       = try(module.azure_network[local.azure_primary_region_key].nat_public_ip, null)
+}
+
+output "azure_nat_gateway_public_ips" {
+  description = "Public egress IPs of Azure NAT Gateways keyed by logical region."
+  value = {
+    for region_key, regional_network in module.azure_network :
+    region_key => regional_network.nat_public_ip
+    if regional_network.nat_public_ip != null
+  }
+}
+
+output "azure_application_key_vault_name" {
+  description = "Azure Key Vault used for application secrets, or null when Azure is disabled."
+  value       = module.azure_identity.application_key_vault_name
+}
+
 output "workload_vm_names" {
   description = "VM names by workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.name
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.name
     if workload.role != "bastion"
   }
 }
@@ -19,7 +42,7 @@ output "workload_vm_names" {
 output "workload_roles" {
   description = "Roles by workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.role
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.role
     if workload.role != "bastion"
   }
 }
@@ -27,7 +50,7 @@ output "workload_roles" {
 output "workload_internal_ips" {
   description = "Internal IPs by workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.internal_ip
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.internal_ip
     if workload.role != "bastion"
   }
 }
@@ -35,7 +58,7 @@ output "workload_internal_ips" {
 output "workload_external_ips" {
   description = "External IPs by workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.public_ip
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.public_ip
     if workload.role != "bastion"
   }
 }
@@ -43,7 +66,7 @@ output "workload_external_ips" {
 output "workload_network_tags" {
   description = "Network tags by workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.network_tags
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.network_tags
     if workload.role != "bastion"
   }
 }
@@ -51,7 +74,7 @@ output "workload_network_tags" {
 output "workload_service_account_emails" {
   description = "Service-account emails by workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.service_account_email
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.service_account_email
     if workload.role != "bastion" && workload.service_account_email != null
   }
 }
@@ -59,7 +82,7 @@ output "workload_service_account_emails" {
 output "workload_clouds" {
   description = "Selected cloud for each workload."
   value = {
-    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms) : name => workload.cloud
+    for name, workload in merge(module.gcp_vm.vms, module.aws_vm.vms, local.azure_vm_outputs) : name => workload.cloud
     if workload.role != "bastion"
   }
 }
@@ -82,14 +105,19 @@ output "workload_secret_access" {
 output "database_connection" {
   description = "Non-secret database connection metadata consumed by deployment automation."
   value = {
-    mode       = var.database_mode
-    cloud      = local.database_cloud
-    host       = local.database_host
-    port       = local.config.service_ports.postgresql
-    name       = var.database_name
-    username   = var.database_username
-    sslmode    = local.database_runtime.sslmode
-    identifier = local.aws_managed_database ? module.aws_rds.identifier : local.gcp_managed_database ? module.gcp_cloud_sql.instance_name : null
+    mode     = var.database_mode
+    cloud    = local.database_cloud
+    host     = local.database_host
+    port     = local.config.service_ports.postgresql
+    name     = var.database_name
+    username = var.database_username
+    sslmode  = local.database_runtime.sslmode
+    identifier = (
+      local.aws_managed_database ? module.aws_rds.identifier :
+      local.gcp_managed_database ? module.gcp_cloud_sql.instance_name :
+      local.azure_managed_database ? module.azure_postgresql.server_name :
+      null
+    )
   }
 }
 

@@ -2,5 +2,5 @@
 plugin: oilscope.platform.oilscope_gcp
 cache: false
 
-# Despite its historical name, this wrapper discovers both GCP and AWS.
-# Set OILSCOPE_PROJECT_CONFIG and, when needed, AWS_PROFILE on the controller.
+# Despite its historical name, this wrapper discovers GCP, AWS and Azure.
+# Set OILSCOPE_PROJECT_CONFIG and authenticate the selected cloud CLIs/SDKs.
