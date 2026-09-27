@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Prepare OilScope Kubernetes resources
+  hosts: database
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Prepare the Kubernetes deployment
+      ansible.builtin.import_role:
+        name: k3s_workloads
+        tasks_from: prepare
+
+- name: Stop the legacy application containers
+  hosts: history:fetcher:ui
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check for the legacy boot deployment service
+      ansible.builtin.stat:
+        path: /etc/systemd/system/oilscope-deploy.service
+      register: k3s_workloads_legacy_boot_service
+
+    - name: Disable the legacy boot deployment service
+      ansible.builtin.systemd_service:
+        name: oilscope-deploy
+        state: stopped
+        enabled: false
+      when: k3s_workloads_legacy_boot_service.stat.exists
+
+    - name: Stop legacy Compose containers
+      ansible.builtin.command:
+        argv: [docker, container, rm, --force, "petroscope-{{ item }}-1"]
+      loop: "{{ {'history': ['history', 'rabbitmq'], 'fetcher': ['fetcher'], 'ui': ['ui', 'redis']}[oilscope_role] }}"
+      register: k3s_workloads_legacy_container_stop
+      changed_when: k3s_workloads_legacy_container_stop.rc == 0
+      failed_when: >-
+        k3s_workloads_legacy_container_stop.rc != 0 and
+        'No such container' not in k3s_workloads_legacy_container_stop.stderr
+
+- name: Release the UI web ports
+  hosts: ui
+  become: true
+  gather_facts: false
+  vars:
+    k3s_workloads_config: "{{ hostvars[groups['database'][0]].k3s_workloads_config }}"
+  tasks:
+    - name: Prepare the Kubernetes UI entry point
+      ansible.builtin.import_role:
+        name: k3s_workloads
+        tasks_from: ui
+
+- name: Deploy OilScope workloads and ingress
+  hosts: database
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Deploy Kubernetes workloads
+      ansible.builtin.import_role:
+        name: k3s_workloads
+        tasks_from: deploy

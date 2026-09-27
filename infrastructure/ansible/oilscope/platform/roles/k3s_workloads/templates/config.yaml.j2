@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oilscope
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oilscope-config
+  namespace: oilscope
+data:
+  DATABASE_MODE: {{ database_mode | to_json }}
+  HISTORY_SERVICE_URL: "http://history:8001"
+{% if database_mode == 'postgres_extensions' %}
+  PGMQ_QUEUE: "price_observations"
+  PGMQ_VISIBILITY_TIMEOUT_SECONDS: "60"
+  PGMQ_POLL_INTERVAL_SECONDS: "1"
+  PGMQ_MAX_ATTEMPTS: "5"
+{% else %}
+  RABBITMQ_EXCHANGE: "oil.price.events"
+  RABBITMQ_QUEUE: "history.price-observations"
+  RABBITMQ_ROUTING_KEY: "prices.observed"
+{% endif %}
+  DATA_PROVIDER: "oilpriceapi"
+  FETCH_CRON_HOURS: "0,6,12,18"
+  FETCH_TIMEZONE: "UTC"
+  FETCH_ON_STARTUP: "true"
+  REQUEST_TIMEOUT_SECONDS: "15"
+  LISTEN_ADDRESS: "0.0.0.0:8002"
+  SESSION_TTL_SECONDS: "2592000"
+  SESSION_COOKIE_SECURE: "true"
+  LOG_LEVEL: "INFO"
+  TZ: "UTC"

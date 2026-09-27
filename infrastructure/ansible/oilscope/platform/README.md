@@ -37,10 +37,12 @@ The deployment stops if a workload fails, preventing dependent workloads from be
 ## Cloudflare HTTPS
 
 When the external project configuration sets `cloudflare.enabled` to `true`,
-the UI play installs Nginx and obtains a Let's Encrypt certificate with the
-Cloudflare DNS plugin. Export `CLOUDFLARE_API_TOKEN` in the controller shell
-before running the UI or full workload playbook. The token needs scoped DNS
-Edit, Zone Settings Edit, and Zone Read permissions for the configured zone.
+the K3s workload playbook installs cert-manager through Helm and requests a
+Let's Encrypt certificate through Cloudflare DNS-01. Export
+`CLOUDFLARE_API_TOKEN` in the controller shell before running the K3s workload
+or full workload playbook. The legacy Compose `ui.yml` playbook still uses
+Nginx and Certbot. The token needs scoped DNS Edit and Zone Read permissions
+for the configured zone.
 
 See [Cloudflare DNS and UI HTTPS](../../../../docs/cloudflare-https.md) for the
 project configuration, Terraform workflow, certificate renewal behavior, and

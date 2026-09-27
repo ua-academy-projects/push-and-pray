@@ -334,7 +334,7 @@ export default function ChartPanel({
         ref={chartElement}
         className="echart"
         role="img"
-        aria-label={`Графік: ${group.title}`}
+        aria-label={`Chart: ${group.title}`}
       />
     </article>
   );

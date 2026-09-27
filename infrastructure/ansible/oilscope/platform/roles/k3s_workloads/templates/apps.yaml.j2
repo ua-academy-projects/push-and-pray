@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: history
+  namespace: oilscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: history}
+  template:
+    metadata:
+      labels: {app: history}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ groups['history'][0] | to_json }}
+      imagePullSecrets:
+        - {name: oilscope-registry}
+      containers:
+        - name: history
+          image: {{ (k3s_workloads_registry.images.history ~ ':' ~ k3s_workloads_image_tag) | to_json }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: {name: oilscope-config}
+            - secretRef: {name: history-env}
+          ports:
+            - {name: http, containerPort: 8001}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: history
+  namespace: oilscope
+spec:
+  selector: {app: history}
+  ports:
+    - {name: http, port: 8001, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fetcher
+  namespace: oilscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: fetcher}
+  template:
+    metadata:
+      labels: {app: fetcher}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ groups['fetcher'][0] | to_json }}
+      imagePullSecrets:
+        - {name: oilscope-registry}
+      containers:
+        - name: fetcher
+          image: {{ (k3s_workloads_registry.images.fetcher ~ ':' ~ k3s_workloads_image_tag) | to_json }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: {name: oilscope-config}
+            - secretRef: {name: fetcher-env}
+          ports:
+            - {name: http, containerPort: 8002}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  namespace: oilscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ui}
+  template:
+    metadata:
+      labels: {app: ui}
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: {{ groups['ui'][0] | to_json }}
+      imagePullSecrets:
+        - {name: oilscope-registry}
+      containers:
+        - name: ui
+          image: {{ (k3s_workloads_registry.images.ui ~ ':' ~ k3s_workloads_image_tag) | to_json }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: {name: oilscope-config}
+            - secretRef: {name: ui-env}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  namespace: oilscope
+spec:
+  selector: {app: ui}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ui
+  namespace: oilscope
+{% if k3s_workloads_config.cloudflare.enabled | default(false) | bool %}
+  annotations:
+    cert-manager.io/issuer: letsencrypt-prod
+{% endif %}
+spec:
+  ingressClassName: traefik
+{% if k3s_workloads_config.cloudflare.enabled | default(false) | bool %}
+  tls:
+    - hosts: [{{ k3s_workloads_config.cloudflare.hostname | to_json }}]
+      secretName: oilscope-ui-tls
+{% endif %}
+  rules:
+{% if k3s_workloads_config.cloudflare.enabled | default(false) | bool %}
+    - host: {{ k3s_workloads_config.cloudflare.hostname | to_json }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ui
+                port: {number: 8080}
+{% else %}
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ui
+                port: {number: 8080}
+{% endif %}

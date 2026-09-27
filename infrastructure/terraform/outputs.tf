@@ -8,6 +8,15 @@ output "database_mode" {
   value       = local.config.database_mode
 }
 
+output "container_registry" {
+  description = "Active cloud's private application image registry and image paths."
+  value = one(concat(
+    module.azure_registry[*].registry,
+    module.aws_registry[*].registry,
+    module.gcp_registry[*].registry,
+  ))
+}
+
 output "managed_database" {
   description = "Non-secret managed PostgreSQL metadata consumed by Ansible inventory."
   value = local.config.database_mode == "managed" ? (

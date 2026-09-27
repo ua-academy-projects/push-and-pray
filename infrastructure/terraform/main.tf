@@ -21,6 +21,13 @@ module "gcp_database" {
   private_service_connection = module.gcp_network.database_private_service_connection
 }
 
+module "gcp_registry" {
+  count  = local.config.default_cloud == "gcp" ? 1 : 0
+  source = "./modules/gcp/registry"
+
+  config = local.config
+}
+
 module "gcp_monitoring" {
   source = "./modules/gcp/monitoring"
 
@@ -50,6 +57,13 @@ module "aws_database" {
   vpc_id                    = module.aws_network.default_vpc_id
   subnet_ids                = module.aws_network.database_subnet_ids
   client_security_group_ids = module.aws_network.managed_database_client_security_group_ids
+}
+
+module "aws_registry" {
+  count  = local.config.default_cloud == "aws" ? 1 : 0
+  source = "./modules/aws/registry"
+
+  config = local.config
 }
 
 module "aws_monitoring" {
@@ -89,6 +103,14 @@ module "azure_database" {
   private_dns_zone_id            = module.azure_network.database_private_dns_zone_id
   administrator_password         = var.azure_database_admin_password
   administrator_password_version = var.azure_database_admin_password_version
+}
+
+module "azure_registry" {
+  count  = local.config.default_cloud == "azure" ? 1 : 0
+  source = "./modules/azure/registry"
+
+  config              = local.config
+  resource_group_name = module.azure_network.default_resource_group_name
 }
 
 module "azure_monitoring" {

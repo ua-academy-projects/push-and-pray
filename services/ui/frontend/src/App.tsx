@@ -240,8 +240,8 @@ function App() {
             <p className="overline">Persisted market observations · UTC normalized</p>
             <h1>Oil benchmarks,<br /><em>without the noise.</em></h1>
             <p>
-              WTI, Brent і RBOB в одному дослідницькому просторі. Інтерфейс читає
-              лише перевірені записи з PostgreSQL — жодних прямих запитів до market API.
+              WTI, Brent, and RBOB in one research workspace. The interface reads
+              only validated records from PostgreSQL—no direct requests to the market API.
             </p>
           </div>
           <aside className="protocol-card">

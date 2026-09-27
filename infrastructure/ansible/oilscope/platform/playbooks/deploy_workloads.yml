@@ -3,11 +3,8 @@
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml
 
-- name: Deploy History workload
-  ansible.builtin.import_playbook: history.yml
+- name: Install K3s cluster
+  ansible.builtin.import_playbook: deploy_k3s.yml
 
-- name: Deploy Fetcher workload
-  ansible.builtin.import_playbook: fetcher.yml
-
-- name: Deploy UI workload
-  ansible.builtin.import_playbook: ui.yml
+- name: Deploy K3s workloads
+  ansible.builtin.import_playbook: deploy_k3s_workloads.yml

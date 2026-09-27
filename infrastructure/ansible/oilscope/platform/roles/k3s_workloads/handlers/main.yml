@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Restart K3s after enabling ingress
+  ansible.builtin.systemd_service:
+    name: k3s
+    daemon_reload: true
+    state: restarted

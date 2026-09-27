@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create the K3s service override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Enable bundled Traefik and ServiceLB
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/k3s.service.d/oilscope-ingress.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/local/bin/k3s server --node-ip {{ internal_ip }} --advertise-address {{ internal_ip }}
+  notify: Restart K3s after enabling ingress
+
+- name: Apply the K3s service change before waiting for the API
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the K3s API
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 6443
+    timeout: 120
+
+- name: Wait for bundled Traefik
+  ansible.builtin.command:
+    argv:
+      [
+        /usr/local/bin/k3s,
+        kubectl,
+        -n,
+        kube-system,
+        rollout,
+        status,
+        deployment/traefik,
+        --timeout=120s,
+      ]
+  register: k3s_workloads_traefik_rollout
+  retries: 6
+  delay: 10
+  until: k3s_workloads_traefik_rollout.rc == 0
+  changed_when: false
+
+- name: Remove obsolete certificate sync access
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - -n
+      - oilscope
+      - delete
+      - serviceaccount/cert-sync
+      - secret/cert-sync-token
+      - role/cert-sync
+      - rolebinding/cert-sync
+      - --ignore-not-found
+  register: k3s_workloads_legacy_tls_cleanup
+  changed_when: "'deleted' in k3s_workloads_legacy_tls_cleanup.stdout"
+
+- name: Deploy OilScope applications and UI ingress
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - "-f"
+      - "-"
+    stdin: "{{ lookup('ansible.builtin.template', 'apps.yaml.j2') }}"
+  register: k3s_workloads_apps_apply
+  changed_when: "'created' in k3s_workloads_apps_apply.stdout or 'configured' in k3s_workloads_apps_apply.stdout"
+
+- name: Wait for OilScope applications
+  ansible.builtin.command:
+    argv:
+      [
+        /usr/local/bin/k3s,
+        kubectl,
+        -n,
+        oilscope,
+        rollout,
+        status,
+        "deployment/{{ item }}",
+        --timeout=180s,
+      ]
+  loop: [history, fetcher, ui]
+  changed_when: false

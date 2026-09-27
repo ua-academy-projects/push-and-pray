@@ -1,0 +1,294 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the active project configuration
+  ansible.builtin.set_fact:
+    k3s_workloads_config: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
+    k3s_workloads_image_tag: "{{ lookup('ansible.builtin.env', 'OILSCOPE_IMAGE_TAG') }}"
+
+- name: Require one VM for each cluster workload
+  ansible.builtin.assert:
+    that:
+      - groups['database'] | length == 1
+      - groups['history'] | length == 1
+      - groups['fetcher'] | length == 1
+      - groups['ui'] | length == 1
+      - database_mode in ['managed', 'postgres_extensions']
+      - k3s_workloads_image_tag | length > 0
+
+- name: Read the active cloud registry from Terraform
+  ansible.builtin.command:
+    argv: [terraform, "-chdir={{ k3s_workloads_terraform_directory }}", output, -json, container_registry]
+  delegate_to: localhost
+  become: false
+  register: k3s_workloads_registry_output
+  changed_when: false
+
+- name: Select the registry and database endpoint
+  ansible.builtin.set_fact:
+    k3s_workloads_registry: "{{ k3s_workloads_registry_output.stdout | from_json }}"
+    k3s_workloads_database_host: "{{ managed_database.host if database_mode == 'managed' else internal_ip }}"
+    k3s_workloads_database_port: "{{ managed_database.port if database_mode == 'managed' else 5432 }}"
+    k3s_workloads_database_sslmode: "{{ managed_database.sslmode if database_mode == 'managed' else 'disable' }}"
+
+- name: Require a registry for this cloud
+  ansible.builtin.assert:
+    that:
+      - k3s_workloads_registry.cloud == oilscope_cloud
+      - k3s_workloads_registry.images.history is defined
+      - k3s_workloads_registry.images.fetcher is defined
+      - k3s_workloads_registry.images.ui is defined
+
+- name: Select the existing cloud secret IDs
+  ansible.builtin.set_fact:
+    k3s_workloads_secret_mappings: >-
+      {{
+        {
+          'history_postgres': {'runtime_env': 'HISTORY_POSTGRES_PASSWORD', 'secret_id': 'db-password-history'},
+          'fetcher_api': {'runtime_env': 'OILPRICEAPI_KEY', 'secret_id': 'oilpriceapi-key'}
+        }
+        | combine(
+            {
+              'rabbitmq': {'runtime_env': 'RABBITMQ_PASSWORD', 'secret_id': 'rabbitmq-password'},
+              'redis': {'runtime_env': 'REDIS_PASSWORD', 'secret_id': 'redis-password'}
+            }
+            if database_mode == 'managed'
+            else {
+              'fetcher_postgres': {'runtime_env': 'FETCHER_POSTGRES_PASSWORD', 'secret_id': 'db-password-fetcher'},
+              'ui_postgres': {'runtime_env': 'UI_POSTGRES_PASSWORD', 'secret_id': 'db-password-ui'}
+            }
+          )
+      }}
+
+- name: Resolve application secrets through the existing cloud secret role
+  ansible.builtin.include_role:
+    name: oilscope.platform.resolve_secrets
+  vars:
+    resolve_secrets_mappings: "{{ k3s_workloads_secret_mappings }}"
+    resolve_secrets_name_prefix: "{{ k3s_workloads_config.name_prefix }}"
+    resolve_secrets_environment: "{{ k3s_workloads_config.environment }}"
+
+- name: Build private application connection URLs
+  ansible.builtin.set_fact:
+    k3s_workloads_history_database_url: >-
+      {{ 'postgresql+psycopg://' ~ k3s_workloads_config.database.admin_user ~ '_history:'
+         ~ (resolve_secrets_result.HISTORY_POSTGRES_PASSWORD | urlencode | replace('/', '%2F'))
+         ~ '@' ~ k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port
+         ~ '/' ~ k3s_workloads_config.database.name
+         ~ '?sslmode=' ~ k3s_workloads_database_sslmode }}
+    k3s_workloads_fetcher_database_url: >-
+      {{ 'postgres://' ~ k3s_workloads_config.database.admin_user ~ '_fetcher:'
+         ~ (resolve_secrets_result.FETCHER_POSTGRES_PASSWORD | default('') | urlencode | replace('/', '%2F'))
+         ~ '@' ~ k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port
+         ~ '/' ~ k3s_workloads_config.database.name
+         ~ '?sslmode=' ~ k3s_workloads_database_sslmode }}
+    k3s_workloads_ui_database_url: >-
+      {{ 'postgresql://' ~ k3s_workloads_config.database.admin_user ~ '_ui:'
+         ~ (resolve_secrets_result.UI_POSTGRES_PASSWORD | default('') | urlencode | replace('/', '%2F'))
+         ~ '@' ~ k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port
+         ~ '/' ~ k3s_workloads_config.database.name
+         ~ '?sslmode=' ~ k3s_workloads_database_sslmode }}
+    k3s_workloads_rabbitmq_url: >-
+      {{ 'amqp://' ~ k3s_workloads_config.database.admin_user ~ ':'
+         ~ (resolve_secrets_result.RABBITMQ_PASSWORD | default('') | urlencode | replace('/', '%2F'))
+         ~ '@rabbitmq:5672/oil_tracker' }}
+    k3s_workloads_redis_url: >-
+      redis://:{{ resolve_secrets_result.REDIS_PASSWORD | default('') | urlencode | replace('/', '%2F') }}@redis:6379/0
+  no_log: true
+
+- name: Get an Azure registry access token
+  ansible.builtin.command:
+    argv: [az, acr, login, "--name={{ k3s_workloads_registry.name }}", --expose-token, --query=accessToken, --output=tsv]
+  delegate_to: localhost
+  become: false
+  register: k3s_workloads_registry_azure_token
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'azure'
+
+- name: Get an AWS registry access token
+  ansible.builtin.command:
+    argv: [aws, ecr, get-login-password, "--region={{ k3s_workloads_registry.region }}"]
+  delegate_to: localhost
+  become: false
+  register: k3s_workloads_registry_aws_token
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'aws'
+
+- name: Get a GCP registry access token
+  ansible.builtin.command:
+    argv: [gcloud, auth, print-access-token]
+  delegate_to: localhost
+  become: false
+  register: k3s_workloads_registry_gcp_token
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'gcp'
+
+- name: Select registry credentials
+  ansible.builtin.set_fact:
+    k3s_workloads_registry_username: "{{ {'azure': '00000000-0000-0000-0000-000000000000', 'aws': 'AWS', 'gcp': 'oauth2accesstoken'}[oilscope_cloud] }}"
+    k3s_workloads_registry_token: >-
+      {{
+        {
+          'azure': k3s_workloads_registry_azure_token.stdout | default(''),
+          'aws': k3s_workloads_registry_aws_token.stdout | default(''),
+          'gcp': k3s_workloads_registry_gcp_token.stdout | default('')
+        }[oilscope_cloud] | trim
+      }}
+  no_log: true
+
+- name: Require a registry access token
+  ansible.builtin.assert:
+    that: k3s_workloads_registry_token | length > 0
+  no_log: true
+
+- name: Require the Cloudflare token for certificate issuance
+  ansible.builtin.assert:
+    that: lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') | length > 0
+  no_log: true
+  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+
+- name: Create the namespace and shared configuration
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - '-f'
+      - '-'
+    stdin: "{{ lookup('ansible.builtin.template', 'config.yaml.j2') }}"
+  register: k3s_workloads_config_apply
+  changed_when: "'created' in k3s_workloads_config_apply.stdout or 'configured' in k3s_workloads_config_apply.stdout"
+
+- name: Create Kubernetes Secrets
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - '-f'
+      - '-'
+    stdin: "{{ lookup('ansible.builtin.template', 'secrets.yaml.j2') }}"
+  register: k3s_workloads_secrets_apply
+  changed_when: "'created' in k3s_workloads_secrets_apply.stdout or 'configured' in k3s_workloads_secrets_apply.stdout"
+  no_log: true
+
+- name: Install cert-manager through the K3s Helm controller
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - '-f'
+      - '-'
+    stdin: "{{ lookup('ansible.builtin.template', 'cert-manager.yaml.j2') }}"
+  register: k3s_workloads_cert_manager_apply
+  changed_when: "'created' in k3s_workloads_cert_manager_apply.stdout or 'configured' in k3s_workloads_cert_manager_apply.stdout"
+  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+
+- name: Wait for cert-manager components
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - -n
+      - cert-manager
+      - rollout
+      - status
+      - "deployment/{{ item }}"
+      - --timeout=120s
+  loop: [cert-manager, cert-manager-cainjector, cert-manager-webhook]
+  register: k3s_workloads_cert_manager_rollout
+  retries: 18
+  delay: 10
+  until: k3s_workloads_cert_manager_rollout.rc == 0
+  changed_when: false
+  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+
+- name: Configure Let's Encrypt with Cloudflare DNS
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - '-f'
+      - '-'
+    stdin: "{{ lookup('ansible.builtin.template', 'issuer.yaml.j2') }}"
+  register: k3s_workloads_issuer_apply
+  retries: 12
+  delay: 5
+  until: k3s_workloads_issuer_apply.rc == 0
+  changed_when: "'created' in k3s_workloads_issuer_apply.stdout or 'configured' in k3s_workloads_issuer_apply.stdout"
+  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+
+- name: Wait for the Let's Encrypt issuer
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - -n
+      - oilscope
+      - wait
+      - --for=condition=Ready
+      - issuer/letsencrypt-prod
+      - --timeout=120s
+  changed_when: false
+  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+
+- name: Deploy managed-mode queue and session stores
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - '-f'
+      - '-'
+    stdin: "{{ lookup('ansible.builtin.template', 'managed.yaml.j2') }}"
+  register: k3s_workloads_managed_apply
+  changed_when: "'created' in k3s_workloads_managed_apply.stdout or 'configured' in k3s_workloads_managed_apply.stdout"
+  when: database_mode == 'managed'
+
+- name: Wait for managed-mode dependencies
+  ansible.builtin.command:
+    argv: [/usr/local/bin/k3s, kubectl, -n, oilscope, rollout, status, "deployment/{{ item }}", --timeout=180s]
+  loop: [rabbitmq, redis]
+  changed_when: false
+  when: database_mode == 'managed'
+
+- name: Remove managed-mode dependencies in PostgreSQL extensions mode
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - '-n'
+      - oilscope
+      - delete
+      - deployment/rabbitmq
+      - deployment/redis
+      - service/rabbitmq
+      - service/redis
+      - secret/rabbitmq-env
+      - secret/redis-env
+      - --ignore-not-found
+  changed_when: false
+  when: database_mode == 'postgres_extensions'
+
+- name: Reserve ServiceLB for the UI node
+  ansible.builtin.command:
+    argv: [/usr/local/bin/k3s, kubectl, label, node, "{{ groups['ui'][0] }}", svccontroller.k3s.cattle.io/enablelb=true, --overwrite]
+  register: k3s_workloads_ui_node_label
+  changed_when: "'not labeled' not in k3s_workloads_ui_node_label.stdout"
+
+- name: Redirect public HTTP traffic to HTTPS
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - kubectl
+      - apply
+      - '-f'
+      - '-'
+    stdin: "{{ lookup('ansible.builtin.template', 'traefik-config.yaml.j2') }}"
+  register: k3s_workloads_traefik_config_apply
+  changed_when: "'created' in k3s_workloads_traefik_config_apply.stdout or 'configured' in k3s_workloads_traefik_config_apply.stdout"
+  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
