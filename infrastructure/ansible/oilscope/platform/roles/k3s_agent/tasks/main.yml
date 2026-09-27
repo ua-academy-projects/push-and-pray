@@ -1,0 +1,47 @@
+---
+- name: Create the K3s installer directory
+  ansible.builtin.file:
+    path: "{{ k3s_install_script_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Create the K3s configuration directory
+  ansible.builtin.file:
+    path: "{{ k3s_agent_config_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Download the K3s installer
+  ansible.builtin.get_url:
+    url: "{{ k3s_install_script_url }}"
+    dest: "{{ k3s_install_script_path }}"
+    mode: "0755"
+
+- name: Configure the desired K3s agent state
+  ansible.builtin.copy:
+    content: |
+      server: https://{{ hostvars[groups['k3s_server'][0]].internal_ip }}:6443
+      token: {{ hostvars[groups['k3s_server'][0]].k3s_server_token }}
+    dest: "{{ k3s_agent_config_path }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart K3s agent
+
+- name: Read the installed K3s version
+  ansible.builtin.command:
+    argv: [/usr/local/bin/k3s, --version]
+  register: k3s_agent_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Join the K3s server
+  ansible.builtin.command:
+    cmd: "{{ k3s_install_script_path }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ hostvars[groups['k3s_server'][0]].k3s_version }}"
+    INSTALL_K3S_EXEC: agent
+  no_log: true
+  when: hostvars[groups['k3s_server'][0]].k3s_version not in k3s_agent_installed_version.stdout
+
+- name: Apply K3s agent configuration changes
+  ansible.builtin.meta: flush_handlers

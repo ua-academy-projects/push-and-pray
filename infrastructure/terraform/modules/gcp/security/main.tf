@@ -57,6 +57,50 @@ resource "google_compute_firewall" "ui_web" {
   }
 }
 
+resource "google_compute_firewall" "k3s_ingress" {
+  name    = "${var.resource_prefix}-allow-k3s-ingress"
+  network = var.network_id
+
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = [local.network_tags.k3s_server]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443"]
+  }
+}
+
+resource "google_compute_firewall" "k3s_api" {
+  name    = "${var.resource_prefix}-allow-k3s-api"
+  network = var.network_id
+
+  source_ranges = var.bastion_allowed_cidrs
+  target_tags   = [local.network_tags.k3s_server]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443"]
+  }
+}
+
+resource "google_compute_firewall" "k3s_internal" {
+  name    = "${var.resource_prefix}-allow-k3s-internal"
+  network = var.network_id
+
+  source_tags = [local.network_tags.k3s_server, local.network_tags.k3s_agent]
+  target_tags = [local.network_tags.k3s_server, local.network_tags.k3s_agent]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443", "10250"]
+  }
+
+  allow {
+    protocol = "udp"
+    ports    = ["8472"]
+  }
+}
+
 resource "google_compute_firewall" "history_api" {
   name    = "${var.resource_prefix}-allow-history-api"
   network = var.network_id

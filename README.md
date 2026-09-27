@@ -174,22 +174,24 @@ not part of this project.
 
 ### Published application images
 
-GitHub Actions builds and publishes every application image to GitHub Container Registry:
+GitHub Actions builds and publishes every application image to the private GCP Artifact
+Registry repository configured for the deployment:
 
 | Application | Image                                   |
 | ----------- | --------------------------------------- |
-| Fetcher     | `ghcr.io/<owner>/push-and-pray/fetcher` |
-| History     | `ghcr.io/<owner>/push-and-pray/history` |
-| UI          | `ghcr.io/<owner>/push-and-pray/ui`      |
+| Fetcher     | `<region>-docker.pkg.dev/<project>/<repository>/fetcher` |
+| History     | `<region>-docker.pkg.dev/<project>/<repository>/history` |
+| UI          | `<region>-docker.pkg.dev/<project>/<repository>/ui`      |
 
-Replace `<owner>` with the lowercase GitHub account or organization that owns the
-repository. Every published image is tagged `xintaro`; this is a moving tag and
+Set the four GitHub Actions variables from Terraform's `gcp_kubernetes` output:
+`GCP_ARTIFACT_REGISTRY`, `GCP_ARTIFACT_REGISTRY_HOST`,
+`GCP_WORKLOAD_IDENTITY_PROVIDER`, and `GCP_ARTIFACT_WRITER_SERVICE_ACCOUNT`.
+Every published image is tagged `xintaro`; this is a moving tag and
 is replaced by the next successful CI run. The commit SHA remains in the OCI
 revision label for tracing a published image back to its source revision.
 
-Images are pushed only after a successful Buildx build. The registry login uses the
-workflow-scoped `GITHUB_TOKEN`, which GitHub Actions masks in logs; workflows do not print
-or pass the token as a Docker build argument.
+Images are pushed only after a successful Buildx build. GitHub Actions exchanges its OIDC
+token for a short-lived GCP access token; no registry password is stored in GitHub or Kubernetes.
 
 ## Local development
 

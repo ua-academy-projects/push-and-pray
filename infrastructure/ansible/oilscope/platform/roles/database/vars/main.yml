@@ -9,6 +9,9 @@ database_runtime_environment: >-
       'POSTGRES_USER': database_postgres_user,
       'POSTGRES_DB': database_postgres_name,
       'DATABASE_BIND_ADDRESS': database_bind_address | string,
-      'DATABASE_HOST_PORT': database_host_port | string
+      'DATABASE_HOST_PORT': database_host_port | string,
+      'RABBITMQ_MEMORY_LIMIT': database_rabbitmq_memory_limit,
+      'REDIS_MEMORY_LIMIT': database_redis_memory_limit,
+      'REDIS_MAXMEMORY': database_redis_maxmemory
     })
   }}

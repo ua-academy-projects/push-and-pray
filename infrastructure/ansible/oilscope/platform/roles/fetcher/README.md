@@ -24,11 +24,11 @@ server (and therefore its health check) ever starts.
 ## Optional variables
 
 - `fetcher_compose_project_dir`: Compose directory; defaults to
-  `/opt/oilscope/app`.
+  `/opt/oilscope/fetcher`.
 - `fetcher_compose_file`: Compose file; defaults to `compose.yaml` in that
   directory.
 - `fetcher_compose_project_name`: Compose project name; defaults to
-  `petroscope`.
+  `petroscope-fetcher`.
 - `fetcher_service`: Compose service name; defaults to `fetcher`.
 - `fetcher_postgres_user` and `fetcher_postgres_name`: both default to
   `oil_tracker`.

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-fetcher_compose_project_dir: /opt/oilscope/app
+fetcher_compose_project_dir: /opt/oilscope/fetcher
 fetcher_compose_file: "{{ fetcher_compose_project_dir }}/compose.yaml"
-fetcher_compose_project_name: petroscope
+fetcher_compose_project_name: petroscope-fetcher
 fetcher_service: fetcher
 fetcher_postgres_password: ""
 fetcher_rabbitmq_password: ""
@@ -17,3 +17,4 @@ fetcher_health_retries: 30
 fetcher_health_delay: 2
 fetcher_docker_config_dir: /run/oilscope/docker-auth
 fetcher_compose_environment: {}
+fetcher_memory_limit: 512m

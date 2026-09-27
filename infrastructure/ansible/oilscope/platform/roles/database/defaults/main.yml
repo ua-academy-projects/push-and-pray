@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-database_compose_project_dir: /opt/oilscope/app
+database_compose_project_dir: /opt/oilscope/infra
 database_compose_file: "{{ database_compose_project_dir }}/compose.yaml"
-database_compose_project_name: petroscope
+database_compose_project_name: petroscope-infra
 database_postgres_service: postgres
 database_migration_service: migrate
 database_postgres_image: ""
@@ -18,3 +18,6 @@ database_health_retries: 30
 database_health_delay: 2
 database_docker_config_dir: /run/oilscope/docker-auth
 database_compose_environment: {}
+database_rabbitmq_memory_limit: 1536m
+database_redis_memory_limit: 768m
+database_redis_maxmemory: 512mb

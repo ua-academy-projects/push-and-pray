@@ -1,0 +1,21 @@
+---
+- name: Provision the K3s control plane
+  hosts: k3s_server
+  become: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s_server
+
+- name: Join K3s agents
+  hosts: k3s_agent
+  become: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s_agent
+
+- name: Install platform services from the controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.kubernetes_platform

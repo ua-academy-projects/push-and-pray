@@ -1,31 +1,40 @@
 # Multi-cloud dynamic inventory
 
-`oilscope.yml` builds one Ansible inventory from live GCP Compute Engine and
-AWS EC2 state. Terraform and Ansible read the same project configuration JSON;
+`oilscope.yml` builds one Ansible inventory from live GCP Compute Engine,
+AWS EC2, and Azure VM state. Terraform and Ansible read the same project configuration JSON;
 provider-specific values are not repeated in the inventory file.
+
+For Azure, `regions.<name>.azure.zone` selects the managed PostgreSQL zone,
+while the optional `regions.<name>.azure.vm_zone` constrains VM and public-IP
+placement. Omitting `vm_zone` permits regional VM allocation and avoids tying
+all workloads to one availability zone.
 
 The inventory is recomputed when Ansible runs. It discovers only running
 instances whose managed label/tag values match all three values:
 
 - `application=<name_prefix>`
 - `environment=<environment>`
-- `cloud=gcp` or `cloud=aws`
+- `cloud=gcp`, `cloud=aws`, or `cloud=azure`
 
 ## Data flow
 
 The `oilscope.platform.oilscope_cloud` wrapper discovers both supported clouds
 for compatibility, but it is now multi-cloud. It performs these steps:
 
-1. Read `default_cloud`, `vms`, `regions`, `clouds`, `name_prefix`, and
-   `environment` from the shared JSON.
+1. Read `default_cloud`, `vms`, `regions`, `clouds`, `name_prefix`,
+   `environment`, and `service_placement` from the shared JSON.
 2. Resolve every VM's effective cloud as `vm.cloud` when present, otherwise
    `default_cloud`.
-3. Collect the GCP zones and AWS regions used by the selected VMs.
+3. Collect the GCP zones, AWS regions, and Azure resource group used by the selected VMs.
 4. Skip a provider entirely when zero configured VMs select it.
 5. Delegate live discovery to `google.cloud.gcp_compute` and/or
-   `amazon.aws.aws_ec2`.
-6. Normalize both provider results into the same host variables and role
+   `amazon.aws.aws_ec2`, and/or `azure.azcollection.azure_rm`.
+6. Normalize all provider results into the same host variables and role
    groups.
+7. Add the VM selected by
+   `service_placement.<default_cloud>.infrastructure_host` to the synthetic
+   `infrastructure` group. This group can overlap a role group; in the Azure
+   development configuration the `fetcher` host belongs to both.
 
 For example, with `default_cloud: gcp` and `vms.bastion.cloud: aws`, the GCP
 delegate queries the zones used by the workload VMs and the AWS delegate
@@ -39,6 +48,7 @@ Install both Ansible collections and their Python SDK dependencies:
 ```sh
 pip install -r infrastructure/ansible/requirements.txt
 ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+pip install -r ~/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt
 ```
 
 Build and install this repository's collection after changing a plugin or
@@ -63,6 +73,12 @@ profile can be selected for the same shell:
 ```sh
 export AWS_PROFILE=terraform
 aws sts get-caller-identity
+```
+
+For Azure discovery, the inventory reuses the active Azure CLI session:
+
+```sh
+az account show
 ```
 
 Only the credentials for providers selected by at least one configured VM are
@@ -97,6 +113,9 @@ Both delegates create groups from the provider `role` label/tag:
 - `history`
 - `fetcher`
 - `ui`
+- `k3s_server` and `k3s_agent`; `k3s_nodes` contains both roles
+- `infrastructure` for the VM selected by
+  `service_placement.<default_cloud>.infrastructure_host`
 - `workloads` for every role except `bastion`
 
 Both providers expose the same normalized variables:
@@ -114,8 +133,8 @@ addresses on port 22 through a generated SSH `ProxyCommand`. It also reads
 `OILSCOPE_SSH_USER`, `OILSCOPE_SSH_KEY`, and, only during bootstrap,
 `OILSCOPE_BASTION_CONNECT_PORT`. Therefore no `group_vars` files are needed to
 re-read configuration JSON, look up another host, or assemble SSH arguments.
-Raw GCP fields retain the `gcp_` prefix; AWS provider fields remain available
-under the names exposed by `amazon.aws.aws_ec2`.
+Raw GCP fields retain the `gcp_` prefix; AWS and Azure provider fields remain
+available under the names exposed by their delegate plugins.
 
 ## SSH host keys in development
 
@@ -169,9 +188,11 @@ Set `OILSCOPE_SSH_KEY` to the private key matching the public key stored in
 | `unknown plugin 'oilscope.platform.oilscope_cloud'` | Rebuild and reinstall this repository's collection. |
 | `unknown plugin 'google.cloud.gcp_compute'` | Install `google.cloud` from `requirements.yml`. |
 | `unknown plugin 'amazon.aws.aws_ec2'` | Install `amazon.aws` from `requirements.yml`. |
+| `unknown plugin 'azure.azcollection.azure_rm'` | Install `azure.azcollection` and its Python `requirements.txt`. |
 | Missing Google library | Install `requirements.txt` and configure ADC. |
 | Missing boto3/botocore | Install `requirements.txt`. |
 | AWS authentication error | Export the correct `AWS_PROFILE` and verify `aws sts get-caller-identity`. |
+| Azure authentication error | Run `az login`, select the subscription, and verify `az account show`. |
 | Empty inventory | Confirm that instances are running and their application/environment/cloud labels match the JSON. |
 
 Check provider state directly when inventory is unexpectedly empty:
@@ -181,4 +202,5 @@ gcloud compute instances list --format='table(name,zone,labels)'
 aws ec2 describe-instances \
   --filters Name=tag:cloud,Values=aws Name=instance-state-name,Values=running \
   --query 'Reservations[].Instances[].[Tags,PrivateIpAddress,PublicIpAddress]'
+az vm list -g oilscope-dev-rg -d --output table
 ```

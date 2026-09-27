@@ -1,0 +1,57 @@
+---
+- name: Create the K3s installer directory
+  ansible.builtin.file:
+    path: "{{ k3s_install_script_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Create the K3s configuration directory
+  ansible.builtin.file:
+    path: "{{ k3s_server_config_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Download the K3s installer
+  ansible.builtin.get_url:
+    url: "{{ k3s_install_script_url }}"
+    dest: "{{ k3s_install_script_path }}"
+    mode: "0755"
+
+- name: Configure the desired K3s server state
+  ansible.builtin.copy:
+    content: |
+      write-kubeconfig-mode: "0640"
+      tls-san:
+        - {{ public_ip }}
+    dest: "{{ k3s_server_config_path }}"
+    mode: "0600"
+  notify: Restart K3s server
+
+- name: Read the installed K3s version
+  ansible.builtin.command:
+    argv: [/usr/local/bin/k3s, --version]
+  register: k3s_server_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Install or upgrade the K3s server to the configured version
+  ansible.builtin.command:
+    cmd: "{{ k3s_install_script_path }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: server
+  when: k3s_version not in k3s_server_installed_version.stdout
+
+- name: Apply K3s server configuration changes before exposing the token
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the K3s node token for agent joins
+  ansible.builtin.slurp:
+    src: "{{ k3s_server_token_path }}"
+  register: k3s_server_token_file
+  no_log: true
+
+- name: Retain the decoded join token for the following play
+  ansible.builtin.set_fact:
+    k3s_server_token: "{{ k3s_server_token_file.content | b64decode | trim }}"
+  no_log: true

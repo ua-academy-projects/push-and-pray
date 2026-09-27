@@ -1,26 +1,26 @@
 output "bastion_public_ip" {
   description = "Bastion public IP, independent of its cloud."
-  value       = lookup(merge(module.gcp.public_ips, module.aws.public_ips), "bastion", null)
+  value       = lookup(merge(module.gcp.public_ips, module.aws.public_ips, module.azure.public_ips), "bastion", null)
 }
 
 output "workload_vm_names" {
   description = "VM names by workload across all configured clouds."
-  value       = merge(module.gcp.workload_names, module.aws.workload_names)
+  value       = merge(module.gcp.workload_names, module.aws.workload_names, module.azure.workload_names)
 }
 
 output "workload_roles" {
   description = "Roles by workload across all configured clouds."
-  value       = merge(module.gcp.workload_roles, module.aws.workload_roles)
+  value       = merge(module.gcp.workload_roles, module.aws.workload_roles, module.azure.workload_roles)
 }
 
 output "workload_internal_ips" {
   description = "Internal IPs by workload across all configured clouds."
-  value       = merge(module.gcp.workload_private_ips, module.aws.workload_private_ips)
+  value       = merge(module.gcp.workload_private_ips, module.aws.workload_private_ips, module.azure.workload_private_ips)
 }
 
 output "workload_external_ips" {
   description = "External IPs by workload across all configured clouds."
-  value       = merge(module.gcp.workload_public_ips, module.aws.workload_public_ips)
+  value       = merge(module.gcp.workload_public_ips, module.aws.workload_public_ips, module.azure.workload_public_ips)
 }
 
 output "workload_network_tags" {
@@ -58,9 +58,29 @@ output "aws_workload_secret_access" {
   value       = module.aws.workload_secret_access
 }
 
+output "azure_key_vault_uri" {
+  description = "Azure Key Vault URI, or null when no Azure VMs are configured."
+  value       = module.azure.key_vault_uri
+}
+
+output "azure_secret_resource_ids" {
+  description = "Azure Key Vault secret resource IDs by logical secret ID."
+  value       = module.azure.secret_resource_ids
+}
+
+output "azure_workload_secret_access" {
+  description = "Secret IDs each Azure VM managed identity may read."
+  value       = module.azure.workload_secret_access
+}
+
 output "gcp_monitoring" {
   description = "GCP observability resource identifiers, or null when monitoring is disabled."
   value       = module.gcp.monitoring
+}
+
+output "gcp_kubernetes" {
+  description = "K3s and Artifact Registry values for the GCP deployment, or null when disabled."
+  value       = module.gcp.kubernetes
 }
 
 output "aws_monitoring" {
@@ -68,9 +88,18 @@ output "aws_monitoring" {
   value       = module.aws.monitoring_summary
 }
 
+output "azure_monitoring" {
+  description = "Azure Monitor resource identifiers, or null when monitoring is disabled."
+  value       = module.azure.monitoring_summary
+}
+
 output "database_connection" {
   description = "Database connection values for the cloud selected by default_cloud."
-  value       = local.config.default_cloud == "aws" ? module.aws.database_connection : module.gcp.database_connection
+  value = {
+    gcp   = module.gcp.database_connection
+    aws   = module.aws.database_connection
+    azure = module.azure.database_connection
+  }[local.config.default_cloud]
 }
 
 output "gcp_database_connection" {
@@ -80,10 +109,18 @@ output "gcp_database_connection" {
 
 output "messaging_connection" {
   description = "Messaging connection values for the cloud selected by default_cloud."
-  value       = local.config.default_cloud == "aws" ? module.aws.messaging_connection : module.gcp.messaging_connection
+  value = {
+    gcp   = module.gcp.messaging_connection
+    aws   = module.aws.messaging_connection
+    azure = module.azure.messaging_connection
+  }[local.config.default_cloud]
 }
 
 output "session_connection" {
   description = "UI session-store connection values for the cloud selected by default_cloud."
-  value       = local.config.default_cloud == "aws" ? module.aws.session_connection : module.gcp.session_connection
+  value = {
+    gcp   = module.gcp.session_connection
+    aws   = module.aws.session_connection
+    azure = module.azure.session_connection
+  }[local.config.default_cloud]
 }

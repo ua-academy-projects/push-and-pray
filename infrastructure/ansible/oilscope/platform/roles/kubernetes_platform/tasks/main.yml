@@ -1,0 +1,101 @@
+---
+- name: Load the shared project configuration
+  ansible.builtin.include_vars:
+    file: "{{ kubernetes_platform_project_config_path }}"
+    name: kubernetes_platform_config
+
+- name: Require the Kubernetes deployment configuration
+  ansible.builtin.assert:
+    that:
+      - kubernetes_platform_config.kubernetes.enabled | bool
+      - groups.k3s_server | length == 1
+      - kubernetes_platform_config.default_cloud == 'gcp'
+
+- name: Create the controller Kubernetes work directory
+  ansible.builtin.file:
+    path: "{{ kubernetes_platform_work_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Read the K3s kubeconfig from the server
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  delegate_to: "{{ groups.k3s_server[0] }}"
+  register: kubernetes_platform_server_kubeconfig
+  no_log: true
+
+- name: Write a controller kubeconfig addressed to the public server IP
+  ansible.builtin.copy:
+    content: >-
+      {{ (kubernetes_platform_server_kubeconfig.content | b64decode)
+         | replace('127.0.0.1', hostvars[groups.k3s_server[0]].public_ip) }}
+    dest: "{{ kubernetes_platform_kubeconfig }}"
+    mode: "0600"
+  no_log: true
+
+- name: Require controller tools
+  ansible.builtin.command:
+    argv: ["{{ item }}", version]
+  changed_when: false
+  loop: [kubectl, helm, gcloud]
+
+- name: Read application secrets from GCP Secret Manager
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - secrets
+      - versions
+      - access
+      - latest
+      - --project
+      - "{{ kubernetes_platform_config.clouds.gcp.project_id }}"
+      - --secret
+      - "{{ item.value }}"
+  loop: "{{ kubernetes_platform_config.kubernetes.secrets | dict2items }}"
+  register: kubernetes_platform_secret_values
+  changed_when: false
+  no_log: true
+
+- name: Create the application secret manifest
+  ansible.builtin.template:
+    src: application-secret.yaml.j2
+    dest: "{{ kubernetes_platform_work_dir }}/application-secret.yaml"
+    mode: "0600"
+  no_log: true
+
+- name: Apply the application secrets
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ kubernetes_platform_kubeconfig }}", apply, -f, "{{ kubernetes_platform_work_dir }}/application-secret.yaml"]
+  changed_when: false
+  no_log: true
+
+- name: Add the cert-manager Helm repository
+  kubernetes.core.helm_repository:
+    name: jetstack
+    repo_url: https://charts.jetstack.io
+
+- name: Install cert-manager with Helm
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    chart_version: v1.17.2
+    release_namespace: cert-manager
+    create_namespace: true
+    kubeconfig: "{{ kubernetes_platform_kubeconfig }}"
+    values:
+      crds:
+        enabled: true
+
+- name: Render the cluster issuer and application workloads
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ kubernetes_platform_work_dir }}/{{ item }}"
+    mode: "0600"
+  loop: [cluster-issuer.yaml, platform.yaml]
+  no_log: true
+
+- name: Apply the cluster issuer and workloads
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ kubernetes_platform_kubeconfig }}", apply, -f, "{{ kubernetes_platform_work_dir }}/{{ item }}"]
+  loop: [cluster-issuer.yaml, platform.yaml]
+  changed_when: false

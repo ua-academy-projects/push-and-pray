@@ -30,7 +30,7 @@ module "database" {
 }
 
 resource "random_password" "managed_database" {
-  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+  count = local.generated_passwords_enabled ? 1 : 0
 
   length  = 32
   special = true
@@ -48,7 +48,7 @@ resource "random_password" "managed_database" {
 }
 
 resource "random_password" "rabbitmq" {
-  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+  count = local.generated_passwords_enabled ? 1 : 0
 
   length           = 32
   special          = true
@@ -63,7 +63,7 @@ resource "random_password" "rabbitmq" {
 }
 
 resource "random_password" "redis" {
-  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+  count = local.generated_passwords_enabled ? 1 : 0
 
   length           = 32
   special          = true
@@ -126,6 +126,78 @@ module "vm" {
 
 }
 
+resource "google_artifact_registry_repository" "application" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  project       = local.config.clouds.gcp.project_id
+  location      = local.config.regions[local.config.default_region].gcp.region
+  repository_id = local.kubernetes_config.artifact_repository
+  description   = "Private application images for the OilScope K3s cluster"
+  format        = "DOCKER"
+  labels        = local.common_labels
+}
+
+resource "google_artifact_registry_repository_iam_member" "k3s_reader" {
+  for_each = local.kubernetes_enabled ? toset(keys(local.k3s_nodes)) : toset([])
+
+  project    = google_artifact_registry_repository.application[0].project
+  location   = google_artifact_registry_repository.application[0].location
+  repository = google_artifact_registry_repository.application[0].name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${module.vm[0].service_account_emails[each.key]}"
+}
+
+resource "google_iam_workload_identity_pool" "github" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  project                   = local.config.clouds.gcp.project_id
+  workload_identity_pool_id = "${local.resource_prefix}-github"
+  display_name              = "${local.resource_prefix} GitHub Actions"
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  project                            = local.config.clouds.gcp.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
+  workload_identity_pool_provider_id = "github"
+  display_name                       = "GitHub Actions OIDC"
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.repository" = "assertion.repository"
+  }
+  attribute_condition = "assertion.repository == '${local.kubernetes_config.github_repository}'"
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account" "github_artifact_writer" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  project      = local.config.clouds.gcp.project_id
+  account_id   = "${local.resource_prefix}-github-ar"
+  display_name = "GitHub Actions Artifact Registry publisher"
+}
+
+resource "google_artifact_registry_repository_iam_member" "github_writer" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  project    = google_artifact_registry_repository.application[0].project
+  location   = google_artifact_registry_repository.application[0].location
+  repository = google_artifact_registry_repository.application[0].name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.github_artifact_writer[0].email}"
+}
+
+resource "google_service_account_iam_member" "github_workload_identity" {
+  count = local.kubernetes_enabled ? 1 : 0
+
+  service_account_id = google_service_account.github_artifact_writer[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository/${local.kubernetes_config.github_repository}"
+}
+
 module "secrets" {
   source = "./secrets"
 
@@ -139,7 +211,7 @@ module "secrets" {
   }
 
   secret_version_managers = var.secret_version_managers
-  secret_values = local.database_mode == "managed" && local.database_vm_name != null ? merge(
+  secret_values = local.generated_passwords_enabled ? merge(
     { for secret_id in local.managed_database_secret_ids : secret_id => random_password.managed_database[0].result },
     { for secret_id in local.rabbitmq_secret_ids : secret_id => random_password.rabbitmq[0].result },
     { for secret_id in local.redis_secret_ids : secret_id => random_password.redis[0].result },

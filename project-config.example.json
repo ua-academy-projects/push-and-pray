@@ -6,6 +6,9 @@
     "gcp": {
         "project_id": "example-id",
         "billing_account_id": "000000-000000-000000"
+    },
+    "azure": {
+      "subscription_id": "00000000-0000-0000-0000-000000000000"
     }
   },
   "environment": "dev",
@@ -18,19 +21,30 @@
         "aws": {
             "region": "example",
             "availability_zone": "example"
+        },
+        "azure": {
+          "location": "polandcentral",
+          "zone": "1"
         }
     }
   },
   "sizes": {
     "small": {
         "gcp": "e2-micro",
-        "aws": "t3.micro"
+        "aws": "t3.micro",
+        "azure": "Standard_F1als_v7"
+    },
+    "infra": {
+        "gcp": "e2-small",
+        "aws": "t3.small",
+        "azure": "Standard_F1as_v7"
     }
   },
   "disk_types": {
     "balanced": {
       "gcp": "pd-balanced",
-      "aws": "gp3"
+      "aws": "gp3",
+      "azure": "StandardSSD_LRS"
     }
   },
   "images": {
@@ -41,6 +55,12 @@
       "aws": {
         "name_filter": "ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*",
         "owners": ["099720109477"]
+      },
+      "azure": {
+        "publisher": "Canonical",
+        "offer": "ubuntu-26_04-lts",
+        "sku": "server",
+        "version": "latest"
       }
     }
   },
@@ -53,7 +73,7 @@
     "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
   },
   "registry": {
-    "repository": "ghcr.io/example-org/example-project",
+    "repository": "example-docker.pkg.dev/example-id/oilscope",
     "username": "example-operator",
     "image_tag": "xintaro"
   },
@@ -61,6 +81,7 @@
     "vpc_cidr": "10.0.0.0/23",
     "management_subnet_cidr": "10.0.0.0/29",
     "workload_subnet_cidr": "10.0.1.0/26",
+    "managed_database_subnet_cidr": "10.0.0.64/26",
     "database_subnets": [
       {
         "cidr": "10.0.0.64/26",
@@ -120,6 +141,10 @@
       "aws": {
         "engine_version": "15",
         "instance_class": "db.t3.micro"
+      },
+      "azure": {
+        "version": "16",
+        "sku_name": "B_Standard_B1ms"
       }
     }
   },
@@ -139,14 +164,33 @@
     "ttl_seconds": 2592000,
     "redis_image": "redis:8.2.8-bookworm"
   },
+  "kubernetes": {
+    "enabled": true,
+    "k3s_version": "v1.32.3+k3s1",
+    "artifact_repository": "oilscope",
+    "github_repository": "example-org/push-and-pray",
+    "namespace": "oilscope",
+    "secrets": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "RABBITMQ_PASSWORD": "example-rabbitmq-password",
+      "REDIS_PASSWORD": "example-redis-password",
+      "OILPRICEAPI_KEY": "example-api-key",
+      "CLOUDFLARE_API_TOKEN": "example-cloudflare-api-token"
+    }
+  },
+  "service_placement": {
+    "gcp": { "infrastructure_host": "k3s-server" },
+    "aws": { "infrastructure_host": "k3s-server" },
+    "azure": { "infrastructure_host": "k3s-server" }
+  },
   "vms": {
     "bastion": {
       "role": "bastion",
       "size": "small",
       "region": "europe",
-      "cloud": "aws",
+      "cloud": "gcp",
       "image": "ubuntu-2604",
-      "internal_ip": "10.0.0.2",
+      "internal_ip": "10.0.0.5",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -157,46 +201,9 @@
       "ssh_port": 8787,
       "allowed_cidrs": ["192.0.2.10/32"]
     },
-    "infra": {
-      "role": "database",
-      "size": "small",
-      "region": "europe",
-      "image": "ubuntu-2604",
-      "internal_ip": "10.0.1.2",
-      "boot_disk": {
-        "size_gb": 10,
-        "type": "balanced"
-      },
-      "assign_public_ip": false,
-      "network_tags": ["infra"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
-        "REDIS_PASSWORD": "example-redis-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
-    },
-    "history": {
-      "role": "history",
-      "size": "small",
-      "region": "europe",
-      "image": "ubuntu-2604",
-      "internal_ip": "10.0.1.3",
-      "boot_disk": {
-        "size_gb": 10,
-        "type": "balanced"
-      },
-      "assign_public_ip": false,
-      "network_tags": ["history"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
-    },
-    "fetcher": {
-      "role": "fetcher",
-      "size": "small",
+    "k3s-server": {
+      "role": "k3s_server",
+      "size": "infra",
       "region": "europe",
       "image": "ubuntu-2604",
       "internal_ip": "10.0.1.4",
@@ -204,18 +211,17 @@
         "size_gb": 10,
         "type": "balanced"
       },
-      "assign_public_ip": false,
-      "network_tags": ["fetcher"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "RABBITMQ_PASSWORD": "example-rabbitmq-password",
-        "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token"
+      "assign_public_ip": true,
+      "network_tags": ["k3s-server"],
+      "secret_mappings": {},
+      "public_endpoint": {
+        "hostname": "oilscope.example.com",
+        "acme_email": "example-operator@example.com"
       }
     },
-    "ui": {
-      "role": "ui",
-      "size": "small",
+    "k3s-agent": {
+      "role": "k3s_agent",
+      "size": "infra",
       "region": "europe",
       "image": "ubuntu-2604",
       "internal_ip": "10.0.1.5",
@@ -223,17 +229,9 @@
         "size_gb": 10,
         "type": "balanced"
       },
-      "assign_public_ip": true,
-      "network_tags": ["ui"],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "REDIS_PASSWORD": "example-redis-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      },
-      "public_endpoint": {
-        "hostname": "oilscope.example.com",
-        "acme_email": "example-operator@example.com"
-      }
+      "assign_public_ip": false,
+      "network_tags": ["k3s-agent"],
+      "secret_mappings": {}
     }
   }
 }

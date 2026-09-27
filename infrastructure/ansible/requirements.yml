@@ -11,6 +11,11 @@ collections:
   # Provides the aws_ec2 delegate used by the same multi-cloud wrapper.
   - name: amazon.aws
     version: ">=11.2.0"
+  # Provides the azure_rm delegate used for Azure VM discovery.
+  - name: azure.azcollection
+    version: ">=3.21.0,<4.0.0"
   # Declarative management of Docker networks and Compose v2 projects.
   - name: community.docker
+    version: ">=5.0.0,<6.0.0"
+  - name: kubernetes.core
     version: ">=5.0.0,<6.0.0"

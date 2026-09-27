@@ -27,12 +27,40 @@
       {{
         ['RABBITMQ_PASSWORD', 'REDIS_PASSWORD']
         if resolve_secrets_config.database.mode == 'self_managed'
-        else {
-          'database': ['POSTGRES_PASSWORD'],
-          'history': ['REDIS_PASSWORD'],
-          'fetcher': ['POSTGRES_PASSWORD', 'REDIS_PASSWORD'],
-          'ui': ['POSTGRES_PASSWORD', 'RABBITMQ_PASSWORD']
-        }[resolve_secrets_config.vms[resolve_secrets_vm_key].role]
+        else
+          (
+            (
+              []
+              if resolve_secrets_config.vms[resolve_secrets_vm_key].role
+                 == 'history'
+              else ['POSTGRES_PASSWORD']
+            )
+            +
+            (
+              []
+              if (
+                resolve_secrets_config.vms[resolve_secrets_vm_key].role
+                in ['history', 'fetcher']
+                or resolve_secrets_vm_key
+                   == resolve_secrets_config.service_placement[
+                        oilscope_cloud | default(resolve_secrets_config.default_cloud)
+                      ].infrastructure_host
+              )
+              else ['RABBITMQ_PASSWORD']
+            )
+            +
+            (
+              []
+              if (
+                resolve_secrets_config.vms[resolve_secrets_vm_key].role == 'ui'
+                or resolve_secrets_vm_key
+                   == resolve_secrets_config.service_placement[
+                        oilscope_cloud | default(resolve_secrets_config.default_cloud)
+                      ].infrastructure_host
+              )
+              else ['REDIS_PASSWORD']
+            )
+          )
       }}
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
@@ -156,6 +184,63 @@
     label: "{{ item.item.key }}"
   when:
     - oilscope_cloud | default('') == 'aws'
+    - resolve_secrets_mappings | length > 0
+
+- name: Derive the Azure Key Vault name
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_vault_name: >-
+      {{ ((
+            (resolve_secrets_config.name_prefix ~ '-' ~ resolve_secrets_config.environment)
+            | replace('-', '')
+          ) ~ 'kv' ~ (
+            resolve_secrets_config.clouds.azure.subscription_id
+            | hash('sha256')
+          )[0:6])[0:24] }}
+  when:
+    - oilscope_cloud | default('') == 'azure'
+    - resolve_secrets_mappings | length > 0
+
+- name: Fetch an Azure managed identity access token
+  ansible.builtin.uri:
+    url: "{{ resolve_secrets_azure_metadata_url }}"
+    headers:
+      Metadata: "true"
+    return_content: true
+  register: resolve_secrets_azure_token
+  no_log: true
+  when:
+    - oilscope_cloud | default('') == 'azure'
+    - resolve_secrets_mappings | length > 0
+
+- name: Access each mapped Azure Key Vault secret
+  ansible.builtin.uri:
+    url: >-
+      https://{{ resolve_secrets_azure_vault_name }}.vault.azure.net/secrets/{{ item.value }}?api-version={{ resolve_secrets_azure_key_vault_api_version }}
+    headers:
+      Authorization: >-
+        Bearer {{ (resolve_secrets_azure_token.content | from_json).access_token }}
+    return_content: true
+  register: resolve_secrets_azure_accessed
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - oilscope_cloud | default('') == 'azure'
+    - resolve_secrets_mappings | length > 0
+
+- name: Build the resolved Azure secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: (item.content | from_json).value
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_azure_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - oilscope_cloud | default('') == 'azure'
     - resolve_secrets_mappings | length > 0
 
 - name: Default to an empty result when there is nothing to resolve

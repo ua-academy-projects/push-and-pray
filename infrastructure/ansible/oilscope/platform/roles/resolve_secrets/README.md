@@ -1,9 +1,9 @@
 # Resolve secrets role
 
-Resolves the secret values permitted for the current host from Secret
-Manager, using the workload VM's own attached service account — not the
-operator's credentials. It runs on the workload host itself, as part of a
-deployment play, not on `localhost`.
+Resolves the secret values permitted for the current host from GCP Secret
+Manager, AWS Secrets Manager, or Azure Key Vault, using the workload VM's own
+cloud identity — not the operator's credentials. It runs on the workload host
+itself, as part of a deployment play, not on `localhost`.
 
 Terraform creates the containers and grants each workload access only to its
 own secrets; `secret_versions` writes values into them from an operator's
@@ -17,9 +17,9 @@ containers.
 - Only the secrets listed in the current host's own `secret_mappings` are
   ever requested — never another workload's, and never a sibling VM that
   happens to share the same `role`.
-- Authentication is the instance's attached service account, obtained from
-  the metadata server. No credential is supplied by the operator or stored
-  on the host.
+- Authentication is the instance's attached service account, instance role,
+  or managed identity. No credential is supplied by the operator or stored on
+  the host.
 - Nothing is written to disk. The result exists only as an in-memory fact
   for the duration of the play.
 - Every task that could carry a token or a secret value is marked `no_log`,
@@ -29,10 +29,15 @@ containers.
 
 ## Requirements
 
-The host must be a GCE instance with a service account attached, granted
-`roles/secretmanager.secretAccessor` on the secrets in its own
-`secret_mappings` — this is what `infrastructure/terraform/secrets.tf`
-grants automatically.
+Terraform grants each GCP service account, AWS instance role, or Azure
+system-assigned managed identity read access only to the secret IDs in that
+VM's active `secret_mappings`.
+
+In managed-database mode,
+`service_placement.<cloud>.infrastructure_host` also controls the RabbitMQ and
+Redis secrets. That selected VM keeps both mappings even when its primary role
+is `fetcher`; PostgreSQL remains a managed service and its password is exposed
+only to the `history` workload.
 
 The role identifies which `vms` entry is "this host" from `inventory_hostname`
 itself, not from a role or group name. Terraform names every instance
@@ -59,6 +64,8 @@ never resolve to a sibling's secrets even in that case.
   `$GOOGLE_PROJECT`, then to `project_id` in the configuration.
 - `resolve_secrets_metadata_url`: the instance metadata token endpoint.
 - `resolve_secrets_secretmanager_url`: the Secret Manager REST API base URL.
+- `resolve_secrets_azure_metadata_url`: Azure managed identity token endpoint.
+- `resolve_secrets_azure_key_vault_api_version`: Key Vault REST API version.
 
 ## Output
 

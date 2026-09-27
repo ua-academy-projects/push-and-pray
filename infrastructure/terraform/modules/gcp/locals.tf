@@ -48,7 +48,7 @@ locals {
   ]), null)
 
   monitoring_config  = lookup(local.config, "monitoring", {})
-  monitoring_enabled = local.has_vms && lookup(local.monitoring_config, "enabled", false)
+  monitoring_enabled = local.has_vms && !local.kubernetes_enabled && lookup(local.monitoring_config, "enabled", false)
   monitoring_settings = {
     notification_email = lookup(
       local.monitoring_config,
@@ -77,9 +77,10 @@ locals {
     )
   }
 
-  all_secret_ids = distinct(flatten([
-    for workload in values(local.workload_vms) : values(workload.secret_mappings)
-  ]))
+  all_secret_ids = distinct(concat(
+    flatten([for workload in values(local.workload_vms) : values(workload.secret_mappings)]),
+    values(lookup(local.kubernetes_config, "secrets", {})),
+  ))
 
   inactive_secret_names_by_role = local.database_mode == "self_managed" ? {
     for role in ["database", "history", "fetcher", "ui"] :
@@ -95,7 +96,7 @@ locals {
     for name, workload in local.workload_vms : name => {
       for environment_name, secret_id in workload.secret_mappings :
       environment_name => secret_id
-      if !contains(local.inactive_secret_names_by_role[workload.role], environment_name)
+      if !contains(lookup(local.inactive_secret_names_by_role, workload.role, []), environment_name)
     }
   }
 
@@ -104,29 +105,44 @@ locals {
     name => distinct(values(secret_mappings))
   }
 
-  managed_database_secret_ids = toset(flatten([
+  managed_database_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "POSTGRES_PASSWORD"
     ]
-  ]))
+  ]), local.kubernetes_enabled ? [lookup(local.kubernetes_config.secrets, "POSTGRES_PASSWORD")] : []))
 
-  rabbitmq_secret_ids = toset(flatten([
+  rabbitmq_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "RABBITMQ_PASSWORD"
     ]
-  ]))
+  ]), local.kubernetes_enabled ? [lookup(local.kubernetes_config.secrets, "RABBITMQ_PASSWORD")] : []))
 
-  redis_secret_ids = toset(flatten([
+  redis_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "REDIS_PASSWORD"
     ]
-  ]))
+  ]), local.kubernetes_enabled ? [lookup(local.kubernetes_config.secrets, "REDIS_PASSWORD")] : []))
+
+  generated_passwords_enabled = (
+    local.database_mode == "managed" && local.database_vm_name != null
+  ) || local.kubernetes_enabled
 
   has_vms    = length(local.resolved_vms) > 0
   bastion_vm = local.config.vms.bastion
+
+  kubernetes_config  = lookup(local.config, "kubernetes", {})
+  kubernetes_enabled = lookup(local.kubernetes_config, "enabled", false)
+  k3s_nodes = {
+    for name, vm in local.resolved_vms : name => vm
+    if contains(["k3s_server", "k3s_agent"], vm.role)
+  }
+  k3s_ingress_vm = try(one([
+    for vm in values(local.k3s_nodes) : vm
+    if vm.role == "k3s_server" && vm.assign_public_ip
+  ]), null)
 
   database_mode = local.config.database.mode
 

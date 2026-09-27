@@ -1,0 +1,9 @@
+#cloud-config
+write_files:
+  - path: /etc/ssh/sshd_config.d/90-oilscope-port.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      Port ${ssh_port}
+runcmd:
+  - [systemctl, restart, ssh]

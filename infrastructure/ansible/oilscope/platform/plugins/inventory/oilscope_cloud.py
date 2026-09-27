@@ -28,9 +28,9 @@ author:
 description:
   - Reads the same project configuration JSON as Terraform and applies the
     C(default_cloud) plus optional per-VM C(cloud) override.
-  - Delegates GCP discovery to C(google.cloud.gcp_compute) and AWS discovery to
-    C(amazon.aws.aws_ec2). A delegate is not invoked when no configured VM uses
-    that cloud.
+  - Delegates discovery to C(google.cloud.gcp_compute), C(amazon.aws.aws_ec2),
+    and C(azure.azcollection.azure_rm). A delegate is not invoked when no
+    configured VM uses that cloud.
   - Filters both providers by the managed C(application), C(environment), and
     C(cloud) label or tag, then creates the same role groups and host variables
     for both providers.
@@ -89,6 +89,7 @@ options:
 requirements:
   - google.cloud collection
   - amazon.aws collection
+  - azure.azcollection collection
   - google-auth
   - requests
   - boto3
@@ -96,6 +97,7 @@ requirements:
 notes:
   - GCP uses Application Default Credentials by default.
   - AWS uses the normal boto3 credential chain, including C(AWS_PROFILE).
+  - Azure uses the active Azure CLI session.
 """
 
 EXAMPLES = r"""
@@ -107,14 +109,16 @@ cache_connection: ~/.cache/oilscope-inventory
 cache_timeout: 300
 """
 
-SUPPORTED_CLOUDS = ("gcp", "aws")
+SUPPORTED_CLOUDS = ("gcp", "aws", "azure")
 DELEGATES = {
     "gcp": "google.cloud.gcp_compute",
     "aws": "amazon.aws.aws_ec2",
+    "azure": "azure.azcollection.azure_rm",
 }
 FILE_SUFFIXES = {
     "gcp": "gcp.yml",
     "aws": "aws_ec2.yml",
+    "azure": "azure_rm.yml",
 }
 display = Display()
 
@@ -147,6 +151,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 generated_files.append(generated)
                 self._delegate(cloud, inventory, loader, generated, cache)
 
+            self._configure_service_placement(inventory, config)
             self._configure_ssh_connections(inventory, settings_by_cloud, common)
         finally:
             for generated in generated_files:
@@ -298,6 +303,41 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return {"user": user, "key_file": key_file}
 
+    def _configure_service_placement(self, inventory, config):
+        kubernetes = config.get("kubernetes", {})
+        if isinstance(kubernetes, dict) and kubernetes.get("enabled"):
+            return
+
+        placements = self._require_mapping(config, "service_placement")
+        cloud = self._require_string(config, "default_cloud")
+        placement = self._require_mapping(
+            placements, cloud, "service_placement"
+        )
+        infrastructure_key = self._require_string(
+            placement, "infrastructure_host", f"service_placement.{cloud}"
+        )
+        vms = self._require_mapping(config, "vms")
+
+        if infrastructure_key not in vms:
+            raise AnsibleParserError(
+                f"service_placement.{cloud}.infrastructure_host must name a configured VM"
+            )
+
+        host_name = (
+            f"{self._require_string(config, 'name_prefix')}-"
+            f"{self._require_string(config, 'environment')}-"
+            f"{infrastructure_key}"
+        )
+
+        if host_name not in inventory.hosts:
+            raise AnsibleParserError(
+                f"configured infrastructure host {host_name!r} was not discovered"
+            )
+
+        inventory.add_group("infrastructure")
+        inventory.add_host(host_name, group="infrastructure")
+        inventory.set_variable(host_name, "oilscope_infrastructure_host", True)
+
     def _configure_ssh_connections(self, inventory, settings_by_cloud, common):
         if not settings_by_cloud:
             return
@@ -375,7 +415,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "groups": {
                 "workloads": (
                     f"labels.role is defined and labels.role != '{common['bastion_role']}'"
-                )
+                ),
+                "k3s_nodes": "labels.role in ['k3s_server', 'k3s_agent']",
             },
             "compose": {
                 "internal_ip": private,
@@ -409,7 +450,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "workloads": (
                     f"ec2_tags.role is defined and "
                     f"ec2_tags.role != '{common['bastion_role']}'"
-                )
+                ),
+                "k3s_nodes": "ec2_tags.role in ['k3s_server', 'k3s_agent']",
             },
             "compose": {
                 "internal_ip": private,
@@ -417,6 +459,49 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "ansible_host": f"{public} if {is_bastion} else {private}",
                 "oilscope_role": role,
                 "oilscope_cloud": "ec2_tags.cloud | default('')",
+            },
+        }
+
+    def _build_azure_settings(self, config, selected_vms, common):
+        clouds = self._require_mapping(config, "clouds")
+        azure = self._require_mapping(clouds, "azure", "project configuration clouds")
+        subscription_id = self._require_string(
+            azure, "subscription_id", "clouds.azure"
+        )
+        resource_group = f"{common['name_prefix']}-{common['environment']}-rg"
+        role = "tags.role | default('')"
+        is_bastion = f"{role} == '{common['bastion_role']}'"
+        public = "(public_ipv4_address | default([]) | first) | default('')"
+        private = "private_ipv4_addresses | first"
+
+        return {
+            "plugin": DELEGATES["azure"],
+            "auth_source": "cli",
+            "subscription_id": plain(subscription_id),
+            "include_vm_resource_groups": [resource_group],
+            "include_host_filters": [
+                f"tags.application == '{common['name_prefix']}' and "
+                f"tags.environment == '{common['environment']}' and "
+                "tags.cloud == 'azure'"
+            ],
+            "hostnames": ["tags.Name", "default"],
+            "plain_host_names": True,
+            "keyed_groups": [
+                {"key": "tags.role", "prefix": "", "separator": ""}
+            ],
+            "conditional_groups": {
+                "workloads": (
+                    f"tags.role is defined and "
+                    f"tags.role != '{common['bastion_role']}'"
+                ),
+                "k3s_nodes": "tags.role in ['k3s_server', 'k3s_agent']",
+            },
+            "hostvar_expressions": {
+                "internal_ip": private,
+                "public_ip": public,
+                "ansible_host": f"{public} if {is_bastion} else {private}",
+                "oilscope_role": role,
+                "oilscope_cloud": "tags.cloud | default('')",
             },
         }
 
@@ -430,6 +515,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         if selected["aws"]:
             settings["aws"] = self._build_aws_settings(config, selected["aws"], common)
+
+        if selected["azure"]:
+            settings["azure"] = self._build_azure_settings(
+                config, selected["azure"], common
+            )
 
         return settings
 
@@ -456,7 +546,11 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         delegate = inventory_loader.get(delegate_name)
 
         if delegate is None:
-            collection = "google.cloud" if cloud == "gcp" else "amazon.aws"
+            collection = {
+                "gcp": "google.cloud",
+                "aws": "amazon.aws",
+                "azure": "azure.azcollection",
+            }[cloud]
             raise AnsibleParserError(
                 f"the {delegate_name} inventory plugin is unavailable; "
                 f"install the {collection} collection"

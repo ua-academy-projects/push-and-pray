@@ -1,13 +1,17 @@
 locals {
   config = jsondecode(file(var.project_config_path))
 
+  kubernetes_enabled = lookup(lookup(local.config, "kubernetes", {}), "enabled", false)
+
   all_workload_roles = merge(
     module.gcp.workload_roles,
     module.aws.workload_roles,
+    module.azure.workload_roles,
   )
   all_public_ips = merge(
     module.gcp.public_ips,
     module.aws.public_ips,
+    module.azure.public_ips,
   )
 
   ui_vm_name = one([
@@ -16,5 +20,9 @@ locals {
     if role == "ui"
   ])
 
-  ui_public_ip = local.all_public_ips[local.ui_vm_name]
+  ui_public_ip = local.kubernetes_enabled ? module.gcp.kubernetes.ingress_public_ip : local.all_public_ips[local.ui_vm_name]
+  public_endpoint_vm_name = local.kubernetes_enabled ? one([
+    for name, vm in local.config.vms : name
+    if vm.role == "k3s_server" && vm.assign_public_ip
+  ]) : local.ui_vm_name
 }

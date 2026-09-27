@@ -6,6 +6,7 @@ services:
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
     pull_policy: ${APPLICATION_PULL_POLICY:-always}
     restart: unless-stopped
+    mem_limit: ${FETCHER_MEMORY_LIMIT:-512m}
     init: true
     environment:
       OILPRICEAPI_KEY: ${OILPRICEAPI_KEY:?OILPRICEAPI_KEY is required}

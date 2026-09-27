@@ -44,6 +44,7 @@ tags:
 # range specifiers can be set and are separated by ','
 dependencies:
   community.docker: ">=5.0.0,<6.0.0"
+  kubernetes.core: ">=5.0.0,<6.0.0"
 
 # The URL of the originating SCM repository
 repository: http://example.com/repository

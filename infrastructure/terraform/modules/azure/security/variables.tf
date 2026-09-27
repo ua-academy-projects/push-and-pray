@@ -1,0 +1,15 @@
+variable "resource_group_name" { type = string }
+variable "location" { type = string }
+variable "resource_prefix" { type = string }
+variable "tags" { type = map(string) }
+variable "vms" { type = any }
+variable "bastion_ssh_port" { type = number }
+variable "bastion_allowed_cidrs" { type = list(string) }
+variable "enable_bastion_ssh_bootstrap" { type = bool }
+variable "ui_public_ports" { type = list(number) }
+variable "history_api_port" { type = number }
+variable "postgresql_port" { type = number }
+variable "rabbitmq_port" { type = number }
+variable "redis_port" { type = number }
+variable "managed_database_enabled" { type = bool }
+variable "infrastructure_vm_name" { type = string }

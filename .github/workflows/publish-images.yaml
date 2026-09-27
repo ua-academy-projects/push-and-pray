@@ -11,14 +11,14 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  id-token: write
 
 jobs:
   fetcher:
     name: Publish Fetcher image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/fetcher
+      image-name: ${{ vars.GCP_ARTIFACT_REGISTRY }}/fetcher
       dockerfile: infrastructure/docker/Dockerfile.fetcher
       context: .
       description: Petroscope scheduled oil-price fetcher
@@ -27,7 +27,7 @@ jobs:
     name: Publish History image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/history
+      image-name: ${{ vars.GCP_ARTIFACT_REGISTRY }}/history
       dockerfile: infrastructure/docker/Dockerfile.history
       context: .
       description: Petroscope price history API and event consumer
@@ -36,7 +36,7 @@ jobs:
     name: Publish UI image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/ui
+      image-name: ${{ vars.GCP_ARTIFACT_REGISTRY }}/ui
       dockerfile: infrastructure/docker/Dockerfile.ui
       context: .
       description: Petroscope web UI and backend service
@@ -45,7 +45,7 @@ jobs:
     name: Publish database image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/database
+      image-name: ${{ vars.GCP_ARTIFACT_REGISTRY }}/database
       dockerfile: infrastructure/docker/Dockerfile.database
       context: .
       description: Petroscope database

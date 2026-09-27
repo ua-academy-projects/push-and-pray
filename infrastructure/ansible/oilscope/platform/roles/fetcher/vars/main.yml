@@ -29,6 +29,7 @@ fetcher_runtime_environment: >-
       'PGMQ_QUEUE': messaging_connection.queue,
       'OILPRICEAPI_KEY': fetcher_oilpriceapi_key,
       'FETCHER_BIND_ADDRESS': fetcher_bind_address | string,
-      'FETCHER_HOST_PORT': fetcher_host_port | string
+      'FETCHER_HOST_PORT': fetcher_host_port | string,
+      'FETCHER_MEMORY_LIMIT': fetcher_memory_limit
     })
   }}

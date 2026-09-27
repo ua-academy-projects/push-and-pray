@@ -3,7 +3,7 @@
 - name: Configure observability before deploying workloads
   ansible.builtin.import_playbook: configure_observability.yml
 
-- name: Deploy Database workload
+- name: Deploy Infrastructure services
   ansible.builtin.import_playbook: database.yml
 
 - name: Deploy History workload

@@ -23,12 +23,13 @@ The database image must contain `petroscope-migrate` and the migrations under
 ## Optional variables
 
 - `database_compose_project_dir`: Compose directory; defaults to
-  `/opt/oilscope/app`.
+  `/opt/oilscope/infra`.
 - `database_compose_file`: Compose file; defaults to `compose.yaml` in that
   directory.
 - `database_postgres_user` and `database_postgres_name`: both default to
   `oil_tracker`.
-- `database_bind_address`: defaults to `0.0.0.0`.
+- `database_bind_address`: defaults to `0.0.0.0`; the infrastructure
+  playbook overrides it with the host's private address.
 - `database_host_port`: defaults to `5432`.
 - `database_health_retries` and `database_health_delay`: health polling
   controls, defaulting to 30 attempts every 2 seconds.
@@ -38,8 +39,8 @@ The database image must contain `petroscope-migrate` and the migrations under
 
 ```yaml
 ---
-- name: Deploy the database
-  hosts: database
+- name: Deploy infrastructure services
+  hosts: infrastructure
   become: true
   roles:
     - role: oilscope.platform.database

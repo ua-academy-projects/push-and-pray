@@ -1,0 +1,212 @@
+{% set namespace = kubernetes_platform_config.kubernetes.namespace | default('oilscope') %}
+{% set registry = kubernetes_platform_config.registry.repository %}
+{% set tag = kubernetes_platform_config.registry.image_tag %}
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: {{ namespace }}
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: {{ namespace }}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: {{ registry }}/database:{{ tag }}
+          args: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name={{ kubernetes_platform_config.database.name }}", "-c", "cron.use_background_workers=on"]
+          env:
+            - { name: POSTGRES_DB, value: {{ kubernetes_platform_config.database.name | to_json }} }
+            - { name: POSTGRES_USER, value: {{ kubernetes_platform_config.database.user | to_json }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
+          ports: [{ containerPort: 5432 }]
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 10Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: rabbitmq, namespace: {{ namespace }} }
+spec: { selector: { app: rabbitmq }, ports: [{ port: 5672, targetPort: 5672 }] }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: rabbitmq, namespace: {{ namespace }} }
+spec:
+  serviceName: rabbitmq
+  replicas: 1
+  selector: { matchLabels: { app: rabbitmq } }
+  template:
+    metadata: { labels: { app: rabbitmq } }
+    spec:
+      containers:
+        - name: rabbitmq
+          image: {{ kubernetes_platform_config.messaging.rabbitmq.image }}
+          env:
+            - { name: RABBITMQ_DEFAULT_USER, value: {{ kubernetes_platform_config.messaging.rabbitmq.username | to_json }} }
+            - { name: RABBITMQ_DEFAULT_VHOST, value: {{ kubernetes_platform_config.messaging.rabbitmq.vhost | to_json }} }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: RABBITMQ_PASSWORD } }
+          volumeMounts: [{ name: data, mountPath: /var/lib/rabbitmq }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 5Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: {{ namespace }} }
+spec: { selector: { app: redis }, ports: [{ port: 6379, targetPort: 6379 }] }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: redis, namespace: {{ namespace }} }
+spec:
+  serviceName: redis
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      containers:
+        - name: redis
+          image: {{ kubernetes_platform_config.sessions.redis_image }}
+          args: ["redis-server", "--appendonly", "yes", "--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: REDIS_PASSWORD } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 2Gi } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: oilscope-migrations
+  namespace: {{ namespace }}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: {{ registry }}/database:{{ tag }}
+          command: [petroscope-migrate]
+          env:
+            - { name: PGHOST, value: postgres }
+            - { name: PGPORT, value: "5432" }
+            - { name: PGUSER, value: {{ kubernetes_platform_config.database.user | to_json }} }
+            - { name: PGDATABASE, value: {{ kubernetes_platform_config.database.name | to_json }} }
+            - { name: MIGRATION_PROFILE, value: self_managed }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: history, namespace: {{ namespace }} }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: history } }
+  template:
+    metadata: { labels: { app: history } }
+    spec:
+      containers:
+        - name: history
+          image: {{ registry }}/history:{{ tag }}
+          env:
+            - name: DATABASE_URL
+              value: postgresql+psycopg://{{ kubernetes_platform_config.database.user }}:$(POSTGRES_PASSWORD)@postgres:5432/{{ kubernetes_platform_config.database.name }}?sslmode=disable
+            - { name: MESSAGING_PROVIDER, value: pgmq }
+            - { name: PGMQ_QUEUE, value: {{ kubernetes_platform_config.messaging.queue_name | to_json }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
+          ports: [{ containerPort: 8001 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: history, namespace: {{ namespace }} }
+spec: { selector: { app: history }, ports: [{ port: 8001, targetPort: 8001 }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: fetcher, namespace: {{ namespace }} }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: fetcher } }
+  template:
+    metadata: { labels: { app: fetcher } }
+    spec:
+      containers:
+        - name: fetcher
+          image: {{ registry }}/fetcher:{{ tag }}
+          env:
+            - { name: MESSAGING_PROVIDER, value: pgmq }
+            - { name: DATABASE_URL, value: postgresql://{{ kubernetes_platform_config.database.user }}:$(POSTGRES_PASSWORD)@postgres:5432/{{ kubernetes_platform_config.database.name }}?sslmode=disable }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
+            - name: OILPRICEAPI_KEY
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: OILPRICEAPI_KEY } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ui, namespace: {{ namespace }} }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ui } }
+  template:
+    metadata: { labels: { app: ui } }
+    spec:
+      containers:
+        - name: ui
+          image: {{ registry }}/ui:{{ tag }}
+          env:
+            - { name: HISTORY_SERVICE_URL, value: http://history:8001 }
+            - { name: SESSION_PROVIDER, value: postgresql }
+            - { name: DATABASE_URL, value: postgresql://{{ kubernetes_platform_config.database.user }}:$(POSTGRES_PASSWORD)@postgres:5432/{{ kubernetes_platform_config.database.name }}?sslmode=disable }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
+          ports: [{ containerPort: 8080 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: ui, namespace: {{ namespace }} }
+spec: { selector: { app: ui }, ports: [{ port: 80, targetPort: 8080 }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ui
+  namespace: {{ namespace }}
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [{{ kubernetes_platform_config.vms['k3s-server'].public_endpoint.hostname }}]
+      secretName: oilscope-ui-tls
+  rules:
+    - host: {{ kubernetes_platform_config.vms['k3s-server'].public_endpoint.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ui, port: { number: 80 } } }

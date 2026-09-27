@@ -55,6 +55,7 @@ services:
   rabbitmq:
     image: "{{ compose_project_config.messaging.rabbitmq.image }}"
     restart: unless-stopped
+    mem_limit: ${RABBITMQ_MEMORY_LIMIT:-1536m}
     hostname: oilscope-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: "{{ compose_project_config.messaging.rabbitmq.username }}"
@@ -76,6 +77,7 @@ services:
   redis:
     image: "{{ compose_project_config.sessions.redis_image }}"
     restart: unless-stopped
+    mem_limit: ${REDIS_MEMORY_LIMIT:-768m}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       TZ: UTC
@@ -87,6 +89,8 @@ services:
       - everysec
       - --maxmemory-policy
       - noeviction
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
       - --requirepass
       - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:

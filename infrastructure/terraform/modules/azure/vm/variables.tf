@@ -1,0 +1,10 @@
+variable "resource_group_name" { type = string }
+variable "location" { type = string }
+variable "resource_prefix" { type = string }
+variable "common_labels" { type = map(string) }
+variable "ssh_users" { type = map(string) }
+variable "vms" { type = any }
+variable "bastion_ssh_port" { type = number }
+variable "management_subnet_id" { type = string }
+variable "workload_subnet_id" { type = string }
+variable "network_security_group_ids" { type = map(string) }

@@ -1,0 +1,7 @@
+---
+kubernetes_platform_project_config_path: >-
+  {{ lookup('env', 'OILSCOPE_PROJECT_CONFIG') | default('../../terraform/env/dev.json', true) }}
+# kubeconfig grants cluster-admin access; keep it outside the Git working tree.
+kubernetes_platform_work_dir: "{{ lookup('env', 'HOME') }}/.cache/oilscope/kubernetes"
+kubernetes_platform_kubeconfig: "{{ kubernetes_platform_work_dir }}/kubeconfig"
+kubernetes_platform_helm_version: "v3.17.3"

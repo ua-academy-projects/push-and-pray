@@ -24,17 +24,25 @@
                 ansible
                 ansible-lint
                 awscli2
+                azure-cli
                 check-jsonschema
                 git
                 google-cloud-sdk
-                jq
-                openssl
+            jq
+            kubectl
+            kubernetes-helm
+            openssl
                 python3Packages.boto3
                 python3Packages.botocore
+                # Required by azure.azcollection.azure_rm when auth_source is "cli".
+                python3Packages.azure-identity
+                python3Packages.azure-mgmt-network
                 python3Packages.google-auth
                 python3Packages.requests
+                python3Packages.virtualenv
                 shellcheck
                 terraform
+                azure-cli
               ];
 
               shellHook = ''
@@ -42,6 +50,9 @@
                 export TF_VAR_project_config_path="''${TF_VAR_project_config_path:-$OILSCOPE_PROJECT_CONFIG}"
                 export GOOGLE_APPLICATION_CREDENTIALS="''${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcp/oil-project/terraform-sa.json}"
                 export AWS_PROFILE="''${AWS_PROFILE:-terraform}"
+                if [[ -z "''${ARM_SUBSCRIPTION_ID:-}" ]] && command -v az >/dev/null 2>&1; then
+                  export ARM_SUBSCRIPTION_ID="$(az account show --query id --output tsv 2>/dev/null || true)"
+                fi
                 export OILSCOPE_SSH_KEY="''${OILSCOPE_SSH_KEY:-$HOME/.ssh/gcp_academy}"
                 if [[ -z "''${OILSCOPE_SSH_USER:-}" && -f "$OILSCOPE_PROJECT_CONFIG" ]]; then
                   export OILSCOPE_SSH_USER="$(jq -r '.ssh_users | keys[0]' "$OILSCOPE_PROJECT_CONFIG")"

@@ -85,6 +85,19 @@ output "monitoring" {
   value       = local.monitoring_enabled ? module.monitoring[0].summary : null
 }
 
+output "kubernetes" {
+  description = "K3s node and Artifact Registry values, or null when Kubernetes is disabled."
+  value = local.kubernetes_enabled ? {
+    server_name                       = one([for name, vm in local.k3s_nodes : module.vm[0].names[name] if vm.role == "k3s_server"])
+    server_private_ip                 = one([for name, vm in local.k3s_nodes : module.vm[0].private_ips[name] if vm.role == "k3s_server"])
+    ingress_public_ip                 = try(one([for name, vm in local.k3s_nodes : module.vm[0].public_ips[name] if vm.role == "k3s_server"]), null)
+    registry                          = "${google_artifact_registry_repository.application[0].location}-docker.pkg.dev/${google_artifact_registry_repository.application[0].project}/${google_artifact_registry_repository.application[0].repository_id}"
+    registry_host                     = "${google_artifact_registry_repository.application[0].location}-docker.pkg.dev"
+    github_workload_identity_provider = google_iam_workload_identity_pool_provider.github[0].name
+    github_service_account            = google_service_account.github_artifact_writer[0].email
+  } : null
+}
+
 output "database_connection" {
   description = "Database connection values resolved from self-managed PostgreSQL or managed Cloud SQL."
 
