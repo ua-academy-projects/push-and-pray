@@ -1,7 +1,20 @@
 name: petroscope
 
+{% if 'azure' in group_names %}
+x-azure-logging: &azure-logging
+  logging:
+    driver: syslog
+    options:
+      syslog-address: "unixgram:///dev/log"
+      syslog-facility: "local0"
+      tag: "{% raw %}{{.Name}}{% endraw %}"
+{% endif %}
+
 services:
   fetcher:
+{% if 'azure' in group_names %}
+    <<: *azure-logging
+{% endif %}
     image: "{{ compose_project_config.registry.repository }}/fetcher:{{ compose_project_config.registry.image_tag }}"
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
     pull_policy: ${APPLICATION_PULL_POLICY:-always}

@@ -12,6 +12,9 @@
 - name: Configure GCP observability when GCP hosts exist
   ansible.builtin.import_playbook: configure_gcp_observability.yml
 
+- name: Configure Azure observability when Azure hosts exist
+  ansible.builtin.import_playbook: configure_azure_observability.yml
+
 - name: Deploy Infrastructure workload
   ansible.builtin.import_playbook: infrastructure.yml
 

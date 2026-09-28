@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+azure_monitor_agent_extension_name: AzureMonitorLinuxAgent
+azure_monitor_agent_publisher: Microsoft.Azure.Monitor
+azure_monitor_agent_extension_type: AzureMonitorLinuxAgent
+azure_monitor_agent_type_handler_version: "1.0"
+azure_monitor_agent_legacy_rsyslog_config_path: /etc/rsyslog.d/30-oilscope-docker.conf

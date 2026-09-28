@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure Azure observability
+  hosts: azure
+  become: true
+  gather_facts: false
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.azure_monitor_agent

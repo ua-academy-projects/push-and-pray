@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install the Azure Monitor Agent VM extension
+  azure.azcollection.azure_rm_virtualmachineextension:
+    auth_source: cli
+    subscription_id: "{{ oilscope_azure_subscription_id }}"
+    resource_group: "{{ oilscope_azure_resource_group }}"
+    virtual_machine_name: "{{ inventory_hostname }}"
+    location: "{{ oilscope_azure_location }}"
+    name: "{{ azure_monitor_agent_extension_name }}"
+    publisher: "{{ azure_monitor_agent_publisher }}"
+    virtual_machine_extension_type: "{{ azure_monitor_agent_extension_type }}"
+    type_handler_version: "{{ azure_monitor_agent_type_handler_version }}"
+    auto_upgrade_minor_version: true
+    enable_automatic_upgrade: true
+    settings:
+      authentication:
+        managedIdentity:
+          identifier-name: mi_res_id
+          identifier-value: "{{ oilscope_azure_identity_id }}"
+    state: present
+  delegate_to: localhost
+  become: false
+
+- name: Remove obsolete Docker JSON log forwarding
+  ansible.builtin.file:
+    path: "{{ azure_monitor_agent_legacy_rsyslog_config_path }}"
+    state: absent
+  notify: Restart rsyslog

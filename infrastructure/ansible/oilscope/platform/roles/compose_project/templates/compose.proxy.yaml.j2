@@ -1,7 +1,20 @@
 name: oilscope-proxy
 
+{% if 'azure' in group_names %}
+x-azure-logging: &azure-logging
+  logging:
+    driver: syslog
+    options:
+      syslog-address: "unixgram:///dev/log"
+      syslog-facility: "local0"
+      tag: "{% raw %}{{.Name}}{% endraw %}"
+{% endif %}
+
 services:
   traefik:
+{% if 'azure' in group_names %}
+    <<: *azure-logging
+{% endif %}
     image: traefik:v3.7.12
     restart: unless-stopped
     init: true

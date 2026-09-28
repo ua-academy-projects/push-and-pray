@@ -1,7 +1,20 @@
 name: petroscope
 
+{% if 'azure' in group_names %}
+x-azure-logging: &azure-logging
+  logging:
+    driver: syslog
+    options:
+      syslog-address: "unixgram:///dev/log"
+      syslog-facility: "local0"
+      tag: "{% raw %}{{.Name}}{% endraw %}"
+{% endif %}
+
 services:
   history:
+{% if 'azure' in group_names %}
+    <<: *azure-logging
+{% endif %}
     image: "{{ compose_project_config.registry.repository }}/history:{{ compose_project_config.registry.image_tag }}"
     platform: ${APPLICATION_PLATFORM:-linux/amd64}
     pull_policy: ${APPLICATION_PULL_POLICY:-always}
@@ -46,6 +59,9 @@ services:
       - cloud-sql-proxy
 
   cloud-sql-proxy:
+{% if 'azure' in group_names %}
+    <<: *azure-logging
+{% endif %}
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.18.2
     restart: unless-stopped
     command:
