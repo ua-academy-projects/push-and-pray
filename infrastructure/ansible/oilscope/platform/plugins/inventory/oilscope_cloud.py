@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) Push and Pray team
-"""Discover OilScope virtual machines in GCP and AWS."""
+"""Discover OilScope virtual machines in AWS, Azure, and GCP."""
 
 import json
 import os
@@ -14,12 +14,12 @@ from ansible.utils.display import Display
 
 DOCUMENTATION = r"""
 name: oilscope_cloud
-short_description: Discover OilScope virtual machines in GCP and AWS
+short_description: Discover OilScope virtual machines in AWS, Azure, and GCP
 version_added: "0.1.0"
 author:
   - Push and Pray team
 description:
-  - Discovers the VMs in the Terraform project configuration through GCP and AWS.
+  - Discovers the VMs in the Terraform project configuration through AWS, Azure, and GCP.
 options:
   plugin:
     description: Token that identifies this plugin.
@@ -38,7 +38,7 @@ options:
   ssh_user:
     description:
       - SSH user used for every discovered host.
-      - Defaults to C(ubuntu) on AWS and the first configured SSH user on GCP.
+      - Defaults to C(ubuntu) on AWS and the first configured SSH user on Azure and GCP.
     type: str
     default: ""
     env:
@@ -60,6 +60,7 @@ plugin: oilscope.platform.oilscope_cloud
 
 DELEGATES = {
     "aws": "amazon.aws.aws_ec2",
+    "azure": "azure.azcollection.azure_rm",
     "gcp": "google.cloud.gcp_compute",
 }
 
@@ -213,6 +214,33 @@ class InventoryModule(BaseInventoryPlugin):
                 },
             }
 
+        if cloud == "azure":
+            cloud_settings = config.get("cloud_settings", {}).get("azure", {})
+            subscription_id = self._required_string(
+                cloud_settings, "subscription_id", "Azure settings"
+            )
+            resource_group = (
+                f"{self._required_string(config, 'name_prefix')}-"
+                f"{self._required_string(config, 'environment')}-rg"
+            )
+            names = sorted(vm["resource_name"] for vm in virtual_machines.values())
+
+            return {
+                "plugin": DELEGATES[cloud],
+                "auth_source": "cli",
+                "subscription_id": subscription_id,
+                "include_vm_resource_groups": [resource_group],
+                "hostnames": ["name"],
+                "include_host_filters": [
+                    f"name in {json.dumps(names)} and powerstate == 'running'"
+                ],
+                "compose": {
+                    "oilscope_discovered_public_ip": (
+                        "public_ipv4_address[0] if public_ipv4_address else ''"
+                    )
+                },
+            }
+
         regions = sorted({vm["provider_location"]["region"] for vm in virtual_machines.values()})
         names = sorted(vm["resource_name"] for vm in virtual_machines.values())
         settings = {
@@ -230,7 +258,12 @@ class InventoryModule(BaseInventoryPlugin):
         return settings
 
     def _write_settings(self, cloud, settings):
-        suffix = ".aws_ec2.yml" if cloud == "aws" else ".gcp_compute.yml"
+        suffixes = {
+            "aws": ".aws_ec2.yml",
+            "azure": ".azure_rm.yml",
+            "gcp": ".gcp_compute.yml",
+        }
+        suffix = suffixes[cloud]
 
         try:
             with tempfile.NamedTemporaryFile(
@@ -418,6 +451,29 @@ class InventoryModule(BaseInventoryPlugin):
                     is_bastion,
                 ),
             }
+
+            if cloud == "azure":
+                subscription_id = self._required_string(
+                    config.get("cloud_settings", {}).get("azure", {}),
+                    "subscription_id",
+                    "Azure settings",
+                )
+                resource_group = (
+                    f"{self._required_string(config, 'name_prefix')}-"
+                    f"{self._required_string(config, 'environment')}-rg"
+                )
+                host_variables.update(
+                    {
+                        "oilscope_azure_subscription_id": subscription_id,
+                        "oilscope_azure_resource_group": resource_group,
+                        "oilscope_azure_location": vm["provider_location"]["region"],
+                        "oilscope_azure_identity_id": (
+                            f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+                            "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/"
+                            f"{resource_name}"
+                        ),
+                    }
+                )
 
             if is_bastion:
                 try:
