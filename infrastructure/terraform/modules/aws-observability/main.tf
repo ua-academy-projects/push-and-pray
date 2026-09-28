@@ -1,9 +1,9 @@
 data "aws_partition" "current" {}
 
 resource "aws_iam_role_policy_attachment" "cloudwatch_agent" {
-  for_each = var.role_names
+  for_each = local.aws_vms
 
-  role       = each.value
+  role       = var.role_names[each.key]
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
@@ -144,7 +144,7 @@ resource "aws_route53_health_check" "https" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "https" {
-  for_each = aws_route53_health_check.https
+  for_each = local.aws_ui
 
   region              = "us-east-1"
   alarm_name          = "${local.resource_prefix}-https-unavailable"
@@ -162,7 +162,7 @@ resource "aws_cloudwatch_metric_alarm" "https" {
   ok_actions          = try(local.notification_actions["us-east-1"], [])
 
   dimensions = {
-    HealthCheckId = each.value.id
+    HealthCheckId = aws_route53_health_check.https[each.key].id
   }
 }
 

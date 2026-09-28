@@ -11,13 +11,24 @@ locals {
     )
   }
 
-  vms = {
+  workload_vms = {
     for name, vm in var.config.vms : name => merge(vm, {
       location = lookup(vm, "location", var.config.default_location)
       region   = var.config.locations[lookup(vm, "location", var.config.default_location)].aws.region
     })
     if lookup(vm, "cloud", var.config.default_cloud) == "aws"
   }
+
+  bastion_location = lookup(var.config.bastion, "location", var.config.default_location)
+  bastion_vms = lookup(var.config.bastion, "cloud", var.config.default_cloud) == "aws" ? {
+    bastion = merge(var.config.bastion, {
+      location        = local.bastion_location
+      region          = var.config.locations[local.bastion_location].aws.region
+      secret_mappings = {}
+    })
+  } : {}
+
+  vms = merge(local.workload_vms, local.bastion_vms)
 
   secret_access = {
     for access in flatten([

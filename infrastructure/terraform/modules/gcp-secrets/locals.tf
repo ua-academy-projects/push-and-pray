@@ -11,10 +11,18 @@ locals {
     )
   }
 
-  vms = {
+  workload_vms = {
     for name, vm in var.config.vms : name => vm
     if lookup(vm, "cloud", var.config.default_cloud) == "gcp"
   }
+
+  bastion_vms = lookup(var.config.bastion, "cloud", var.config.default_cloud) == "gcp" ? {
+    bastion = merge(var.config.bastion, {
+      secret_mappings = {}
+    })
+  } : {}
+
+  vms = merge(local.workload_vms, local.bastion_vms)
 
   secret_access = {
     for access in flatten([

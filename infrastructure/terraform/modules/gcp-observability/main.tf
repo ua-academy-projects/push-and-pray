@@ -7,7 +7,7 @@ resource "google_project_iam_member" "ops_agent" {
 }
 
 resource "google_logging_metric" "http_requests" {
-  count = length(local.gcp_vms) == 0 ? 0 : 1
+  count = length(local.gcp_workload_vms) == 0 ? 0 : 1
 
   project     = var.config.cloud_settings.gcp.project_id
   name        = "${local.resource_prefix}-http-requests"
@@ -23,7 +23,7 @@ resource "google_logging_metric" "http_requests" {
 }
 
 resource "google_logging_metric" "http_5xx" {
-  count = length(local.gcp_vms) == 0 ? 0 : 1
+  count = length(local.gcp_workload_vms) == 0 ? 0 : 1
 
   project     = var.config.cloud_settings.gcp.project_id
   name        = "${local.resource_prefix}-http-5xx"
@@ -109,7 +109,7 @@ resource "google_monitoring_alert_policy" "vm_unavailable" {
 }
 
 resource "google_monitoring_alert_policy" "http_5xx" {
-  count = length(local.gcp_vms) == 0 ? 0 : 1
+  count = length(local.gcp_workload_vms) == 0 ? 0 : 1
 
   project      = var.config.cloud_settings.gcp.project_id
   display_name = "${local.resource_prefix}-http-5xx"
@@ -174,7 +174,7 @@ resource "google_monitoring_uptime_check_config" "https" {
 }
 
 resource "google_monitoring_alert_policy" "https_unavailable" {
-  for_each = google_monitoring_uptime_check_config.https
+  for_each = local.gcp_ui
 
   project      = var.config.cloud_settings.gcp.project_id
   display_name = "${local.resource_prefix}-https-unavailable"
@@ -185,7 +185,7 @@ resource "google_monitoring_alert_policy" "https_unavailable" {
     display_name = "Most HTTPS probes fail for two minutes"
 
     condition_threshold {
-      filter          = "resource.type=\"uptime_url\" AND metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id=\"${each.value.uptime_check_id}\""
+      filter          = "resource.type=\"uptime_url\" AND metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id=\"${google_monitoring_uptime_check_config.https[each.key].uptime_check_id}\""
       comparison      = "COMPARISON_LT"
       threshold_value = 0.5
       duration        = "120s"

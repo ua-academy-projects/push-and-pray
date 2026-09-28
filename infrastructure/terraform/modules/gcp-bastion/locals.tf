@@ -29,7 +29,7 @@ locals {
       subnet_id             = var.networks[local.location].public_subnet_id
       assign_public_ip      = true
       provider_tags         = ["${local.context.resource_prefix}-${local.location}-bastion"]
-      service_account_email = null
+      service_account_email = var.service_account_emails.bastion
       data_disks            = {}
       cloud_init            = local.cloud_init
       boot_disk = merge(var.config.bastion.boot_disk, {

@@ -3,28 +3,36 @@ locals {
 
   service_account_roles = {
     for grant in flatten([
-      for vm_name, email in var.service_account_emails : [
+      for vm_name in keys(local.gcp_vms) : [
         for role in var.writer_roles : {
           key   = "${vm_name}/${role}"
-          email = email
+          email = var.service_account_emails[vm_name]
           role  = role
         }
       ]
     ]) : grant.key => grant
   }
 
-  gcp_vms = {
+  gcp_workload_vms = {
     for name, vm in var.config.vms : name => vm
     if lookup(vm, "cloud", var.config.default_cloud) == "gcp"
   }
 
+  gcp_bastion_vms = lookup(var.config.bastion, "cloud", var.config.default_cloud) == "gcp" ? {
+    bastion = merge(var.config.bastion, {
+      tags = ["bastion"]
+    })
+  } : {}
+
+  gcp_vms = merge(local.gcp_workload_vms, local.gcp_bastion_vms)
+
   gcp_ui = {
-    for name, vm in local.gcp_vms : name => vm
+    for name, vm in local.gcp_workload_vms : name => vm
     if contains(vm.tags, "ui")
   }
 
   notification_channels = compact([
-    var.config.monitoring.gcp.notification_channel_id,
+    try(var.config.monitoring.gcp.notification_channel_id, null),
   ])
 
   monitoring_instance_filter = join(" OR ", [
@@ -33,8 +41,9 @@ locals {
   ])
 
   logging_instance_filter = join(" OR ", [
-    for instance_id in values(var.instance_ids) :
+    for name, instance_id in var.instance_ids :
     "resource.labels.instance_id=\"${instance_id}\""
+    if contains(keys(local.gcp_workload_vms), name)
   ])
 
   vm_metric_alerts = {

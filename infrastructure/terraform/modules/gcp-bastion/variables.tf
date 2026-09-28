@@ -11,3 +11,8 @@ variable "networks" {
     private_subnet_id = string
   }))
 }
+
+variable "service_account_emails" {
+  description = "Service account email addresses keyed by logical GCP VM name."
+  type        = map(string)
+}

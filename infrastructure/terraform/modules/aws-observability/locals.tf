@@ -1,12 +1,22 @@
 locals {
   resource_prefix = var.config.name_prefix
 
-  aws_vms = {
+  aws_workload_vms = {
     for name, vm in var.config.vms : name => merge(vm, {
       location = lookup(vm, "location", var.config.default_location)
     })
     if lookup(vm, "cloud", var.config.default_cloud) == "aws"
   }
+
+  bastion_location = lookup(var.config.bastion, "location", var.config.default_location)
+  aws_bastion_vms = lookup(var.config.bastion, "cloud", var.config.default_cloud) == "aws" ? {
+    bastion = merge(var.config.bastion, {
+      location = local.bastion_location
+      tags     = ["bastion"]
+    })
+  } : {}
+
+  aws_vms = merge(local.aws_workload_vms, local.aws_bastion_vms)
 
   regions = toset([
     for vm in values(local.aws_vms) :
@@ -118,7 +128,7 @@ locals {
   }
 
   aws_ui = {
-    for name, vm in local.aws_vms : name => vm
+    for name, vm in local.aws_workload_vms : name => vm
     if contains(vm.tags, "ui")
   }
 

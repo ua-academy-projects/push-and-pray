@@ -23,7 +23,7 @@ locals {
       resource_name      = "${local.context.resource_prefix}-bastion"
       subnet_id          = var.networks[local.location].public_subnet_id
       security_group_ids = [var.security_group_ids[local.location].bastion]
-      instance_profile   = null
+      instance_profile   = var.instance_profiles.bastion
       key_name           = var.bootstrap_key_names[local.location]
       assign_public_ip   = true
       tags               = ["bastion"]

@@ -22,3 +22,8 @@ variable "bootstrap_key_names" {
   description = "AWS key pair names keyed by logical location."
   type        = map(string)
 }
+
+variable "instance_profiles" {
+  description = "IAM instance profile names keyed by logical AWS VM name."
+  type        = map(string)
+}
