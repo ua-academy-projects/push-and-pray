@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Apply K3s sysctl settings
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - --system
+  changed_when: true

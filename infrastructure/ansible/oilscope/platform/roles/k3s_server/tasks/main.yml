@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Render the K3s server configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_server_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  register: k3s_server_config
+  no_log: true
+
+- name: Check the installed K3s server version
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - --version
+  register: k3s_server_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Install the pinned K3s server release
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_server_installer_path }}"
+  environment:
+    INSTALL_K3S_EXEC: server
+    INSTALL_K3S_SKIP_START: "true"
+    INSTALL_K3S_VERSION: "{{ k3s_server_version }}"
+  when: >-
+    k3s_server_installed_version.rc != 0
+    or k3s_server_version not in k3s_server_installed_version.stdout
+  changed_when: true
+
+- name: Enable and start the K3s server
+  ansible.builtin.systemd_service:
+    name: "{{ k3s_server_service }}"
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if k3s_server_config.changed else 'started' }}"
+
+- name: Wait for the local K3s API
+  ansible.builtin.wait_for:
+    host: "{{ internal_ip }}"
+    port: "{{ resolve_secrets_config.k3s.api_server.port }}"
+    state: started
+    timeout: "{{ k3s_server_api_wait_timeout }}"
+
+- name: Wait for the load-balanced K3s API after bootstrap
+  ansible.builtin.wait_for:
+    host: "{{ resolve_secrets_config.k3s.api_server.internal_ip }}"
+    port: "{{ resolve_secrets_config.k3s.api_server.port }}"
+    state: started
+    timeout: "{{ k3s_server_api_wait_timeout }}"
+  when: k3s_server_cluster_init | bool

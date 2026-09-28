@@ -1,0 +1,22 @@
+# Managed by Ansible. Manual changes will be overwritten.
+token: {{ k3s_common_token | to_json }}
+node-name: {{ inventory_hostname | to_json }}
+node-ip: {{ internal_ip | to_json }}
+advertise-address: {{ internal_ip | to_json }}
+{% if k3s_server_cluster_init | bool %}
+cluster-init: true
+{% else %}
+server: {{ k3s_server_api_url | trim | to_json }}
+{% endif %}
+tls-san:
+  - {{ resolve_secrets_config.k3s.api_server.internal_ip | to_json }}
+cluster-cidr: {{ resolve_secrets_config.k3s.cluster_cidr | to_json }}
+service-cidr: {{ resolve_secrets_config.k3s.service_cidr | to_json }}
+cluster-dns: {{ resolve_secrets_config.k3s.cluster_dns | to_json }}
+flannel-backend: {{ resolve_secrets_config.k3s.flannel_backend | to_json }}
+secrets-encryption: true
+write-kubeconfig-mode: "0600"
+node-label:
+  - "oilscope.io/role=server"
+node-taint:
+  - "node-role.kubernetes.io/control-plane=true:NoSchedule"

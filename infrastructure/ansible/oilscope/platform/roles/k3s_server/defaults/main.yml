@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_server_cluster_init: false
+k3s_server_installer_path: /usr/local/src/install-k3s.sh
+k3s_server_config_path: /etc/rancher/k3s/config.yaml
+k3s_server_service: k3s
+k3s_server_api_wait_timeout: 300
+k3s_server_version: "{{ resolve_secrets_config.k3s.version }}"
+k3s_server_api_url: "https://{{ hostvars[(groups['k3s-server'] | sort | first)]['internal_ip'] }}:{{ resolve_secrets_config.k3s.api_server.port }}"

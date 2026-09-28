@@ -34,6 +34,57 @@ The playbook:
 The inventory groups select the monitoring agent automatically. The deployment
 stops if a stage fails, preventing dependent workloads from being deployed.
 
+## Bootstrap a K3s cluster
+
+K3s uses a separate playbook from the Compose application deployment. After
+Terraform has created the bastion, three server nodes, two agent nodes, and the
+private API load balancer, create one persistent cluster token and upload it to
+the cloud secret manager:
+
+```bash
+export K3S_TOKEN="$(openssl rand -hex 32)"
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -i localhost, \
+  -e secret_versions_config_file="$PWD/project-config.json"
+```
+
+Keep the token in an independent recovery source. Reuse it on later runs; do
+not generate a new value unless deliberately rotating the cluster token.
+
+Bootstrap the embedded-etcd cluster and join the worker agents:
+
+```bash
+ansible-playbook oilscope.platform.k3s \
+  -i infrastructure/ansible/inventory/oilscope.yml
+```
+
+The playbook installs the version pinned in `project-config.json`, initializes
+the first server, joins the remaining servers one at a time through that
+server's private address, joins the agents through the private load balancer,
+waits for every node to become Ready, and writes the administrator kubeconfig
+to `~/.kube/oilscope-<environment>.yaml`.
+All server nodes are tainted `NoSchedule`, so application workloads are placed
+on the agents unless they explicitly tolerate the control-plane taint.
+
+The kubeconfig deliberately retains K3s's `https://127.0.0.1:6443` endpoint.
+Keep the API private and reach it through the bastion from a second terminal:
+
+```bash
+ssh -N -L 6443:10.10.1.5:6443 \
+  -p 8787 andri@<BASTION_PUBLIC_IP>
+```
+
+Then verify the cluster locally:
+
+```bash
+KUBECONFIG="$HOME/.kube/oilscope-dev.yaml" kubectl get nodes -o wide
+```
+
+The IP address, SSH port, user, and environment-specific filename in these
+examples come from the current `project-config.json`; adjust them when using
+another configuration.
+
 ## Upload secret versions
 
 Terraform creates the AWS and GCP secret containers and the Azure Key Vault,

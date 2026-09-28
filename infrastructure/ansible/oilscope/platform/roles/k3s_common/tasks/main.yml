@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Store the K3s token for subsequent roles
+  ansible.builtin.set_fact:
+    k3s_common_token: "{{ resolve_secrets_result.K3S_TOKEN }}"
+  no_log: true
+
+- name: Install K3s host prerequisites
+  ansible.builtin.apt:
+    name: "{{ k3s_common_packages }}"
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+
+- name: Disable active swap
+  ansible.builtin.command:
+    argv:
+      - swapoff
+      - --all
+  when: ansible_swaptotal_mb | int > 0
+  changed_when: true
+
+- name: Disable configured swap persistently
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(?!#)(.+\s+swap\s+.+)$'
+    replace: '# \1'
+
+- name: Configure K3s kernel modules at boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k3s.conf
+    content: "{{ k3s_common_kernel_modules | join('\n') }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Load the required K3s kernel modules
+  ansible.builtin.command:
+    argv:
+      - modprobe
+      - "{{ item }}"
+  loop: "{{ k3s_common_kernel_modules }}"
+  changed_when: false
+
+- name: Configure K3s kernel networking parameters
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-k3s.conf
+    content: |
+      {% for key, value in k3s_common_sysctl.items() %}
+      {{ key }} = {{ value }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply K3s sysctl settings
+
+- name: Create the K3s configuration directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Download the official K3s installer
+  ansible.builtin.get_url:
+    url: "{{ k3s_common_installer_url }}"
+    dest: "{{ k3s_common_installer_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  register: k3s_common_installer
+  retries: 3
+  delay: 5
+  until: k3s_common_installer is succeeded

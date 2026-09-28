@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Prepare every K3s node
+  hosts: k3s-server:k3s-agent
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+    - role: oilscope.platform.k3s_common
+
+- name: Bootstrap the first K3s server
+  hosts: k3s-server
+  order: sorted
+  become: true
+  gather_facts: false
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.k3s_server
+      when: inventory_hostname == (groups['k3s-server'] | sort | first)
+      vars:
+        k3s_server_cluster_init: true
+
+- name: Join the remaining K3s servers
+  hosts: k3s-server
+  order: sorted
+  become: true
+  gather_facts: false
+  force_handlers: true
+  any_errors_fatal: true
+  serial: 1
+  roles:
+    - role: oilscope.platform.k3s_server
+      when: inventory_hostname != (groups['k3s-server'] | sort | first)
+
+- name: Join the K3s agents
+  hosts: k3s-agent
+  become: true
+  gather_facts: false
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.k3s_agent
+
+- name: Verify the cluster and retrieve its kubeconfig
+  hosts: k3s-server
+  order: sorted
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Verify from the first K3s server
+      when: inventory_hostname == (groups['k3s-server'] | sort | first)
+      block:
+        - name: Wait for every configured K3s node to register
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - get
+              - nodes
+              - --output=json
+          changed_when: false
+          register: k3s_registered_nodes
+          retries: 30
+          delay: 10
+          until: >-
+            (k3s_registered_nodes.stdout | from_json)['items'] | length
+            == ((groups['k3s-server'] | length) + (groups['k3s-agent'] | length))
+
+        - name: Wait for every K3s node to become Ready
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - wait
+              - --for=condition=Ready
+              - node
+              - --all
+              - --timeout=300s
+          changed_when: false
+
+        - name: Read the final K3s node status
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - get
+              - nodes
+              - --output=wide
+          changed_when: false
+          register: k3s_node_status
+
+        - name: Display the final K3s node status
+          ansible.builtin.debug:
+            var: k3s_node_status.stdout_lines
+
+        - name: Create the local kubeconfig directory
+          become: false
+          ansible.builtin.file:
+            path: "{{ k3s_kubeconfig_local_path | dirname }}"
+            state: directory
+            mode: "0700"
+          delegate_to: localhost
+
+        - name: Retrieve the K3s administrator kubeconfig
+          ansible.builtin.fetch:
+            src: /etc/rancher/k3s/k3s.yaml
+            dest: "{{ k3s_kubeconfig_local_path }}"
+            flat: true
+          no_log: true
+
+        - name: Protect the local kubeconfig
+          become: false
+          ansible.builtin.file:
+            path: "{{ k3s_kubeconfig_local_path }}"
+            mode: "0600"
+          delegate_to: localhost
+  vars:
+    k3s_kubeconfig_local_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/oilscope-{{ resolve_secrets_config.environment }}.yaml"

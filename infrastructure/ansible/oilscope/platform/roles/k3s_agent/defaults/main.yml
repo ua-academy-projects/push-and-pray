@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_agent_installer_path: /usr/local/src/install-k3s.sh
+k3s_agent_config_path: /etc/rancher/k3s/config.yaml
+k3s_agent_service: k3s-agent
+k3s_agent_version: "{{ resolve_secrets_config.k3s.version }}"
+k3s_agent_api_url: "https://{{ resolve_secrets_config.k3s.api_server.internal_ip }}:{{ resolve_secrets_config.k3s.api_server.port }}"

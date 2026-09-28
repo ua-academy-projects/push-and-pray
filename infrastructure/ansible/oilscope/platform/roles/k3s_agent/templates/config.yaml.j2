@@ -1,0 +1,7 @@
+# Managed by Ansible. Manual changes will be overwritten.
+token: {{ k3s_common_token | to_json }}
+server: {{ k3s_agent_api_url | trim | to_json }}
+node-name: {{ inventory_hostname | to_json }}
+node-ip: {{ internal_ip | to_json }}
+node-label:
+  - "oilscope.io/role=agent"

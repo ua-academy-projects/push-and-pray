@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_common_installer_url: https://get.k3s.io
+k3s_common_installer_path: /usr/local/src/install-k3s.sh
+k3s_common_packages:
+  - ca-certificates
+  - curl
+  - iptables
+k3s_common_kernel_modules:
+  - overlay
+  - br_netfilter
+k3s_common_sysctl:
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.ip_forward: 1
