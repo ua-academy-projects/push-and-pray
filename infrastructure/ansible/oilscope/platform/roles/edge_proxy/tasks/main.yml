@@ -78,7 +78,7 @@
       - --detach
       - --wait
       - --wait-timeout
-      - "60"
+      - "{{ edge_proxy_wait_timeout | string }}"
       - traefik
   args:
     chdir: "{{ edge_proxy_dir }}"
