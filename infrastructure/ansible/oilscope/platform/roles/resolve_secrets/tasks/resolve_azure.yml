@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Select the Azure Key Vault
+  ansible.builtin.set_fact:
+    resolve_secrets_azure_vault: >-
+      {{ resolve_secrets_azure_key_vault_name
+         | default(resolve_secrets_azure_default_key_vault_name, true) }}
+  vars:
+    resolve_secrets_azure_subscription_suffix: >-
+      {{ (resolve_secrets_config.cloud_settings.azure.subscription_id
+          | replace('-', ''))[0:8] }}
+    resolve_secrets_azure_default_key_vault_name: >-
+      {{ ((resolve_secrets_config.name_prefix
+           ~ '-' ~ resolve_secrets_config.environment
+           ~ '-' ~ resolve_secrets_azure_subscription_suffix)[0:24])
+         | trim('-') | lower }}
+
+- name: Fetch an Azure managed-identity access token
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_azure_metadata_url
+         }}?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net
+    headers:
+      Metadata: "true"
+    return_content: true
+    use_proxy: false
+  register: resolve_secrets_azure_token
+  no_log: true
+
+- name: Read each Azure secret version
+  ansible.builtin.uri:
+    url: >-
+      https://{{ resolve_secrets_azure_vault
+      }}.vault.azure.net/secrets/{{ item.value
+      }}?api-version={{ resolve_secrets_azure_key_vault_api_version }}
+    headers:
+      Authorization: >-
+        Bearer {{ (resolve_secrets_azure_token.content | from_json).access_token }}
+    return_content: true
+  register: resolve_secrets_azure_accessed
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Build the resolved Azure secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | combine({
+           item.item.key: (item.content | from_json).value
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_azure_accessed.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

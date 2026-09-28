@@ -6,6 +6,10 @@ secret_versions_config_file: "{{ project_config_path | default('') }}"
 # Optional GCP project override. The project configuration is used by default.
 secret_versions_gcp_project_id: ""
 
+# Optional Azure Key Vault name override. Terraform's deterministic name is
+# derived from the project configuration by default.
+secret_versions_azure_key_vault_name: ""
+
 # Upload a subset. Entries match a container ID or a variable name.
 secret_versions_only: []
 
@@ -15,4 +19,6 @@ secret_versions_only: []
 secret_versions_force_upload: false
 
 secret_versions_gcloud: gcloud
+secret_versions_az: az
+secret_versions_azure_key_vault_api_version: "7.4"
 secret_versions_python: "{{ ansible_playbook_python }}"

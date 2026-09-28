@@ -7,5 +7,10 @@ resolve_secrets_gcp_metadata_url: >-
   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 resolve_secrets_gcp_secretmanager_url: https://secretmanager.googleapis.com/v1
 
+resolve_secrets_azure_key_vault_name: ""
+resolve_secrets_azure_metadata_url: >-
+  http://169.254.169.254/metadata/identity/oauth2/token
+resolve_secrets_azure_key_vault_api_version: "7.4"
+
 resolve_secrets_aws_python: /usr/bin/python3
 resolve_secrets_aws_boto3_package: python3-boto3

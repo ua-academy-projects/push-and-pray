@@ -80,6 +80,26 @@
       {{ secret_versions_absent | join(', ') }}
   when: secret_versions_absent | length > 0
 
+- name: Obtain an Azure Key Vault access token
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_az }}"
+      - account
+      - get-access-token
+      - --resource
+      - https://vault.azure.net
+      - --query
+      - accessToken
+      - --output
+      - tsv
+  register: secret_versions_azure_token
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: >-
+    secret_versions_catalog
+    | selectattr('cloud', 'equalto', 'azure') | list | length > 0
+
 - name: Verify every secret container
   ansible.builtin.include_tasks: "validate_{{ secret_versions_target.cloud }}.yml"
   loop: "{{ secret_versions_catalog }}"

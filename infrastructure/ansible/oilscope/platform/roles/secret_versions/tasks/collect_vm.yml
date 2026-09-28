@@ -33,7 +33,18 @@
       {{ secret_versions_gcp_project_id
          | default(secret_versions_config.cloud_settings.gcp.project_id, true)
          if secret_versions_vm_cloud == 'gcp'
-         else secret_versions_config.locations[secret_versions_vm_location].aws.region }}
+         else (secret_versions_azure_key_vault_name
+               | default(secret_versions_azure_default_key_vault_name, true)
+               if secret_versions_vm_cloud == 'azure'
+               else secret_versions_config.locations[secret_versions_vm_location].aws.region) }}
     secret_versions_target_key: >-
       {{ secret_versions_vm_cloud ~ '/' ~ secret_versions_target_scope
          ~ '/' ~ secret_versions_secret_id }}
+    secret_versions_azure_subscription_suffix: >-
+      {{ (secret_versions_config.cloud_settings.azure.subscription_id
+          | replace('-', ''))[0:8] }}
+    secret_versions_azure_default_key_vault_name: >-
+      {{ ((secret_versions_config.name_prefix
+           ~ '-' ~ secret_versions_config.environment
+           ~ '-' ~ secret_versions_azure_subscription_suffix)[0:24])
+         | trim('-') | lower }}

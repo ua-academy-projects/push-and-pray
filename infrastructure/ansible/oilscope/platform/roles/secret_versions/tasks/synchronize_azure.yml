@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Compare the current Azure secret version
+  ansible.builtin.command:
+    argv:
+      - "{{ secret_versions_python }}"
+      - -c
+      - |
+        import hmac
+        import json
+        import os
+        import sys
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        vault = urllib.parse.quote(sys.argv[1], safe="")
+        secret = urllib.parse.quote(sys.argv[2], safe="")
+        version = urllib.parse.quote(sys.argv[3], safe="")
+        url = f"https://{vault}.vault.azure.net/secrets/{secret}?api-version={version}"
+        request = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {os.environ['AZURE_KEY_VAULT_TOKEN']}"},
+        )
+        desired = sys.stdin.buffer.read()
+        try:
+            with urllib.request.urlopen(request) as response:
+                current = json.load(response).get("value")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                print("missing")
+                raise SystemExit(0)
+            raise
+
+        matches = current is not None and hmac.compare_digest(current.encode(), desired)
+        print("same" if matches else "different")
+      - "{{ secret_versions_target.scope }}"
+      - "{{ secret_versions_target.secret_id }}"
+      - "{{ secret_versions_azure_key_vault_api_version }}"
+    stdin: "{{ lookup('ansible.builtin.env', secret_versions_target.variable) }}"
+    stdin_add_newline: false
+  environment:
+    AZURE_KEY_VAULT_TOKEN: "{{ secret_versions_azure_token.stdout | trim }}"
+  register: secret_versions_azure_comparison
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Add the required Azure secret version
+  ansible.builtin.include_tasks: upload_azure.yml
+  when:
+    - not ansible_check_mode
+    - >-
+      secret_versions_force_upload | bool
+      or secret_versions_azure_comparison.stdout | trim != 'same'
+
+- name: Report the current Azure secret version
+  ansible.builtin.debug:
+    msg: "{{ secret_versions_target.key }} already has the requested value"
+  when:
+    - not secret_versions_force_upload | bool
+    - secret_versions_azure_comparison.stdout | trim == 'same'
