@@ -1,9 +1,9 @@
 # Resolve secrets role
 
-Reads the current host's configured secrets from AWS Secrets Manager or Google
-Secret Manager by using the VM's attached cloud identity. It runs on the
-workload VM during deployment and returns an in-memory dictionary for the
-application roles.
+Reads the current host's configured secrets from AWS Secrets Manager, Azure Key
+Vault, or Google Secret Manager by using the VM's attached cloud identity. It
+runs on the workload VM during deployment and returns an in-memory dictionary
+for the application roles.
 
 The dynamic inventory supplies `oilscope_vm_name` and `oilscope_cloud`. The role
 uses those values to select the exact `vms` entry and its `secret_mappings`; it
@@ -14,6 +14,9 @@ does not infer authorization from Ansible groups or tags.
 - AWS uses the instance profile and the standard boto3 credential chain. The
   role installs Ubuntu's `python3-boto3` package and requests each secret from
   the VM's effective region.
+- Azure obtains a Key Vault access token from the Instance Metadata Service by
+  using the VM's user-assigned managed identity, then reads each mapped secret's
+  current version.
 - GCP obtains an access token for the attached service account from the metadata
   server and requests each secret's `latest` version from the configured
   project.
@@ -28,6 +31,12 @@ VM. No operator credential is copied to a workload host.
 - `resolve_secrets_gcp_project_id`: optional GCP project override.
 - `resolve_secrets_gcp_metadata_url`: GCP metadata token endpoint.
 - `resolve_secrets_gcp_secretmanager_url`: GCP Secret Manager API base URL.
+- `resolve_secrets_azure_key_vault_name`: optional Azure Key Vault name
+  override. By default, the role derives Terraform's deterministic name.
+- `resolve_secrets_azure_metadata_url`: Azure Instance Metadata Service identity
+  endpoint.
+- `resolve_secrets_azure_key_vault_api_version`: Azure Key Vault data-plane API
+  version, default `7.4`.
 - `resolve_secrets_aws_python`: system Python used on AWS, default
   `/usr/bin/python3`.
 - `resolve_secrets_aws_boto3_package`: Ubuntu package providing boto3, default

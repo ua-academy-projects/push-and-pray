@@ -19,7 +19,7 @@ Each VM declares the application variable name and secret container ID:
 
 Both strings are identifiers, not secrets. The key is the variable consumed by
 the application on that VM. The value is the container ID in AWS Secrets
-Manager or Google Secret Manager.
+Manager or Google Secret Manager, or the Azure Key Vault secret name.
 
 Mappings must describe only the services used by the selected database
 architecture. Self-managed database deployments use PostgreSQL for PGMQ and UI
@@ -28,10 +28,12 @@ deployments additionally map
 `RABBITMQ_PASSWORD` on the Infrastructure, History, and Fetcher VMs and
 `REDIS_PASSWORD` on the Infrastructure and UI VMs.
 
-Terraform derives the containers and least-privilege read grants from this
-mapping. The same container ID may be shared by several VMs in one provider
-scope. AWS containers are regional, so the effective VM location determines the
-region; GCP containers are scoped to `cloud_settings.gcp.project_id`.
+Terraform derives the containers and workload read grants from this mapping.
+The same container ID may be shared by several VMs in one provider scope. AWS
+containers are regional, so the effective VM location determines the region;
+GCP containers are scoped to `cloud_settings.gcp.project_id`. On Azure, each
+workload with mappings receives the Key Vault Secrets User role at vault scope;
+secret-level scopes cannot be assigned before automation creates the secrets.
 
 ## Responsibilities
 
@@ -39,6 +41,7 @@ region; GCP containers are scoped to `cloud_settings.gcp.project_id`.
 | --- | --- |
 | Terraform AWS secrets module | Create regional containers, EC2 roles and instance profiles, and `GetSecretValue` policies |
 | Terraform GCP secrets module | Create project containers and VM service accounts, and grant secret accessor membership |
+| Terraform Azure secrets module | Create a Key Vault and workload managed identities, and grant vault secret-reader roles; secret values and names are created later by automation |
 | `secret_versions` Ansible role | Reconcile environment values with the latest enabled versions in every required cloud and scope |
 | `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
 
@@ -53,6 +56,11 @@ does not support rotating the password of an existing managed database in
 place; recreate the development database when changing `DB_PASSWORD`. The
 providers require an internal write-only password version, which is fixed at
 `1` in Terraform and is not a project configuration option.
+
+The Azure Terraform path creates the Key Vault and access roles but no secret
+objects because an Azure Key Vault secret cannot exist without a value. The
+first Ansible synchronization creates each mapped secret and its initial
+version; later synchronizations add a version only when its value changes.
 
 ## Uploading values
 
@@ -69,11 +77,13 @@ One source value is uploaded to every cloud/scope target that references that
 container ID. Use different container IDs when different clouds or workloads
 must receive different values.
 
-The controller needs both provider toolchains when the configuration contains
-both clouds:
+The controller needs the corresponding provider toolchain for every cloud in
+the configuration:
 
 - AWS: boto3 in Ansible's Python and normal AWS credential resolution, such as
   `AWS_PROFILE`.
+- Azure: an authenticated Azure CLI session, normally established with
+  `az login` and the subscription selected by the project configuration.
 - GCP: an authenticated `gcloud` session.
 
 The operator also needs permission to describe containers, read current
@@ -146,6 +156,9 @@ VM's mappings.
 
 - On AWS, boto3 uses the attached EC2 instance profile and reads from the VM's
   effective region.
+- On Azure, the role obtains a Key Vault token from the Instance Metadata
+  Service through the VM's user-assigned managed identity and reads the current
+  secret version from the deployment's vault.
 - On GCP, the role obtains a token for the attached service account from the
   metadata server and reads the `latest` version from Secret Manager.
 

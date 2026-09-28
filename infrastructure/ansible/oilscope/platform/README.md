@@ -27,7 +27,8 @@ The playbook:
 
 1. Synchronizes changed or missing cloud secret versions.
 2. Prepares workload hosts with the baseline and Docker Engine.
-3. Installs the CloudWatch Agent on AWS hosts or the Ops Agent on GCP hosts.
+3. Installs the CloudWatch Agent on AWS hosts, the Ops Agent on GCP hosts, or
+   the Azure Monitor Agent VM extension on Azure hosts.
 4. Deploys Infrastructure, History, Fetcher, and UI in dependency order.
 
 The inventory groups select the monitoring agent automatically. The deployment
@@ -35,9 +36,10 @@ stops if a stage fails, preventing dependent workloads from being deployed.
 
 ## Upload secret versions
 
-Terraform creates the AWS and GCP secret containers, but it does not store
-their values. The general deployment only adds a version when the latest
-enabled value differs. Force a new version for deliberate rotation with:
+Terraform creates the AWS and GCP secret containers and the Azure Key Vault,
+but it does not store their values. The general deployment only adds a version
+when the latest enabled value differs. Force a new version for deliberate
+rotation with:
 
 ```bash
 ansible-playbook oilscope.platform.upload_secret_versions \
@@ -82,6 +84,21 @@ The playbook publishes host metrics to the `OilScope` CloudWatch namespace,
 sends system logs from every AWS instance, and sends Docker JSON logs from
 workload instances. It does not restart the application containers. See the
 [`aws_cloudwatch_agent` role](roles/aws_cloudwatch_agent/README.md) for details.
+
+## Configure Azure observability
+
+To reconcile only the Azure Monitor Agent extension after Terraform has
+created the Log Analytics workspace and DCR associations, run:
+
+```bash
+ansible-playbook oilscope.platform.configure_azure_observability \
+  -i infrastructure/ansible/inventory/oilscope.yml
+```
+
+The playbook installs the native VM extension on every Azure VM through the
+Azure API. Azure workload Compose definitions send container output directly
+through the AMA-collected `local0` facility. See the
+[`azure_monitor_agent` role](roles/azure_monitor_agent/README.md) for details.
 
 The UI deployment enables JSON Traefik access logs. Terraform derives request
 and HTTP 5xx metrics from those records and creates the provider-specific VM and

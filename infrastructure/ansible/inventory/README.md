@@ -2,8 +2,8 @@
 
 `oilscope.yml` discovers the live virtual machines described by the same
 `project-config.json` that Terraform reads. The top-level `bastion` object and
-the workload machines in `vms` are normalized into one inventory. The inventory source is independent
-of the selected environment and of whether its VMs use GCP, AWS, or both.
+the workload machines in `vms` are normalized into one inventory. The inventory source is independent of the selected environment and of whether
+its VMs use AWS, Azure, GCP, or a combination of them.
 
 The inventory is dynamic in the Ansible sense: it is rebuilt when an Ansible
 command loads it. It does not poll in the background.
@@ -16,6 +16,7 @@ the top-level defaults. It then:
 
 - queries `google.cloud.gcp_compute` for the GCP projects and zones in use;
 - queries `amazon.aws.aws_ec2` for the AWS regions in use;
+- queries `azure.azcollection.azure_rm` for the Azure resource group in use;
 - skips a provider when no configured VM uses it;
 - keeps only live instances whose Terraform resource names match configured
   VMs;
@@ -37,6 +38,13 @@ pipx runpip ansible-core install \
   -r infrastructure/ansible/requirements.txt
 
 ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+```
+
+Install the Azure collection dependency set into the same pipx environment:
+
+```sh
+pipx runpip ansible-core install \
+  -r "$HOME/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt"
 ```
 
 Build and install this repository's collection:
@@ -63,9 +71,17 @@ For AWS, use the normal AWS credential chain. To select a named profile:
 export AWS_PROFILE=your-aws-profile
 ```
 
-Both credentials must be available when the current configuration contains VMs
-in both clouds. Only the credential for the selected cloud is needed when all
-VMs use one provider.
+For Azure, authenticate the CLI and select the subscription declared in the
+project configuration:
+
+```sh
+az login
+az account set --subscription <subscription-id>
+```
+
+Credentials must be available for every provider used by the current
+configuration. Only the selected provider credential is needed when all VMs use
+one cloud.
 
 ## Select the project configuration
 
@@ -90,8 +106,8 @@ ansible-inventory \
   --list
 ```
 
-Hosts appear only after `terraform apply`. A mixed-cloud test should show both
-the `aws` and `gcp` groups. Functional tags create groups such as `bastion`,
+Hosts appear only after `terraform apply`. A mixed-cloud test should show the
+corresponding `aws`, `azure`, and `gcp` groups. Functional tags create groups such as `bastion`,
 `infrastructure`, `history`, `fetcher`, and `ui`; every non-bastion also joins
 `workloads`.
 
@@ -103,10 +119,14 @@ Every discovered host receives:
 | --- | --- |
 | `internal_ip` | address from the VM's JSON configuration |
 | `public_ip` | current address discovered from the provider |
-| `oilscope_cloud` | `aws` or `gcp` |
+| `oilscope_cloud` | `aws`, `azure`, or `gcp` |
 | `oilscope_location` | logical location key from the configuration |
 | `oilscope_tags` | functional tags from the VM definition |
 | `oilscope_vm_name` | workload key from `vms`, or `bastion` for the top-level bastion |
+| `oilscope_azure_subscription_id` | Azure subscription containing the VM; Azure hosts only |
+| `oilscope_azure_resource_group` | Azure resource group containing the VM; Azure hosts only |
+| `oilscope_azure_location` | Azure region containing the VM; Azure hosts only |
+| `oilscope_azure_identity_id` | user-assigned identity resource ID used by AMA; Azure hosts only |
 | `ansible_user` | provider-appropriate or explicitly overridden SSH user |
 | `ansible_ssh_common_args` | environment-specific host-key and bastion routing options |
 | `ansible_ssh_private_key_file` | optional key path from `OILSCOPE_SSH_KEY` |
@@ -119,8 +139,8 @@ address and port 22.
 
 The inventory plugin emits SSH connection variables directly; no inventory
 `group_vars` files are required. AWS hosts connect as `ubuntu`, matching the
-configured Ubuntu AMIs. GCP hosts use the alphabetically first username from
-`ssh_users` in `project-config.json`. Override either default when necessary:
+configured Ubuntu AMIs. Azure and GCP hosts use the alphabetically first
+username from `ssh_users` in `project-config.json`. Override either default when necessary:
 
 ```sh
 export OILSCOPE_SSH_USER=andri
@@ -153,8 +173,11 @@ deployment, the bastion and its private workloads must be mutually reachable.
 | `unknown plugin 'oilscope.platform.oilscope_cloud'` | rebuild and reinstall this repository's collection |
 | `unknown plugin 'google.cloud.gcp_compute'` | install `requirements.yml` |
 | `unknown plugin 'amazon.aws.aws_ec2'` | install `requirements.yml` |
-| missing `google-auth`, `boto3`, `botocore`, or `awscrt` | install `requirements.txt` with `pipx runpip ansible-core` |
+| `unknown plugin 'azure.azcollection.azure_rm'` | install `requirements.yml` |
+| missing GCP or AWS Python libraries | install `requirements.txt` with `pipx runpip ansible-core` |
+| missing Azure Python libraries | install the Azure collection's `requirements.txt` as shown above |
 | the `aws` group is empty | verify `aws sts get-caller-identity` with the selected profile |
+| the `azure` group is empty | verify `az account show` and the configured subscription |
 | the `gcp` group is empty | verify the active ADC account and configured project |
 | a configured host is absent | confirm Terraform created it with the expected `<prefix>-<environment>-<VM key>` name |
 

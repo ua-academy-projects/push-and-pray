@@ -19,8 +19,8 @@ have already been persisted in PostgreSQL.
 - PostgreSQL- or Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and role-specific Docker Compose projects.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
-- Terraform deployments on AWS and GCP with Ansible-managed workloads and
-  cloud-provider observability.
+- Terraform infrastructure, Ansible-managed workloads, and cloud-provider
+  observability on AWS, GCP, and Azure.
 
 See [Cloud monitoring](docs/monitoring.md) for the Terraform-managed alerts,
 log metrics, HTTPS checks, and manual notification prerequisites.
@@ -61,7 +61,7 @@ log metrics, HTTPS checks, and manual notification prerequisites.
 | Persistence    | PostgreSQL 18                                 |
 | UI sessions    | PostgreSQL extensions or Redis                |
 | Packaging      | Docker Engine and Docker Compose              |
-| Infrastructure | Terraform, AWS, Google Cloud                  |
+| Infrastructure | Terraform, AWS, Google Cloud, Microsoft Azure |
 | Automation     | Ansible                                       |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
@@ -74,9 +74,10 @@ Cloud deployments select one of two database architectures with `database.mode`
 in `project-config.json`. A self-managed database deployment
 (`self_managed`) runs PostgreSQL with PGMQ and the session extensions on the
 infrastructure VM. A managed database deployment (`managed`) provisions private
-Cloud SQL or RDS PostgreSQL, runs RabbitMQ and Redis on the infrastructure VM,
-and uses no PostgreSQL extensions. GCP clients reach Cloud SQL through the Auth
-Proxy with private IP; AWS clients use the private RDS endpoint.
+Cloud SQL, RDS PostgreSQL, or Azure Database for PostgreSQL Flexible Server,
+runs RabbitMQ and Redis on the infrastructure VM, and uses no PostgreSQL
+extensions. GCP clients reach Cloud SQL through the Auth Proxy with private IP;
+AWS and Azure clients use private DNS endpoints with TLS.
 
 | Component        | Responsibility                                                                                    | Owns                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -139,7 +140,7 @@ scientific data source.
 │   ├── ansible/                    Cloud inventory and workload automation
 │   ├── docker/                     Dockerfiles and local Compose files
 │   ├── ssh/                        Example SSH client configuration
-│   ├── terraform/                  AWS and GCP infrastructure modules
+│   ├── terraform/                  AWS, GCP, and Azure infrastructure modules
 │   └── vagrant/
 │       ├── commands/               Host-side deployment commands
 │       ├── config/                 Vagrant configuration template
