@@ -149,14 +149,14 @@ extension.
 
 ## Docker deployment details
 
-The supported production-style deployment pulls prebuilt GHCR images through
-the `oilscope.platform.compose_project` Ansible role. See
-[the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
-required parent-process environment, the one-command startup, independent VM roles,
-shutdown, and smoke test.
+The aggregate cloud deployment provisions generic K3s servers and agents and
+deploys the application as Kubernetes workloads. See the
+[current architecture](docs/architecture-current.md). Individual Compose
+playbooks remain for the older VM path; see the
+[Compose guide](docs/supported-compose-deployment.md).
 
-Public UI HTTPS can be managed end to end with Cloudflare DNS, Terraform,
-Nginx, Certbot, and Let's Encrypt. See
+Public UI HTTPS in K3s uses Cloudflare DNS, cert-manager, Let's Encrypt, and
+Traefik Ingress. See
 [Cloudflare DNS and UI HTTPS](docs/cloudflare-https.md) for the required
 configuration, scoped API-token permissions, and exact deployment commands.
 

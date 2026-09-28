@@ -59,13 +59,26 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "k3s_api" {
-  for_each = local.k3s_agents
+  for_each = local.k3s_nodes
 
   region                       = local.locations[each.value.location].region
-  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "database" : "${each.value.location}/database"].id
+  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "k3s_server" : "${each.value.location}/k3s_server"].id
   referenced_security_group_id = aws_security_group.role[each.key].id
   from_port                    = 6443
   to_port                      = 6443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_etcd" {
+  for_each = {
+    for key, instance in local.role_instances : key => instance if instance.role == "k3s_server"
+  }
+
+  region                       = local.locations[each.value.location].region
+  security_group_id            = aws_security_group.role[each.key].id
+  referenced_security_group_id = aws_security_group.role[each.key].id
+  from_port                    = 2379
+  to_port                      = 2380
   ip_protocol                  = "tcp"
 }
 
@@ -94,59 +107,25 @@ resource "aws_vpc_security_group_ingress_rule" "k3s_kubelet" {
 resource "aws_vpc_security_group_ingress_rule" "database_postgresql" {
   for_each = {
     for key, instance in local.role_instances : key => instance
-    if var.config.database_mode == "postgres_extensions" && contains(["history", "fetcher", "ui"], instance.role) && contains(
+    if var.config.database_mode == "postgres_extensions" && contains(["k3s_server", "k3s_agent"], instance.role) && contains(
       keys(local.role_instances),
-      instance.location == var.config.default_location ? "database" : "${instance.location}/database"
+      instance.location == var.config.default_location ? "k3s_server" : "${instance.location}/k3s_server"
     )
   }
 
   region                       = local.locations[each.value.location].region
-  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "database" : "${each.value.location}/database"].id
+  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "k3s_server" : "${each.value.location}/k3s_server"].id
   referenced_security_group_id = aws_security_group.role[each.key].id
   from_port                    = 5432
   to_port                      = 5432
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "history_rabbitmq" {
-  for_each = {
-    for key, instance in local.role_instances : key => instance
-    if local.managed_database_enabled && instance.role == "fetcher" && contains(
-      keys(local.role_instances),
-      instance.location == var.config.default_location ? "history" : "${instance.location}/history"
-    )
-  }
-
-  region                       = local.locations[each.value.location].region
-  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "history" : "${each.value.location}/history"].id
-  referenced_security_group_id = aws_security_group.role[each.key].id
-  from_port                    = 5672
-  to_port                      = 5672
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "history_http" {
-  for_each = {
-    for key, instance in local.role_instances : key => instance
-    if instance.role == "ui" && contains(
-      keys(local.role_instances),
-      instance.location == var.config.default_location ? "history" : "${instance.location}/history"
-    )
-  }
-
-  region                       = local.locations[each.value.location].region
-  security_group_id            = aws_security_group.role[each.value.location == var.config.default_location ? "history" : "${each.value.location}/history"].id
-  referenced_security_group_id = aws_security_group.role[each.key].id
-  from_port                    = 8001
-  to_port                      = 8001
-  ip_protocol                  = "tcp"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "ui_web" {
-  for_each = local.ui_ports
+resource "aws_vpc_security_group_ingress_rule" "ingress_web" {
+  for_each = local.ingress_ports
 
   region            = local.locations[each.value.location].region
-  security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? "ui" : "${each.value.location}/ui"].id
+  security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? each.value.role : "${each.value.location}/${each.value.role}"].id
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = each.value.port
   to_port           = each.value.port

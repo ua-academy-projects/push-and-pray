@@ -39,6 +39,28 @@
     "database": {
       "$ref": "#/$defs/database"
     },
+    "k3s": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+$",
+          "description": "Desired K3s release on server and agent nodes."
+        },
+        "bootstrap_server": {
+          "type": "string",
+          "description": "Logical VM key of the initial K3s server; defaults to the first sorted server key.",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+        },
+        "api_sans": {
+          "type": "array",
+          "description": "Additional DNS names or IP addresses used to reach the K3s API.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
     "vm_defaults": {
       "$ref": "#/$defs/vm_defaults"
     },
@@ -144,7 +166,7 @@
         "database_subnet_cidrs",
         "database_private_service_prefix_length",
         "enable_bastion_ssh_bootstrap",
-        "ui_public_ports"
+        "ingress_public_ports"
       ],
       "properties": {
         "vpc_cidr": {
@@ -176,7 +198,7 @@
         "enable_bastion_ssh_bootstrap": {
           "type": "boolean"
         },
-        "ui_public_ports": {
+        "ingress_public_ports": {
           "type": "array",
           "items": {
             "type": "integer",
@@ -594,7 +616,7 @@
       "properties": {
         "role": {
           "type": "string",
-          "enum": ["bastion", "database", "history", "fetcher", "ui"]
+          "enum": ["bastion", "k3s_server", "k3s_agent"]
         },
         "cloud": {
           "$ref": "#/$defs/cloud"
@@ -693,7 +715,7 @@
           },
           "then": {
             "properties": {
-              "role": { "enum": ["bastion", "ui"] }
+              "role": { "enum": ["k3s_server", "k3s_agent"] }
             }
           }
         },

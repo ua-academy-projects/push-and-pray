@@ -12,16 +12,35 @@
     secret_versions_existing_keys: []
     secret_versions_generated_values: {}
 
-- name: Collect workload cloud targets
+- name: Select the K3s server that hosts deployment control
+  ansible.builtin.set_fact:
+    secret_versions_server_names: >-
+      {{ secret_versions_config.vms | dict2items
+         | selectattr('value.role', 'defined')
+         | selectattr('value.role', 'equalto', 'k3s_server')
+         | map(attribute='key') | sort | list }}
+
+- name: Select the K3s bootstrap server
+  ansible.builtin.set_fact:
+    secret_versions_primary_server: >-
+      {{ secret_versions_config.get('k3s', {}).get('bootstrap_server')
+         or (secret_versions_server_names | first | default('')) }}
+
+- name: Require a configured K3s bootstrap server
+  ansible.builtin.assert:
+    that: secret_versions_primary_server in secret_versions_server_names
+    fail_msg: k3s.bootstrap_server must name a configured K3s server.
+
+- name: Collect application secret targets in the primary server's provider scope
   ansible.builtin.set_fact:
     secret_versions_targets: >-
       {{ secret_versions_targets + [{
-           'cloud': item.value.cloud | default(secret_versions_config.default_cloud),
-           'location': item.value.location,
-           'role': item.value.role
+           'cloud': secret_versions_config.vms[secret_versions_primary_server].cloud
+                    | default(secret_versions_config.default_cloud),
+           'location': secret_versions_config.vms[secret_versions_primary_server].location,
+           'role': item
          }] }}
-  loop: "{{ secret_versions_config.vms | dict2items }}"
-  when: item.value.role != 'bastion'
+  loop: [database, history, fetcher, ui]
 
 - name: Collect application roles that need secrets
   ansible.builtin.set_fact:
@@ -59,16 +78,15 @@
     label: >-
       {{ item.cloud }}/{{ item.location }}/{{ item.role }}
   vars:
-    secret_versions_runtime_envs: >-
-      {{ ['POSTGRES_PASSWORD', 'HISTORY_POSTGRES_PASSWORD',
-          'FETCHER_POSTGRES_PASSWORD', 'UI_POSTGRES_PASSWORD', 'OILPRICEAPI_KEY']
-         if secret_versions_config.database_mode == 'postgres_extensions'
-         else ['POSTGRES_PASSWORD', 'HISTORY_POSTGRES_PASSWORD',
-               'RABBITMQ_PASSWORD', 'REDIS_PASSWORD', 'OILPRICEAPI_KEY'] }}
+    secret_versions_mode_secret_ids: >-
+      {{ ['db-password-admin', 'db-password-history', 'oilpriceapi-key']
+         + (['db-password-fetcher', 'db-password-ui']
+            if secret_versions_config.database_mode == 'postgres_extensions'
+            else ['rabbitmq-password', 'redis-password']) }}
     secret_versions_mode_requirements: >-
       {{ secret_versions_requirements_by_role[item.role]
          | dict2items
-         | selectattr('value.runtime_env', 'in', secret_versions_runtime_envs)
+         | selectattr('value.secret_id', 'in', secret_versions_mode_secret_ids)
          | list }}
     secret_versions_selected_requirements: >-
       {{ secret_versions_mode_requirements

@@ -14,22 +14,26 @@ locals {
     for key, value in local.bastion_cidrs : key => value if value.ssh_port != 22
   } : {}
 
-  ui_ports = merge({}, [
-    for location, vms in local.vms_by_location :
-    contains([for vm in values(vms) : vm.role], "ui") ? {
-      for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ui_public_ports) :
-      location == var.config.default_location ? tostring(port) : "${location}/${port}" => {
-        location = location
-        port     = port
-      }
-    } : {}
-  ]...)
+  ingress_ports = {
+    for item in flatten([
+      for location, vms in local.vms_by_location : [
+        for role in distinct([for vm in values(vms) : vm.role if vm.role != "bastion" && try(vm.assign_public_ip, false)]) : [
+          for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ingress_public_ports) : {
+            key      = "${location}/${role}/${port}"
+            location = location
+            role     = role
+            port     = port
+          }
+        ]
+      ]
+    ]) : item.key => item
+  }
 
-  k3s_agents = {
+  k3s_nodes = {
     for key, instance in local.role_instances : key => instance
-    if contains(["history", "fetcher", "ui"], instance.role) && contains(
+    if contains(["k3s_server", "k3s_agent"], instance.role) && contains(
       keys(local.role_instances),
-      instance.location == var.config.default_location ? "database" : "${instance.location}/database"
+      instance.location == var.config.default_location ? "k3s_server" : "${instance.location}/k3s_server"
     )
   }
 
@@ -40,7 +44,7 @@ locals {
         source_key = source_key
         location   = target.location
       }
-      if source_key != target_key && source.location == target.location && contains(["database", "history", "fetcher", "ui"], source.role)
-    } if contains(["database", "history", "fetcher", "ui"], target.role)
+      if source.location == target.location && contains(["k3s_server", "k3s_agent"], source.role)
+    } if contains(["k3s_server", "k3s_agent"], target.role)
   ]...)
 }

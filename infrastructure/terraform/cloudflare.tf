@@ -7,8 +7,8 @@ locals {
     acme_email = ""
   }, try(local.config.cloudflare, {}))
 
-  ui_public_ips = compact([
-    for vm in values(local.vm_outputs_by_name) : vm.public_ip if vm.role == "ui"
+  ingress_public_ips = compact([
+    for vm in values(local.vm_outputs_by_name) : vm.public_ip if vm.role != "bastion"
   ])
 }
 
@@ -17,7 +17,7 @@ resource "cloudflare_dns_record" "ui" {
 
   zone_id = local.cloudflare.zone_id
   name    = local.cloudflare.hostname
-  content = local.ui_public_ips[0]
+  content = local.ingress_public_ips[0]
   type    = "A"
   ttl     = 1
   proxied = local.cloudflare.proxied
@@ -26,8 +26,8 @@ resource "cloudflare_dns_record" "ui" {
 
   lifecycle {
     precondition {
-      condition     = length(local.ui_public_ips) == 1
-      error_message = "Cloudflare requires exactly one UI VM with an assigned public IP."
+      condition     = length(local.ingress_public_ips) == 1
+      error_message = "Cloudflare requires exactly one K3s node with an assigned public IP."
     }
   }
 }

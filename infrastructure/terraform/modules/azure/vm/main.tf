@@ -66,13 +66,13 @@ resource "azurerm_linux_virtual_machine" "workload" {
     name                 = "${local.resource_prefix}-${each.key}-os"
     caching              = "ReadWrite"
     storage_account_type = var.config.provider_mappings.disk_types[each.value.disk_type].azure
-    disk_size_gb = max(each.value.disk_size, var.config.provider_mappings.images[each.value.image].azure.min_disk_size_gb)
+    disk_size_gb         = max(each.value.disk_size, var.config.provider_mappings.images[each.value.image].azure.min_disk_size_gb)
   }
 
   lifecycle {
     precondition {
-      condition     = !each.value.assign_public_ip || contains(["ui", "bastion"], each.value.role)
-      error_message = "Only workloads with role ui or bastion may receive a public IP."
+      condition     = !each.value.assign_public_ip || contains(["k3s_server", "k3s_agent", "bastion"], each.value.role)
+      error_message = "Only K3s nodes or bastions may receive a public IP."
     }
   }
 

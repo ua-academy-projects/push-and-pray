@@ -1,60 +1,104 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Prepare a node changing from agent to server
+  ansible.builtin.import_tasks: promote_server.yml
+  when: k3s_mode == 'server'
+
 - name: Check whether K3s is installed
   ansible.builtin.stat:
     path: "/etc/systemd/system/{{ 'k3s' if k3s_mode == 'server' else 'k3s-agent' }}.service"
   register: k3s_service_file
 
-- name: Download K3s installer
+- name: Read the installed K3s version
+  ansible.builtin.command:
+    argv: [k3s, --version]
+  register: k3s_version_output
+  changed_when: false
+  failed_when: false
+
+- name: Extract the installed K3s version
+  ansible.builtin.set_fact:
+    k3s_installed_version: >-
+      {{ ((k3s_version_output.stdout | default('') | regex_findall('(?m)^k3s version ([^ ]+)')) + ['']) | first }}
+
+- name: Decide whether K3s needs installation or upgrade
+  ansible.builtin.set_fact:
+    k3s_needs_install: "{{ not k3s_service_file.stat.exists or k3s_installed_version != k3s_version }}"
+
+- name: Create the K3s configuration directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Configure K3s
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  notify: Restart K3s when configuration changes
+
+- name: Remove the legacy K3s ingress service override
+  ansible.builtin.file:
+    path: /etc/systemd/system/k3s.service.d/oilscope-ingress.conf
+    state: absent
+  register: k3s_legacy_ingress_override
+  notify: Restart K3s when configuration changes
+  when: k3s_mode == 'server'
+
+- name: Download the K3s installer when installation or upgrade is needed
   ansible.builtin.get_url:
     url: https://get.k3s.io
     dest: /tmp/oilscope-k3s-install.sh
     mode: '0755'
-  when: not k3s_service_file.stat.exists
+  when: k3s_needs_install
 
-- name: Install K3s server
+- name: Install or upgrade K3s to the desired version
   ansible.builtin.command:
-    cmd: /bin/sh /tmp/oilscope-k3s-install.sh
-    creates: /etc/systemd/system/k3s.service
+    argv: [/bin/sh, /tmp/oilscope-k3s-install.sh]
   environment:
-    INSTALL_K3S_EXEC: "server --node-ip {{ internal_ip }} --advertise-address {{ internal_ip }} --disable traefik --disable servicelb"
+    INSTALL_K3S_EXEC: "{{ k3s_mode }}"
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
   no_log: true
-  when: k3s_mode == 'server'
+  changed_when: k3s_needs_install
+  when: k3s_needs_install
 
-- name: Start K3s server
+- name: Verify the installed K3s version after installation or upgrade
+  ansible.builtin.command:
+    argv: [k3s, --version]
+  register: k3s_version_after_install
+  changed_when: false
+  when: k3s_needs_install
+
+- name: Require the desired K3s version
+  ansible.builtin.assert:
+    that:
+      - k3s_version_after_install.stdout is match('^k3s version ' ~ (k3s_version | regex_escape) ~ ' ')
+  when: k3s_needs_install
+
+- name: Apply configuration changes to an existing K3s service
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure K3s is running
   ansible.builtin.systemd_service:
-    name: k3s
+    name: "{{ 'k3s' if k3s_mode == 'server' else 'k3s-agent' }}"
     enabled: true
     state: started
-  when: k3s_mode == 'server'
 
-- name: Wait for K3s node token
+- name: Wait for the first server token
   ansible.builtin.wait_for:
     path: /var/lib/rancher/k3s/server/node-token
     timeout: 120
-  when: k3s_mode == 'server'
+  when: k3s_mode == 'server' and k3s_first_server | bool
 
-- name: Read K3s node token
+- name: Read the first server token
   ansible.builtin.slurp:
     src: /var/lib/rancher/k3s/server/node-token
   register: k3s_node_token
   no_log: true
-  when: k3s_mode == 'server'
-
-- name: Install K3s agent
-  ansible.builtin.command:
-    cmd: /bin/sh /tmp/oilscope-k3s-install.sh
-    creates: /etc/systemd/system/k3s-agent.service
-  environment:
-    K3S_URL: "https://{{ hostvars[groups['database'][0]].internal_ip }}:6443"
-    K3S_TOKEN: "{{ hostvars[groups['database'][0]].k3s_node_token.content | b64decode | trim }}"
-    INSTALL_K3S_EXEC: "agent --node-ip {{ internal_ip }}"
-  no_log: true
-  when: k3s_mode == 'agent'
-
-- name: Start K3s agent
-  ansible.builtin.systemd_service:
-    name: k3s-agent
-    enabled: true
-    state: started
-  when: k3s_mode == 'agent'
+  when: k3s_mode == 'server' and k3s_first_server | bool

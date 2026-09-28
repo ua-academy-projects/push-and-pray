@@ -1,17 +1,58 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Install K3s server
-  hosts: database
+- name: Stop older K3s agents on nodes becoming servers
+  hosts: k3s_server
   become: true
   gather_facts: false
+  serial: 1
+  tasks:
+    - name: Prepare servers before bootstrapping the quorum
+      ansible.builtin.import_role:
+        name: oilscope.platform.k3s
+        tasks_from: promote_server
+
+- name: Bootstrap the first K3s server
+  hosts: k3s_primary
+  become: true
+  gather_facts: false
+  vars:
+    k3s_primary_server: "{{ groups['k3s_primary'][0] }}"
+    k3s_first_server: true
+    k3s_mode: server
+    k3s_api_sans: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).get('k3s', {}).get('api_sans', []) }}"
+  pre_tasks:
+    - name: Require a valid embedded etcd quorum
+      ansible.builtin.assert:
+        that:
+          - groups['k3s_server'] | length >= 3
+          - groups['k3s_server'] | length % 2 == 1
+        fail_msg: K3s embedded etcd requires at least three, and an odd number of, server nodes.
   roles:
-    - role: oilscope.platform.k3s
-      k3s_mode: server
+    - oilscope.platform.k3s
+
+- name: Join the other K3s servers
+  hosts: "k3s_server:!k3s_primary"
+  become: true
+  gather_facts: false
+  serial: 1
+  vars:
+    k3s_primary_server: "{{ groups['k3s_primary'][0] }}"
+    k3s_first_server: false
+    k3s_mode: server
+    k3s_api_sans: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).get('k3s', {}).get('api_sans', []) }}"
+  tasks:
+    - name: Join a server
+      ansible.builtin.import_role:
+        name: oilscope.platform.k3s
 
 - name: Join K3s agents
-  hosts: history:fetcher:ui
+  hosts: k3s_agent
   become: true
   gather_facts: false
+  vars:
+    k3s_primary_server: "{{ groups['k3s_primary'][0] }}"
+    k3s_first_server: false
+    k3s_mode: agent
+    k3s_api_sans: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).get('k3s', {}).get('api_sans', []) }}"
   roles:
-    - role: oilscope.platform.k3s
-      k3s_mode: agent
+    - oilscope.platform.k3s

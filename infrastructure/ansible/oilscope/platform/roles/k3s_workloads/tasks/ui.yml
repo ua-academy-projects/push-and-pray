@@ -1,33 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Remove the old certificate sync hook
-  ansible.builtin.file:
-    path: /etc/letsencrypt/renewal-hooks/deploy/sync-oilscope-k3s
-    state: absent
-
-- name: Remove the old certificate sync kubeconfig
-  ansible.builtin.file:
-    path: /etc/oilscope/cert-sync.kubeconfig
-    state: absent
-
 - name: Check for a legacy Nginx service
   ansible.builtin.service_facts:
-  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
 
 - name: Stop the old Nginx entry point
   ansible.builtin.systemd_service:
     name: nginx
     state: stopped
     enabled: false
-  when:
-    - k3s_workloads_config.cloudflare.enabled | default(false) | bool
-    - "'nginx.service' in ansible_facts.services"
-
-- name: Remove the old Nginx certificate reload hook
-  ansible.builtin.file:
-    path: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
-    state: absent
-  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+  when: "'nginx.service' in ansible_facts.services"
 
 - name: Check for the old Traefik Compose project
   ansible.builtin.stat:

@@ -18,6 +18,7 @@
     "size": "micro",
     "storage_gb": 20
   },
+  "k3s": {"version": "v1.36.3+k3s1", "bootstrap_server": "server-1"},
   "vm_defaults": {
     "image": "ubuntu-24.04",
     "disk_type": "standard",
@@ -197,7 +198,7 @@
   },
   "cloudflare": {
     "enabled": true,
-    "zone_id": "example_id",
+    "zone_id": "00000000000000000000000000000000",
     "hostname": "example.com",
     "proxied": true,
     "acme_email": "example-operator@example.com"
@@ -217,60 +218,31 @@
     "database_subnet_cidrs": ["10.0.2.0/28", "10.0.2.16/28"],
     "database_private_service_prefix_length": 24,
     "enable_bastion_ssh_bootstrap": false,
-    "ui_public_ports": [80, 443]
+    "ingress_public_ports": [80, 443]
   },
   "vms": {
     "bastion": {},
-    "infra": {
-      "role": "database",
+    "server-1": {
+      "role": "k3s_server",
       "cloud": "gcp",
-      "size": "micro",
+      "size": "small",
       "location": "europe",
-      "internal_ip": "10.0.1.4"
+      "internal_ip": "10.0.1.4",
+      "assign_public_ip": true
     },
-    "history": {
-      "role": "history",
+    "server-2": {
+      "role": "k3s_server",
+      "cloud": "gcp",
       "size": "small",
       "location": "europe",
       "internal_ip": "10.0.1.5"
     },
-    "fetcher": {
-      "role": "fetcher",
-      "cloud": "aws",
-      "size": "micro",
+    "server-3": {
+      "role": "k3s_server",
+      "cloud": "gcp",
+      "size": "small",
       "location": "europe",
       "internal_ip": "10.0.1.6"
-    },
-    "ui": {
-      "role": "ui",
-      "cloud": "aws",
-      "disks": [
-        {
-          "type": "balanced",
-          "size": 20
-        },
-        {
-          "type": "ssd",
-          "size": 50
-        }
-      ],
-      "bootstrap": {
-        "commands": ["apt-get update", "apt-get install -y htop"]
-      },
-      "size": "micro",
-      "location": "europe",
-      "internal_ip": "10.0.0.5",
-      "assign_public_ip": true
-    },
-    "bastion-aws": {
-      "role": "bastion",
-      "cloud": "aws",
-      "size": "micro",
-      "location": "europe",
-      "internal_ip": "10.0.0.4",
-      "assign_public_ip": true,
-      "ssh_port": 8787,
-      "allowed_cidrs": ["192.0.2.10/32"]
     }
   }
 }

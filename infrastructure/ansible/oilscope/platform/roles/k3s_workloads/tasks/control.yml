@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create a private temporary control directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: oilscope-k3s-
+  delegate_to: localhost
+  become: false
+  register: k3s_workloads_control_dir
+  changed_when: false
+
+- name: Choose an available local API tunnel port
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "import socket; s=socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1]); s.close()"
+  delegate_to: localhost
+  become: false
+  register: k3s_workloads_port_command
+  changed_when: false
+
+- name: Read the server kubeconfig
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  register: k3s_workloads_server_kubeconfig
+  no_log: true
+
+- name: Write a private control-host kubeconfig
+  ansible.builtin.copy:
+    dest: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    content: >-
+      {{ k3s_workloads_server_kubeconfig.content | b64decode
+         | replace('https://127.0.0.1:6443', 'https://127.0.0.1:' ~ k3s_workloads_port_command.stdout) }}
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  no_log: true
+  changed_when: false
+
+- name: Open an SSH tunnel through the inventory bastion
+  ansible.builtin.command:
+    argv: >-
+      {{ ['ssh', '-fN', '-M', '-S', k3s_workloads_control_dir.path ~ '/ssh.sock',
+          '-o', 'ExitOnForwardFailure=yes', '-o', 'StrictHostKeyChecking=accept-new',
+          '-o', 'HostKeyAlias=' ~ oilscope_ssh_host_key_alias,
+          '-L', '127.0.0.1:' ~ k3s_workloads_port_command.stdout ~ ':127.0.0.1:6443']
+         + (['-o', 'ProxyCommand=' ~ oilscope_ssh_proxy_command]
+            if oilscope_ssh_proxy_command is defined else [])
+         + (['-i', ansible_ssh_private_key_file]
+            if ansible_ssh_private_key_file is defined else [])
+         + ['-p', ansible_port | string, ansible_user ~ '@' ~ ansible_host] }}
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Wait for the K3s API schema before applying resources
+  ansible.builtin.command:
+    argv: [kubectl, --request-timeout=10s, get, --raw=/openapi/v3]
+  delegate_to: localhost
+  become: false
+  environment:
+    KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+  register: k3s_workloads_api_schema
+  retries: 36
+  delay: 5
+  until: k3s_workloads_api_schema.rc == 0
+  changed_when: false

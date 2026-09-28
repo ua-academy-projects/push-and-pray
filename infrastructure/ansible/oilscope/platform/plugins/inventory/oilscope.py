@@ -323,6 +323,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     raise AnsibleParserError(f"{hostname} is missing cloud instance ID {id_key}")
                 scope = context.get("oilscope_project_id", context["oilscope_region"])
                 alias = f"oilscope-{cloud}-{scope}-{instance_id}"
+                context["oilscope_ssh_host_key_alias"] = alias
                 context["oilscope_ssh_base_args"] = (
                     "-o StrictHostKeyChecking=accept-new -o "
                     + shlex.quote(f"HostKeyAlias={alias}")
@@ -344,8 +345,21 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     f"{jump['oilscope_ssh_base_args']} "
                     + shlex.quote(f"{jump['ansible_user']}@{jump['ansible_host']}")
                 )
+                self.inventory.set_variable(hostname, "oilscope_ssh_proxy_command", proxy)
                 ssh_args += " -o " + shlex.quote(f"ProxyCommand={proxy}")
             self.inventory.set_variable(hostname, "ansible_ssh_common_args", ssh_args)
+
+        servers = sorted(hostname for hostname, role in managed_hosts if role == "k3s_server")
+        if servers:
+            primary_key = config.get("k3s", {}).get("bootstrap_server")
+            primary = (
+                f"{config['name_prefix']}-{config['environment']}-{primary_key}"
+                if primary_key else servers[0]
+            )
+            if primary not in servers:
+                raise AnsibleParserError("k3s.bootstrap_server must name a discovered K3s server")
+            self.inventory.add_group("k3s_primary")
+            self.inventory.add_host(primary, group="k3s_primary")
 
     def _resource_names(self, config, vms):
         prefix = self._require_string(config.get("name_prefix"), "name_prefix")

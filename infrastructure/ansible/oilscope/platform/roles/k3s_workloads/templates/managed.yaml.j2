@@ -25,8 +25,6 @@ spec:
       labels: {app: rabbitmq}
     spec:
       hostname: oil-rabbitmq
-      nodeSelector:
-        kubernetes.io/hostname: {{ groups['history'][0] | to_json }}
       containers:
         - name: rabbitmq
           image: rabbitmq:4.3.4-management
@@ -57,62 +55,3 @@ spec:
   selector: {app: rabbitmq}
   ports:
     - {name: amqp, port: 5672, targetPort: amqp}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-data
-  namespace: oilscope
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 1Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: oilscope
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate
-  selector:
-    matchLabels: {app: redis}
-  template:
-    metadata:
-      labels: {app: redis}
-    spec:
-      nodeSelector:
-        kubernetes.io/hostname: {{ groups['ui'][0] | to_json }}
-      containers:
-        - name: redis
-          image: redis:8.2.8-bookworm
-          envFrom:
-            - secretRef: {name: redis-env}
-          command: [/bin/sh, -ec]
-          args:
-            - exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass "$REDIS_PASSWORD"
-          ports:
-            - {name: redis, containerPort: 6379}
-          readinessProbe:
-            exec:
-              command: [/bin/sh, -ec, 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG']
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          volumeMounts:
-            - {name: data, mountPath: /data}
-      volumes:
-        - name: data
-          persistentVolumeClaim: {claimName: redis-data}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: oilscope
-spec:
-  selector: {app: redis}
-  ports:
-    - {name: redis, port: 6379, targetPort: redis}

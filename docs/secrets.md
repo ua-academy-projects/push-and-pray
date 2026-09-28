@@ -15,9 +15,10 @@ entry keeps four meanings separate:
 VM entries in project configuration contain neither secret mappings nor values.
 
 The Ansible `secret_versions` role creates provider-specific secret containers
-and uploads their values. It reads only the declarations for roles used by the
-configured workloads and deduplicates containers within each GCP project or
-AWS region. Terraform does not manage application secrets.
+and uploads their values. For K3s it reads the database, history, fetcher, and
+UI declarations, using the bootstrap server's cloud and location as the secret
+provider scope. It deduplicates containers within each GCP project or AWS
+region. Terraform does not manage application secrets.
 
 The selected `database_mode` also filters the catalog. Managed mode adds
 `RABBITMQ_PASSWORD` and `REDIS_PASSWORD` and does not request the unused Fetcher
@@ -78,8 +79,9 @@ GHCR_TOKEN
 
 Cloudflare DNS and certificate automation use `CLOUDFLARE_API_TOKEN` from the
 Terraform and Ansible controller environment. It is not an application secret
-and is never uploaded by `secret_versions`. The HTTPS role installs it only on
-the UI VM as a root-readable Certbot renewal credential. See
+and is never uploaded by `secret_versions`. The aggregate K3s workload role stores it as a Kubernetes Secret for
+the cert-manager Cloudflare DNS-01 Issuer. The legacy standalone Compose UI role
+uses a VM-local Certbot renewal credential. See
 [Cloudflare DNS and UI HTTPS](cloudflare-https.md).
 
 ```sh

@@ -115,19 +115,21 @@ it is legitimately empty.
 
 ## Groups
 
-Terraform labels every VM with `role=<role>`, which becomes the `bastion`,
-`database`, `history`, `fetcher` and `ui` groups the deployment roles expect.
-Everything except the bastion also joins `workloads`.
+Terraform labels every VM with `role=<role>`. Inventory creates `bastion`,
+`k3s_server`, and `k3s_agent` groups from those labels. All K3s nodes also join
+`workloads`. The selected bootstrap server joins `k3s_primary`.
 
 The group name comes from the `role` label, not from the key in the project
-configuration: `vms.infra` has `role: database` and therefore lands in the
-`database` group, which is what the `ui` role looks for.
+configuration. For example, a VM keyed `vms.infra` with role `k3s_server`
+joins `k3s_server`. `k3s.bootstrap_server` selects that logical key as the
+primary server; without it, inventory uses the first sorted server key.
 
 ## Host variables
 
-`internal_ip` is set on every host. This is a contract, not a convenience: the
-`ui` role resolves its Database and History peers through that exact variable
-name. Also set: `public_ip`, `oilscope_role`, `oilscope_cloud`, `oilscope_location`, `oilscope_region`, `ansible_host`, and `ansible_port`.
+`internal_ip` is set on every host and provides the private K3s API address.
+Also set: `public_ip`, `oilscope_role`, `oilscope_cloud`, `oilscope_location`,
+`oilscope_region`, `ansible_host`, `ansible_port`, and the SSH host-key alias
+and ProxyCommand used by the control-host K3s API tunnel.
 For each bastion, `bastion_ssh_port` is its configured final port. `ansible_port` normally uses that value, but can use
 `OILSCOPE_BASTION_CONNECT_PORT` during the one-time bootstrap connection.
 

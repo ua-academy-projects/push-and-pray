@@ -1,0 +1,14 @@
+{
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json#/$defs/tasks": [
+      "**/roles/*/tasks/*.yml",
+      "**/roles/*/tasks/**/*.yml",
+      "**/roles/*/tasks/*.yaml",
+      "**/roles/*/tasks/**/*.yaml",
+      "**/roles/*/handlers/*.yml",
+      "**/roles/*/handlers/**/*.yml",
+      "**/roles/*/handlers/*.yaml",
+      "**/roles/*/handlers/**/*.yaml"
+    ]
+  }
+}

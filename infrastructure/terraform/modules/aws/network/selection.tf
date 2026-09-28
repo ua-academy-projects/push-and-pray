@@ -28,10 +28,10 @@ locals {
 
   role_instances = merge({}, [
     for location, vms in local.vms_by_location : {
-      for name, vm in vms :
-      location == var.config.default_location ? vm.role : "${location}/${vm.role}" => {
+      for role in distinct([for vm in values(vms) : vm.role]) :
+      location == var.config.default_location ? role : "${location}/${role}" => {
         location = location
-        role     = vm.role
+        role     = role
       }
     }
   ]...)

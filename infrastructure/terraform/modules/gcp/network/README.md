@@ -37,7 +37,7 @@ The firewall contract does not use generic `app` or `db` tags.
 | `<prefix>-allow-bastion-ssh` | `bastion_allowed_cidrs` | Bastion | `bastion_ssh_port` |
 | `<prefix>-allow-bastion-ssh-bootstrap` | `bastion_allowed_cidrs` | Bastion | `22` (temporary and opt-in) |
 | `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
-| `<prefix>-allow-ui-web` | `0.0.0.0/0` | UI | `ui_public_ports` (`80` and `443`) |
+| `<prefix>-allow-ingress-web` | `0.0.0.0/0` | UI | `ingress_public_ports` (`80` and `443`) |
 
 Application service ports are not managed by this Terraform module. Other
 ingress is blocked by Google Cloud's implied deny-ingress rule.

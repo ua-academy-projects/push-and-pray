@@ -6,25 +6,20 @@ locals {
         ] : [
         { name = "workload-ssh", ports = ["22"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role == "bastion"] }
       ],
-      vm.role == "database" && var.config.database_mode == "postgres_extensions" ? [
-        { name = "postgresql", ports = [tostring(var.config.database.port)], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["history", "fetcher", "ui"], peer.role)] }
-      ] : [],
-      vm.role == "history" ? [
-        { name = "history-http", ports = ["8001"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role == "ui"] }
-      ] : [],
-      vm.role == "history" && local.managed_database_enabled ? [
-        { name = "rabbitmq", ports = ["5672"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role == "fetcher"] }
-      ] : [],
-      vm.role == "ui" ? [
-        { name = "ui-web", ports = [for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ui_public_ports) : tostring(port)], sources = ["0.0.0.0/0"] }
-      ] : [],
-      vm.role == "database" ? [
-        { name = "k3s-api", ports = ["6443"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["history", "fetcher", "ui"], peer.role)] }
+      [for rule in [
+        { name = "k3s-api", ports = ["6443"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] },
+        { name = "k3s-etcd", ports = ["2379", "2380"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role == "k3s_server"] }
+      ] : rule if vm.role == "k3s_server"],
+      vm.role == "k3s_server" && var.config.database_mode == "postgres_extensions" ? [
+        { name = "postgresql", ports = [tostring(var.config.database.port)], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] }
       ] : [],
       [for rule in [
-        { name = "k3s-vxlan", protocol = "Udp", ports = ["8472"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["database", "history", "fetcher", "ui"], peer.role)] },
-        { name = "k3s-kubelet", protocol = "Tcp", ports = ["10250"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && contains(["database", "history", "fetcher", "ui"], peer.role)] }
-      ] : rule if contains(["database", "history", "fetcher", "ui"], vm.role)],
+        { name = "k3s-vxlan", protocol = "Udp", ports = ["8472"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] },
+        { name = "k3s-kubelet", ports = ["10250"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] }
+      ] : rule if vm.role != "bastion"],
+      vm.role != "bastion" && try(vm.assign_public_ip, false) ? [
+        { name = "ingress-web", ports = [for port in(try(var.config.cloudflare.enabled, false) ? [80, 443] : var.config.network.ingress_public_ports) : tostring(port)], sources = ["0.0.0.0/0"] }
+      ] : [],
     )
   }
 }

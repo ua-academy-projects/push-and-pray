@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check for a previous K3s agent service on a server node
+  ansible.builtin.stat:
+    path: /etc/systemd/system/k3s-agent.service
+  register: k3s_previous_agent_service
+
+- name: Stop the previous K3s agent before starting a server
+  ansible.builtin.systemd_service:
+    name: k3s-agent
+    enabled: false
+    state: stopped
+  when: k3s_previous_agent_service.stat.exists

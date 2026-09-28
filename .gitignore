@@ -29,6 +29,7 @@ crash.log
 crash.*.log
 *.json
 !infrastructure/terraform/*.json
+!.vscode/settings.json
 # Credentials and private keys
 *.pem
 *.key

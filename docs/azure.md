@@ -7,47 +7,71 @@ locations, instance types, disks, images, and database sizes from
 do not need Azure mapping entries. Retain the existing AWS/GCP configuration
 fields: the root still configures those providers and uses its GCS backend.
 
-For a complete single-location Azure topology, replace the corresponding fields
-in the shared example with this fragment (retain its other fields):
+For a single-location Azure K3s topology, use three `k3s_server` nodes and
+optional `k3s_agent` nodes in one VNet. For example, set `default_cloud` to
+`azure`, keep the shared mappings, and use this VM section:
 
 ```json
-{
-  "default_cloud": "azure",
-  "default_location": "europe",
-  "database_mode": "postgres_extensions",
-  "cloudflare": { "enabled": false },
-  "vms": {
-    "bastion": { "allowed_cidrs": ["192.0.2.10/32"] },
-    "infra": { "role": "database", "size": "micro", "location": "europe", "internal_ip": "10.0.1.4" },
-    "history": { "role": "history", "size": "small", "location": "europe", "internal_ip": "10.0.1.5" },
-    "fetcher": { "role": "fetcher", "size": "micro", "location": "europe", "internal_ip": "10.0.1.6" },
-    "ui": { "role": "ui", "cloud": "azure", "size": "micro", "location": "europe", "internal_ip": "10.0.0.5", "assign_public_ip": true }
-  }
+"k3s": {"bootstrap_server": "server-1"},
+"vms": {
+  "bastion": {"allowed_cidrs": ["192.0.2.10/32"]},
+  "server-1": {"role": "k3s_server", "size": "small", "location": "europe", "internal_ip": "10.0.0.5", "assign_public_ip": true},
+  "server-2": {"role": "k3s_server", "size": "small", "location": "europe", "internal_ip": "10.0.1.5"},
+  "server-3": {"role": "k3s_server", "size": "small", "location": "europe", "internal_ip": "10.0.1.6"}
 }
 ```
 
-Replace the example SSH source CIDR with your own public address. The automatic
-Linux bastion uses the management subnet's fourth address and the configured
-`ssh_users` username/key. Extra bastions use the existing VM model with
-`role: "bastion"`. For each Azure location with workloads, configure a matching
-bastion. The bootstrap toggle and `OILSCOPE_BASTION_CONNECT_PORT=22` work as
-before when Ansible first changes a bastion's SSH port.
+Replace the example bastion SSH CIDR with your public address. The default
+bastion uses the management subnet and the configured SSH public key. A node
+with a public IP also uses the management subnet on Azure; private nodes use
+the workload subnet. Pick addresses from the corresponding subnet. The
+`bootstrap_server` key identifies the server that keeps the Compose-backed
+PostgreSQL or managed-database migration workload.
+
+## Terraform automation identity
+
+AzureRM and AzAPI use the standard Azure service principal environment
+variables. Create one dedicated application/service principal with a privileged
+bootstrap account, then grant it **Contributor** and **Role Based Access Control
+Administrator** at the target subscription scope. Contributor permits Terraform
+to create the resource groups, network, VMs, managed database and monitoring
+resources. The second role permits the monitoring identity's required role
+assignments. Narrow these grants after the initial bootstrap if your
+organization provides a pre-created resource group and more granular scopes.
+
+```sh
+SUBSCRIPTION_ID="<target-subscription-id>"
+SP_NAME="oilscope-terraform"
+SP_JSON="$(az ad sp create-for-rbac --name "$SP_NAME" --skip-assignment --output json)"
+SP_APP_ID="$(printf '%s' "$SP_JSON" | jq -r .appId)"
+SP_OBJECT_ID="$(az ad sp show --id "$SP_APP_ID" --query id --output tsv)"
+SCOPE="/subscriptions/$SUBSCRIPTION_ID"
+az role assignment create --assignee-object-id "$SP_OBJECT_ID" --assignee-principal-type ServicePrincipal --role Contributor --scope "$SCOPE"
+az role assignment create --assignee-object-id "$SP_OBJECT_ID" --assignee-principal-type ServicePrincipal --role 'Role Based Access Control Administrator' --scope "$SCOPE"
+```
+
+Handle `SP_JSON` as a credential: run the bootstrap in a private shell and do
+not print, log, or commit it. Supply its `appId`, `password`, `tenant`, and the
+subscription ID to Terraform through `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`,
+`ARM_TENANT_ID`, and `ARM_SUBSCRIPTION_ID` in a secure local/CI secret store.
+The Terraform configuration contains no Azure credential fields. Azure CLI
+commands used by Ansible for secrets/registry access need their own
+non-interactive login on the control host; they do not change Terraform's
+service principal authentication.
 
 ## Resources and connectivity
 
 Each selected logical location gets a Resource Group, VNet, management and
 workload subnets using the shared CIDRs, and an explicit NAT gateway for outbound
-traffic. As with AWS, bastions and public UI VMs use the management subnet;
+traffic. As with AWS, bastions and public K3s nodes use the management subnet;
 other VMs use the workload subnet. Set static IPs within the corresponding
 subnet, excluding Azure's first four and last reserved addresses.
 
-NIC NSGs allow only the configured bastion SSH sources, bastion-to-workload SSH,
-UI-to-history HTTP (8001), application-to-self-managed PostgreSQL (5432),
-fetcher-to-history RabbitMQ (5672) in managed mode, and the existing public UI
-ports. They override Azure's default unrestricted VNet ingress. Public IPs are
-limited to bastion/UI roles. There is no new cross-cloud or cross-location
-peering; private services and clients need a reachable common network just as
-with the existing provider modules.
+NIC NSGs allow the configured bastion SSH sources, bastion-to-node SSH, K3s
+API and etcd quorum traffic, node overlay/kubelet traffic, private PostgreSQL
+(5432), and public ingress ports on the selected node. They override Azure's
+default unrestricted VNet ingress. Public IPs are optional on K3s nodes. There
+is no new cross-cloud or cross-location peering.
 
 Azure VM sizes, Ubuntu marketplace images, and disk SKUs resolve inside the VM
 module. OS disks are at least the mapped image's `min_disk_size_gb` (30 GiB for
@@ -59,8 +83,8 @@ Azure monitoring and logging are provisioned as described below.
 ## Monitoring and logging
 
 The root `azure_monitoring` module consumes shared config and only the VMs
-returned by `azure_vm`. All created Azure Linux VMs receive monitoring: bastion,
-database/infra, history, fetcher, and UI, as selected. An empty Azure VM map
+returned by `azure_vm`. All created Azure Linux VMs receive monitoring:
+bastions and selected K3s servers and agents. An empty Azure VM map
 creates no monitoring resources or data lookups and requires no Azure location
 mappings. Existing provider authentication requirements remain unchanged.
 
@@ -157,13 +181,14 @@ and [VM availability semantics](https://learn.microsoft.com/en-us/azure/virtual-
 
 `database_mode: "managed"` with `default_cloud: "azure"` selects PostgreSQL
 Flexible Server in `default_location`. All workload VMs must use that cloud and
-location. `postgres_extensions` retains the PostgreSQL container on the database
-VM. Redis and RabbitMQ stay on UI and history respectively in managed mode.
+location. `postgres_extensions` retains the PostgreSQL container on the first K3s
+server. In managed mode, Redis is a Helm release and RabbitMQ is a Kubernetes
+Deployment.
 
 Flexible Server uses the first `network.database_subnet_cidrs` entry as its
 delegated subnet and a private DNS zone linked to the VNet. Public access is
-disabled. Only database/history VM addresses and PostgreSQL's own subnet can
-reach port 5432. The database VM remains the migration host. Storage rounds up
+disabled. K3s node addresses and PostgreSQL's own subnet can
+reach port 5432. The first K3s server remains the migration host. Storage rounds up
 to the next Azure-supported tier, with a 32 GiB minimum; the common database
 size, version, username, name, and port retain their meanings. The module exports
 the private FQDN through `managed_database`, which inventory already loads.
@@ -183,13 +208,12 @@ credentials are added to Terraform. AWS/GCP secret branches remain unchanged.
 
 ## Authentication and manual checks
 
-Use Azure CLI login with the intended subscription, or AzureRM's normal
-`ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `ARM_CLIENT_ID`, and `ARM_CLIENT_SECRET`
-environment variables (OIDC/managed identity are also supported by AzureRM).
-No account IDs or authentication values belong in the shared config.
+Terraform uses the dedicated service principal described above through
+`ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`, `ARM_CLIENT_ID`, and
+`ARM_CLIENT_SECRET`. No authentication values belong in shared config.
 
 Inventory uses `azure.azcollection.azure_rm`, scoped to the generated resource
-groups, names, and tags. It creates the existing role/workloads groups, selects
+groups, names, and tags. It creates K3s server/agent groups, selects
 the configured `ssh_users` username, and uses the same bastion ProxyCommand.
 Azure's VM UUID identifies SSH known-host entries across replacements.
 Install `infrastructure/ansible/requirements.yml` and the installed

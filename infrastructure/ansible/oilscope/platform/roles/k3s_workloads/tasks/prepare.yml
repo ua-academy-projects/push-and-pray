@@ -5,13 +5,9 @@
     k3s_workloads_config: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
     k3s_workloads_image_tag: "{{ lookup('ansible.builtin.env', 'OILSCOPE_IMAGE_TAG') }}"
 
-- name: Require one VM for each cluster workload
+- name: Require an application mode and image tag
   ansible.builtin.assert:
     that:
-      - groups['database'] | length == 1
-      - groups['history'] | length == 1
-      - groups['fetcher'] | length == 1
-      - groups['ui'] | length == 1
       - database_mode in ['managed', 'postgres_extensions']
       - k3s_workloads_image_tag | length > 0
 
@@ -26,7 +22,7 @@
 - name: Select the registry and database endpoint
   ansible.builtin.set_fact:
     k3s_workloads_registry: "{{ k3s_workloads_registry_output.stdout | from_json }}"
-    k3s_workloads_database_host: "{{ managed_database.host if database_mode == 'managed' else internal_ip }}"
+    k3s_workloads_database_host: "{{ managed_database.host if database_mode == 'managed' else hostvars[groups['k3s_primary'][0]].internal_ip }}"
     k3s_workloads_database_port: "{{ managed_database.port if database_mode == 'managed' else 5432 }}"
     k3s_workloads_database_sslmode: "{{ managed_database.sslmode if database_mode == 'managed' else 'disable' }}"
 
@@ -151,69 +147,105 @@
 
 - name: Create the namespace and shared configuration
   ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - apply
-      - '-f'
-      - '-'
+    argv: [kubectl, apply, -f, "-"]
     stdin: "{{ lookup('ansible.builtin.template', 'config.yaml.j2') }}"
   register: k3s_workloads_config_apply
   changed_when: "'created' in k3s_workloads_config_apply.stdout or 'configured' in k3s_workloads_config_apply.stdout"
 
 - name: Create Kubernetes Secrets
   ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - apply
-      - '-f'
-      - '-'
+    argv: [kubectl, apply, -f, "-"]
     stdin: "{{ lookup('ansible.builtin.template', 'secrets.yaml.j2') }}"
   register: k3s_workloads_secrets_apply
   changed_when: "'created' in k3s_workloads_secrets_apply.stdout or 'configured' in k3s_workloads_secrets_apply.stdout"
   no_log: true
 
-- name: Install cert-manager through the K3s Helm controller
+- name: Remove the old K3s-managed Traefik resources
   ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - apply
-      - '-f'
-      - '-'
-    stdin: "{{ lookup('ansible.builtin.template', 'cert-manager.yaml.j2') }}"
-  register: k3s_workloads_cert_manager_apply
-  changed_when: "'created' in k3s_workloads_cert_manager_apply.stdout or 'configured' in k3s_workloads_cert_manager_apply.stdout"
+    argv: [kubectl, -n, kube-system, delete, helmchartconfig/traefik, helmchart/traefik, --ignore-not-found, --wait=true]
+  register: k3s_workloads_old_traefik_delete
+  changed_when: "'deleted' in k3s_workloads_old_traefik_delete.stdout"
+
+- name: Wait for the old Traefik release to stop
+  ansible.builtin.command:
+    argv: [helm, -n, kube-system, list, --filter, '^traefik$', -q]
+  register: k3s_workloads_old_traefik_release
+  retries: 18
+  delay: 5
+  until: k3s_workloads_old_traefik_release.stdout | trim | length == 0
+  changed_when: false
+  when: "'deleted' in k3s_workloads_old_traefik_delete.stdout"
+
+- name: Install the Traefik ingress controller from the control host
+  kubernetes.core.helm:
+    release_name: traefik
+    release_namespace: kube-system
+    chart_ref: oci://ghcr.io/traefik/helm/traefik
+    chart_version: 41.6.0
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      deployment:
+        kind: DaemonSet
+      gateway:
+        enabled: false
+      service:
+        enabled: false
+      providers:
+        kubernetesIngress:
+          publishedService:
+            enabled: false
+      ports:
+        web:
+          hostPort: 80
+          http:
+            redirections:
+              entryPoint: "{{ {'to': 'websecure', 'scheme': 'https', 'permanent': true} if k3s_workloads_config.cloudflare.enabled | default(false) | bool else {} }}"
+        websecure:
+          hostPort: 443
+
+- name: Remove the old K3s Helm controller cert-manager resource
+  ansible.builtin.command:
+    argv: [kubectl, -n, kube-system, delete, helmchart/cert-manager, --ignore-not-found, --wait=true]
+  register: k3s_workloads_old_cert_manager_delete
+  changed_when: "'deleted' in k3s_workloads_old_cert_manager_delete.stdout"
+
+- name: Wait for the old Helm controller release to stop
+  ansible.builtin.command:
+    argv: [helm, -n, cert-manager, list, --filter, '^cert-manager$', -q]
+  register: k3s_workloads_old_cert_manager_release
+  retries: 18
+  delay: 5
+  until: k3s_workloads_old_cert_manager_release.stdout | trim | length == 0
+  changed_when: false
+  when: "'deleted' in k3s_workloads_old_cert_manager_delete.stdout"
+
+- name: Install cert-manager from its official chart
+  kubernetes.core.helm:
+    release_name: cert-manager
+    release_namespace: cert-manager
+    create_namespace: true
+    chart_ref: oci://quay.io/jetstack/charts/cert-manager
+    chart_version: v1.21.2
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      crds:
+        enabled: true
   when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
 
-- name: Wait for cert-manager components
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - -n
-      - cert-manager
-      - rollout
-      - status
-      - "deployment/{{ item }}"
-      - --timeout=120s
-  loop: [cert-manager, cert-manager-cainjector, cert-manager-webhook]
-  register: k3s_workloads_cert_manager_rollout
-  retries: 18
-  delay: 10
-  until: k3s_workloads_cert_manager_rollout.rc == 0
-  changed_when: false
-  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+- name: Remove cert-manager when Cloudflare TLS is disabled
+  kubernetes.core.helm:
+    release_name: cert-manager
+    release_namespace: cert-manager
+    release_state: absent
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+  when: not (k3s_workloads_config.cloudflare.enabled | default(false) | bool)
 
 - name: Configure Let's Encrypt with Cloudflare DNS
   ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - apply
-      - '-f'
-      - '-'
+    argv: [kubectl, apply, -f, "-"]
     stdin: "{{ lookup('ansible.builtin.template', 'issuer.yaml.j2') }}"
   register: k3s_workloads_issuer_apply
   retries: 12
@@ -224,71 +256,94 @@
 
 - name: Wait for the Let's Encrypt issuer
   ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - -n
-      - oilscope
-      - wait
-      - --for=condition=Ready
-      - issuer/letsencrypt-prod
-      - --timeout=120s
+    argv: [kubectl, -n, oilscope, wait, --for=condition=Ready, issuer/letsencrypt-prod, --timeout=120s]
   changed_when: false
   when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
 
-- name: Deploy managed-mode queue and session stores
+- name: Deploy the managed-mode RabbitMQ queue
   ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - apply
-      - '-f'
-      - '-'
+    argv: [kubectl, apply, -f, "-"]
     stdin: "{{ lookup('ansible.builtin.template', 'managed.yaml.j2') }}"
   register: k3s_workloads_managed_apply
   changed_when: "'created' in k3s_workloads_managed_apply.stdout or 'configured' in k3s_workloads_managed_apply.stdout"
   when: database_mode == 'managed'
 
-- name: Wait for managed-mode dependencies
+- name: Preserve the Redis data claim for the Helm release
   ansible.builtin.command:
-    argv: [/usr/local/bin/k3s, kubectl, -n, oilscope, rollout, status, "deployment/{{ item }}", --timeout=180s]
-  loop: [rabbitmq, redis]
+    argv: [kubectl, apply, -f, "-"]
+    stdin: "{{ lookup('ansible.builtin.template', 'redis-pvc.yaml.j2') }}"
+  register: k3s_workloads_redis_pvc_apply
+  changed_when: "'created' in k3s_workloads_redis_pvc_apply.stdout or 'configured' in k3s_workloads_redis_pvc_apply.stdout"
+  when: database_mode == 'managed'
+
+- name: Remove the old hand-written Redis deployment
+  ansible.builtin.command:
+    argv: [kubectl, -n, oilscope, delete, deployment/redis, --ignore-not-found]
+  register: k3s_workloads_old_redis_delete
+  changed_when: "'deleted' in k3s_workloads_old_redis_delete.stdout"
+  when: database_mode == 'managed'
+
+- name: Check ownership of the Redis Service
+  ansible.builtin.command:
+    argv: [kubectl, -n, oilscope, get, service, redis, -o, json]
+  register: k3s_workloads_redis_service
+  changed_when: false
+  failed_when: >-
+    k3s_workloads_redis_service.rc != 0 and
+    'NotFound' not in k3s_workloads_redis_service.stderr
+  when: database_mode == 'managed'
+
+- name: Remove the old hand-written Redis Service
+  ansible.builtin.command:
+    argv: [kubectl, -n, oilscope, delete, service/redis, --ignore-not-found]
+  register: k3s_workloads_old_redis_service_delete
+  changed_when: "'deleted' in k3s_workloads_old_redis_service_delete.stdout"
+  when:
+    - database_mode == 'managed'
+    - k3s_workloads_redis_service.rc == 0
+    - >-
+      ((k3s_workloads_redis_service.stdout | from_json).metadata.annotations | default({})).get('meta.helm.sh/release-name', '') == ''
+
+- name: Install Redis from its Helm chart
+  kubernetes.core.helm:
+    release_name: redis
+    release_namespace: oilscope
+    chart_ref: oci://ghcr.io/cloudpirates-io/helm-charts/redis
+    chart_version: 0.35.4
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      fullnameOverride: redis
+      auth:
+        enabled: true
+        existingSecret: redis-env
+        existingSecretPasswordKey: REDIS_PASSWORD
+      persistence:
+        existingClaim: redis-data
+      extraConfig: |
+        appendonly yes
+        appendfsync everysec
+        maxmemory-policy noeviction
+  when: database_mode == 'managed'
+
+- name: Wait for RabbitMQ
+  ansible.builtin.command:
+    argv: [kubectl, -n, oilscope, rollout, status, deployment/rabbitmq, --timeout=180s]
   changed_when: false
   when: database_mode == 'managed'
 
-- name: Remove managed-mode dependencies in PostgreSQL extensions mode
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - '-n'
-      - oilscope
-      - delete
-      - deployment/rabbitmq
-      - deployment/redis
-      - service/rabbitmq
-      - service/redis
-      - secret/rabbitmq-env
-      - secret/redis-env
-      - --ignore-not-found
-  changed_when: false
+- name: Remove the Redis Helm release in PostgreSQL extensions mode
+  kubernetes.core.helm:
+    release_name: redis
+    release_namespace: oilscope
+    release_state: absent
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
   when: database_mode == 'postgres_extensions'
 
-- name: Reserve ServiceLB for the UI node
+- name: Remove managed-mode dependencies in PostgreSQL extensions mode
   ansible.builtin.command:
-    argv: [/usr/local/bin/k3s, kubectl, label, node, "{{ groups['ui'][0] }}", svccontroller.k3s.cattle.io/enablelb=true, --overwrite]
-  register: k3s_workloads_ui_node_label
-  changed_when: "'not labeled' not in k3s_workloads_ui_node_label.stdout"
-
-- name: Redirect public HTTP traffic to HTTPS
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/k3s
-      - kubectl
-      - apply
-      - '-f'
-      - '-'
-    stdin: "{{ lookup('ansible.builtin.template', 'traefik-config.yaml.j2') }}"
-  register: k3s_workloads_traefik_config_apply
-  changed_when: "'created' in k3s_workloads_traefik_config_apply.stdout or 'configured' in k3s_workloads_traefik_config_apply.stdout"
-  when: k3s_workloads_config.cloudflare.enabled | default(false) | bool
+    argv: [kubectl, -n, oilscope, delete, deployment/rabbitmq, deployment/redis, service/rabbitmq, service/redis, secret/rabbitmq-env, secret/redis-env, --ignore-not-found]
+  register: k3s_workloads_managed_delete
+  changed_when: "'deleted' in k3s_workloads_managed_delete.stdout"
+  when: database_mode == 'postgres_extensions'

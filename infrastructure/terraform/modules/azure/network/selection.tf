@@ -24,6 +24,6 @@ locals {
   }
   database_client_ips = [
     for vm in values(local.vms) : vm.internal_ip
-    if vm.location == var.config.default_location && contains(["database", "history"], vm.role)
+    if vm.location == var.config.default_location && vm.role != "bastion"
   ]
 }

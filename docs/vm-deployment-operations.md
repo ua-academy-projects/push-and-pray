@@ -1,6 +1,10 @@
-# VM deployment operations
+# Legacy Compose VM deployment operations
 
-The supported deployment is controlled by Ansible. Each workload VM receives
+The aggregate deployment is K3s. These commands apply to the older standalone
+Compose playbooks. Their dedicated VM role inventory is not produced by the
+generic K3s node configuration.
+
+The older deployment is controlled by Ansible. Each workload VM receives
 `/opt/oilscope/app/compose.yaml` for its own role. The UI VM also receives the
 Traefik project under `/opt/oilscope/proxy`.
 
@@ -69,8 +73,9 @@ ansible-playbook oilscope.platform.history \
 ```
 
 Replace `history` with `database`, `fetcher`, or `ui` as needed. Use
-`oilscope.platform.deploy_workloads` when dependencies also need to be
-reapplied in order.
+these commands only with the older dedicated-role inventory. The current
+`oilscope.platform.deploy_workloads` playbook targets generic K3s nodes and
+does not redeploy the standalone Compose application roles.
 
 For an immediate restart that does not pull or re-render configuration, use
 the exact container name reported by `docker ps`:

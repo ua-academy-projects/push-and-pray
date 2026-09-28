@@ -1,139 +1,46 @@
-# Cloudflare DNS and UI HTTPS
+# Cloudflare DNS and K3s HTTPS
 
-The production UI endpoint uses Cloudflare DNS in front of an Nginx reverse
-proxy on the UI VM. Terraform manages the proxied DNS A record and the
-Cloudflare `Full (strict)` SSL mode. Ansible installs Nginx and Certbot, obtains
-a public Let's Encrypt certificate through a Cloudflare DNS-01 challenge, and
-keeps the certificate renewed.
+The aggregate K3s deployment serves the UI through Traefik Ingress. Terraform
+points the proxied Cloudflare A record at the one K3s node with a public IP and
+sets Cloudflare SSL to `strict`. Ansible installs cert-manager with the official
+Helm chart. cert-manager uses Let's Encrypt and Cloudflare DNS-01 to issue and
+renew the `oilscope-ui-tls` Kubernetes Secret; the UI Ingress consumes that Secret.
 
 ```text
-Browser --HTTPS--> Cloudflare --HTTPS--> Nginx :443 --HTTP--> 127.0.0.1:8080
+Browser -> Cloudflare -> public K3s node :443 -> Traefik -> UI Service
+                         cert-manager -> Let's Encrypt DNS-01 -> Cloudflare
 ```
 
-The UI container publishes port 8080 only on the VM loopback interface. AWS and
-GCP firewall rules expose only ports 80 and 443 for a Cloudflare-enabled UI.
-Nginx redirects port 80 requests to HTTPS.
+Set `cloudflare.enabled`, `zone_id`, `hostname`, `proxied: true`, and
+`acme_email` in the shared project configuration. Exactly one non-bastion K3s
+node must set `assign_public_ip: true`. The public node is only an ingress
+address; Kubernetes may schedule UI, History, and Fetcher pods on any node.
+Terraform opens ports 80 and 443 on that node when Cloudflare is enabled.
 
-## Cloudflare prerequisites
+Create a Cloudflare API token scoped to the zone with DNS Edit, Zone Read, and
+Zone Settings Edit permissions. Export `CLOUDFLARE_API_TOKEN` for Terraform and
+the Ansible control machine. Store the value outside Git. Terraform uses it to
+manage DNS and the strict SSL setting. Ansible writes it to a Kubernetes Secret
+in the `oilscope` namespace, referenced by the cert-manager Issuer. The token
+is never included in project configuration.
 
-The domain must already be added as an active Cloudflare zone. Copy the Zone ID
-from **Cloudflare dashboard → domain → Overview → API**.
-
-Create a scoped API token restricted to that zone with these permissions:
-
-- `Zone / DNS / Edit` for the Terraform A record and Certbot DNS-01 challenge;
-- `Zone / Zone Settings / Edit` for `Full (strict)`;
-- `Zone / Zone / Read` for zone discovery performed by the provider and Certbot.
-
-Export the token in the shell that runs both Terraform and Ansible:
+From the repository root, after providing cloud credentials and applying a
+reviewed Terraform plan, run the aggregate deployment:
 
 ```sh
-export CLOUDFLARE_API_TOKEN="replace-with-a-scoped-token"
+export CLOUDFLARE_API_TOKEN=...       # provide the scoped token locally
+export OILSCOPE_IMAGE_TAG=...         # published immutable image tag
+ansible-playbook -i infrastructure/ansible/inventory/oilscope.yml \
+  infrastructure/ansible/oilscope/platform/playbooks/deploy_workloads.yml \
+  -e project_config_path="$PWD/project-config.json"
 ```
 
-The token is not part of project configuration, Terraform code, Terraform
-state, or the repository. Ansible writes it to
-`/etc/letsencrypt/cloudflare.ini` on the UI VM with mode `0600`, because Certbot
-needs the credential for unattended renewals.
+The control host needs `kubectl`, Helm, the `kubernetes.core` Ansible collection,
+and access to the cloud secret service and container registry. Ansible uses the
+inventory's bastion SSH route to tunnel to the first server's K3s API; the
+kubeconfig is kept in a private temporary directory and removed at the end.
 
-## Project configuration
-
-Add this root-level object to `project-config.json`:
-
-```json
-"cloudflare": {
-  "enabled": true,
-  "zone_id": "replace-with-the-32-character-zone-id",
-  "hostname": "isopenkoandrii.pp.ua",
-  "proxied": true,
-  "acme_email": "replace-with-your-email@example.com"
-}
-```
-
-Keep `network.ui_public_ports` set to both HTTP and HTTPS:
-
-```json
-"ui_public_ports": [80, 443]
-```
-
-The UI VM must have `assign_public_ip: true`. Terraform selects the public IP
-from the existing AWS Elastic IP or GCP static external IP output according to
-the UI VM's configured cloud; no public IP is stored in the JSON configuration.
-
-## Terraform
-
-Run from the repository root:
-
-The private `../terraform.env` file must contain a non-empty
-`CLOUDFLARE_API_TOKEN` assignment with your scoped API token. Terraform does not
-load this file itself. Sourcing bare assignments without `set -a` does not
-export new variables to Terraform or its provider processes; `set -a` exports
-them, but cannot supply a token missing from the file.
-
-The empty `provider "cloudflare" {}` block intentionally uses the provider's
-standard `CLOUDFLARE_API_TOKEN` environment variable. Do not add the token to
-Terraform variables or `project-config.json`.
-
-```sh
-set -a
-source ../terraform.env
-set +a
-
-# Check presence without displaying the token.
-: "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN in ../terraform.env}"
-
-terraform -chdir=infrastructure/terraform validate
-
-terraform -chdir=infrastructure/terraform plan \
-  -var="project_config_path=../../project-config.json" \
-  -out=tfplan
-
-# After reviewing the saved plan, apply it explicitly in the same shell.
-terraform -chdir=infrastructure/terraform apply tfplan
-```
-
-For a fresh checkout, run `terraform -chdir=infrastructure/terraform init`
-with the project's backend configuration before validation. If applying from
-a new shell, repeat the environment-loading commands first.
-
-Terraform creates `isopenkoandrii.pp.ua` as a proxied A record pointing to the
-UI public IP and sets the zone SSL mode to `strict`.
-
-## Ansible
-
-Ansible executes the installed `oilscope.platform` collection. Build and
-install it after changing or cloning the collection:
-
-```sh
-cd infrastructure/ansible/oilscope/platform
-ansible-galaxy collection build --force
-ansible-galaxy collection install oilscope-platform-*.tar.gz --force
-cd ../../../..
-```
-
-Export the existing private GHCR credentials and the Cloudflare token in the
-same shell, then deploy the UI:
-
-```sh
-export GHCR_USERNAME="replace-with-your-github-login"
-export GHCR_TOKEN="replace-with-a-token-that-can-read-packages"
-export CLOUDFLARE_API_TOKEN="replace-with-a-scoped-cloudflare-token"
-
-ansible-playbook \
-  -i infrastructure/ansible/inventory/oilscope.yml \
-  infrastructure/ansible/oilscope/platform/playbooks/ui.yml
-```
-
-The role installs `nginx`, `certbot`, and
-`python3-certbot-dns-cloudflare`. Certbot's systemd timer renews the certificate
-and its deploy hook reloads Nginx after a successful renewal.
-
-Open the application at <https://isopenkoandrii.pp.ua>. A request to
-`http://isopenkoandrii.pp.ua` is redirected to HTTPS by Nginx.
-
-## One-time manual step
-
-If the domain is not already delegated to Cloudflare, replace the domain's
-authoritative nameservers at the registrar with the two nameservers assigned by
-Cloudflare. Terraform cannot perform this registrar-side delegation. Wait for
-the Cloudflare zone to become active before requesting the certificate.
+A one-time domain registrar change may still be needed to delegate the zone to
+Cloudflare. No certificate copying or renewal hook participates in the K3s
+path. The standalone Compose `ui.yml` playbook is a legacy deployment path with
+its own Nginx/Certbot behavior and is not part of the aggregate K3s workflow.

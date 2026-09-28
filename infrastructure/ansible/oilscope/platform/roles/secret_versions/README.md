@@ -1,10 +1,11 @@
 # Provision application secrets
 
 This controller-side role reads application secret IDs from each role's
-`vars/secrets.yml`, resolves workload clouds with explicit `vm.cloud` or
-`default_cloud`, ensures the required containers exist, and uploads one version
-per used GCP project or AWS region. It uses `gcloud` for GCP and the AWS CLI for
-AWS. Both must be authenticated for the clouds present in the configuration.
+`vars/secrets.yml` for the database, history, fetcher, and UI applications. It
+uses the K3s bootstrap server's cloud and location (explicit `vm.cloud` or
+`default_cloud`) for the secret provider scope, ensures the required containers
+exist, and uploads one version per GCP project or AWS region. It uses `gcloud`
+for GCP and the AWS CLI for AWS. The active provider client must be authenticated.
 The operator credentials need permission to describe and create containers and
 add secret versions.
 

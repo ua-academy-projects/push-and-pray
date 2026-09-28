@@ -1,60 +1,60 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Prepare OilScope Kubernetes resources
-  hosts: database
+- name: Release public web ports used by older Compose deployments
+  hosts: k3s_server:k3s_agent
   become: true
   gather_facts: false
   tasks:
-    - name: Prepare the Kubernetes deployment
-      ansible.builtin.import_role:
-        name: k3s_workloads
-        tasks_from: prepare
-
-- name: Stop the legacy application containers
-  hosts: history:fetcher:ui
-  become: true
-  gather_facts: false
-  tasks:
-    - name: Check for the legacy boot deployment service
-      ansible.builtin.stat:
-        path: /etc/systemd/system/oilscope-deploy.service
-      register: k3s_workloads_legacy_boot_service
-
-    - name: Disable the legacy boot deployment service
-      ansible.builtin.systemd_service:
-        name: oilscope-deploy
-        state: stopped
-        enabled: false
-      when: k3s_workloads_legacy_boot_service.stat.exists
-
-    - name: Stop legacy Compose containers
-      ansible.builtin.command:
-        argv: [docker, container, rm, --force, "petroscope-{{ item }}-1"]
-      loop: "{{ {'history': ['history', 'rabbitmq'], 'fetcher': ['fetcher'], 'ui': ['ui', 'redis']}[oilscope_role] }}"
-      register: k3s_workloads_legacy_container_stop
-      changed_when: k3s_workloads_legacy_container_stop.rc == 0
-      failed_when: >-
-        k3s_workloads_legacy_container_stop.rc != 0 and
-        'No such container' not in k3s_workloads_legacy_container_stop.stderr
-
-- name: Release the UI web ports
-  hosts: ui
-  become: true
-  gather_facts: false
-  vars:
-    k3s_workloads_config: "{{ hostvars[groups['database'][0]].k3s_workloads_config }}"
-  tasks:
-    - name: Prepare the Kubernetes UI entry point
+    - name: Stop older web services on the public node
       ansible.builtin.import_role:
         name: k3s_workloads
         tasks_from: ui
+      when: public_ip | default('') | length > 0
 
-- name: Deploy OilScope workloads and ingress
-  hosts: database
+- name: Deploy OilScope from the Ansible control host
+  hosts: k3s_primary
   become: true
   gather_facts: false
   tasks:
-    - name: Deploy Kubernetes workloads
-      ansible.builtin.import_role:
-        name: k3s_workloads
-        tasks_from: deploy
+    - name: Install and configure workloads
+      block:
+        - name: Prepare controller access to the K3s API
+          ansible.builtin.import_role:
+            name: k3s_workloads
+            tasks_from: control
+
+        - name: Prepare Kubernetes resources and Helm releases
+          ansible.builtin.import_role:
+            name: k3s_workloads
+            tasks_from: prepare
+          delegate_to: localhost
+          become: false
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+
+        - name: Deploy application resources
+          ansible.builtin.import_role:
+            name: k3s_workloads
+            tasks_from: deploy
+          delegate_to: localhost
+          become: false
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+      always:
+        - name: Close the control-host API tunnel
+          ansible.builtin.command:
+            argv: [ssh, -S, "{{ k3s_workloads_control_dir.path }}/ssh.sock", -O, exit, "{{ ansible_user }}@{{ ansible_host }}"]
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          failed_when: false
+          when: k3s_workloads_control_dir is defined and k3s_workloads_control_dir.path is defined
+
+        - name: Remove the temporary kubeconfig
+          ansible.builtin.file:
+            path: "{{ k3s_workloads_control_dir.path }}"
+            state: absent
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          when: k3s_workloads_control_dir is defined and k3s_workloads_control_dir.path is defined

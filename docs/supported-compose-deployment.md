@@ -1,8 +1,10 @@
-# Supported Ansible and Docker Compose deployment
+# Legacy Ansible and Docker Compose deployment
 
-The supported deployment path is the `oilscope.platform` Ansible collection.
-It deploys one workload per VM in dependency order: Database, History, Fetcher,
-and UI. Docker Compose remains the container runtime on each VM, but operators
+The aggregate `deploy_workloads.yml` path now uses K3s. This guide describes
+the individual Compose playbooks retained for the older VM role topology. The
+generic K3s node configuration does not assign service-specific VM roles.
+The older path uses the `oilscope.platform` Ansible collection and deploys one
+workload per VM in dependency order: Database, History, Fetcher, and UI. Docker Compose remains the container runtime on each VM, but operators
 do not install or start a shared all-in-one Compose project manually.
 
 The `compose_project` role renders exactly one workload definition to
@@ -72,21 +74,9 @@ uvx check-jsonschema \
 Provision the required secret containers and versions before deployment. See
 [Secrets](secrets.md) for the Ansible workflow.
 
-## Deploy all workloads
+## Deploy an individual legacy workload
 
 Run from the repository root:
-
-```sh
-ansible-playbook oilscope.platform.deploy_workloads \
-  -i infrastructure/ansible/inventory/oilscope.yml \
-  -e project_config_path=/absolute/path/project-config.json
-```
-
-The playbook deploys Database first, applies migrations, then deploys History,
-Fetcher, and UI. `any_errors_fatal` prevents dependent workloads from being
-deployed after a failure.
-
-To redeploy one workload, run its playbook directly, for example:
 
 ```sh
 ansible-playbook oilscope.platform.history \
@@ -95,8 +85,11 @@ ansible-playbook oilscope.platform.history \
 ```
 
 The available workload playbooks are `database`, `history`, `fetcher`, and
-`ui`. Database must be healthy and migrated before the other workloads are
-deployed; History must be healthy before UI is deployed.
+`ui`. They require inventory carrying the old dedicated VM role groups.
+Database must be healthy and migrated before the other workloads are deployed;
+History must be healthy before UI is deployed. The aggregate
+`oilscope.platform.deploy_workloads` playbook uses K3s and does not deploy these
+standalone application roles.
 
 ## Runtime defaults
 

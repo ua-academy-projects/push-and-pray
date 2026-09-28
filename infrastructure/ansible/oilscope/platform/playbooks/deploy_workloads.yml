@@ -1,5 +1,20 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Require the K3s inventory before deployment
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Require one primary and a valid server quorum
+      ansible.builtin.assert:
+        that:
+          - groups.get('k3s_primary', []) | length == 1
+          - groups.get('k3s_server', []) | length >= 3
+          - groups.get('k3s_server', []) | length % 2 == 1
+        fail_msg: Discover one K3s primary and at least three odd-numbered K3s servers before deployment.
+
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml
 

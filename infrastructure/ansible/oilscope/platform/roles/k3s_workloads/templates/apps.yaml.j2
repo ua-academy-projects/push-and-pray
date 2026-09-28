@@ -4,15 +4,21 @@ metadata:
   name: history
   namespace: oilscope
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app: history}
   template:
     metadata:
       labels: {app: history}
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: {{ groups['history'][0] | to_json }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels: {app: history}
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - {name: oilscope-registry}
       containers:
@@ -52,8 +58,6 @@ spec:
     metadata:
       labels: {app: fetcher}
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: {{ groups['fetcher'][0] | to_json }}
       imagePullSecrets:
         - {name: oilscope-registry}
       containers:
@@ -76,15 +80,21 @@ metadata:
   name: ui
   namespace: oilscope
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: {app: ui}
   template:
     metadata:
       labels: {app: ui}
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: {{ groups['ui'][0] | to_json }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels: {app: ui}
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - {name: oilscope-registry}
       containers:
