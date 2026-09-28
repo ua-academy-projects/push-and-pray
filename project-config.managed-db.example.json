@@ -31,7 +31,8 @@
       "aws_private_subnet_cidrs": [
         "10.0.3.0/24",
         "10.0.4.0/24"
-      ]
+      ],
+      "azure_delegated_subnet_cidr": "10.0.5.0/28"
     },
     "ui_public_ports": [80, 443]
   },
@@ -51,6 +52,11 @@
     },
     "gcp": {
       "notification_channel_id": "projects/example-project-12345/notificationChannels/1234567890123456789"
+    },
+    "azure": {
+      "log_retention_days": 30,
+      "daily_ingestion_limit_gb": 0.1,
+      "notification_email": "operator@example.com"
     }
   },
   "dns": {
@@ -144,9 +150,25 @@
   "cloud_settings": {
     "gcp": {
       "project_id": "example-project-12345"
+    },
+    "azure": {
+      "subscription_id": "00000000-0000-0000-0000-000000000000"
     }
   },
   "locations": {
+    "west_europe": {
+      "gcp": {
+        "region": "europe-west4",
+        "zone": "europe-west4-a"
+      },
+      "aws": {
+        "region": "eu-west-3",
+        "zone": "eu-west-3a"
+      },
+      "azure": {
+        "region": "westeurope"
+      }
+    },
     "stockholm": {
       "gcp": {
         "region": "europe-north2",
@@ -155,6 +177,10 @@
       "aws": {
         "region": "eu-north-1",
         "zone": "eu-north-1a"
+      },
+      "azure": {
+        "region": "swedencentral",
+        "zone": "1"
       }
     },
     "ohio": {
@@ -165,6 +191,10 @@
       "aws": {
         "region": "us-east-2",
         "zone": "us-east-2a"
+      },
+      "azure": {
+        "region": "eastus",
+        "zone": "1"
       }
     },
     "mexico": {
@@ -175,21 +205,28 @@
       "aws": {
         "region": "mx-central-1",
         "zone": "mx-central-1a"
+      },
+      "azure": {
+        "region": "mexicocentral",
+        "zone": "1"
       }
     }
   },
   "machine_types": {
     "micro": {
       "gcp": "e2-micro",
-      "aws": "t3.micro"
+      "aws": "t3.micro",
+      "azure": "Standard_B2ats_v2"
     },
     "small": {
       "gcp": "e2-small",
-      "aws": "t3.small"
+      "aws": "t3.small",
+      "azure": "Standard_B2als_v2"
     },
     "medium": {
       "gcp": "e2-medium",
-      "aws": "t3.medium"
+      "aws": "t3.medium",
+      "azure": "Standard_B2as_v2"
     }
   },
   "images": {
@@ -200,6 +237,12 @@
       },
       "aws": {
         "ssm_parameter": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+      },
+      "azure": {
+        "publisher": "Canonical",
+        "offer": "ubuntu-24_04-lts",
+        "sku": "server",
+        "version": "latest"
       }
     },
     "ubuntu_2604": {
@@ -209,6 +252,12 @@
       },
       "aws": {
         "ssm_parameter": "/aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
+      },
+      "azure": {
+        "publisher": "Canonical",
+        "offer": "ubuntu-26_04-lts",
+        "sku": "server",
+        "version": "latest"
       }
     }
   },
@@ -219,6 +268,9 @@
       },
       "aws": {
         "type": "gp3"
+      },
+      "azure": {
+        "type": "StandardSSD_LRS"
       }
     },
     "performance": {
@@ -228,6 +280,9 @@
       "aws": {
         "type": "io2",
         "iops": 7000
+      },
+      "azure": {
+        "type": "Premium_LRS"
       }
     }
   }

@@ -96,6 +96,67 @@ module "gcp_bastion" {
   service_account_emails = module.gcp_secrets.service_account_emails
 }
 
+module "azure_resource_group" {
+  source = "./modules/azure-resource-group"
+
+  config = local.config
+}
+
+module "azure_network" {
+  source = "./modules/azure-network"
+
+  config              = local.config
+  resource_group_name = module.azure_resource_group.name
+}
+
+module "azure_security" {
+  source = "./modules/azure-security"
+
+  config              = local.config
+  resource_group_name = module.azure_resource_group.name
+  networks            = module.azure_network.networks
+}
+
+module "azure_secrets" {
+  source = "./modules/azure-secrets"
+
+  config              = local.config
+  location            = module.azure_resource_group.location
+  resource_group_name = module.azure_resource_group.name
+}
+
+module "azure_workloads" {
+  source = "./modules/azure-workloads"
+
+  config                     = local.config
+  identity_ids               = module.azure_secrets.identity_ids
+  networks                   = module.azure_network.networks
+  network_security_group_ids = module.azure_security.network_security_group_ids
+  resource_group_name        = module.azure_resource_group.name
+}
+
+module "azure_bastion" {
+  source = "./modules/azure-bastion"
+
+  config                     = local.config
+  identity_ids               = module.azure_secrets.identity_ids
+  networks                   = module.azure_network.networks
+  network_security_group_ids = module.azure_security.network_security_group_ids
+  resource_group_name        = module.azure_resource_group.name
+}
+
+module "azure_observability" {
+  source = "./modules/azure-observability"
+
+  config = local.config
+  instance_ids = merge(
+    module.azure_workloads.instance_ids,
+    module.azure_bastion.instance_ids,
+  )
+  location            = module.azure_resource_group.location
+  resource_group_name = module.azure_resource_group.name
+}
+
 module "aws_managed_database" {
   count  = local.config.database.mode == "managed" && local.config.default_cloud == "aws" ? 1 : 0
   source = "./modules/aws-managed-database"
@@ -122,11 +183,25 @@ module "gcp_managed_database" {
   password = var.database_password
 }
 
+module "azure_managed_database" {
+  count  = local.config.database.mode == "managed" && local.config.default_cloud == "azure" ? 1 : 0
+  source = "./modules/azure-managed-database"
+
+  config              = local.config
+  network             = module.azure_network.networks[local.config.default_location]
+  resource_group_name = module.azure_resource_group.name
+  password            = var.database_password
+}
+
 module "cloudflare_dns" {
   count  = try(local.config.dns.cloudflare.zone_id, null) == null ? 0 : 1
   source = "./modules/cloudflare-dns"
 
-  zone_id      = local.config.dns.cloudflare.zone_id
-  hostname     = local.config.vms.ui.public_endpoint.hostname
-  ipv4_address = merge(module.gcp_workloads.public_ips, module.aws_workloads.public_ips)["ui"]
+  zone_id  = local.config.dns.cloudflare.zone_id
+  hostname = local.config.vms.ui.public_endpoint.hostname
+  ipv4_address = merge(
+    module.gcp_workloads.public_ips,
+    module.aws_workloads.public_ips,
+    module.azure_workloads.public_ips,
+  )["ui"]
 }

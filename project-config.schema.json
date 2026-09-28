@@ -15,10 +15,8 @@
     "database",
     "network",
     "service_ports",
-    "monitoring",
     "bastion",
     "vms",
-    "cloud_settings",
     "locations",
     "machine_types",
     "images",
@@ -35,11 +33,11 @@
     },
     "default_cloud": {
       "type": "string",
-      "enum": ["gcp", "aws"]
+      "enum": ["gcp", "aws", "azure"]
     },
     "default_location": {
       "type": "string",
-      "enum": ["stockholm", "ohio", "mexico"]
+      "enum": ["west_europe", "stockholm", "ohio", "mexico"]
     },
     "name_prefix": {
       "type": "string",
@@ -81,7 +79,6 @@
         "vpc_cidr",
         "public_subnet_cidr",
         "private_subnet_cidr",
-        "managed_database",
         "ui_public_ports"
       ],
       "properties": {
@@ -196,6 +193,64 @@
   },
   "allOf": [
     {
+      "if": { "properties": { "default_cloud": { "const": "gcp" } }, "required": ["default_cloud"] },
+      "then": {
+        "required": ["cloud_settings", "monitoring"],
+        "properties": {
+          "cloud_settings": { "required": ["gcp"] },
+          "monitoring": { "required": ["gcp"] },
+          "locations": { "properties": { "west_europe": { "required": ["gcp"] }, "stockholm": { "required": ["gcp"] }, "ohio": { "required": ["gcp"] }, "mexico": { "required": ["gcp"] } } },
+          "machine_types": { "properties": { "micro": { "required": ["gcp"] }, "small": { "required": ["gcp"] }, "medium": { "required": ["gcp"] } } },
+          "images": { "properties": { "ubuntu_2404": { "required": ["gcp"] }, "ubuntu_2604": { "required": ["gcp"] } } },
+          "disk_types": { "properties": { "general_purpose": { "required": ["gcp"] }, "performance": { "required": ["gcp"] } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "default_cloud": { "const": "aws" } }, "required": ["default_cloud"] },
+      "then": {
+        "required": ["monitoring"],
+        "properties": {
+          "monitoring": { "required": ["aws"] },
+          "locations": { "properties": { "west_europe": { "required": ["aws"] }, "stockholm": { "required": ["aws"] }, "ohio": { "required": ["aws"] }, "mexico": { "required": ["aws"] } } },
+          "machine_types": { "properties": { "micro": { "required": ["aws"] }, "small": { "required": ["aws"] }, "medium": { "required": ["aws"] } } },
+          "images": { "properties": { "ubuntu_2404": { "required": ["aws"] }, "ubuntu_2604": { "required": ["aws"] } } },
+          "disk_types": { "properties": { "general_purpose": { "required": ["aws"] }, "performance": { "required": ["aws"] } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "default_cloud": { "const": "azure" } }, "required": ["default_cloud"] },
+      "then": {
+        "required": ["cloud_settings", "monitoring"],
+        "properties": {
+          "cloud_settings": { "required": ["azure"] },
+          "monitoring": { "required": ["azure"] },
+          "locations": { "properties": { "west_europe": { "required": ["azure"] }, "stockholm": { "required": ["azure"] }, "ohio": { "required": ["azure"] }, "mexico": { "required": ["azure"] } } },
+          "machine_types": { "properties": { "micro": { "required": ["azure"] }, "small": { "required": ["azure"] }, "medium": { "required": ["azure"] } } },
+          "images": { "properties": { "ubuntu_2404": { "required": ["azure"] }, "ubuntu_2604": { "required": ["azure"] } } },
+          "disk_types": { "properties": { "general_purpose": { "required": ["azure"] }, "performance": { "required": ["azure"] } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "default_cloud": { "const": "gcp" }, "database": { "properties": { "mode": { "const": "managed" } }, "required": ["mode"] } }, "required": ["default_cloud", "database"] },
+      "then": { "properties": { "network": { "properties": { "managed_database": { "required": ["gcp_private_service_cidr"] } } } } }
+    },
+    {
+      "if": { "properties": { "default_cloud": { "const": "aws" }, "database": { "properties": { "mode": { "const": "managed" } }, "required": ["mode"] } }, "required": ["default_cloud", "database"] },
+      "then": { "properties": { "network": { "properties": { "managed_database": { "required": ["aws_private_subnet_cidrs"] } } } } }
+    },
+    {
+      "if": { "properties": { "default_cloud": { "const": "azure" }, "database": { "properties": { "mode": { "const": "managed" } }, "required": ["mode"] } }, "required": ["default_cloud", "database"] },
+      "then": {
+        "properties": {
+          "database": { "properties": { "storage_gb": { "minimum": 32 } } },
+          "network": { "properties": { "managed_database": { "required": ["azure_delegated_subnet_cidr"] } } }
+        }
+      }
+    },
+    {
       "if": {
         "properties": {
           "database": {
@@ -209,6 +264,7 @@
       },
       "then": {
         "properties": {
+          "network": { "required": ["managed_database"] },
           "vms": {
             "properties": {
               "infrastructure": {
@@ -282,11 +338,11 @@
       "properties": {
         "cloud": {
           "type": "string",
-          "enum": ["gcp", "aws"]
+          "enum": ["gcp", "aws", "azure"]
         },
         "location": {
           "type": "string",
-          "enum": ["stockholm", "ohio", "mexico"]
+          "enum": ["west_europe", "stockholm", "ohio", "mexico"]
         },
         "machine_type": {
           "type": "string",
@@ -380,7 +436,6 @@
       "description": "Private address space reserved for provider-managed PostgreSQL.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp_private_service_cidr", "aws_private_subnet_cidrs"],
       "properties": {
         "gcp_private_service_cidr": {
           "allOf": [
@@ -400,6 +455,17 @@
           "items": {
             "$ref": "#/$defs/ipv4_cidr"
           }
+        },
+        "azure_delegated_subnet_cidr": {
+          "description": "Dedicated Azure subnet delegated to PostgreSQL Flexible Server; Azure requires at least a /28.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/ipv4_cidr"
+            },
+            {
+              "pattern": "/(?:[0-9]|1[0-9]|2[0-8])$"
+            }
+          ]
         }
       }
     },
@@ -414,7 +480,6 @@
     "monitoring": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["aws", "gcp"],
       "properties": {
         "aws": {
           "type": "object",
@@ -449,6 +514,28 @@
               "pattern": "^projects/[^/]+/notificationChannels/[^/]+$"
             }
           }
+        },
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["log_retention_days", "daily_ingestion_limit_gb", "notification_email"],
+          "properties": {
+            "log_retention_days": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 730
+            },
+            "daily_ingestion_limit_gb": {
+              "description": "Daily Log Analytics ingestion cap in GB; use -1 to disable the cap.",
+              "type": "number",
+              "minimum": -1
+            },
+            "notification_email": {
+              "description": "Email receiver for the Terraform-managed Azure Monitor action group, or null for alerts without notification actions.",
+              "type": ["string", "null"],
+              "format": "email"
+            }
+          }
         }
       }
     },
@@ -474,7 +561,6 @@
     "cloud_settings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp"],
       "properties": {
         "gcp": {
           "type": "object",
@@ -485,6 +571,15 @@
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
             }
+          }
+        },
+        "azure": {
+          "description": "Non-secret Azure deployment target.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subscription_id"],
+          "properties": {
+            "subscription_id": { "type": "string", "format": "uuid" }
           }
         }
       }
@@ -504,16 +599,27 @@
         }
       }
     },
+    "azure_location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region"],
+      "properties": {
+        "region": { "type": "string", "minLength": 1 },
+        "zone": { "type": "string", "enum": ["1", "2", "3"] }
+      }
+    },
     "location": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp", "aws"],
       "properties": {
         "gcp": {
           "$ref": "#/$defs/provider_location"
         },
         "aws": {
           "$ref": "#/$defs/provider_location"
+        },
+        "azure": {
+          "$ref": "#/$defs/azure_location"
         }
       }
     },
@@ -522,6 +628,9 @@
       "additionalProperties": false,
       "required": ["stockholm", "ohio", "mexico"],
       "properties": {
+        "west_europe": {
+          "$ref": "#/$defs/location"
+        },
         "stockholm": {
           "$ref": "#/$defs/location"
         },
@@ -536,7 +645,6 @@
     "cloud_string_values": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp", "aws"],
       "properties": {
         "gcp": {
           "type": "string",
@@ -545,6 +653,10 @@
         "aws": {
           "type": "string",
           "minLength": 1
+        },
+        "azure": {
+          "type": "string",
+          "pattern": "^Standard_[A-Za-z0-9_]+$"
         }
       }
     },
@@ -590,16 +702,29 @@
         }
       }
     },
+    "azure_image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publisher", "offer", "sku", "version"],
+      "properties": {
+        "publisher": { "type": "string", "minLength": 1 },
+        "offer": { "type": "string", "minLength": 1 },
+        "sku": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp", "aws"],
       "properties": {
         "gcp": {
           "$ref": "#/$defs/gcp_image"
         },
         "aws": {
           "$ref": "#/$defs/aws_image"
+        },
+        "azure": {
+          "$ref": "#/$defs/azure_image"
         }
       }
     },
@@ -658,16 +783,26 @@
         }
       ]
     },
+    "azure_disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["StandardSSD_LRS", "Premium_LRS"] }
+      }
+    },
     "disk_type": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gcp", "aws"],
       "properties": {
         "gcp": {
           "$ref": "#/$defs/gcp_disk"
         },
         "aws": {
           "$ref": "#/$defs/aws_disk"
+        },
+        "azure": {
+          "$ref": "#/$defs/azure_disk"
         }
       }
     },
@@ -787,11 +922,11 @@
       "properties": {
         "cloud": {
           "type": "string",
-          "enum": ["gcp", "aws"]
+          "enum": ["gcp", "aws", "azure"]
         },
         "location": {
           "type": "string",
-          "enum": ["stockholm", "ohio", "mexico"]
+          "enum": ["west_europe", "stockholm", "ohio", "mexico"]
         },
         "machine_type": {
           "type": "string",

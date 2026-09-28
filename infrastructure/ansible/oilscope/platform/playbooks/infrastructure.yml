@@ -53,6 +53,6 @@
           {{
             'require'
             if compose_project_config.database.mode == 'managed'
-               and compose_project_config.default_cloud == 'aws'
+               and compose_project_config.default_cloud in ['aws', 'azure']
             else 'disable'
           }}
