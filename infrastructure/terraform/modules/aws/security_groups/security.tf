@@ -121,6 +121,17 @@ resource "aws_vpc_security_group_ingress_rule" "k3s_agent_from_server" {
   ip_protocol                  = "-1"
 }
 
+# Server-to-server traffic for the embedded etcd quorum (2379/2380), the API
+# (6443) and flannel. With an all-server topology there are no agents, so the
+# server group must trust itself.
+resource "aws_vpc_security_group_ingress_rule" "k3s_server_from_server" {
+  count = local.tag_present["k3s_server"] ? 1 : 0
+
+  security_group_id            = aws_security_group.k3s_server[0].id
+  referenced_security_group_id = aws_security_group.k3s_server[0].id
+  ip_protocol                  = "-1"
+}
+
 
 resource "aws_vpc_security_group_ingress_rule" "history_api" {
   count = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0

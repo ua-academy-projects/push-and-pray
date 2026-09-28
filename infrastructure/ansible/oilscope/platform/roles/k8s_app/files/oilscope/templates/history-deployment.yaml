@@ -1,0 +1,51 @@
+{{- if .Values.history.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: history
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.history.replicas }}
+  selector:
+    matchLabels:
+      app: history
+  template:
+    metadata:
+      labels:
+        app: history
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: history
+          image: "{{ .Values.image.repository }}/history:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.history.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.history.secret }}
+          env:
+            - name: QUEUE_BACKEND
+              value: "{{ .Values.history.queueBackend }}"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: TZ
+              value: "UTC"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.history.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.history.port }}
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.history.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+{{- end }}

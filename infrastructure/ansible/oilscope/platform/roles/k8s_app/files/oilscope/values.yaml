@@ -1,0 +1,54 @@
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: Always
+
+imagePullSecret: ghcr-pull
+
+ui:
+  enabled: true
+  replicas: 1
+  port: 8080
+  appSecret: oilscope-app
+  historyServiceUrl: http://history.oilscope.svc:8001
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+  ingress:
+    host: oilscope.example.com
+    clusterIssuer: letsencrypt-prod
+    tlsSecret: ui-tls
+
+history:
+  enabled: true
+  replicas: 1
+  port: 8001
+  secret: oilscope-history
+  queueBackend: rabbitmq
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+fetcher:
+  enabled: true
+  replicas: 1
+  port: 8002
+  secret: oilscope-fetcher
+  queueBackend: rabbitmq
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+migrate:
+  enabled: true
+  secret: oilscope-migrate
+  pgHost: ""
+  pgUser: oil_tracker
+  pgDatabase: oil_tracker
+  skip: "003_create_ui_sessions.sql 004_create_pgmq_queue.sql 005_create_published_queue_events.sql"
+
+cloudflared:
+  enabled: true
+  image: cloudflare/cloudflared:latest
+  replicas: 1
+  secret: oilscope-cloudflared

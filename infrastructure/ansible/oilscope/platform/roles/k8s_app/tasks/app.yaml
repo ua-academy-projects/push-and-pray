@@ -1,0 +1,30 @@
+---
+- name: Create the application namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: oilscope
+
+- name: Provision application secrets
+  ansible.builtin.import_tasks: secrets.yaml
+
+
+- name: Deploy the application chart
+  kubernetes.core.helm:
+    name: oilscope
+    chart_ref: "{{ role_path }}/files/oilscope"
+    release_namespace: oilscope
+    create_namespace: false
+    wait: false
+    values:
+      image:
+        repository: "{{ k8s_app_config.registry.repository }}"
+        tag: "{{ k8s_app_config.registry.image_sha }}"
+      ui:
+        ingress:
+          host: "{{ k8s_app_public_endpoint.hostname }}"
+      migrate:
+        pgHost: "{{ app_db_host }}"

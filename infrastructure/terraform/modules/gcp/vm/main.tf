@@ -50,8 +50,8 @@ resource "google_compute_instance" "workload" {
 
   lifecycle {
     precondition {
-      condition     = !each.value.assign_public_ip || length(setintersection(each.value.roles, ["ui", "bastion"])) > 0
-      error_message = "Only workloads tagged ui or bastion may receive a public IP."
+      condition     = !each.value.assign_public_ip || length(setintersection(each.value.roles, ["ui", "bastion", "k3s_server", "k3s_agent"])) > 0
+      error_message = "Only workloads tagged ui, bastion, k3s_server or k3s_agent may receive a public IP."
     }
   }
 

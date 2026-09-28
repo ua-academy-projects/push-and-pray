@@ -1,8 +1,4 @@
 ---
 k3s_version: "v1.36.4+k3s1"
-k3s_arch: "amd64"
 k3s_binary_url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s"
 k3s_binary_sha256: "sha256:835873f37245fc615f547a2fe2af9402a347875f13fa64a1f136de644955ea3f"
-
-k3s_db_user: "oil_tracker"
-k3s_datastore_db: "k3s"

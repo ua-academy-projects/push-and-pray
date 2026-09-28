@@ -1,0 +1,9 @@
+{% if k3s_is_init | bool %}
+cluster-init: true
+{% else %}
+server: "https://{{ hostvars[groups['k3s_server'][0]].internal_ip }}:6443"
+token: "{{ hostvars[groups['k3s_server'][0]].k3s_node_token }}"
+{% endif %}
+tls-san:
+  - "{{ internal_ip }}"
+node-ip: "{{ internal_ip }}"

@@ -58,9 +58,3 @@ resource "azurerm_key_vault_secret" "db_password" {
   value        = random_password.db[0].result
   key_vault_id = var.key_vault_id
 }
-
-resource "azurerm_postgresql_flexible_server_database" "k3s" {
-  count     = local.enabled ? 1 : 0
-  name      = "k3s"
-  server_id = azurerm_postgresql_flexible_server.main[0].id
-}

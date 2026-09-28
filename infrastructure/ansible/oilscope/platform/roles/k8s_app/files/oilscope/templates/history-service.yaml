@@ -1,0 +1,15 @@
+{{- if .Values.history.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: history
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: history
+  ports:
+    - name: http
+      port: 8001
+      targetPort: {{ .Values.history.port }}
+{{- end }}

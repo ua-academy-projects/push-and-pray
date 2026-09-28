@@ -1,0 +1,42 @@
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: migrate
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}/database:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["petroscope-migrate"]
+          env:
+            - name: PGHOST
+              value: "{{ .Values.migrate.pgHost }}"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "{{ .Values.migrate.pgUser }}"
+            - name: PGDATABASE
+              value: "{{ .Values.migrate.pgDatabase }}"
+            - name: PGSSLMODE
+              value: "require"
+            - name: MIGRATION_SKIP
+              value: "{{ .Values.migrate.skip }}"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.migrate.secret }}
+{{- end }}

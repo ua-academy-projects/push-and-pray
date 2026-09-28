@@ -1,0 +1,55 @@
+{{- if .Values.ui.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels:
+      app: ui
+  template:
+    metadata:
+      labels:
+        app: ui
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: ui
+          image: "{{ .Values.image.repository }}/ui:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.ui.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.ui.appSecret }}
+          env:
+            - name: HISTORY_SERVICE_URL
+              value: "{{ .Values.ui.historyServiceUrl }}"
+            - name: SESSION_BACKEND
+              value: "redis"
+            - name: SESSION_COOKIE_SECURE
+              value: "true"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: TZ
+              value: "UTC"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.ui.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.ui.port }}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+{{- end }}

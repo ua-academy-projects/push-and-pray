@@ -38,4 +38,6 @@ ansible-playbook oilscope.platform.bootstrap_bastion -i inventory/oilscope.yml -
 ansible-playbook oilscope.platform.upload_secret_versions -i inventory/oilscope.yml -e secret_versions_config_file="$CONFIG"
 ansible-playbook oilscope.platform.k3s -i inventory/oilscope.yml \
   -e project_config_path="$CONFIG" \
-  -e k3s_datastore_host="$managed_db_host"
+  -e app_db_host="$managed_db_host" \
+  -e cloudflare_api_token="$cf_token" \
+  -e cloudflared_tunnel_token="$tunnel_token"

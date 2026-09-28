@@ -100,8 +100,9 @@ resource "google_compute_firewall" "redis" {
   }
 }
 
-# Intra-cluster traffic between k3s nodes: API server (6443), kubelet (10250)
-# and flannel VXLAN (8472/udp). Both k3s tags are source and target.
+# Intra-cluster traffic between k3s nodes: API server (6443), kubelet (10250),
+# embedded etcd client/peer (2379-2380) and flannel VXLAN (8472/udp). Both k3s
+# tags are source and target.
 resource "google_compute_firewall" "k3s_cluster" {
   count   = local.k3s_present && length(local.k3s_tags) > 0 ? 1 : 0
   name    = "${local.resource_prefix}-allow-k3s-cluster"
@@ -112,7 +113,7 @@ resource "google_compute_firewall" "k3s_cluster" {
 
   allow {
     protocol = "tcp"
-    ports    = ["6443", "10250"]
+    ports    = ["6443", "10250", "2379-2380"]
   }
 
   allow {

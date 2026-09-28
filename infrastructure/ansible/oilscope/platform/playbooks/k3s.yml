@@ -1,6 +1,6 @@
 ---
-- name : Provision the k3s control plane
-  hosts: k3s_server
+- name: Initialize the k3s control plane
+  hosts: k3s_server[0]
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -12,7 +12,20 @@
     - role: oilscope.platform.k3s
       vars:
         k3s_node_role: server
-- name: Join the k3s agent to the cluster
+
+- name: Join the remaining k3s servers
+  hosts: k3s_server[1:]
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s
+      vars:
+        k3s_node_role: server
+
+- name: Join the k3s agents to the cluster
   hosts: k3s_agent
   become: true
   gather_facts: true
@@ -22,3 +35,24 @@
     - role: oilscope.platform.k3s
       vars:
         k3s_node_role: agent
+
+- name: Deploy the application
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  any_errors_fatal: true
+  environment:
+    KUBECONFIG: "{{ k8s_local_kubeconfig }}"
+  vars:
+    k8s_bastion: "{{ hostvars[groups['bastion'][0]] }}"
+    k8s_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/oilscope-k3s.yaml"
+    k8s_api_local_port: 6444
+    resolve_secrets_result: "{{ hostvars[groups['k3s_server'][0]].resolve_secrets_result }}"
+    k8s_ssh_key: "{{ k8s_bastion.ansible_ssh_private_key_file }}"
+    k8s_ssh_user: "{{ k8s_bastion.ansible_user }}"
+    k8s_bastion_host: "{{ k8s_bastion.ansible_host }}"
+    k8s_bastion_port: "{{ k8s_bastion.bastion_ssh_port }}"
+    k8s_server_ip: "{{ hostvars[groups['k3s_server'][0]].internal_ip }}"
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  roles:
+    - role: oilscope.platform.k8s_app

@@ -40,15 +40,6 @@ resource "google_sql_database" "main" {
   instance = google_sql_database_instance.main[0].name
 }
 
-# Separate database for the k3s control-plane state (kine datastore), mirroring
-# the Azure setup. Reuses the same admin user as the app database.
-resource "google_sql_database" "k3s" {
-  count = local.enabled ? 1 : 0
-
-  name     = "k3s"
-  instance = google_sql_database_instance.main[0].name
-}
-
 resource "google_sql_user" "main" {
   count = local.enabled ? 1 : 0
 

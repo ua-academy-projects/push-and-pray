@@ -1,0 +1,16 @@
+---
+- name: Ensure the helm binary is available
+  ansible.builtin.command: helm version --short
+  register: helm_present
+  changed_when: false
+  failed_when: helm_present.rc != 0
+
+- name: List installed helm plugins
+  ansible.builtin.command: helm plugin list
+  register: helm_plugins
+  changed_when: false
+
+- name: Install the helm diff plugin
+  ansible.builtin.command:
+    cmd: helm plugin install https://github.com/databus23/helm-diff --verify=false
+  when: "'diff' not in helm_plugins.stdout"

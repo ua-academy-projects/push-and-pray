@@ -22,7 +22,10 @@ resource "aws_secretsmanager_secret_policy" "version_adder" {
 }
 
 resource "aws_iam_role_policy" "secret_access" {
-  for_each = local.aws_workload_vms
+  for_each = {
+    for name, vm in local.aws_workload_vms : name => vm
+    if length(vm.secret_mappings) > 0
+  }
 
   name = "${local.resource_prefix}-${each.key}-secrets"
   role = var.iam_role_names[each.key]

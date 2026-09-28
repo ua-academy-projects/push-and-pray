@@ -1,0 +1,28 @@
+---
+- name: Load the project config
+  ansible.builtin.set_fact:
+    k8s_app_config: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
+
+- name: Set up local kubeconfig and API tunnel
+  ansible.builtin.import_tasks: kubeconfig.yaml
+
+- name: Derive the public endpoint
+  ansible.builtin.set_fact:
+    k8s_app_public_endpoint: "{{ (k8s_app_config.vms.values()
+      | selectattr('public_endpoint', 'defined') | first).public_endpoint }}"
+
+
+- name: Check Helm and install the helm-diff plugin
+  ansible.builtin.import_tasks: helm.yaml
+
+- name: Deploy cert-manager
+  ansible.builtin.import_tasks: cert_manager.yaml
+
+- name: Deploy RabbitMQ
+  ansible.builtin.import_tasks: rabbitmq.yaml
+
+- name: Deploy Redis
+  ansible.builtin.import_tasks: redis.yaml
+
+- name: Deploy the application
+  ansible.builtin.import_tasks: app.yaml

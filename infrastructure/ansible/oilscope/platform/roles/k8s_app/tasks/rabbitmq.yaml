@@ -1,0 +1,21 @@
+---
+- name: Install RabbitMQ
+  kubernetes.core.helm:
+    name: rabbitmq
+    chart_ref: "oci://registry-1.docker.io/bitnamicharts/rabbitmq"
+    chart_version: "16.0.14"
+    release_namespace: oilscope
+    create_namespace: true
+    values:
+      global:
+        security:
+          allowInsecureImages: true
+      image:
+        repository: bitnamilegacy/rabbitmq
+      auth:
+        username: oil_tracker
+        password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
+      persistence:
+        enabled: false
+    wait: true
+  no_log: true

@@ -1,0 +1,55 @@
+{{- if .Values.fetcher.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fetcher
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.fetcher.replicas }}
+  selector:
+    matchLabels:
+      app: fetcher
+  template:
+    metadata:
+      labels:
+        app: fetcher
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: fetcher
+          image: "{{ .Values.image.repository }}/fetcher:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.fetcher.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.fetcher.secret }}
+          env:
+            - name: DATA_PROVIDER
+              value: "oilpriceapi"
+            - name: QUEUE_BACKEND
+              value: "{{ .Values.fetcher.queueBackend }}"
+            - name: LISTEN_ADDRESS
+              value: "0.0.0.0:{{ .Values.fetcher.port }}"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: TZ
+              value: "UTC"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.fetcher.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.fetcher.port }}
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.fetcher.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+{{- end }}

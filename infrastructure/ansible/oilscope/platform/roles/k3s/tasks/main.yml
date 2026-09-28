@@ -7,8 +7,9 @@
     owner: root
     group: root
     mode: "0755"
+  notify: Restart k3s
 
-- name: Download the k3s installer script
+- name: Install the vendored k3s installer script
   ansible.builtin.copy:
     src: install.sh
     dest: /usr/local/bin/k3s-install.sh
@@ -16,57 +17,88 @@
     group: root
     mode: "0755"
 
-- name: Select the kine datastore database
-  # Azure/GCP get a dedicated "k3s" database (created by Terraform). AWS RDS
-  # cannot provision a second database via Terraform, so kine reuses the app
-  # database ("oil_tracker") there — its state lives in a separate "kine" table.
-  ansible.builtin.set_fact:
-    k3s_datastore_db: "{{ 'oil_tracker' if oilscope_cloud == 'aws' else 'k3s' }}"
-  when: k3s_node_role == "server"
+- name: Ensure the k3s config directory exists
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
-- name: Build the kine datastore endpoint
+- name: Determine whether this is the cluster-init node
   ansible.builtin.set_fact:
-    k3s_datastore_endpoint: "postgres://{{ k3s_db_user }}:{{ resolve_secrets_result.POSTGRES_PASSWORD }}@{{ k3s_datastore_host }}:5432/{{ k3s_datastore_db }}?sslmode=require"
+    k3s_is_init: "{{ k3s_node_role == 'server' and inventory_hostname == groups['k3s_server'][0] }}"
+
+- name: Require an odd number of k3s servers
+  ansible.builtin.assert:
+    that: groups['k3s_server'] | length is odd
+    fail_msg: >-
+      k3s_server count is {{ groups['k3s_server'] | length }};
+  when: k3s_is_init | bool
+
+- name: Render the k3s server config
+  ansible.builtin.template:
+    src: server-config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
   no_log: true
   when: k3s_node_role == "server"
+  notify: Restart k3s
 
-- name: Install and start the k3s server
+- name: Install the k3s server
   ansible.builtin.command:
     cmd: /usr/local/bin/k3s-install.sh
     creates: /etc/systemd/system/k3s.service
   environment:
     INSTALL_K3S_SKIP_DOWNLOAD: "true"
     INSTALL_K3S_VERSION: "{{ k3s_version }}"
-    K3S_DATASTORE_ENDPOINT: "{{ k3s_datastore_endpoint }}"
-    INSTALL_K3S_EXEC: "server --tls-san {{ internal_ip }} --node-ip {{ internal_ip }} --write-kubeconfig-mode 644"
-  no_log: true
+    INSTALL_K3S_EXEC: "server"
   when: k3s_node_role == "server"
 
 - name: Wait for the k3s node token to be written
   ansible.builtin.wait_for:
     path: /var/lib/rancher/k3s/server/node-token
-  when: k3s_node_role == "server"
+  when: k3s_is_init | bool
 
 - name: Read the k3s node token
   ansible.builtin.slurp:
     path: /var/lib/rancher/k3s/server/node-token
   register: k3s_token_raw
-  when: k3s_node_role == "server"
+  no_log: true
+  when: k3s_is_init | bool
 
-- name: Expose the node token
+- name: Expose the node token to the joining nodes
   ansible.builtin.set_fact:
     k3s_node_token: "{{ k3s_token_raw.content | b64decode | trim }}"
   no_log: true
-  when: k3s_node_role == "server"
+  when: k3s_is_init | bool
 
-- name: Install and start the k3s agent
+- name: Render the k3s agent config
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: k3s_node_role == "agent"
+  notify: Restart k3s
+
+- name: Install the k3s agent
   ansible.builtin.command:
     cmd: /usr/local/bin/k3s-install.sh
     creates: /etc/systemd/system/k3s-agent.service
   environment:
     INSTALL_K3S_SKIP_DOWNLOAD: "true"
     INSTALL_K3S_VERSION: "{{ k3s_version }}"
-    K3S_URL: "https://{{ hostvars[groups['k3s_server'][0]].internal_ip }}:6443"
-    K3S_TOKEN: "{{ hostvars[groups['k3s_server'][0]].k3s_node_token }}"
-  no_log: true
+    INSTALL_K3S_EXEC: "agent"
   when: k3s_node_role == "agent"
+
+- name: Read the kubeconfig for the control machine
+  ansible.builtin.slurp:
+    path: /etc/rancher/k3s/k3s.yaml
+  register: k3s_kubeconfig_raw
+  no_log: true
+  when: k3s_is_init | bool

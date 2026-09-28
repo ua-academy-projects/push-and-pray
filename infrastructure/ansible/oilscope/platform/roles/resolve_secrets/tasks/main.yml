@@ -195,3 +195,13 @@
   ansible.builtin.set_fact:
     resolve_secrets_result: "{{ resolve_secrets_result | default({}) }}"
   no_log: true
+
+- name: Fail if any mapped secret could not be resolved
+  ansible.builtin.assert:
+    that:
+      - (resolve_secrets_mappings.keys() | list | difference(resolve_secrets_result.keys() | list)) | length == 0
+    fail_msg: >-
+      Unresolved secrets: {{ resolve_secrets_mappings.keys() | list
+        | difference(resolve_secrets_result.keys() | list) }}.
+      Check the secret exists in the store and the VM's IAM role can read it.
+  when: resolve_secrets_mappings | length > 0
