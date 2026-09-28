@@ -1,6 +1,7 @@
 {
   "$schema": "./project-config.schema.json",
   "environment": "dev",
+  "deployment_mode": "compose",
   "default_cloud": "aws",
   "default_location": "stockholm",
   "name_prefix": "oilscope",
@@ -156,7 +157,7 @@
     }
   },
   "locations": {
-    "west_europe": {
+    "west-europe": {
       "gcp": {
         "region": "europe-west4",
         "zone": "europe-west4-a"

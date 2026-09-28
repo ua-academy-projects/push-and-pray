@@ -18,6 +18,8 @@ locals {
     if lookup(vm, "cloud", var.config.default_cloud) == "gcp"
   }
 
+  gcp_compose_vms = try(var.config.deployment_mode, "compose") == "compose" ? local.gcp_workload_vms : {}
+
   gcp_bastion_vms = lookup(var.config.bastion, "cloud", var.config.default_cloud) == "gcp" ? {
     bastion = merge(var.config.bastion, {
       tags = ["bastion"]
@@ -43,7 +45,7 @@ locals {
   logging_instance_filter = join(" OR ", [
     for name, instance_id in var.instance_ids :
     "resource.labels.instance_id=\"${instance_id}\""
-    if contains(keys(local.gcp_workload_vms), name)
+    if contains(keys(local.gcp_compose_vms), name)
   ])
 
   vm_metric_alerts = {

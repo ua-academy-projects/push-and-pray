@@ -35,6 +35,18 @@ locals {
     for tag in values(local.tags) : tag.location if tag.tag != "bastion"
   ])
 
+  k3s_server_locations = toset([
+    for location in keys(var.networks) : location
+    if contains(keys(local.tags), "${location}/k3s-server")
+  ])
+
+  k3s_agent_locations = toset([
+    for location in keys(var.networks) : location
+    if contains(keys(local.tags), "${location}/k3s-agent")
+  ])
+
+  k3s_locations = setunion(local.k3s_server_locations, local.k3s_agent_locations)
+
   history_locations = toset([
     for location in keys(var.networks) : location
     if contains(keys(local.tags), "${location}/history") && contains(keys(local.tags), "${location}/ui")

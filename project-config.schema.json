@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "environment",
+    "deployment_mode",
     "default_cloud",
     "default_location",
     "name_prefix",
@@ -31,13 +32,18 @@
       "type": "string",
       "enum": ["dev", "stage", "prod"]
     },
+    "deployment_mode": {
+      "description": "Selects direct Docker Compose workloads or a K3s cluster.",
+      "type": "string",
+      "enum": ["compose", "k3s"]
+    },
     "default_cloud": {
       "type": "string",
       "enum": ["gcp", "aws", "azure"]
     },
     "default_location": {
       "type": "string",
-      "enum": ["west_europe", "stockholm", "ohio", "mexico"]
+      "enum": ["west-europe", "stockholm", "ohio", "mexico"]
     },
     "name_prefix": {
       "type": "string",
@@ -71,6 +77,9 @@
     },
     "database": {
       "$ref": "#/$defs/database"
+    },
+    "k3s": {
+      "$ref": "#/$defs/k3s"
     },
     "network": {
       "type": "object",
@@ -145,7 +154,6 @@
     "vms": {
       "type": "object",
       "minProperties": 1,
-      "required": ["infrastructure"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -193,13 +201,55 @@
   },
   "allOf": [
     {
+      "if": { "properties": { "deployment_mode": { "const": "compose" } }, "required": ["deployment_mode"] },
+      "then": {
+        "properties": {
+          "vms": {
+            "required": ["infrastructure"],
+            "additionalProperties": {
+              "properties": {
+                "tags": {
+                  "items": {
+                    "enum": ["infrastructure", "history", "fetcher", "ui"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "deployment_mode": { "const": "k3s" } }, "required": ["deployment_mode"] },
+      "then": {
+        "required": ["k3s"],
+        "properties": {
+          "default_cloud": { "const": "gcp" },
+          "vms": {
+            "minProperties": 5,
+            "additionalProperties": {
+              "properties": {
+                "tags": {
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "enum": ["k3s-server", "k3s-agent"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "if": { "properties": { "default_cloud": { "const": "gcp" } }, "required": ["default_cloud"] },
       "then": {
         "required": ["cloud_settings", "monitoring"],
         "properties": {
           "cloud_settings": { "required": ["gcp"] },
           "monitoring": { "required": ["gcp"] },
-          "locations": { "properties": { "west_europe": { "required": ["gcp"] }, "stockholm": { "required": ["gcp"] }, "ohio": { "required": ["gcp"] }, "mexico": { "required": ["gcp"] } } },
+          "locations": { "properties": { "west-europe": { "required": ["gcp"] }, "stockholm": { "required": ["gcp"] }, "ohio": { "required": ["gcp"] }, "mexico": { "required": ["gcp"] } } },
           "machine_types": { "properties": { "micro": { "required": ["gcp"] }, "small": { "required": ["gcp"] }, "medium": { "required": ["gcp"] } } },
           "images": { "properties": { "ubuntu_2404": { "required": ["gcp"] }, "ubuntu_2604": { "required": ["gcp"] } } },
           "disk_types": { "properties": { "general_purpose": { "required": ["gcp"] }, "performance": { "required": ["gcp"] } } }
@@ -212,7 +262,7 @@
         "required": ["monitoring"],
         "properties": {
           "monitoring": { "required": ["aws"] },
-          "locations": { "properties": { "west_europe": { "required": ["aws"] }, "stockholm": { "required": ["aws"] }, "ohio": { "required": ["aws"] }, "mexico": { "required": ["aws"] } } },
+          "locations": { "properties": { "west-europe": { "required": ["aws"] }, "stockholm": { "required": ["aws"] }, "ohio": { "required": ["aws"] }, "mexico": { "required": ["aws"] } } },
           "machine_types": { "properties": { "micro": { "required": ["aws"] }, "small": { "required": ["aws"] }, "medium": { "required": ["aws"] } } },
           "images": { "properties": { "ubuntu_2404": { "required": ["aws"] }, "ubuntu_2604": { "required": ["aws"] } } },
           "disk_types": { "properties": { "general_purpose": { "required": ["aws"] }, "performance": { "required": ["aws"] } } }
@@ -226,7 +276,7 @@
         "properties": {
           "cloud_settings": { "required": ["azure"] },
           "monitoring": { "required": ["azure"] },
-          "locations": { "properties": { "west_europe": { "required": ["azure"] }, "stockholm": { "required": ["azure"] }, "ohio": { "required": ["azure"] }, "mexico": { "required": ["azure"] } } },
+          "locations": { "properties": { "west-europe": { "required": ["azure"] }, "stockholm": { "required": ["azure"] }, "ohio": { "required": ["azure"] }, "mexico": { "required": ["azure"] } } },
           "machine_types": { "properties": { "micro": { "required": ["azure"] }, "small": { "required": ["azure"] }, "medium": { "required": ["azure"] } } },
           "images": { "properties": { "ubuntu_2404": { "required": ["azure"] }, "ubuntu_2604": { "required": ["azure"] } } },
           "disk_types": { "properties": { "general_purpose": { "required": ["azure"] }, "performance": { "required": ["azure"] } } }
@@ -342,7 +392,7 @@
         },
         "location": {
           "type": "string",
-          "enum": ["west_europe", "stockholm", "ohio", "mexico"]
+          "enum": ["west-europe", "stockholm", "ohio", "mexico"]
         },
         "machine_type": {
           "type": "string",
@@ -431,6 +481,36 @@
           }
         }
       ]
+    },
+    "k3s": {
+      "description": "K3s cluster networking shared by Terraform and Ansible.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "api_server", "cluster_cidr", "service_cidr", "cluster_dns", "flannel_backend"],
+      "properties": {
+        "version": {
+          "description": "Pinned K3s release installed by Ansible.",
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+$"
+        },
+        "api_server": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["internal_ip", "port"],
+          "properties": {
+            "internal_ip": { "$ref": "#/$defs/ipv4_address" },
+            "port": { "type": "integer", "const": 6443 }
+          }
+        },
+        "cluster_cidr": { "$ref": "#/$defs/ipv4_cidr" },
+        "service_cidr": { "$ref": "#/$defs/ipv4_cidr" },
+        "cluster_dns": { "$ref": "#/$defs/ipv4_address" },
+        "flannel_backend": {
+          "description": "K3s pod-network backend; Terraform opens only the corresponding node-to-node traffic.",
+          "type": "string",
+          "enum": ["vxlan"]
+        }
+      }
     },
     "managed_database_network": {
       "description": "Private address space reserved for provider-managed PostgreSQL.",
@@ -626,9 +706,9 @@
     "locations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stockholm", "ohio", "mexico"],
+      "minProperties": 1,
       "properties": {
-        "west_europe": {
+        "west-europe": {
           "$ref": "#/$defs/location"
         },
         "stockholm": {
@@ -893,7 +973,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "enum": ["infrastructure", "history", "fetcher", "ui"]
+        "enum": ["infrastructure", "history", "fetcher", "ui", "k3s-server", "k3s-agent"]
       }
     },
     "secret_mappings": {
@@ -926,7 +1006,7 @@
         },
         "location": {
           "type": "string",
-          "enum": ["west_europe", "stockholm", "ohio", "mexico"]
+          "enum": ["west-europe", "stockholm", "ohio", "mexico"]
         },
         "machine_type": {
           "type": "string",
@@ -974,25 +1054,6 @@
         }
       },
       "allOf": [
-        {
-          "if": {
-            "properties": {
-              "assign_public_ip": {
-                "const": true
-              }
-            },
-            "required": ["assign_public_ip"]
-          },
-          "then": {
-            "properties": {
-              "tags": {
-                "contains": {
-                  "const": "ui"
-                }
-              }
-            }
-          }
-        },
         {
           "if": {
             "properties": {

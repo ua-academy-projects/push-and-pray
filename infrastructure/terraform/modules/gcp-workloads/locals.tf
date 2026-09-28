@@ -26,13 +26,16 @@ locals {
 
   vms = {
     for name, vm in local.placed_vms : name => merge(vm, {
-      resource_name         = "${local.resource_prefix}-${name}"
-      region                = var.config.locations[vm.location].gcp.region
-      zone                  = var.config.locations[vm.location].gcp.zone
-      machine_type          = var.config.machine_types[vm.machine_type].gcp
-      image                 = var.config.images[vm.image].gcp
-      subnet_id             = vm.assign_public_ip ? var.networks[vm.location].public_subnet_id : var.networks[vm.location].private_subnet_id
-      provider_tags         = [for tag in vm.tags : "${local.resource_prefix}-${vm.location}-${tag}"]
+      resource_name = "${local.resource_prefix}-${name}"
+      region        = var.config.locations[vm.location].gcp.region
+      zone          = var.config.locations[vm.location].gcp.zone
+      machine_type  = var.config.machine_types[vm.machine_type].gcp
+      image         = var.config.images[vm.image].gcp
+      subnet_id     = vm.assign_public_ip ? var.networks[vm.location].public_subnet_id : var.networks[vm.location].private_subnet_id
+      provider_tags = [
+        for tag in vm.tags :
+        "${local.resource_prefix}-${vm.location}-${tag}"
+      ]
       service_account_email = var.service_account_emails[name]
       metadata              = local.ssh_metadata
       cloud_init            = null

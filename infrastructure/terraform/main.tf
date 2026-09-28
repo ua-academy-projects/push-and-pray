@@ -88,6 +88,14 @@ module "gcp_workloads" {
   service_account_emails = module.gcp_secrets.service_account_emails
 }
 
+module "gcp_k3s_api" {
+  source = "./modules/gcp-k3s-api"
+
+  config              = local.config
+  instance_self_links = module.gcp_workloads.instance_self_links
+  networks            = module.gcp_network.networks
+}
+
 module "gcp_bastion" {
   source = "./modules/gcp-bastion"
 
@@ -194,14 +202,18 @@ module "azure_managed_database" {
 }
 
 module "cloudflare_dns" {
-  count  = try(local.config.dns.cloudflare.zone_id, null) == null ? 0 : 1
+  count = (
+    try(local.config.deployment_mode, "compose") == "compose"
+    && try(local.config.dns.cloudflare.zone_id, null) != null
+    && try(local.config.vms.ui.public_endpoint.hostname, null) != null
+  ) ? 1 : 0
   source = "./modules/cloudflare-dns"
 
   zone_id  = local.config.dns.cloudflare.zone_id
-  hostname = local.config.vms.ui.public_endpoint.hostname
-  ipv4_address = merge(
+  hostname = try(local.config.vms.ui.public_endpoint.hostname, null)
+  ipv4_address = try(merge(
     module.gcp_workloads.public_ips,
     module.aws_workloads.public_ips,
     module.azure_workloads.public_ips,
-  )["ui"]
+  )["ui"], null)
 }

@@ -11,3 +11,10 @@ output "instance_ids" {
     for name, instance in google_compute_instance.this : name => instance.instance_id
   }
 }
+
+output "instance_self_links" {
+  description = "Compute Engine instance self-links keyed by logical VM name."
+  value = {
+    for name, instance in google_compute_instance.this : name => instance.self_link
+  }
+}

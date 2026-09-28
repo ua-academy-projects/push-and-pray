@@ -7,3 +7,8 @@ output "instance_ids" {
   description = "Compute Engine instance IDs keyed by logical workload VM name."
   value       = module.vm.instance_ids
 }
+
+output "instance_self_links" {
+  description = "Compute Engine instance self-links keyed by logical workload VM name."
+  value       = module.vm.instance_self_links
+}

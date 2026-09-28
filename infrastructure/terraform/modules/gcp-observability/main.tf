@@ -7,7 +7,7 @@ resource "google_project_iam_member" "ops_agent" {
 }
 
 resource "google_logging_metric" "http_requests" {
-  count = length(local.gcp_workload_vms) == 0 ? 0 : 1
+  count = length(local.gcp_compose_vms) == 0 ? 0 : 1
 
   project     = var.config.cloud_settings.gcp.project_id
   name        = "${local.resource_prefix}-http-requests"
@@ -23,7 +23,7 @@ resource "google_logging_metric" "http_requests" {
 }
 
 resource "google_logging_metric" "http_5xx" {
-  count = length(local.gcp_workload_vms) == 0 ? 0 : 1
+  count = length(local.gcp_compose_vms) == 0 ? 0 : 1
 
   project     = var.config.cloud_settings.gcp.project_id
   name        = "${local.resource_prefix}-http-5xx"
@@ -109,7 +109,7 @@ resource "google_monitoring_alert_policy" "vm_unavailable" {
 }
 
 resource "google_monitoring_alert_policy" "http_5xx" {
-  count = length(local.gcp_workload_vms) == 0 ? 0 : 1
+  count = length(local.gcp_compose_vms) == 0 ? 0 : 1
 
   project      = var.config.cloud_settings.gcp.project_id
   display_name = "${local.resource_prefix}-http-5xx"
