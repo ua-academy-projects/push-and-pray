@@ -73,6 +73,7 @@ module "gcp_secrets" {
 }
 
 module "gcp_observability" {
+  count  = local.config.deployment_mode == "compose" ? 1 : 0
   source = "./modules/gcp-observability"
 
   config                 = local.config

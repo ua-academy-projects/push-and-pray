@@ -203,6 +203,7 @@
     {
       "if": { "properties": { "deployment_mode": { "const": "compose" } }, "required": ["deployment_mode"] },
       "then": {
+        "required": ["monitoring"],
         "properties": {
           "vms": {
             "required": ["infrastructure"],
@@ -225,6 +226,11 @@
         "required": ["k3s"],
         "properties": {
           "default_cloud": { "const": "gcp" },
+          "database": {
+            "properties": {
+              "mode": { "const": "self_managed" }
+            }
+          },
           "vms": {
             "minProperties": 5,
             "additionalProperties": {
@@ -245,7 +251,7 @@
     {
       "if": { "properties": { "default_cloud": { "const": "gcp" } }, "required": ["default_cloud"] },
       "then": {
-        "required": ["cloud_settings", "monitoring"],
+        "required": ["cloud_settings"],
         "properties": {
           "cloud_settings": { "required": ["gcp"] },
           "monitoring": { "required": ["gcp"] },
@@ -259,7 +265,6 @@
     {
       "if": { "properties": { "default_cloud": { "const": "aws" } }, "required": ["default_cloud"] },
       "then": {
-        "required": ["monitoring"],
         "properties": {
           "monitoring": { "required": ["aws"] },
           "locations": { "properties": { "west-europe": { "required": ["aws"] }, "stockholm": { "required": ["aws"] }, "ohio": { "required": ["aws"] }, "mexico": { "required": ["aws"] } } },
@@ -272,7 +277,7 @@
     {
       "if": { "properties": { "default_cloud": { "const": "azure" } }, "required": ["default_cloud"] },
       "then": {
-        "required": ["cloud_settings", "monitoring"],
+        "required": ["cloud_settings"],
         "properties": {
           "cloud_settings": { "required": ["azure"] },
           "monitoring": { "required": ["azure"] },
@@ -486,7 +491,17 @@
       "description": "K3s cluster networking shared by Terraform and Ansible.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "api_server", "cluster_cidr", "service_cidr", "cluster_dns", "flannel_backend"],
+      "required": [
+        "version",
+        "api_server",
+        "cluster_cidr",
+        "service_cidr",
+        "cluster_dns",
+        "flannel_backend",
+        "application",
+        "data_services",
+        "secret_mappings"
+      ],
       "properties": {
         "version": {
           "description": "Pinned K3s release installed by Ansible.",
@@ -509,6 +524,69 @@
           "description": "K3s pod-network backend; Terraform opens only the corresponding node-to-node traffic.",
           "type": "string",
           "enum": ["vxlan"]
+        },
+        "application": {
+          "description": "Cluster-local namespace and public endpoint for the OilScope application.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "hostname", "acme_email"],
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+            },
+            "hostname": {
+              "type": "string",
+              "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
+            },
+            "acme_email": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+            }
+          }
+        },
+        "data_services": {
+          "description": "Persistent data-service sizing for the K3s application deployment.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["postgresql", "rabbitmq", "redis"],
+          "properties": {
+            "postgresql": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["storage_gb"],
+              "properties": {
+                "storage_gb": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "rabbitmq": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["storage_gb"],
+              "properties": {
+                "storage_gb": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "redis": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["storage_gb"],
+              "properties": {
+                "storage_gb": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
+        "secret_mappings": {
+          "$ref": "#/$defs/secret_mappings",
+          "required": [
+            "POSTGRES_PASSWORD",
+            "RABBITMQ_PASSWORD",
+            "RABBITMQ_ERLANG_COOKIE",
+            "REDIS_PASSWORD",
+            "OILPRICEAPI_KEY",
+            "GHCR_TOKEN"
+          ]
         }
       }
     },

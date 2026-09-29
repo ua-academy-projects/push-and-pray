@@ -29,7 +29,31 @@
     "cluster_cidr": "10.42.0.0/16",
     "service_cidr": "10.43.0.0/16",
     "cluster_dns": "10.43.0.10",
-    "flannel_backend": "vxlan"
+    "flannel_backend": "vxlan",
+    "application": {
+      "namespace": "oilscope",
+      "hostname": "oilscope.example.com",
+      "acme_email": "example-operator@example.com"
+    },
+    "data_services": {
+      "postgresql": {
+        "storage_gb": 10
+      },
+      "rabbitmq": {
+        "storage_gb": 5
+      },
+      "redis": {
+        "storage_gb": 2
+      }
+    },
+    "secret_mappings": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "RABBITMQ_PASSWORD": "example-rabbitmq-password",
+      "RABBITMQ_ERLANG_COOKIE": "example-rabbitmq-erlang-cookie",
+      "REDIS_PASSWORD": "example-redis-password",
+      "OILPRICEAPI_KEY": "example-api-key",
+      "GHCR_TOKEN": "example-ghcr-token"
+    }
   },
   "network": {
     "vpc_cidr": "10.20.0.0/16",
@@ -42,11 +66,6 @@
     "postgresql": 5432,
     "rabbitmq": 5672,
     "redis": 6379
-  },
-  "monitoring": {
-    "gcp": {
-      "notification_channel_id": null
-    }
   },
   "bastion": {
     "machine_type": "micro",
@@ -61,7 +80,7 @@
   },
   "vms": {
     "server-1": {
-      "machine_type": "medium",
+      "machine_type": "small",
       "image": "ubuntu_2604",
       "internal_ip": "10.20.1.10",
       "boot_disk": {
@@ -75,7 +94,7 @@
       }
     },
     "server-2": {
-      "machine_type": "medium",
+      "machine_type": "small",
       "image": "ubuntu_2604",
       "internal_ip": "10.20.1.11",
       "boot_disk": {
@@ -89,7 +108,7 @@
       }
     },
     "server-3": {
-      "machine_type": "medium",
+      "machine_type": "small",
       "image": "ubuntu_2604",
       "internal_ip": "10.20.1.12",
       "boot_disk": {
@@ -103,7 +122,7 @@
       }
     },
     "agent-1": {
-      "machine_type": "medium",
+      "machine_type": "small",
       "image": "ubuntu_2604",
       "internal_ip": "10.20.1.20",
       "boot_disk": {
@@ -117,7 +136,7 @@
       }
     },
     "agent-2": {
-      "machine_type": "medium",
+      "machine_type": "small",
       "image": "ubuntu_2604",
       "internal_ip": "10.20.1.21",
       "boot_disk": {
