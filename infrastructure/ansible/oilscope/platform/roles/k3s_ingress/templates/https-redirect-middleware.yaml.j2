@@ -1,0 +1,15 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ k3s_ingress_https_redirect_middleware_name }}
+  namespace: {{ k3s_ingress_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ k3s_ingress_service_name }}
+    app.kubernetes.io/instance: {{ k3s_ingress_config.name_prefix }}
+    app.kubernetes.io/part-of: {{ k3s_ingress_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: {{ k3s_ingress_https_redirect_permanent | bool | lower }}
+

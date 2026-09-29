@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ k3s_application_fetcher_name }}
+  namespace: {{ k3s_application_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ k3s_application_fetcher_name }}
+    app.kubernetes.io/instance: {{ k3s_application_config.name_prefix }}
+    app.kubernetes.io/part-of: {{ k3s_application_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+spec:
+  replicas: {{ k3s_application_fetcher_replicas }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ k3s_application_fetcher_name }}
+      app.kubernetes.io/instance: {{ k3s_application_config.name_prefix }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ k3s_application_fetcher_name }}
+        app.kubernetes.io/instance: {{ k3s_application_config.name_prefix }}
+        app.kubernetes.io/part-of: {{ k3s_application_config.name_prefix }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: {{ k3s_application_registry_secret_name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fetcher
+          image: "{{ k3s_application_image_repository }}/fetcher:{{ k3s_application_image_tag }}"
+          imagePullPolicy: {{ k3s_application_image_pull_policy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: {{ k3s_application_fetcher_port }}
+              protocol: TCP
+          env:
+            - name: OILPRICEAPI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ k3s_application_secret_name }}
+                  key: OILPRICEAPI_KEY
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ k3s_application_secret_name }}
+                  key: RABBITMQ_PASSWORD
+            - name: DATA_PROVIDER
+              value: oilpriceapi
+            - name: MESSAGING_BACKEND
+              value: rabbitmq
+            - name: RABBITMQ_URL
+              value: >-
+                amqp://{{ k3s_application_rabbitmq_user }}:$(RABBITMQ_PASSWORD)@{{ k3s_application_rabbitmq_host }}:{{ k3s_application_rabbitmq_port }}/{{ k3s_application_rabbitmq_vhost }}
+            - name: PGMQ_QUEUE
+              value: price_observations
+            - name: FETCH_CRON_HOURS
+              value: "{{ k3s_application_fetch_cron_hours }}"
+            - name: FETCH_TIMEZONE
+              value: {{ k3s_application_fetch_timezone }}
+            - name: FETCH_ON_STARTUP
+              value: "{{ k3s_application_fetch_on_startup }}"
+            - name: REQUEST_TIMEOUT_SECONDS
+              value: "{{ k3s_application_request_timeout_seconds }}"
+            - name: LISTEN_ADDRESS
+              value: "0.0.0.0:{{ k3s_application_fetcher_port }}"
+            - name: TZ
+              value: UTC
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+

@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_application_config: >-
+      {{ lookup('ansible.builtin.file', k3s_application_config_file) | from_json }}
+
+- name: Create the History Service
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_application_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'history-service.yaml.j2') | from_yaml }}
+
+- name: Deploy History
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_application_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'history-deployment.yaml.j2') | from_yaml }}
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: "{{ k3s_application_wait_timeout }}"
+
+- name: Deploy Fetcher
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_application_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'fetcher-deployment.yaml.j2') | from_yaml }}
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: "{{ k3s_application_wait_timeout }}"
+
+- name: Create the UI Service
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_application_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'ui-service.yaml.j2') | from_yaml }}
+
+- name: Deploy UI
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_application_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'ui-deployment.yaml.j2') | from_yaml }}
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: "{{ k3s_application_wait_timeout }}"

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy the OilScope application to K3s
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    k3s_application_config_file: >-
+      {{ project_config_path | default('project-config.json') }}
+  roles:
+    - role: oilscope.platform.k3s_migrations
+      vars:
+        k3s_migrations_config_file: "{{ k3s_application_config_file }}"
+    - role: oilscope.platform.k3s_application
+    - role: oilscope.platform.k3s_ingress
+      vars:
+        k3s_ingress_config_file: "{{ k3s_application_config_file }}"
