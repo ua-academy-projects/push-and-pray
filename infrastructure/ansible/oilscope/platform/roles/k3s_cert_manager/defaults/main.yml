@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_cert_manager_config_file: "{{ project_config_path | default('project-config.json') }}"
+k3s_cert_manager_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_cert_manager_config.environment
+     ~ '.yaml' }}
+k3s_cert_manager_values_file: >-
+  {{ lookup('ansible.builtin.env', 'PWD')
+     ~ '/infrastructure/kubernetes/values/cert-manager.yaml' }}
+k3s_cert_manager_helm_binary: helm
+k3s_cert_manager_release_name: cert-manager
+k3s_cert_manager_release_namespace: cert-manager
+k3s_cert_manager_chart_ref: oci://quay.io/jetstack/charts/cert-manager
+k3s_cert_manager_chart_version: v1.21.2
+k3s_cert_manager_timeout: 10m0s
+k3s_cert_manager_production_issuer_name: letsencrypt-production
+k3s_cert_manager_production_server: https://acme-v02.api.letsencrypt.org/directory
+k3s_cert_manager_production_account_secret_name: letsencrypt-production-account-key
+k3s_cert_manager_production_ingress_class: traefik
+k3s_cert_manager_production_wait_timeout: 120

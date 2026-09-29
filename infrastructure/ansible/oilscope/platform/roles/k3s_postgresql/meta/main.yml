@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+galaxy_info:
+  author: Push and Pray team
+  description: Install PostgreSQL in K3s with Helm
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+  galaxy_tags:
+    - database
+    - helm
+    - k3s
+    - postgresql
+
+dependencies: []

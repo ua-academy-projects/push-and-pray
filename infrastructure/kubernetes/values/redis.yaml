@@ -1,0 +1,39 @@
+image:
+  registry: docker.io
+  repository: redis
+  tag: 8.10.2@sha256:d5ac52db24d4e70566fe9944f22cf5bdc2bc739b05c0f426335161ea6c23f3b3
+  pullPolicy: IfNotPresent
+
+architecture: standalone
+
+service:
+  type: ClusterIP
+
+auth:
+  enabled: true
+  existingSecretPasswordKey: REDIS_PASSWORD
+
+extraConfig: |-
+  appendonly yes
+  appendfsync everysec
+  maxmemory 192mb
+  maxmemory-policy allkeys-lru
+
+persistence:
+  enabled: true
+  storageClass: local-path
+  accessMode: ReadWriteOnce
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 384Mi
+
+sentinel:
+  enabled: false
+
+metrics:
+  enabled: false

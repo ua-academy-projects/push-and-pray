@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_cert_manager_config: >-
+      {{ lookup('ansible.builtin.file', k3s_cert_manager_config_file) | from_json }}
+
+- name: Install cert-manager
+  kubernetes.core.helm:
+    binary_path: "{{ k3s_cert_manager_helm_binary }}"
+    release_name: "{{ k3s_cert_manager_release_name }}"
+    release_namespace: "{{ k3s_cert_manager_release_namespace }}"
+    chart_ref: "{{ k3s_cert_manager_chart_ref }}"
+    chart_version: "{{ k3s_cert_manager_chart_version }}"
+    kubeconfig: "{{ k3s_cert_manager_kubeconfig }}"
+    values_files:
+      - "{{ k3s_cert_manager_values_file }}"
+    create_namespace: true
+    atomic: true
+    wait: true
+    timeout: "{{ k3s_cert_manager_timeout }}"
+
+- name: Create the Let's Encrypt production ClusterIssuer
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_cert_manager_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: "{{ k3s_cert_manager_production_issuer_name }}"
+        labels:
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_cert_manager_config.name_prefix }}"
+      spec:
+        acme:
+          email: "{{ k3s_cert_manager_config.k3s.application.acme_email }}"
+          server: "{{ k3s_cert_manager_production_server }}"
+          privateKeySecretRef:
+            name: "{{ k3s_cert_manager_production_account_secret_name }}"
+          solvers:
+            - http01:
+                ingress:
+                  ingressClassName: "{{ k3s_cert_manager_production_ingress_class }}"
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: "{{ k3s_cert_manager_production_wait_timeout }}"

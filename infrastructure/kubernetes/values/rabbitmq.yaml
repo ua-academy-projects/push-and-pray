@@ -1,0 +1,44 @@
+image:
+  registry: docker.io
+  repository: rabbitmq
+  tag: 4.3.6-management@sha256:de62d9901fb73aaa8767b9c1e9ea32f2938f69d1b83e430f7c5ca854081d2128
+  imagePullPolicy: IfNotPresent
+
+replicaCount: 1
+podManagementPolicy: OrderedReady
+
+auth:
+  enabled: true
+  username: oil_tracker
+  existingPasswordKey: RABBITMQ_PASSWORD
+  existingErlangCookieKey: RABBITMQ_ERLANG_COOKIE
+
+config:
+  extraConfiguration: |-
+    default_vhost = oil_tracker
+
+peerDiscoveryK8sPlugin:
+  enabled: false
+
+managementPlugin:
+  enabled: true
+
+service:
+  type: ClusterIP
+
+persistence:
+  enabled: true
+  storageClass: local-path
+  accessModes:
+    - ReadWriteOnce
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 768Mi
+
+metrics:
+  enabled: false
