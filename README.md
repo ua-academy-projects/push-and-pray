@@ -19,8 +19,10 @@ have already been persisted in PostgreSQL.
 - PostgreSQL- or Redis-backed UI preferences with a sliding 30-day TTL.
 - Multi-stage Docker images and role-specific Docker Compose projects.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
-- Terraform infrastructure, Ansible-managed workloads, and cloud-provider
-  observability on AWS, GCP, and Azure.
+- Terraform infrastructure, Ansible-managed Compose workloads, and
+  cloud-provider observability on AWS, GCP, and Azure.
+- Highly available K3s control plane on GCP with controller-driven Helm add-ons,
+  Traefik ingress, cert-manager, and Let's Encrypt TLS.
 
 See [Cloud monitoring](docs/monitoring.md) for the Terraform-managed alerts,
 log metrics, HTTPS checks, and manual notification prerequisites.
@@ -60,9 +62,9 @@ log metrics, HTTPS checks, and manual notification prerequisites.
 | Messaging      | PGMQ or RabbitMQ                              |
 | Persistence    | PostgreSQL 18                                 |
 | UI sessions    | PostgreSQL extensions or Redis                |
-| Packaging      | Docker Engine and Docker Compose              |
+| Packaging      | Docker, Docker Compose, Kubernetes, and Helm  |
 | Infrastructure | Terraform, AWS, Google Cloud, Microsoft Azure |
-| Automation     | Ansible                                       |
+| Automation     | Ansible and K3s                               |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
@@ -70,14 +72,19 @@ log metrics, HTTPS checks, and manual notification prerequisites.
 The runtime is divided into three application services and a selectable set of
 infrastructure services.
 
-Cloud deployments select one of two database architectures with `database.mode`
-in `project-config.json`. A self-managed database deployment
+Compose cloud deployments select one of two database architectures with
+`database.mode` in `project-config.json`. A self-managed database deployment
 (`self_managed`) runs PostgreSQL with PGMQ and the session extensions on the
 infrastructure VM. A managed database deployment (`managed`) provisions private
 Cloud SQL, RDS PostgreSQL, or Azure Database for PostgreSQL Flexible Server,
 runs RabbitMQ and Redis on the infrastructure VM, and uses no PostgreSQL
 extensions. GCP clients reach Cloud SQL through the Auth Proxy with private IP;
 AWS and Azure clients use private DNS endpoints with TLS.
+
+The GCP K3s deployment installs PostgreSQL, RabbitMQ, and Redis inside the
+cluster as pinned Helm releases. Its Terraform `database.mode` remains
+`self_managed` because no cloud database service is provisioned, while the
+application uses the RabbitMQ and Redis integration layout.
 
 | Component        | Responsibility                                                                                    | Owns                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -86,7 +93,7 @@ AWS and Azure clients use private DNS endpoints with TLS.
 | UI Service       | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
 | PGMQ or RabbitMQ | Provides the selected event transport between Fetcher and History                               | Delivery, retries, and failed-message handling   |
 | PostgreSQL       | Stores observations and, for a self-managed database, hashed UI sessions                         | Durable market data                              |
-| Redis            | Stores expiring UI sessions for a managed database deployment                                   | Managed-database session state                   |
+| Redis            | Stores expiring UI sessions for managed Compose and K3s                                          | RabbitMQ/Redis architecture session state        |
 
 ### Data flow
 
@@ -94,7 +101,7 @@ AWS and Azure clients use private DNS endpoints with TLS.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
 3. The Fetcher publishes a versioned event through the selected messaging backend:
-   PGMQ for a self-managed database or RabbitMQ for a managed database.
+   PGMQ for self-managed Compose, or RabbitMQ for managed Compose and K3s.
 4. History consumes and validates the event, then persists its observations to
    PostgreSQL before acknowledging successful processing.
 5. Failed events remain eligible for retry according to the selected backend's
@@ -102,15 +109,15 @@ AWS and Azure clients use private DNS endpoints with TLS.
    PGMQ messages that exceed the retry limit are archived.
 6. The UI Service requests saved observations from History over HTTP.
 7. The browser receives only persisted data through the UI Service.
-8. UI preferences are stored in PostgreSQL for a self-managed database deployment
-   or Redis for a managed database deployment.
+8. UI preferences are stored in PostgreSQL for self-managed Compose, or Redis
+   for managed Compose and K3s.
 
-With a self-managed database, PGMQ provides durable queue storage inside
+With self-managed Compose, PGMQ provides durable queue storage inside
 PostgreSQL. Messages are archived only after successful observation persistence;
-otherwise, the visibility timeout makes them available again. With a managed
-database, RabbitMQ provides event delivery and dead-letter handling. Database
-uniqueness on `(instrument_code, scheduled_for)` keeps redelivery idempotent in
-both architectures.
+otherwise, the visibility timeout makes them available again. With managed
+Compose or K3s, RabbitMQ provides event delivery and dead-letter handling.
+Database uniqueness on `(instrument_code, scheduled_for)` keeps redelivery
+idempotent in every architecture.
 
 ## Tracked instruments
 
@@ -139,6 +146,7 @@ scientific data source.
 ├── infrastructure/
 │   ├── ansible/                    Cloud inventory and workload automation
 │   ├── docker/                     Dockerfiles and local Compose files
+│   ├── kubernetes/                 Pinned Helm release values
 │   ├── ssh/                        Example SSH client configuration
 │   ├── terraform/                  AWS, GCP, and Azure infrastructure modules
 │   └── vagrant/
@@ -190,7 +198,17 @@ PostgreSQL uses a named Docker volume. The current Ansible deployment leaves
 Docker's JSON logging enabled so the GCP Ops Agent or AWS CloudWatch Agent can
 collect workload logs. The legacy Vagrant Compose files use journald.
 
-### Published application images
+## K3s deployment details
+
+The GCP K3s path provisions a private three-server embedded-etcd control plane,
+two worker agents, a bastion, a private API load balancer, and an external
+passthrough ingress load balancer. Ansible bootstraps K3s and then runs Helm and
+Kubernetes modules locally through the bastion tunnel. See the
+[Ansible collection guide](infrastructure/ansible/oilscope/platform/README.md)
+for the complete infrastructure, secrets, add-on, migration, application, and
+TLS deployment order.
+
+## Published application images
 
 GitHub Actions builds and publishes every application image to GitHub Container Registry:
 
@@ -321,7 +339,7 @@ source metadata, and four different time concepts:
 The original upstream price object is retained in `raw_data` as JSONB. SQL migrations are
 ordered in `database/migrations/` and are safe to apply repeatedly.
 
-For a self-managed database deployment, the `ui_sessions` table stores validated
+For a self-managed Compose deployment, the `ui_sessions` table stores validated
 preferences in an hstore column, a 30-day
 expiration timestamp, and only the SHA-256 digest of the browser session ID. Each preference
 value is JSON-encoded inside the key/value hstore so lists, booleans, integers, nulls, and
@@ -343,9 +361,9 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                 | External HTTP timeout                        |
 | `DATABASE_URL`                    | see `.env.example`   | History and UI PostgreSQL connection         |
 | `MESSAGING_BACKEND`               | `pgmq`               | `pgmq` or `rabbitmq`                         |
-| `RABBITMQ_URL`                    | none                 | RabbitMQ connection for a managed database   |
+| `RABBITMQ_URL`                    | none                 | RabbitMQ connection for managed Compose/K3s  |
 | `SESSION_BACKEND`                 | `postgresql`         | `postgresql` or `redis`                      |
-| `REDIS_URL`                       | none                 | Redis connection for a managed database      |
+| `REDIS_URL`                       | none                 | Redis connection for managed Compose/K3s     |
 | `PGMQ_QUEUE`                      | `price_observations` | PostgreSQL queue name                        |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                 | Message visibility timeout                   |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                  | Consumer polling interval                    |

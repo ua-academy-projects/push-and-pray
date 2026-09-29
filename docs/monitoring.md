@@ -1,12 +1,17 @@
 # Cloud monitoring
 
-Terraform creates the monitoring definitions that belong to the active
-application deployment. Ansible installs the guest agents and configures
+For Compose deployments, Terraform creates the monitoring definitions that
+belong to the active cloud. Ansible installs the guest agents and configures
 workload log collection and Traefik access logging. Budgets remain manual.
 
 Host monitoring covers the bastion and every workload VM. Docker and
 application log collection remains limited to workload VMs, and the external
 HTTPS check targets only the public UI.
+
+K3s mode deliberately does not instantiate the GCP observability module or
+install the Google Cloud Ops Agent. Kubernetes monitoring is deferred until a
+cluster-native monitoring stack is added, so K3s nodes do not receive the
+Compose VM alert policies or their service-account IAM grants.
 
 ## Manual notification destinations
 
@@ -60,10 +65,10 @@ fleet-wide CPU, memory, root-disk, status-check, and HTTP 5xx alarms. It also
 creates a Route 53 HTTPS check for `/health`, its alarm in `us-east-1`, and the
 `Oilscope` dashboard.
 
-For a GCP deployment, Terraform creates request and HTTP 5xx logs-based metrics,
-fleet-wide CPU, memory, root-disk, VM metric-absence, and HTTP 5xx policies. It
-also creates an HTTPS uptime check for `/health`, an availability policy, and
-the `Oilscope` dashboard.
+For a GCP Compose deployment, Terraform creates request and HTTP 5xx logs-based
+metrics, fleet-wide CPU, memory, root-disk, VM metric-absence, and HTTP 5xx
+policies. It also creates an HTTPS uptime check for `/health`, an availability
+policy, and the `Oilscope` dashboard.
 
 For an Azure deployment, Terraform creates a capped Log Analytics workspace,
 an Application Insights component, a Linux data collection rule and its VM
@@ -82,6 +87,8 @@ uptime probes do not inflate the request metric.
 
 ## Deployment order
 
+For Compose deployments:
+
 1. Apply Terraform to create the infrastructure, monitoring definitions, and
    optional Cloudflare DNS record.
 2. Run `oilscope.platform.deploy`. The general Ansible playbook prepares the
@@ -94,8 +101,8 @@ endpoint becomes healthy.
 
 ## Cloudflare DNS
 
-Add the non-secret Cloudflare Zone ID to `project-config.json` to manage the UI
-record with Terraform:
+Add the non-secret Cloudflare Zone ID to `project-config.json` to manage the
+public application record with Terraform:
 
 ```json
 "dns": {
@@ -108,7 +115,9 @@ record with Terraform:
 Before running Terraform, export a Cloudflare API token restricted to `DNS
 Edit` on this zone as `CLOUDFLARE_API_TOKEN`. The token is not part of the
 configuration or Terraform state. Terraform keeps the A record in DNS-only
-mode and updates it from the active cloud's UI public IP.
+mode. Compose deployments point it to the active cloud's UI public IP; a GCP
+K3s deployment points it to the reserved external ingress load-balancer IP and
+uses `k3s.application.hostname` as the record name.
 
 The first apply requires an existing record to be imported or deleted. Import
 uses the identifier `<zone_id>/<dns_record_id>` at the address
