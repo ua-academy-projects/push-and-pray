@@ -1,0 +1,67 @@
+replicaCount: 1
+
+image:
+  registry: ghcr.io
+  repository: headlamp-k8s/headlamp
+  tag: v0.45.0@sha256:db3f0e0fc58d358d41daa3fe7fc852437552c7ee873c3645470f7b86a8e0db49
+  pullPolicy: IfNotPresent
+
+config:
+  inCluster: true
+  unsafeUseServiceAccountToken: false
+  oidc:
+    secret:
+      create: false
+    externalSecret:
+      enabled: false
+  staticPlugins:
+    enabled: false
+  enableHelm: false
+  watchPlugins: false
+  clusterInventory:
+    enabled: false
+
+automountServiceAccountToken: true
+
+serviceAccount:
+  create: true
+  name: headlamp
+
+clusterRoleBinding:
+  create: false
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+
+httpRoute:
+  enabled: false
+
+persistentVolumeClaim:
+  enabled: false
+
+pluginsManager:
+  enabled: false
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 100
+  runAsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

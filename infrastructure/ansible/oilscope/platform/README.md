@@ -181,6 +181,30 @@ configured service port and `local-path` volume. AOF persistence is enabled,
 memory usage is bounded for the small K3s nodes, and Sentinel and metrics are
 disabled.
 
+The final add-on is an internal-only Headlamp dashboard in its own namespace.
+It has only a `ClusterIP` Service: no Ingress, HTTPRoute, public load balancer,
+DNS record, or firewall rule exposes it. The chart's automatic `cluster-admin`
+binding is disabled. Ansible instead creates a separate `headlamp-admin`
+ServiceAccount explicitly bound to `cluster-admin` for this private cluster.
+With the private API tunnel running, access it from the controller and generate
+a temporary login token:
+
+```bash
+KUBECONFIG="$HOME/.kube/oilscope-dev.yaml" \
+kubectl -n headlamp port-forward \
+  service/headlamp 8088:80 \
+  --address=127.0.0.1
+
+KUBECONFIG="$HOME/.kube/oilscope-dev.yaml" \
+kubectl -n headlamp create token headlamp-admin --duration=8h
+```
+
+Open `http://127.0.0.1:8088` and paste the temporary token. The port-forward
+process must remain running while Headlamp is in use. The token grants
+unrestricted cluster access: treat it like a root credential, do not store it,
+and close the port-forward when finished. The Headlamp Pod itself continues to
+use a separate unprivileged ServiceAccount.
+
 ## Apply K3s database migrations
 
 After the add-ons are ready, run the repository's existing database migration

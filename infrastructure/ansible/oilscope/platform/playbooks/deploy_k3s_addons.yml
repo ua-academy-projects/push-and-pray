@@ -21,3 +21,6 @@
     - role: oilscope.platform.k3s_redis
       vars:
         k3s_redis_config_file: "{{ k3s_addons_config_file }}"
+    - role: oilscope.platform.k3s_headlamp
+      vars:
+        k3s_headlamp_config_file: "{{ k3s_addons_config_file }}"

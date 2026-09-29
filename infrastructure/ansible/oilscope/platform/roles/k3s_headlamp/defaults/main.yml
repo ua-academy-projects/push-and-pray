@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_headlamp_config_file: "{{ project_config_path | default('project-config.json') }}"
+k3s_headlamp_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_headlamp_config.environment
+     ~ '.yaml' }}
+k3s_headlamp_values_file: >-
+  {{ lookup('ansible.builtin.env', 'PWD')
+     ~ '/infrastructure/kubernetes/values/headlamp.yaml' }}
+k3s_headlamp_helm_binary: helm
+k3s_headlamp_release_name: headlamp
+k3s_headlamp_release_namespace: headlamp
+k3s_headlamp_chart_ref: headlamp
+k3s_headlamp_chart_repo_url: https://kubernetes-sigs.github.io/headlamp/
+k3s_headlamp_chart_version: "0.45.0"
+k3s_headlamp_timeout: 10m0s
+k3s_headlamp_admin_service_account: headlamp-admin
+k3s_headlamp_admin_cluster_role: cluster-admin
+k3s_headlamp_admin_binding: headlamp-admin
