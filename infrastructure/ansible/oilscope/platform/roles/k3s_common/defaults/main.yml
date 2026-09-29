@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-k3s_common_installer_url: https://get.k3s.io
+k3s_common_installer_url: >-
+  {{ 'https://raw.githubusercontent.com/k3s-io/k3s/'
+     ~ (resolve_secrets_config.k3s.version | urlencode)
+     ~ '/install.sh' }}
 k3s_common_installer_path: /usr/local/src/install-k3s.sh
 k3s_common_packages:
   - ca-certificates

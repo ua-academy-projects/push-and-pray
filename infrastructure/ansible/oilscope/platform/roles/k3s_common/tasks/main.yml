@@ -62,7 +62,7 @@
     group: root
     mode: "0700"
 
-- name: Download the official K3s installer
+- name: Download the version-pinned official K3s installer
   ansible.builtin.get_url:
     url: "{{ k3s_common_installer_url }}"
     dest: "{{ k3s_common_installer_path }}"
