@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Add K3s application secrets to the target catalog
+  ansible.builtin.set_fact:
+    secret_versions_target_map: >-
+      {{ secret_versions_target_map | combine({
+           secret_versions_target_key: {
+             'key': secret_versions_target_key,
+             'cloud': secret_versions_config.default_cloud,
+             'scope': secret_versions_config.cloud_settings.gcp.project_id,
+             'secret_id': secret_versions_mapping.value,
+             'read_by': (
+               secret_versions_target_map
+               .get(secret_versions_target_key, {})
+               .get('read_by', [])
+               + ['k3s/' ~ secret_versions_config.k3s.application.namespace]
+             ) | unique | sort | list
+           }
+         }) }}
+  loop: "{{ secret_versions_config.k3s.secret_mappings | dict2items }}"
+  loop_control:
+    loop_var: secret_versions_mapping
+    label: "{{ secret_versions_mapping.value }}"
+  vars:
+    secret_versions_target_key: >-
+      {{ secret_versions_config.default_cloud
+         ~ '/' ~ secret_versions_config.cloud_settings.gcp.project_id
+         ~ '/' ~ secret_versions_mapping.value }}

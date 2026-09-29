@@ -19,6 +19,10 @@
     loop_var: secret_versions_vm
     label: "{{ secret_versions_vm.key }}"
 
+- name: Collect K3s application secret targets
+  ansible.builtin.include_tasks: collect_k3s.yml
+  when: secret_versions_config.deployment_mode | default('compose') == 'k3s'
+
 - name: Map secret IDs to operator environment variables
   ansible.builtin.set_fact:
     secret_versions_variable_map: >-

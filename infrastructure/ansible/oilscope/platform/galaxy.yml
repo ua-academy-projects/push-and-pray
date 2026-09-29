@@ -48,15 +48,16 @@ dependencies:
   amazon.aws: ">=10.0.0"
   azure.azcollection: ">=3.0.0"
   google.cloud: ">=1.14.0"
+  kubernetes.core: ">=6.5.0"
 
 # The URL of the originating SCM repository
-repository: https://github.com/ua-academy-projects/push-and-pray/tree/andrii-miroshnyk/oil-price-tracker-gcp-aws
+repository: https://github.com/ua-academy-projects/push-and-pray/tree/andrii-miroshnyk/oil-price-tracker-k3s
 
 # The URL to any online docs
-documentation: https://github.com/ua-academy-projects/push-and-pray/tree/andrii-miroshnyk/oil-price-tracker-gcp-aws/docs
+documentation: https://github.com/ua-academy-projects/push-and-pray/tree/andrii-miroshnyk/oil-price-tracker-k3s/docs
 
 # The URL to the homepage of the collection/project
-homepage: https://github.com/ua-academy-projects/push-and-pray/tree/andrii-miroshnyk/oil-price-tracker-gcp-aws
+homepage: https://github.com/ua-academy-projects/push-and-pray/tree/andrii-miroshnyk/oil-price-tracker-k3s
 
 # The URL to the collection issue tracker
 issues: https://github.com/ua-academy-projects/push-and-pray/issues

@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_secrets_config: >-
+      {{ lookup('ansible.builtin.file', k3s_secrets_config_file) | from_json }}
+
+- name: Create the application namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_secrets_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ k3s_secrets_config.k3s.application.namespace }}"
+        labels:
+          app.kubernetes.io/part-of: "{{ k3s_secrets_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+
+- name: Read K3s application values from GCP Secret Manager
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_secrets_gcloud }}"
+      - secrets
+      - versions
+      - access
+      - latest
+      - "--secret={{ k3s_secret_mapping.value }}"
+      - "--project={{ k3s_secrets_config.cloud_settings.gcp.project_id }}"
+    strip_empty_ends: false
+  loop: "{{ k3s_secrets_config.k3s.secret_mappings | dict2items }}"
+  loop_control:
+    loop_var: k3s_secret_mapping
+    label: "{{ k3s_secret_mapping.value }}"
+  register: k3s_secrets_read
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Index K3s application values by variable name
+  ansible.builtin.set_fact:
+    k3s_secrets_values: >-
+      {{ k3s_secrets_values | default({})
+         | combine({item.k3s_secret_mapping.key: item.stdout}) }}
+  loop: "{{ k3s_secrets_read.results }}"
+  no_log: true
+
+- name: Encode the application Secret data
+  ansible.builtin.set_fact:
+    k3s_secrets_application_data: >-
+      {{ k3s_secrets_application_data | default({})
+         | combine({item.key: item.value | b64encode}) }}
+  loop: >-
+    {{ k3s_secrets_values | dict2items
+       | rejectattr('key', 'equalto', 'GHCR_TOKEN')
+       | list }}
+  no_log: true
+
+- name: Create the application Secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_secrets_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ k3s_secrets_application_secret_name }}"
+        namespace: "{{ k3s_secrets_config.k3s.application.namespace }}"
+        labels:
+          app.kubernetes.io/part-of: "{{ k3s_secrets_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+      type: Opaque
+      data: "{{ k3s_secrets_application_data }}"
+  no_log: true
+
+- name: Build the registry authentication document
+  ansible.builtin.set_fact:
+    k3s_secrets_registry_config:
+      auths: >-
+        {{ {
+          k3s_secrets_registry_server: {
+            'username': k3s_secrets_config.registry.username,
+            'password': k3s_secrets_values.GHCR_TOKEN,
+            'auth': (k3s_secrets_config.registry.username
+                     ~ ':' ~ k3s_secrets_values.GHCR_TOKEN) | b64encode
+          }
+        } }}
+  no_log: true
+
+- name: Create the registry pull Secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_secrets_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ k3s_secrets_registry_secret_name }}"
+        namespace: "{{ k3s_secrets_config.k3s.application.namespace }}"
+        labels:
+          app.kubernetes.io/part-of: "{{ k3s_secrets_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: "{{ k3s_secrets_registry_config | to_json | b64encode }}"
+  no_log: true

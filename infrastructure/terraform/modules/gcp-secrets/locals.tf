@@ -36,7 +36,14 @@ locals {
     ]) : access.key => access
   }
 
-  secret_ids = toset([
+  vm_secret_ids = toset([
     for access in values(local.secret_access) : access.secret_id
   ])
+
+  k3s_secret_ids = (
+    try(var.config.deployment_mode, "compose") == "k3s"
+    && var.config.default_cloud == "gcp"
+  ) ? toset(values(try(var.config.k3s.secret_mappings, {}))) : toset([])
+
+  secret_ids = setunion(local.vm_secret_ids, local.k3s_secret_ids)
 }

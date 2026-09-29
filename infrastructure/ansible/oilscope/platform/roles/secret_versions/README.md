@@ -7,12 +7,15 @@ secret service and access policies, while this role creates versions containing
 the values. By default, it reads the latest enabled value and adds a version
 only when the desired value differs.
 
-The target is derived for every VM:
+The target catalog is derived from every VM and, in K3s mode, from the
+cluster-level `k3s.secret_mappings` object:
 
 - AWS secrets are scoped by the VM's effective region.
 - Azure secrets are scoped by the deployment's Key Vault.
 - GCP secrets are scoped by the configured project.
 - Repeated references to the same container in the same scope are uploaded once.
+- K3s application secrets are scoped to the GCP project and are marked as read
+  by the application namespace rather than granting every node direct access.
 
 Values come only from the controller process environment. A source variable is
 the upper-case secret ID with non-alphanumeric characters replaced by
@@ -82,6 +85,10 @@ still leave a partial rotation and should be retried after the cause is fixed.
 Database password rotation requires changing PostgreSQL and its secret value as
 one coordinated operation; uploading a new `DB_PASSWORD` version alone is not
 sufficient.
+
+In K3s mode, uploading a new version does not change an existing Kubernetes
+Secret automatically. Rerun `oilscope.platform.synchronize_k3s_secrets` and
+restart the affected workloads as part of the rotation procedure.
 
 To rotate only one container:
 

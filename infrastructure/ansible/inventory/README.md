@@ -47,6 +47,14 @@ pipx runpip ansible-core install \
   -r "$HOME/.ansible/collections/ansible_collections/azure/azcollection/requirements.txt"
 ```
 
+The repository requirements also install `kubernetes.core` and its controller
+Python libraries. K3s application automation additionally expects `kubectl`
+and Helm on the WSL/controller host; they connect through the local SSH tunnel
+to the private API and are not installed on the cluster nodes. Install the
+Helm Diff plugin as well so `kubernetes.core.helm` can distinguish real OCI
+chart changes from no-op runs. Pin and verify the plugin according to its
+upstream release instructions rather than installing an unversioned artifact.
+
 Build and install this repository's collection:
 
 ```sh
@@ -174,7 +182,9 @@ deployment, the bastion and its private workloads must be mutually reachable.
 | `unknown plugin 'google.cloud.gcp_compute'` | install `requirements.yml` |
 | `unknown plugin 'amazon.aws.aws_ec2'` | install `requirements.yml` |
 | `unknown plugin 'azure.azcollection.azure_rm'` | install `requirements.yml` |
+| `couldn't resolve module/action 'kubernetes.core.k8s'` | install `requirements.yml`, then rebuild this collection |
 | missing GCP or AWS Python libraries | install `requirements.txt` with `pipx runpip ansible-core` |
+| missing Kubernetes Python client or YAML support | install `requirements.txt` into the Ansible pipx environment |
 | missing Azure Python libraries | install the Azure collection's `requirements.txt` as shown above |
 | the `aws` group is empty | verify `aws sts get-caller-identity` with the selected profile |
 | the `azure` group is empty | verify `az account show` and the configured subscription |

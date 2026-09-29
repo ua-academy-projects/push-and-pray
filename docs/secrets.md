@@ -1,10 +1,12 @@
 # Secrets
 
-Application credentials live in the secret manager of the cloud where each VM
-runs. Terraform manages containers and workload access; Ansible manages values
-and retrieves them during deployment. Application secret versions do not pass
-through Terraform configuration, plans, or state. The password used to create a
-managed PostgreSQL database is the one exception described below.
+Application credentials live in the selected cloud secret manager. For Compose,
+Terraform manages containers and VM access; for K3s, it creates the containers
+without giving every node application-secret access. Ansible manages values and
+delivers them to the relevant VM or Kubernetes namespace. Application secret
+versions do not pass through Terraform configuration, plans, or state. The
+password used to create a managed PostgreSQL database is the one exception
+described below.
 
 ## Configuration model
 
@@ -35,6 +37,26 @@ GCP containers are scoped to `cloud_settings.gcp.project_id`. On Azure, each
 workload with mappings receives the Key Vault Secrets User role at vault scope;
 secret-level scopes cannot be assigned before automation creates the secrets.
 
+K3s mode declares the same kind of identifier mapping once at cluster level:
+
+```json
+"k3s": {
+  "secret_mappings": {
+    "POSTGRES_PASSWORD": "db-password",
+    "RABBITMQ_PASSWORD": "rabbitmq-password",
+    "RABBITMQ_ERLANG_COOKIE": "rabbitmq-erlang-cookie",
+    "REDIS_PASSWORD": "redis-password",
+    "OILPRICEAPI_KEY": "external-api-key",
+    "GHCR_TOKEN": "ghcr-token"
+  }
+}
+```
+
+For the current GCP K3s deployment, Terraform creates these Secret Manager
+containers without granting every cluster VM direct application-secret access.
+The local controller reads the values with the operator's `gcloud` identity and
+creates namespace-scoped Kubernetes Secrets through the private API endpoint.
+
 ## Responsibilities
 
 | Component | Responsibility |
@@ -44,6 +66,7 @@ secret-level scopes cannot be assigned before automation creates the secrets.
 | Terraform Azure secrets module | Create a Key Vault and workload managed identities, and grant vault secret-reader roles; secret values and names are created later by automation |
 | `secret_versions` Ansible role | Reconcile environment values with the latest enabled versions in every required cloud and scope |
 | `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
+| `k3s_secrets` Ansible role | Read K3s values from GCP on the controller and reconcile the application and GHCR pull Secrets in the configured namespace |
 
 Terraform deliberately creates no secret versions. Creating a managed database
 is the one exception to the Ansible-only value flow: set the ephemeral
@@ -107,6 +130,34 @@ export REDIS_PASSWORD="..."
 ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
+
+For K3s, also provide the RabbitMQ Erlang cookie and then use the explicit
+secret upload and cluster synchronization playbooks. The general Compose
+deployment playbook is not used:
+
+```bash
+export DB_PASSWORD="..."
+export RABBITMQ_PASSWORD="..."
+export RABBITMQ_ERLANG_COOKIE="..."
+export REDIS_PASSWORD="..."
+export EXTERNAL_API_KEY="..."
+export GHCR_TOKEN="..."
+
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -i localhost, \
+  -e secret_versions_config_file="$PWD/project-config.json"
+
+# Keep the bastion SSH tunnel to 127.0.0.1:6443 running first.
+ansible-playbook oilscope.platform.synchronize_k3s_secrets \
+  -i localhost, \
+  -e k3s_secrets_config_file="$PWD/project-config.json"
+```
+
+The synchronization creates `<name-prefix>-application` with application/data
+service credentials and `<name-prefix>-registry` with the GHCR Docker
+configuration. Secret-bearing Ansible tasks use `no_log`; the plaintext values
+are held in controller memory while the role runs and are stored as Kubernetes
+Secret data in the cluster.
 
 To force a new version for a deliberate API-key rotation, select that container
 explicitly with the upload playbook:
@@ -172,6 +223,10 @@ those values to services or configuration files.
 Adding a version leaves older versions in place. Restart consumers so they read
 the new `latest` version, verify the deployment, and only then disable or destroy
 the previous version according to the provider's recovery model.
+
+For K3s consumers, rerun `synchronize_k3s_secrets` after adding the version,
+then perform a controlled rollout of the workloads that consume the changed
+Secret. Updating a Kubernetes Secret does not automatically restart Pods.
 
 If a value leaks, create a replacement version first, redeploy consumers, then
 disable or destroy the exposed version. Removing a leaked value from Git or a
