@@ -139,6 +139,10 @@ locals {
     for name, vm in local.resolved_vms : name => vm
     if contains(["k3s_server", "k3s_agent"], vm.role)
   }
+  k3s_server_names = sort([
+    for name, vm in local.k3s_nodes : name
+    if vm.role == "k3s_server"
+  ])
   k3s_ingress_vm = try(one([
     for vm in values(local.k3s_nodes) : vm
     if vm.role == "k3s_server" && vm.assign_public_ip

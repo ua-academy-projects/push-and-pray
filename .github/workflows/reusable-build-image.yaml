@@ -19,6 +19,11 @@ on:
         description: OCI image description
         required: true
         type: string
+      image_tag:
+        description: Image tag to publish
+        required: false
+        default: xintaro
+        type: string
 
 permissions:
   contents: read
@@ -55,7 +60,7 @@ jobs:
         with:
           images: ${{ inputs.image-name }}
           tags: |
-            type=raw,value=xintaro
+            type=raw,value=${{ inputs.image_tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

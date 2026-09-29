@@ -22,6 +22,9 @@
     content: |
       server: https://{{ hostvars[groups['k3s_server'][0]].internal_ip }}:6443
       token: {{ hostvars[groups['k3s_server'][0]].k3s_server_token }}
+      kubelet-arg:
+        - image-credential-provider-bin-dir=/var/lib/rancher/credentialprovider/bin
+        - image-credential-provider-config=/var/lib/rancher/credentialprovider/config.yaml
     dest: "{{ k3s_agent_config_path }}"
     mode: "0600"
   no_log: true
@@ -38,10 +41,10 @@
   ansible.builtin.command:
     cmd: "{{ k3s_install_script_path }}"
   environment:
-    INSTALL_K3S_VERSION: "{{ hostvars[groups['k3s_server'][0]].k3s_version }}"
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
     INSTALL_K3S_EXEC: agent
   no_log: true
-  when: hostvars[groups['k3s_server'][0]].k3s_version not in k3s_agent_installed_version.stdout
+  when: k3s_version not in k3s_agent_installed_version.stdout
 
 - name: Apply K3s agent configuration changes
   ansible.builtin.meta: flush_handlers

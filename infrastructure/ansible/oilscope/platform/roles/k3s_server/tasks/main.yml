@@ -21,8 +21,20 @@
   ansible.builtin.copy:
     content: |
       write-kubeconfig-mode: "0640"
+      {% if inventory_hostname == groups['k3s_server'][0] %}
+      cluster-init: true
+      {% endif %}
+      {% if public_ip | default('') | length > 0 %}
       tls-san:
         - {{ public_ip }}
+      {% endif %}
+      {% if inventory_hostname != groups['k3s_server'][0] %}
+      server: https://{{ hostvars[groups['k3s_server'][0]].internal_ip }}:6443
+      token: {{ hostvars[groups['k3s_server'][0]].k3s_server_token }}
+      {% endif %}
+      kubelet-arg:
+        - image-credential-provider-bin-dir=/var/lib/rancher/credentialprovider/bin
+        - image-credential-provider-config=/var/lib/rancher/credentialprovider/config.yaml
     dest: "{{ k3s_server_config_path }}"
     mode: "0600"
   notify: Restart K3s server
@@ -40,18 +52,32 @@
   environment:
     INSTALL_K3S_VERSION: "{{ k3s_version }}"
     INSTALL_K3S_EXEC: server
-  when: k3s_version not in k3s_server_installed_version.stdout
+  when:
+    - k3s_version not in k3s_server_installed_version.stdout
 
 - name: Apply K3s server configuration changes before exposing the token
   ansible.builtin.meta: flush_handlers
 
-- name: Read the K3s node token for agent joins
+- name: Read the K3s node token from the bootstrap control plane
   ansible.builtin.slurp:
     src: "{{ k3s_server_token_path }}"
   register: k3s_server_token_file
+  when: inventory_hostname == groups['k3s_server'][0]
   no_log: true
 
 - name: Retain the decoded join token for the following play
   ansible.builtin.set_fact:
     k3s_server_token: "{{ k3s_server_token_file.content | b64decode | trim }}"
+  when: inventory_hostname == groups['k3s_server'][0]
+  no_log: true
+
+- name: Read the K3s kubeconfig for the controller play
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  register: k3s_server_kubeconfig_file
+  no_log: true
+
+- name: Retain the decoded kubeconfig for the following play
+  ansible.builtin.set_fact:
+    k3s_server_kubeconfig: "{{ k3s_server_kubeconfig_file.content | b64decode }}"
   no_log: true

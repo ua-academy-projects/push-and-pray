@@ -49,3 +49,13 @@ jobs:
       dockerfile: infrastructure/docker/Dockerfile.database
       context: .
       description: Petroscope database
+
+  database-cnpg:
+    name: Publish CloudNativePG database image
+    uses: ./.github/workflows/reusable-build-image.yaml
+    with:
+      image-name: ${{ vars.GCP_ARTIFACT_REGISTRY }}/database-cnpg
+      image_tag: 18-xintaro
+      dockerfile: infrastructure/docker/Dockerfile.database.cnpg
+      context: .
+      description: Petroscope CloudNativePG database and migration image

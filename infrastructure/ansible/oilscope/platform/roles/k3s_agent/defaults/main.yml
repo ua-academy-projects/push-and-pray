@@ -1,4 +1,5 @@
 ---
+k3s_version: "{{ lookup('env', 'OILSCOPE_K3S_VERSION') | default('v1.32.3+k3s1', true) }}"
 k3s_install_script_url: https://get.k3s.io
 k3s_install_script_path: /usr/local/lib/oilscope/install-k3s.sh
 k3s_agent_config_path: /etc/rancher/k3s/config.yaml

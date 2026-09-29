@@ -53,9 +53,9 @@ have already been persisted in PostgreSQL.
 | History API    | Python 3.12, FastAPI, SQLAlchemy, psycopg, uv |
 | UI backend     | Python 3.12, FastAPI, httpx, psycopg, uv      |
 | UI frontend    | React 19, TypeScript, Vite, Apache ECharts    |
-| Messaging      | RabbitMQ (managed DB) or PGMQ (self-managed)  |
+| Messaging      | RabbitMQ (managed DB) or PGMQ (self-managed/Kubernetes)  |
 | Persistence    | PostgreSQL 18                                 |
-| UI sessions    | Redis (managed DB) or PostgreSQL extensions   |
+| UI sessions    | Redis (managed DB/Kubernetes) or PostgreSQL extensions   |
 | Packaging      | Docker Engine and Docker Compose              |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
@@ -99,6 +99,16 @@ credential and network path. Fetcher reaches RabbitMQ, UI reaches History and Re
 and neither needs a direct managed-database connection. In self-managed mode, the
 Fetcher, History, and UI VMs can reach PostgreSQL on the infra VM because PGMQ and
 PostgreSQL-backed sessions require it.
+
+### Kubernetes database topology
+
+Kubernetes deployments use CloudNativePG rather than the standalone PostgreSQL
+StatefulSet. The `postgres` cluster has three PostgreSQL instances: one primary and
+two standby replicas. Each instance receives a `2Gi` PVC and the primary requires one
+synchronous standby acknowledgement before confirming writes. Applications write only
+through the operator-managed `postgres-rw` Service. PGMQ, pg_cron, hstore, and
+pgcrypto remain installed by the self-managed migration profile; Redis is a separate
+single-replica AOF-backed session store.
 
 ## Tracked instruments
 

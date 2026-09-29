@@ -1,0 +1,4 @@
+---
+k3s_registry_auth_project_config_path: >-
+  {{ lookup('env', 'OILSCOPE_PROJECT_CONFIG') | default('../../../../terraform/env/dev.json', true) }}
+k3s_credential_provider_dir: /var/lib/rancher/credentialprovider

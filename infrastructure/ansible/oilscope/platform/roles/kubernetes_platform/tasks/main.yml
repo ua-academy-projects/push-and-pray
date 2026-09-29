@@ -8,8 +8,9 @@
   ansible.builtin.assert:
     that:
       - kubernetes_platform_config.kubernetes.enabled | bool
-      - groups.k3s_server | length == 1
+      - groups.k3s_server | length == 3
       - kubernetes_platform_config.default_cloud == 'gcp'
+      - hostvars[groups.k3s_server[0]].k3s_server_kubeconfig is defined
 
 - name: Create the controller Kubernetes work directory
   ansible.builtin.file:
@@ -17,27 +18,25 @@
     state: directory
     mode: "0700"
 
-- name: Read the K3s kubeconfig from the server
-  ansible.builtin.slurp:
-    src: /etc/rancher/k3s/k3s.yaml
-  delegate_to: "{{ groups.k3s_server[0] }}"
-  register: kubernetes_platform_server_kubeconfig
-  no_log: true
-
 - name: Write a controller kubeconfig addressed to the public server IP
   ansible.builtin.copy:
     content: >-
-      {{ (kubernetes_platform_server_kubeconfig.content | b64decode)
+      {{ hostvars[groups.k3s_server[0]].k3s_server_kubeconfig
          | replace('127.0.0.1', hostvars[groups.k3s_server[0]].public_ip) }}
     dest: "{{ kubernetes_platform_kubeconfig }}"
     mode: "0600"
   no_log: true
 
-- name: Require controller tools
+- name: Require the kubectl client
+  ansible.builtin.command:
+    argv: [kubectl, version, --client=true]
+  changed_when: false
+
+- name: Require the remaining controller tools
   ansible.builtin.command:
     argv: ["{{ item }}", version]
   changed_when: false
-  loop: [kubectl, helm, gcloud]
+  loop: [helm, gcloud]
 
 - name: Read application secrets from GCP Secret Manager
   ansible.builtin.command:
@@ -70,21 +69,100 @@
   no_log: true
 
 - name: Add the cert-manager Helm repository
-  kubernetes.core.helm_repository:
-    name: jetstack
-    repo_url: https://charts.jetstack.io
+  ansible.builtin.command:
+    argv: [helm, repo, add, jetstack, https://charts.jetstack.io, --force-update]
+  changed_when: false
 
 - name: Install cert-manager with Helm
-  kubernetes.core.helm:
-    name: cert-manager
-    chart_ref: jetstack/cert-manager
-    chart_version: v1.17.2
-    release_namespace: cert-manager
-    create_namespace: true
-    kubeconfig: "{{ kubernetes_platform_kubeconfig }}"
-    values:
-      crds:
-        enabled: true
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - cert-manager
+      - jetstack/cert-manager
+      - --version
+      - v1.17.2
+      - --namespace
+      - cert-manager
+      - --create-namespace
+      - --set
+      - crds.enabled=true
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --wait
+      - --timeout
+      - 5m
+  changed_when: false
+
+- name: Add the CloudNativePG Helm repository
+  ansible.builtin.command:
+    argv: [helm, repo, add, cnpg, https://cloudnative-pg.github.io/charts, --force-update]
+  changed_when: false
+
+- name: Install the CloudNativePG operator with Helm
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - cnpg
+      - cnpg/cloudnative-pg
+      - --version
+      - 1.29.1
+      - --namespace
+      - cnpg-system
+      - --create-namespace
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --wait
+      - --timeout
+      - 5m
+  changed_when: false
+
+- name: Remove superseded standalone messaging and database workloads
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - delete
+      - statefulset
+      - postgres
+      - rabbitmq
+      - --ignore-not-found=true
+  changed_when: false
+
+- name: Remove superseded standalone service endpoints
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - delete
+      - service
+      - postgres
+      - rabbitmq
+      - --ignore-not-found=true
+  changed_when: false
+
+- name: Recreate the migration job for the current database image
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - delete
+      - job
+      - oilscope-migrations
+      - --ignore-not-found=true
+  changed_when: false
 
 - name: Render the cluster issuer and application workloads
   ansible.builtin.template:
@@ -98,4 +176,32 @@
   ansible.builtin.command:
     argv: [kubectl, --kubeconfig, "{{ kubernetes_platform_kubeconfig }}", apply, -f, "{{ kubernetes_platform_work_dir }}/{{ item }}"]
   loop: [cluster-issuer.yaml, platform.yaml]
+  changed_when: false
+
+- name: Wait for the CloudNativePG cluster to become ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - wait
+      - --for=condition=Ready
+      - cluster/postgres
+      - --timeout=10m
+  changed_when: false
+
+- name: Wait for the database migrations to complete
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - wait
+      - --for=condition=complete
+      - job/oilscope-migrations
+      - --timeout=10m
   changed_when: false

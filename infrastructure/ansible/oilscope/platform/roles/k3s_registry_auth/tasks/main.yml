@@ -1,0 +1,30 @@
+---
+- name: Load the shared project configuration for registry authentication
+  ansible.builtin.include_vars:
+    file: "{{ k3s_registry_auth_project_config_path }}"
+    name: k3s_registry_auth_config
+
+- name: Derive the Artifact Registry hostname
+  ansible.builtin.set_fact:
+    k3s_registry_host: "{{ k3s_registry_auth_config.regions[k3s_registry_auth_config.default_region].gcp.region }}-docker.pkg.dev"
+
+- name: Create the kubelet credential provider directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ k3s_credential_provider_dir }}"
+    - "{{ k3s_credential_provider_dir }}/bin"
+
+- name: Install the GCE Artifact Registry credential provider
+  ansible.builtin.template:
+    src: gcp-artifact-registry-credential-provider.sh.j2
+    dest: "{{ k3s_credential_provider_dir }}/bin/gcp-artifact-registry"
+    mode: "0755"
+
+- name: Configure kubelet Artifact Registry credential provider
+  ansible.builtin.template:
+    src: credential-provider-config.yaml.j2
+    dest: "{{ k3s_credential_provider_dir }}/config.yaml"
+    mode: "0600"

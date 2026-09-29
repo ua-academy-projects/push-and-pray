@@ -28,6 +28,7 @@ DATABASE_URL = os.getenv(
 )
 SESSION_PROVIDER = os.getenv("SESSION_PROVIDER", "postgresql").lower()
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "petroscope_session")
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
@@ -56,7 +57,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.session_store = (
-    RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS)
+    RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS, password=REDIS_PASSWORD)
     if SESSION_PROVIDER == "redis"
     else PostgreSQLSessionStore(DATABASE_URL, SESSION_TTL_SECONDS)
 )

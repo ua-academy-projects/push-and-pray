@@ -1,0 +1,18 @@
+ARG CNPG_POSTGRES_IMAGE=ghcr.io/cloudnative-pg/postgresql:18.1-standard-bookworm
+ARG PGMQ_IMAGE=ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+
+FROM ${PGMQ_IMAGE} AS pgmq
+
+FROM ${CNPG_POSTGRES_IMAGE}
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-18-cron \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=pgmq /usr/share/postgresql/18/extension/pgmq* /usr/share/postgresql/18/extension/
+COPY --chown=26:26 database/migrations /opt/petroscope/migrations
+COPY --chmod=0755 infrastructure/docker/migrate.sh /usr/local/bin/petroscope-migrate
+
+USER 26

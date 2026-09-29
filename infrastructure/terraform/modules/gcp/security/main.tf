@@ -36,6 +36,8 @@ resource "google_compute_firewall" "workload_ssh" {
     local.network_tags.history,
     local.network_tags.fetcher,
     local.network_tags.ui,
+    local.network_tags.k3s_server,
+    local.network_tags.k3s_agent,
   ]
 
   allow {

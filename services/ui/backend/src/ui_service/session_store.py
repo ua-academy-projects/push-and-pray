@@ -12,7 +12,7 @@ from .sessions import SessionPreferences
 
 
 class RedisSessionStore:
-    def __init__(self, redis_url: str, ttl_seconds: int) -> None:
+    def __init__(self, redis_url: str, ttl_seconds: int, password: str | None = None) -> None:
         self.ttl_seconds = ttl_seconds
         self.client = redis.Redis.from_url(
             redis_url,
@@ -20,6 +20,7 @@ class RedisSessionStore:
             socket_connect_timeout=5,
             socket_timeout=5,
             health_check_interval=30,
+            password=password,
         )
 
     @staticmethod

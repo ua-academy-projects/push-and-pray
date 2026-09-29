@@ -1,9 +1,11 @@
 ---
 - name: Provision the K3s control plane
   hosts: k3s_server
+  serial: 1
   become: true
   roles:
     - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s_registry_auth
     - role: oilscope.platform.k3s_server
 
 - name: Join K3s agents
@@ -11,6 +13,7 @@
   become: true
   roles:
     - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s_registry_auth
     - role: oilscope.platform.k3s_agent
 
 - name: Install platform services from the controller
