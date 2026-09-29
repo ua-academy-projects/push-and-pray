@@ -1,0 +1,198 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_migrations_config: >-
+      {{ lookup('ansible.builtin.file', k3s_migrations_config_file) | from_json }}
+
+- name: Build the migration Job identity
+  ansible.builtin.set_fact:
+    k3s_migrations_job_name: >-
+      {{ ((k3s_migrations_config.name_prefix ~ '-database-migrations')[:50]
+          | regex_replace('-+$', ''))
+         ~ '-'
+         ~ ((k3s_migrations_image ~ ':' ~ k3s_migrations_database_mode)
+            | hash('sha256'))[:12] }}
+
+- name: Read the existing migration Job
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_migrations_kubeconfig }}"
+    api_version: batch/v1
+    kind: Job
+    name: "{{ k3s_migrations_job_name }}"
+    namespace: "{{ k3s_migrations_namespace }}"
+  register: k3s_migrations_existing_job
+
+- name: Record the existing migration Job state
+  ansible.builtin.set_fact:
+    k3s_migrations_existing_complete: >-
+      {{ k3s_migrations_existing_job.resources | length > 0
+         and
+         (k3s_migrations_existing_job.resources[0]
+          .get('status', {}).get('conditions', [])
+          | selectattr('type', 'equalto', 'Complete')
+          | selectattr('status', 'equalto', 'True')
+          | list
+          | length > 0) }}
+    k3s_migrations_existing_failed: >-
+      {{ k3s_migrations_existing_job.resources | length > 0
+         and
+         (k3s_migrations_existing_job.resources[0]
+          .get('status', {}).get('conditions', [])
+          | selectattr('type', 'equalto', 'Failed')
+          | selectattr('status', 'equalto', 'True')
+          | list
+          | length > 0) }}
+
+- name: Remove a failed migration Job before retrying
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_migrations_kubeconfig }}"
+    api_version: batch/v1
+    kind: Job
+    name: "{{ k3s_migrations_job_name }}"
+    namespace: "{{ k3s_migrations_namespace }}"
+    state: absent
+    wait: true
+  when: k3s_migrations_existing_failed
+
+- name: Create the database migration Job
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_migrations_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: "{{ k3s_migrations_job_name }}"
+        namespace: "{{ k3s_migrations_namespace }}"
+        labels:
+          app.kubernetes.io/name: database-migrations
+          app.kubernetes.io/instance: "{{ k3s_migrations_config.name_prefix }}"
+          app.kubernetes.io/part-of: "{{ k3s_migrations_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+      spec:
+        backoffLimit: "{{ k3s_migrations_backoff_limit }}"
+        activeDeadlineSeconds: "{{ k3s_migrations_active_deadline_seconds }}"
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/name: database-migrations
+              app.kubernetes.io/instance: "{{ k3s_migrations_config.name_prefix }}"
+              app.kubernetes.io/part-of: "{{ k3s_migrations_config.name_prefix }}"
+          spec:
+            restartPolicy: Never
+            imagePullSecrets:
+              - name: "{{ k3s_migrations_registry_secret_name }}"
+            securityContext:
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: migrate
+                image: "{{ k3s_migrations_image }}"
+                imagePullPolicy: "{{ k3s_migrations_image_pull_policy }}"
+                command:
+                  - petroscope-migrate
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+                env:
+                  - name: PGHOST
+                    value: "{{ k3s_migrations_database_host }}"
+                  - name: PGPORT
+                    value: "{{ k3s_migrations_database_port | string }}"
+                  - name: PGUSER
+                    value: "{{ k3s_migrations_database_user }}"
+                  - name: PGDATABASE
+                    value: "{{ k3s_migrations_database_name }}"
+                  - name: PGSSLMODE
+                    value: "{{ k3s_migrations_database_sslmode }}"
+                  - name: DATABASE_MODE
+                    value: "{{ k3s_migrations_database_mode }}"
+                  - name: PGPASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: "{{ k3s_migrations_application_secret_name }}"
+                        key: POSTGRES_PASSWORD
+                resources:
+                  requests:
+                    cpu: 25m
+                    memory: 64Mi
+                  limits:
+                    cpu: 250m
+                    memory: 256Mi
+  when: >-
+    not k3s_migrations_existing_complete
+    and not (k3s_migrations_existing_job.resources | length > 0
+             and not k3s_migrations_existing_failed)
+
+- name: Wait for the database migration Job to finish
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_migrations_kubeconfig }}"
+    api_version: batch/v1
+    kind: Job
+    name: "{{ k3s_migrations_job_name }}"
+    namespace: "{{ k3s_migrations_namespace }}"
+  register: k3s_migrations_job_result
+  changed_when: false
+  failed_when: false
+  retries: "{{ k3s_migrations_wait_retries }}"
+  delay: "{{ k3s_migrations_wait_delay }}"
+  until: >-
+    k3s_migrations_job_result.resources | length > 0
+    and
+    ((k3s_migrations_job_result.resources[0]
+      .get('status', {}).get('conditions', [])
+      | selectattr('type', 'in', ['Complete', 'Failed'])
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length) > 0)
+  when: not k3s_migrations_existing_complete
+
+- name: Read migration pods after an unsuccessful Job
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_migrations_kubeconfig }}"
+    api_version: v1
+    kind: Pod
+    namespace: "{{ k3s_migrations_namespace }}"
+    label_selectors:
+      - "job-name={{ k3s_migrations_job_name }}"
+  register: k3s_migrations_failed_pods
+  when: >-
+    not k3s_migrations_existing_complete
+    and
+    (k3s_migrations_job_result.resources | length == 0
+     or
+     (k3s_migrations_job_result.resources[0]
+      .get('status', {}).get('conditions', [])
+      | selectattr('type', 'equalto', 'Complete')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length == 0))
+
+- name: Read unsuccessful migration pod logs
+  kubernetes.core.k8s_log:
+    kubeconfig: "{{ k3s_migrations_kubeconfig }}"
+    namespace: "{{ k3s_migrations_namespace }}"
+    name: "{{ item.metadata.name }}"
+    container: migrate
+  loop: "{{ k3s_migrations_failed_pods.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: k3s_migrations_failed_logs
+  failed_when: false
+  when: k3s_migrations_failed_pods is not skipped
+
+- name: Report an unsuccessful database migration
+  ansible.builtin.fail:
+    msg: >-
+      The database migration Job {{ k3s_migrations_job_name }} did not complete.
+      Pod logs:
+      {{ k3s_migrations_failed_logs.results
+         | default([])
+         | map(attribute='log')
+         | select('defined')
+         | join('\n')
+         | default('No pod logs were available.', true) }}
+  when: k3s_migrations_failed_pods is not skipped

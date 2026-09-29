@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Apply K3s database migrations
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    k3s_migrations_config_file: >-
+      {{ project_config_path | default('project-config.json') }}
+  roles:
+    - role: oilscope.platform.k3s_migrations

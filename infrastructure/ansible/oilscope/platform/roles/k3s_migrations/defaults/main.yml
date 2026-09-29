@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_migrations_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+k3s_migrations_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_migrations_config.environment
+     ~ '.yaml' }}
+k3s_migrations_namespace: >-
+  {{ k3s_migrations_config.k3s.application.namespace }}
+k3s_migrations_application_secret_name: >-
+  {{ k3s_migrations_config.name_prefix ~ '-application' }}
+k3s_migrations_registry_secret_name: >-
+  {{ k3s_migrations_config.name_prefix ~ '-registry' }}
+k3s_migrations_image: >-
+  {{ k3s_migrations_config.registry.repository
+     ~ '/database:'
+     ~ k3s_migrations_config.registry.image_tag }}
+k3s_migrations_image_pull_policy: IfNotPresent
+k3s_migrations_database_host: postgresql
+k3s_migrations_database_port: >-
+  {{ k3s_migrations_config.service_ports.postgresql }}
+k3s_migrations_database_user: oil_tracker
+k3s_migrations_database_name: oil_tracker
+k3s_migrations_database_sslmode: disable
+# The existing migration runner uses "managed" to select the RabbitMQ and
+# Redis schema: migrations 003, 004, and 005 are skipped.
+k3s_migrations_database_mode: managed
+k3s_migrations_backoff_limit: 3
+k3s_migrations_active_deadline_seconds: 300
+k3s_migrations_wait_retries: 72
+k3s_migrations_wait_delay: 5
