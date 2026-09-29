@@ -97,6 +97,13 @@ module "gcp_k3s_api" {
   networks            = module.gcp_network.networks
 }
 
+module "gcp_k3s_ingress" {
+  source = "./modules/gcp-k3s-ingress"
+
+  config              = local.config
+  instance_self_links = module.gcp_workloads.instance_self_links
+}
+
 module "gcp_bastion" {
   source = "./modules/gcp-bastion"
 
@@ -204,15 +211,17 @@ module "azure_managed_database" {
 
 module "cloudflare_dns" {
   count = (
-    try(local.config.deployment_mode, "compose") == "compose"
-    && try(local.config.dns.cloudflare.zone_id, null) != null
-    && try(local.config.vms.ui.public_endpoint.hostname, null) != null
+    try(local.config.dns.cloudflare.zone_id, null) != null
+    && (
+      local.config.deployment_mode == "k3s"
+      || try(local.config.vms.ui.public_endpoint.hostname, null) != null
+    )
   ) ? 1 : 0
   source = "./modules/cloudflare-dns"
 
   zone_id  = local.config.dns.cloudflare.zone_id
-  hostname = try(local.config.vms.ui.public_endpoint.hostname, null)
-  ipv4_address = try(merge(
+  hostname = local.config.deployment_mode == "k3s" ? local.config.k3s.application.hostname : try(local.config.vms.ui.public_endpoint.hostname, null)
+  ipv4_address = local.config.deployment_mode == "k3s" ? module.gcp_k3s_ingress.ip_address : try(merge(
     module.gcp_workloads.public_ips,
     module.aws_workloads.public_ips,
     module.azure_workloads.public_ips,

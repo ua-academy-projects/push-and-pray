@@ -16,11 +16,6 @@ resource "google_compute_instance_group" "servers" {
   zone      = local.placement.zone
   instances = [for name in sort(keys(local.servers)) : var.instance_self_links[name]]
 
-  named_port {
-    name = "k3s-api"
-    port = var.config.k3s.api_server.port
-  }
-
   lifecycle {
     precondition {
       condition     = length(local.servers) >= 3 && length(local.servers) % 2 == 1

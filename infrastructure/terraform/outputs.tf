@@ -7,6 +7,7 @@ output "public_ips" {
     module.aws_bastion.public_ips,
     module.azure_workloads.public_ips,
     module.azure_bastion.public_ips,
+    module.gcp_k3s_ingress.public_ips,
   )
 }
 

@@ -5,5 +5,5 @@ resource "cloudflare_dns_record" "ui" {
   type    = "A"
   ttl     = 1
   proxied = false
-  comment = "Managed by Terraform for the OilScope UI."
+  comment = "Managed by Terraform for the OilScope public endpoint."
 }

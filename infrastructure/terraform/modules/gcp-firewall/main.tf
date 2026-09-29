@@ -119,6 +119,21 @@ resource "google_compute_firewall" "k3s_kubelet" {
   }
 }
 
+resource "google_compute_firewall" "k3s_ingress" {
+  for_each = local.k3s_agent_locations
+
+  name    = "${local.resource_prefix}-${each.key}-allow-k3s-ingress"
+  network = var.networks[each.key].network_id
+
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["${local.resource_prefix}-${each.key}-k3s-agent"]
+
+  allow {
+    protocol = "tcp"
+    ports    = [for port in var.config.network.ui_public_ports : tostring(port)]
+  }
+}
+
 resource "google_compute_firewall" "ui_web" {
   for_each = toset([
     for tag in values(local.tags) : tag.location if tag.tag == "ui"
