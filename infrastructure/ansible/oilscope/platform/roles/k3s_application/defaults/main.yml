@@ -39,19 +39,11 @@ k3s_application_ui_replicas: 1
 k3s_application_session_ttl_seconds: 2592000
 k3s_application_session_cookie_secure: "true"
 
-k3s_application_postgresql_host: postgresql
+k3s_application_postgresql_host: postgresql-rw
 k3s_application_postgresql_port: >-
   {{ k3s_application_config.service_ports.postgresql }}
 k3s_application_postgresql_user: oil_tracker
 k3s_application_postgresql_database: oil_tracker
 k3s_application_postgresql_sslmode: disable
-k3s_application_rabbitmq_host: rabbitmq
-k3s_application_rabbitmq_port: >-
-  {{ k3s_application_config.service_ports.rabbitmq }}
-k3s_application_rabbitmq_user: oil_tracker
-k3s_application_rabbitmq_vhost: oil_tracker
-k3s_application_redis_host: redis
-k3s_application_redis_port: >-
-  {{ k3s_application_config.service_ports.redis }}
 k3s_application_log_level: INFO
 k3s_application_wait_timeout: 300

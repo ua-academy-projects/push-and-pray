@@ -51,18 +51,18 @@ spec:
                 secretKeyRef:
                   name: {{ k3s_application_secret_name }}
                   key: OILPRICEAPI_KEY
-            - name: RABBITMQ_PASSWORD
+            - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ k3s_application_secret_name }}
-                  key: RABBITMQ_PASSWORD
+                  key: POSTGRES_PASSWORD
             - name: DATA_PROVIDER
               value: oilpriceapi
-            - name: MESSAGING_BACKEND
-              value: rabbitmq
-            - name: RABBITMQ_URL
+            - name: DATABASE_URL
               value: >-
-                amqp://{{ k3s_application_rabbitmq_user }}:$(RABBITMQ_PASSWORD)@{{ k3s_application_rabbitmq_host }}:{{ k3s_application_rabbitmq_port }}/{{ k3s_application_rabbitmq_vhost }}
+                postgres://{{ k3s_application_postgresql_user }}:$(POSTGRES_PASSWORD)@{{ k3s_application_postgresql_host }}:{{ k3s_application_postgresql_port }}/{{ k3s_application_postgresql_database }}?sslmode={{ k3s_application_postgresql_sslmode }}
+            - name: MESSAGING_BACKEND
+              value: pgmq
             - name: PGMQ_QUEUE
               value: price_observations
             - name: FETCH_CRON_HOURS
@@ -104,4 +104,3 @@ spec:
             limits:
               cpu: 300m
               memory: 256Mi
-

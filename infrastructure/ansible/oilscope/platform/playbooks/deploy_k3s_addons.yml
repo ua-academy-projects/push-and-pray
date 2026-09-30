@@ -12,15 +12,12 @@
     - role: oilscope.platform.k3s_cert_manager
       vars:
         k3s_cert_manager_config_file: "{{ k3s_addons_config_file }}"
+    - role: oilscope.platform.k3s_cnpg_operator
+      vars:
+        k3s_cnpg_operator_config_file: "{{ k3s_addons_config_file }}"
     - role: oilscope.platform.k3s_postgresql
       vars:
         k3s_postgresql_config_file: "{{ k3s_addons_config_file }}"
-    - role: oilscope.platform.k3s_rabbitmq
-      vars:
-        k3s_rabbitmq_config_file: "{{ k3s_addons_config_file }}"
-    - role: oilscope.platform.k3s_redis
-      vars:
-        k3s_redis_config_file: "{{ k3s_addons_config_file }}"
     - role: oilscope.platform.k3s_headlamp
       vars:
         k3s_headlamp_config_file: "{{ k3s_addons_config_file }}"

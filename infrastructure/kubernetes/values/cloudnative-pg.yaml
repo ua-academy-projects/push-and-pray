@@ -1,0 +1,20 @@
+replicaCount: 1
+
+crds:
+  create: true
+
+config:
+  clusterWide: true
+
+monitoring:
+  podMonitorEnabled: false
+  grafanaDashboard:
+    create: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

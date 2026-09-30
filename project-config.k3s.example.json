@@ -37,20 +37,12 @@
     },
     "data_services": {
       "postgresql": {
+        "instances": 2,
         "storage_gb": 10
-      },
-      "rabbitmq": {
-        "storage_gb": 5
-      },
-      "redis": {
-        "storage_gb": 2
       }
     },
     "secret_mappings": {
       "POSTGRES_PASSWORD": "example-db-password",
-      "RABBITMQ_PASSWORD": "example-rabbitmq-password",
-      "RABBITMQ_ERLANG_COOKIE": "example-rabbitmq-erlang-cookie",
-      "REDIS_PASSWORD": "example-redis-password",
       "OILPRICEAPI_KEY": "example-api-key",
       "GHCR_TOKEN": "example-ghcr-token"
     }
@@ -63,9 +55,7 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432,
-    "rabbitmq": 5672,
-    "redis": 6379
+    "postgresql": 5432
   },
   "bastion": {
     "machine_type": "micro",

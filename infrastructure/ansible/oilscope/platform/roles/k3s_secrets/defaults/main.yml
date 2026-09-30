@@ -9,4 +9,7 @@ k3s_secrets_kubeconfig: >-
 k3s_secrets_gcloud: gcloud
 k3s_secrets_application_secret_name: "{{ k3s_secrets_config.name_prefix }}-application"
 k3s_secrets_registry_secret_name: "{{ k3s_secrets_config.name_prefix }}-registry"
+k3s_secrets_postgresql_owner_secret_name: >-
+  {{ k3s_secrets_config.name_prefix ~ '-postgresql-owner' }}
+k3s_secrets_postgresql_owner: oil_tracker
 k3s_secrets_registry_server: ghcr.io

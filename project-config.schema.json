@@ -118,7 +118,7 @@
     "service_ports": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["history_api", "postgresql", "rabbitmq", "redis"],
+      "required": ["history_api", "postgresql"],
       "properties": {
         "history_api": {
           "type": "integer",
@@ -205,6 +205,9 @@
       "then": {
         "required": ["monitoring"],
         "properties": {
+          "service_ports": {
+            "required": ["rabbitmq", "redis"]
+          },
           "vms": {
             "required": ["infrastructure"],
             "additionalProperties": {
@@ -229,6 +232,11 @@
           "database": {
             "properties": {
               "mode": { "const": "self_managed" }
+            }
+          },
+          "service_ports": {
+            "properties": {
+              "postgresql": { "const": 5432 }
             }
           },
           "vms": {
@@ -549,29 +557,14 @@
           "description": "Persistent data-service sizing for the K3s application deployment.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["postgresql", "rabbitmq", "redis"],
+          "required": ["postgresql"],
           "properties": {
             "postgresql": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["storage_gb"],
+              "required": ["instances", "storage_gb"],
               "properties": {
-                "storage_gb": { "type": "integer", "minimum": 1 }
-              }
-            },
-            "rabbitmq": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["storage_gb"],
-              "properties": {
-                "storage_gb": { "type": "integer", "minimum": 1 }
-              }
-            },
-            "redis": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["storage_gb"],
-              "properties": {
+                "instances": { "type": "integer", "minimum": 2 },
                 "storage_gb": { "type": "integer", "minimum": 1 }
               }
             }
@@ -581,9 +574,6 @@
           "$ref": "#/$defs/secret_mappings",
           "required": [
             "POSTGRES_PASSWORD",
-            "RABBITMQ_PASSWORD",
-            "RABBITMQ_ERLANG_COOKIE",
-            "REDIS_PASSWORD",
             "OILPRICEAPI_KEY",
             "GHCR_TOKEN"
           ]

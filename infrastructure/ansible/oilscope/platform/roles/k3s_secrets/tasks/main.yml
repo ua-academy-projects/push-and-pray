@@ -74,6 +74,26 @@
       data: "{{ k3s_secrets_application_data }}"
   no_log: true
 
+- name: Create the CloudNativePG database owner Secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_secrets_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ k3s_secrets_postgresql_owner_secret_name }}"
+        namespace: "{{ k3s_secrets_config.k3s.application.namespace }}"
+        labels:
+          app.kubernetes.io/part-of: "{{ k3s_secrets_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+      data:
+        username: "{{ k3s_secrets_postgresql_owner | b64encode }}"
+        password: "{{ k3s_secrets_values.POSTGRES_PASSWORD | b64encode }}"
+  no_log: true
+
 - name: Build the registry authentication document
   ansible.builtin.set_fact:
     k3s_secrets_registry_config:

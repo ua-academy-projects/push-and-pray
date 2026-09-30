@@ -1,24 +1,35 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-k3s_postgresql_config_file: "{{ project_config_path | default('project-config.json') }}"
+k3s_postgresql_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
 k3s_postgresql_kubeconfig: >-
   {{ lookup('ansible.builtin.env', 'HOME')
      ~ '/.kube/oilscope-'
      ~ k3s_postgresql_config.environment
      ~ '.yaml' }}
-k3s_postgresql_values_file: >-
-  {{ lookup('ansible.builtin.env', 'PWD')
-     ~ '/infrastructure/kubernetes/values/postgresql.yaml' }}
-k3s_postgresql_helm_binary: helm
-k3s_postgresql_release_name: postgresql
-k3s_postgresql_release_namespace: >-
+k3s_postgresql_namespace: >-
   {{ k3s_postgresql_config.k3s.application.namespace }}
-k3s_postgresql_chart_ref: oci://registry-1.docker.io/bitnamicharts/postgresql
-k3s_postgresql_chart_version: "18.12.4"
-k3s_postgresql_existing_secret: >-
-  {{ k3s_postgresql_config.name_prefix ~ '-application' }}
+k3s_postgresql_cluster_name: postgresql
+k3s_postgresql_database_resource_name: postgresql-oil-tracker
+k3s_postgresql_database_role_name: postgresql-oil-tracker-owner
+k3s_postgresql_image_catalog_name: oilscope-postgresql
+k3s_postgresql_image: >-
+  {{ k3s_postgresql_config.registry.repository
+     ~ '/database:'
+     ~ k3s_postgresql_config.registry.image_tag }}
+k3s_postgresql_major_version: 18
+k3s_postgresql_uid: 999
+k3s_postgresql_gid: 999
+k3s_postgresql_instances: >-
+  {{ k3s_postgresql_config.k3s.data_services.postgresql.instances }}
+k3s_postgresql_storage_class: local-path
 k3s_postgresql_storage_size: >-
   {{ k3s_postgresql_config.k3s.data_services.postgresql.storage_gb ~ 'Gi' }}
-k3s_postgresql_service_port: >-
-  {{ k3s_postgresql_config.service_ports.postgresql }}
-k3s_postgresql_timeout: 10m0s
+k3s_postgresql_owner_secret_name: >-
+  {{ k3s_postgresql_config.name_prefix ~ '-postgresql-owner' }}
+k3s_postgresql_registry_secret_name: >-
+  {{ k3s_postgresql_config.name_prefix ~ '-registry' }}
+k3s_postgresql_database_name: oil_tracker
+k3s_postgresql_database_owner: oil_tracker
+k3s_postgresql_wait_retries: 120
+k3s_postgresql_wait_delay: 5

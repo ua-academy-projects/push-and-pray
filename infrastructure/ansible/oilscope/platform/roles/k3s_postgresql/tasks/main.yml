@@ -5,25 +5,299 @@
     k3s_postgresql_config: >-
       {{ lookup('ansible.builtin.file', k3s_postgresql_config_file) | from_json }}
 
-- name: Install PostgreSQL
-  kubernetes.core.helm:
-    binary_path: "{{ k3s_postgresql_helm_binary }}"
-    release_name: "{{ k3s_postgresql_release_name }}"
-    release_namespace: "{{ k3s_postgresql_release_namespace }}"
-    chart_ref: "{{ k3s_postgresql_chart_ref }}"
-    chart_version: "{{ k3s_postgresql_chart_version }}"
+- name: Declare the PostgreSQL 18 application image
+  kubernetes.core.k8s:
     kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
-    values_files:
-      - "{{ k3s_postgresql_values_file }}"
-    release_values:
-      auth:
-        existingSecret: "{{ k3s_postgresql_existing_secret }}"
-      primary:
-        service:
-          ports:
-            postgresql: "{{ k3s_postgresql_service_port | int }}"
-        persistence:
+    state: present
+    definition:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: ImageCatalog
+      metadata:
+        name: "{{ k3s_postgresql_image_catalog_name }}"
+        namespace: "{{ k3s_postgresql_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_postgresql_config.name_prefix }}"
+      spec:
+        images:
+          - major: "{{ k3s_postgresql_major_version }}"
+            image: "{{ k3s_postgresql_image }}"
+
+- name: Create the CloudNativePG cluster
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: "{{ k3s_postgresql_cluster_name }}"
+        namespace: "{{ k3s_postgresql_namespace }}"
+        labels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/instance: "{{ k3s_postgresql_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_postgresql_config.name_prefix }}"
+      spec:
+        instances: "{{ k3s_postgresql_instances }}"
+        postgresUID: "{{ k3s_postgresql_uid }}"
+        postgresGID: "{{ k3s_postgresql_gid }}"
+        imageCatalogRef:
+          apiGroup: postgresql.cnpg.io
+          kind: ImageCatalog
+          name: "{{ k3s_postgresql_image_catalog_name }}"
+          major: "{{ k3s_postgresql_major_version }}"
+        imagePullSecrets:
+          - name: "{{ k3s_postgresql_registry_secret_name }}"
+        enableSuperuserAccess: false
+        primaryUpdateStrategy: unsupervised
+        bootstrap:
+          initdb:
+            database: "{{ k3s_postgresql_database_name }}"
+            owner: "{{ k3s_postgresql_database_owner }}"
+            secret:
+              name: "{{ k3s_postgresql_owner_secret_name }}"
+            dataChecksums: true
+            encoding: UTF8
+        postgresql:
+          shared_preload_libraries:
+            - pg_cron
+          parameters:
+            cron.database_name: "{{ k3s_postgresql_database_name }}"
+            cron.use_background_workers: "on"
+            max_connections: "100"
+            shared_buffers: 128MB
+            timezone: UTC
+        storage:
+          storageClass: "{{ k3s_postgresql_storage_class }}"
           size: "{{ k3s_postgresql_storage_size }}"
-    atomic: true
-    wait: true
-    timeout: "{{ k3s_postgresql_timeout }}"
+        affinity:
+          enablePodAntiAffinity: true
+          topologyKey: kubernetes.io/hostname
+          podAntiAffinityType: required
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+- name: Wait for the CloudNativePG cluster to become ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: "{{ k3s_postgresql_cluster_name }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+  register: k3s_postgresql_cluster_result
+  changed_when: false
+  retries: "{{ k3s_postgresql_wait_retries }}"
+  delay: "{{ k3s_postgresql_wait_delay }}"
+  until: >-
+    k3s_postgresql_cluster_result.resources | length > 0
+    and
+    (k3s_postgresql_cluster_result.resources[0]
+     .get('status', {}).get('conditions', [])
+     | selectattr('type', 'equalto', 'Ready')
+     | selectattr('status', 'equalto', 'True')
+     | list
+     | length > 0)
+
+- name: Manage the application database owner
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: DatabaseRole
+      metadata:
+        name: "{{ k3s_postgresql_database_role_name }}"
+        namespace: "{{ k3s_postgresql_namespace }}"
+        labels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/instance: "{{ k3s_postgresql_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_postgresql_config.name_prefix }}"
+      spec:
+        cluster:
+          name: "{{ k3s_postgresql_cluster_name }}"
+        name: "{{ k3s_postgresql_database_owner }}"
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        databaseRoleReclaimPolicy: retain
+        passwordSecret:
+          name: "{{ k3s_postgresql_owner_secret_name }}"
+
+- name: Wait for the application database owner
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    api_version: postgresql.cnpg.io/v1
+    kind: DatabaseRole
+    name: "{{ k3s_postgresql_database_role_name }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+  register: k3s_postgresql_database_role_result
+  changed_when: false
+  retries: "{{ k3s_postgresql_wait_retries }}"
+  delay: "{{ k3s_postgresql_wait_delay }}"
+  until: >-
+    k3s_postgresql_database_role_result.resources | length > 0
+    and
+    k3s_postgresql_database_role_result.resources[0]
+    .get('status', {}).get('applied', false) | bool
+
+- name: Manage the application database extensions
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      metadata:
+        name: "{{ k3s_postgresql_database_resource_name }}"
+        namespace: "{{ k3s_postgresql_namespace }}"
+        labels:
+          app.kubernetes.io/name: postgresql
+          app.kubernetes.io/instance: "{{ k3s_postgresql_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_postgresql_config.name_prefix }}"
+      spec:
+        name: "{{ k3s_postgresql_database_name }}"
+        owner: "{{ k3s_postgresql_database_owner }}"
+        cluster:
+          name: "{{ k3s_postgresql_cluster_name }}"
+        databaseReclaimPolicy: retain
+        extensions:
+          - name: hstore
+            ensure: present
+          - name: pg_cron
+            ensure: present
+          - name: pgcrypto
+            ensure: present
+          - name: pgmq
+            ensure: present
+
+- name: Wait for the application database extensions
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    api_version: postgresql.cnpg.io/v1
+    kind: Database
+    name: "{{ k3s_postgresql_database_resource_name }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+  register: k3s_postgresql_database_result
+  changed_when: false
+  retries: "{{ k3s_postgresql_wait_retries }}"
+  delay: "{{ k3s_postgresql_wait_delay }}"
+  until: >-
+    k3s_postgresql_database_result.resources | length > 0
+    and
+    k3s_postgresql_database_result.resources[0]
+    .get('status', {}).get('applied', false) | bool
+
+- name: Read the current CloudNativePG primary
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: "{{ k3s_postgresql_cluster_name }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+  register: k3s_postgresql_current_cluster
+  changed_when: false
+  retries: "{{ k3s_postgresql_wait_retries }}"
+  delay: "{{ k3s_postgresql_wait_delay }}"
+  until: >-
+    k3s_postgresql_current_cluster.resources | length > 0
+    and
+    k3s_postgresql_current_cluster.resources[0]
+    .get('status', {}).get('currentPrimary', '') | length > 0
+
+- name: Check the application owner pg_cron schema access
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+    pod: >-
+      {{ k3s_postgresql_current_cluster.resources[0]
+         .get('status', {}).get('currentPrimary') }}
+    container: postgres
+    command: >-
+      psql
+      --dbname={{ k3s_postgresql_database_name | quote }}
+      --username=postgres
+      --tuples-only
+      --no-align
+      --set=ON_ERROR_STOP=1
+      --command={{ ("SELECT has_schema_privilege('"
+                    ~ k3s_postgresql_database_owner
+                    ~ "', 'cron', 'USAGE');") | quote }}
+  register: k3s_postgresql_cron_schema_access
+  changed_when: false
+
+- name: Grant the application owner access to pg_cron
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+    pod: >-
+      {{ k3s_postgresql_current_cluster.resources[0]
+         .get('status', {}).get('currentPrimary') }}
+    container: postgres
+    command: >-
+      psql
+      --dbname={{ k3s_postgresql_database_name | quote }}
+      --username=postgres
+      --set=ON_ERROR_STOP=1
+      --command={{ ('GRANT USAGE ON SCHEMA cron TO "'
+                    ~ k3s_postgresql_database_owner
+                    ~ '";') | quote }}
+  when: k3s_postgresql_cron_schema_access.stdout | trim != 't'
+
+- name: Check the application owner PGMQ access
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+    pod: >-
+      {{ k3s_postgresql_current_cluster.resources[0]
+         .get('status', {}).get('currentPrimary') }}
+    container: postgres
+    command: >-
+      psql
+      --dbname={{ k3s_postgresql_database_name | quote }}
+      --username=postgres
+      --tuples-only
+      --no-align
+      --set=ON_ERROR_STOP=1
+      --command={{ ("SELECT has_schema_privilege('"
+                    ~ k3s_postgresql_database_owner
+                    ~ "', 'pgmq', 'USAGE')"
+                    ~ " AND has_schema_privilege('"
+                    ~ k3s_postgresql_database_owner
+                    ~ "', 'pgmq', 'CREATE')"
+                    ~ " AND has_table_privilege('"
+                    ~ k3s_postgresql_database_owner
+                    ~ "', 'pgmq.meta', 'SELECT')"
+                    ~ " AND has_table_privilege('"
+                    ~ k3s_postgresql_database_owner
+                    ~ "', 'pgmq.meta', 'INSERT');") | quote }}
+  register: k3s_postgresql_pgmq_access
+  changed_when: false
+
+- name: Grant the application owner access to PGMQ
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ k3s_postgresql_kubeconfig }}"
+    namespace: "{{ k3s_postgresql_namespace }}"
+    pod: >-
+      {{ k3s_postgresql_current_cluster.resources[0]
+         .get('status', {}).get('currentPrimary') }}
+    container: postgres
+    command: >-
+      psql
+      --dbname={{ k3s_postgresql_database_name | quote }}
+      --username=postgres
+      --set=ON_ERROR_STOP=1
+      --command={{ ('GRANT USAGE, CREATE ON SCHEMA pgmq TO "'
+                    ~ k3s_postgresql_database_owner
+                    ~ '"; GRANT SELECT, INSERT ON TABLE pgmq.meta TO "'
+                    ~ k3s_postgresql_database_owner
+                    ~ '";') | quote }}
+  when: k3s_postgresql_pgmq_access.stdout | trim != 't'

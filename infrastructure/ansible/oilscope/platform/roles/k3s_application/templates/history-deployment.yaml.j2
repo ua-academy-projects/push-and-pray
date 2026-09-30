@@ -51,19 +51,11 @@ spec:
                 secretKeyRef:
                   name: {{ k3s_application_secret_name }}
                   key: POSTGRES_PASSWORD
-            - name: RABBITMQ_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ k3s_application_secret_name }}
-                  key: RABBITMQ_PASSWORD
             - name: DATABASE_URL
               value: >-
                 postgresql+psycopg://{{ k3s_application_postgresql_user }}:$(POSTGRES_PASSWORD)@{{ k3s_application_postgresql_host }}:{{ k3s_application_postgresql_port }}/{{ k3s_application_postgresql_database }}?sslmode={{ k3s_application_postgresql_sslmode }}
             - name: MESSAGING_BACKEND
-              value: rabbitmq
-            - name: RABBITMQ_URL
-              value: >-
-                amqp://{{ k3s_application_rabbitmq_user }}:$(RABBITMQ_PASSWORD)@{{ k3s_application_rabbitmq_host }}:{{ k3s_application_rabbitmq_port }}/{{ k3s_application_rabbitmq_vhost }}
+              value: pgmq
             - name: PGMQ_QUEUE
               value: price_observations
             - name: LOG_LEVEL
