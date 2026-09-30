@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_postgresql_standalone_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+k3s_postgresql_standalone_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_postgresql_standalone_config.environment
+     ~ '.yaml' }}
+k3s_postgresql_standalone_values_file: >-
+  {{ lookup('ansible.builtin.env', 'PWD')
+     ~ '/infrastructure/kubernetes/values/postgresql.yaml' }}
+k3s_postgresql_standalone_helm_binary: helm
+k3s_postgresql_standalone_release_name: postgresql
+k3s_postgresql_standalone_release_namespace: >-
+  {{ k3s_postgresql_standalone_config.k3s.application.namespace }}
+k3s_postgresql_standalone_chart_ref: >-
+  oci://registry-1.docker.io/bitnamicharts/postgresql
+k3s_postgresql_standalone_chart_version: "18.12.4"
+k3s_postgresql_standalone_existing_secret: >-
+  {{ k3s_postgresql_standalone_config.name_prefix ~ '-application' }}
+k3s_postgresql_standalone_storage_size: >-
+  {{ k3s_postgresql_standalone_config.k3s.data_services.postgresql.storage_gb ~ 'Gi' }}
+k3s_postgresql_standalone_service_port: >-
+  {{ k3s_postgresql_standalone_config.service_ports.postgresql }}
+k3s_postgresql_standalone_timeout: 10m0s
