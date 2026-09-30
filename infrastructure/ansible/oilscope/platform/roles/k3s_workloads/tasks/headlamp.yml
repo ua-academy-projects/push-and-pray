@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install Headlamp privately from the control host
+  kubernetes.core.helm:
+    release_name: headlamp
+    release_namespace: headlamp
+    create_namespace: true
+    chart_ref: headlamp
+    chart_repo_url: https://kubernetes-sigs.github.io/headlamp/
+    chart_version: 0.45.0
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      fullnameOverride: headlamp
+      service:
+        type: ClusterIP
+        port: 80
+      ingress:
+        enabled: false
+      clusterRoleBinding:
+        create: false
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+- name: Configure Headlamp login permissions
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition: "{{ lookup('ansible.builtin.template', 'headlamp-rbac.yaml.j2') | from_yaml_all | list }}"

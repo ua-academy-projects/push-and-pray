@@ -42,6 +42,19 @@
          }] }}
   loop: [database, history, fetcher, ui]
 
+- name: Collect Tailscale secret targets for every K3s node provider scope
+  ansible.builtin.set_fact:
+    secret_versions_targets: >-
+      {{ secret_versions_targets + [{
+           'cloud': item.value.cloud | default(secret_versions_config.default_cloud),
+           'location': item.value.location,
+           'role': 'tailscale'
+         }] }}
+  loop: "{{ secret_versions_config.vms | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value.role in ['k3s_server', 'k3s_agent']
+
 - name: Collect application roles that need secrets
   ansible.builtin.set_fact:
     secret_versions_roles: >-
@@ -79,7 +92,7 @@
       {{ item.cloud }}/{{ item.location }}/{{ item.role }}
   vars:
     secret_versions_mode_secret_ids: >-
-      {{ ['db-password-admin', 'db-password-history', 'oilpriceapi-key']
+      {{ ['db-password-admin', 'db-password-history', 'oilpriceapi-key', 'tailscale-auth-key']
          + (['db-password-fetcher', 'db-password-ui']
             if secret_versions_config.database_mode == 'postgres_extensions'
             else ['rabbitmq-password', 'redis-password']) }}

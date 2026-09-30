@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+# The existing pinned PostgreSQL 18 image supplies pgmq, hstore and pgcrypto.
+ARG POSTGRES_IMAGE=ghcr.io/pgmq/pg18-pgmq@sha256:9410102ea5fc16428be5b7203fdfef372827039f57ae05874e8c2e6f45e15336
+FROM ${POSTGRES_IMAGE} AS cron-builder
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc make postgresql-server-dev-18 \
+    && rm -rf /var/lib/apt/lists/*
+ADD --checksum=sha256:d950bc29155f31017567e23a31d268ff672e98276c0e9d062512fb7870351f03 \
+    https://codeload.github.com/citusdata/pg_cron/tar.gz/refs/tags/v1.6.7 /tmp/pg_cron.tar.gz
+RUN tar -xzf /tmp/pg_cron.tar.gz -C /tmp \
+    && make -C /tmp/pg_cron-1.6.7 PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config with_llvm=no \
+    && make -C /tmp/pg_cron-1.6.7 PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config with_llvm=no install
+
+FROM ${POSTGRES_IMAGE}
+COPY --from=cron-builder /usr/lib/postgresql/18/lib/pg_cron.so /usr/lib/postgresql/18/lib/
+COPY --from=cron-builder /usr/share/postgresql/18/extension/pg_cron* /usr/share/postgresql/18/extension/
+COPY --chown=postgres:postgres database/migrations /opt/petroscope/migrations
+COPY --chmod=0755 infrastructure/docker/cnpg-migrate.sh /usr/local/bin/oilscope-cnpg-migrate
+# Match the postgres account from the pinned Debian PostgreSQL image.
+USER 999:999
+# CNPG supplies its own entrypoint and PostgreSQL configuration.
+HEALTHCHECK NONE

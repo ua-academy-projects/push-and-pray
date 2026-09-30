@@ -5,7 +5,7 @@ defined beside `default_cloud` and `default_location` in `project-config.json`.
 
 | `database_mode` | `default_cloud` | PostgreSQL | Messaging | UI sessions |
 | --- | --- | --- | --- | --- |
-| `postgres_extensions` | `aws`, `gcp`, or `azure` | PostgreSQL container on the first K3s server | PGMQ | PostgreSQL hstore/pg_cron |
+| `postgres_extensions` | `aws`, `gcp`, or `azure` | CloudNativePG, two PostgreSQL instances | PGMQ | PostgreSQL hstore/pg_cron |
 | `managed` | `aws` | Private Amazon RDS for PostgreSQL | RabbitMQ Deployment | Redis Helm release |
 | `managed` | `gcp` | Private Cloud SQL for PostgreSQL | RabbitMQ Deployment | Redis Helm release |
 | `managed` | `azure` | Private PostgreSQL Flexible Server | RabbitMQ Deployment | Redis Helm release |
@@ -76,8 +76,19 @@ administrator password and all application, RabbitMQ, and Redis passwords use
 the existing provider-independent Ansible Secret Manager/Secrets Manager flow.
 Secret values remain in memory and are never emitted as Terraform outputs.
 
-The selected first K3s server runs the database preparation playbook in both
-modes. In `postgres_extensions` it runs PostgreSQL and migrations. In `managed`
-it runs migrations and application-role provisioning against the private
-managed endpoint. RabbitMQ is a Kubernetes Deployment; Redis is a Helm release
-in the `oilscope` namespace.
+In the aggregate K3s path, `postgres_extensions` installs CNPG from the Ansible
+controller, creates two PostgreSQL instances with persistent volumes, and runs
+the existing SQL migrations on the primary before deploying applications.
+Applications use `oilscope-db-rw.oilscope.svc.cluster.local:5432` with TLS.
+The custom image supplies pgmq, pg_cron, hstore, and pgcrypto.
+
+In `managed`, the selected first K3s server still runs migrations and
+application-role provisioning against the private managed endpoint. CNPG is
+not installed or changed in this mode. RabbitMQ remains a Kubernetes Deployment;
+Redis remains a Helm release in the `oilscope` namespace. Mode changes do not
+automatically remove an existing CNPG cluster or its data.
+
+The standalone `database.yml` playbook retains its Compose path. Existing
+Compose data is not automatically imported into CNPG. See
+[CNPG and Headlamp](k3s-platform.md) for deployment, data-cutover limits,
+credentials, and verification commands.

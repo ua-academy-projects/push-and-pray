@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Require the published PostgreSQL image repository
+  ansible.builtin.assert:
+    that:
+      - k3s_workloads_registry.images['database-cnpg'] is defined
+      - k3s_workloads_config.database.admin_user != 'postgres'
+      - k3s_workloads_config.database.name not in ['postgres', 'template0', 'template1']
+    fail_msg: >-
+      CNPG requires a non-system database and owner. Apply the registry Terraform
+      changes and publish the database-cnpg image before deploying CNPG.
+
+- name: Install the CloudNativePG operator from the control host
+  kubernetes.core.helm:
+    release_name: cnpg
+    release_namespace: cnpg-system
+    create_namespace: true
+    chart_ref: cloudnative-pg
+    chart_repo_url: https://cloudnative-pg.github.io/charts
+    chart_version: 0.29.1
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
+- name: Create CNPG credentials from the existing cloud secrets
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition: "{{ lookup('ansible.builtin.template', 'cnpg-secrets.yaml.j2') | from_yaml_all | list }}"
+  no_log: true
+
+- name: Configure the two-instance PostgreSQL cluster
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition: "{{ lookup('ansible.builtin.template', 'cnpg-cluster.yaml.j2') | from_yaml }}"
+
+- name: Wait for both PostgreSQL instances and application roles
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: oilscope-db
+    namespace: oilscope
+  register: k3s_workloads_cnpg_cluster
+  vars:
+    k3s_workloads_cnpg_expected_roles:
+      - "{{ k3s_workloads_config.database.admin_user }}"
+      - "{{ k3s_workloads_config.database.admin_user }}_history"
+      - "{{ k3s_workloads_config.database.admin_user }}_fetcher"
+      - "{{ k3s_workloads_config.database.admin_user }}_ui"
+  until:
+    - k3s_workloads_cnpg_cluster.resources | length == 1
+    - k3s_workloads_cnpg_cluster.resources[0].status.readyInstances | default(0) == 2
+    - k3s_workloads_cnpg_cluster.resources[0].status.phase | default('') == 'Cluster in healthy state'
+    - >-
+      k3s_workloads_cnpg_cluster.resources[0].status.image | default('') ==
+      k3s_workloads_registry.images['database-cnpg'] ~ ':18-' ~ k3s_workloads_image_tag
+    - k3s_workloads_cnpg_cluster.resources[0].status.currentPrimary | default('') | length > 0
+    - >-
+      k3s_workloads_cnpg_expected_roles | difference(
+        k3s_workloads_cnpg_cluster.resources[0].status.managedRolesStatus.byStatus.reconciled | default([])
+      ) | length == 0
+  retries: 90
+  delay: 10
+
+- name: Apply pending database migrations on the current primary
+  kubernetes.core.k8s_exec:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    namespace: oilscope
+    pod: "{{ k3s_workloads_cnpg_cluster.resources[0].status.currentPrimary }}"
+    container: postgres
+    command: >-
+      /usr/local/bin/oilscope-cnpg-migrate
+      {{ k3s_workloads_config.database.name | quote }}
+      {{ k3s_workloads_config.database.admin_user | quote }}
+  register: k3s_workloads_cnpg_migrations
+  changed_when: "'Applying ' in k3s_workloads_cnpg_migrations.stdout | default('')"
+  failed_when: k3s_workloads_cnpg_migrations.rc | default(1) != 0

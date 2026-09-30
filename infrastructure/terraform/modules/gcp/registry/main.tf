@@ -33,7 +33,7 @@ output "registry" {
     region = local.region
     server = local.server
     images = {
-      for image in ["history", "fetcher", "ui"] : image => "${local.server}/${local.project}/${google_artifact_registry_repository.app.repository_id}/${image}"
+      for image in ["history", "fetcher", "ui", "database-cnpg"] : image => "${local.server}/${local.project}/${google_artifact_registry_repository.app.repository_id}/${image}"
     }
   }
 }

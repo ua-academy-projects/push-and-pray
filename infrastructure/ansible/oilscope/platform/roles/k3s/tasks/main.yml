@@ -33,6 +33,15 @@
     group: root
     mode: '0700'
 
+- name: Preserve the transport choice before initializing a new Tailnet node
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/.oilscope-tailnet-transport
+    content: "tailscale\n"
+    owner: root
+    group: root
+    mode: '0600'
+  when: k3s_cluster_uses_tailscale | bool
+
 - name: Configure K3s
   ansible.builtin.template:
     src: config.yaml.j2
@@ -102,3 +111,13 @@
   register: k3s_node_token
   no_log: true
   when: k3s_mode == 'server' and k3s_first_server | bool
+
+- name: Wait for a new Tailnet server to become ready
+  ansible.builtin.command:
+    argv: [k3s, kubectl, --request-timeout=10s, get, --raw=/readyz]
+  register: k3s_tailnet_api_ready
+  changed_when: false
+  until: k3s_tailnet_api_ready.rc == 0
+  retries: 30
+  delay: 5
+  when: k3s_mode == 'server' and k3s_cluster_uses_tailscale | bool

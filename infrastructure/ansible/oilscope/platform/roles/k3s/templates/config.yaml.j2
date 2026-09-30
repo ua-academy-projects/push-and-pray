@@ -1,20 +1,23 @@
-node-ip: {{ internal_ip | to_json }}
+node-ip: {{ k3s_transport_ip | to_json }}
+{% if k3s_cluster_uses_tailscale | bool %}
+flannel-iface: tailscale0
+{% endif %}
 {% if k3s_mode == 'server' %}
-advertise-address: {{ internal_ip | to_json }}
+advertise-address: {{ k3s_transport_ip | to_json }}
 {% if k3s_first_server | bool %}
 cluster-init: true
 {% else %}
-server: {{ ('https://' ~ hostvars[k3s_primary_server].internal_ip ~ ':6443') | to_json }}
+server: {{ ('https://' ~ hostvars[k3s_primary_server].k3s_transport_ip ~ ':6443') | to_json }}
 token: {{ hostvars[k3s_primary_server].k3s_node_token.content | b64decode | trim | to_json }}
 {% endif %}
 tls-san:
-{% for san in ([hostvars[k3s_primary_server].internal_ip] + k3s_api_sans) | unique %}
+{% for san in ([hostvars[k3s_primary_server].k3s_transport_ip] + k3s_api_sans) | unique %}
   - {{ san | to_json }}
 {% endfor %}
 disable:
   - traefik
   - servicelb
 {% else %}
-server: {{ ('https://' ~ hostvars[k3s_primary_server].internal_ip ~ ':6443') | to_json }}
+server: {{ ('https://' ~ hostvars[k3s_primary_server].k3s_transport_ip ~ ':6443') | to_json }}
 token: {{ hostvars[k3s_primary_server].k3s_node_token.content | b64decode | trim | to_json }}
 {% endif %}

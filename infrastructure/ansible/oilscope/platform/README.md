@@ -14,7 +14,9 @@ uvx check-jsonschema \
 
 ## Deploy all workloads
 
-The aggregate playbook prepares the database, bootstraps the K3s server quorum, joins agents, and deploys the Kubernetes workloads. Publish the application images and set `OILSCOPE_IMAGE_TAG` before running it. The control host needs `kubectl`, Helm, and the `kubernetes.core` collection.
+The aggregate playbook prepares the managed database when selected, bootstraps the K3s server quorum, joins agents, and deploys the Kubernetes workloads. In `postgres_extensions`, workload preparation installs CNPG, waits for two PostgreSQL instances, and applies the existing migrations before applications. Publish the application and CNPG images and set `OILSCOPE_IMAGE_TAG` before running it. The control host needs `kubectl`, Helm, the `kubernetes.core` collection, and the Python dependencies in `infrastructure/ansible/requirements.txt`.
+
+Both database modes install private Headlamp. See [CNPG and Headlamp](../../../../docs/k3s-platform.md) for registry/image preparation, existing-data limitations, private UI access, and verification commands. To update an existing K3s cluster's workloads, use `oilscope.platform.deploy_k3s_workloads` instead of the aggregate playbook.
 
 Run from the repository root:
 

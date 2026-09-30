@@ -1,0 +1,145 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Require Ubuntu for the Tailscale package repository
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_release'] | length > 0
+
+- name: Install the Tailscale package signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install the Debian repository module dependency
+  ansible.builtin.apt:
+    name: python3-debian
+    state: present
+
+- name: Configure the Tailscale package repository
+  ansible.builtin.deb822_repository:
+    name: tailscale
+    types: [deb]
+    uris: https://pkgs.tailscale.com/stable/ubuntu
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: [main]
+    signed_by: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    state: present
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Ensure tailscaled is running
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read Tailscale connection state
+  ansible.builtin.command:
+    argv: [tailscale, status, --json]
+  register: tailscale_status_before
+  changed_when: false
+  failed_when: false
+
+- name: Parse Tailscale connection state
+  ansible.builtin.set_fact:
+    tailscale_current_status: >-
+      {{ (tailscale_status_before.stdout | from_json)
+         if tailscale_status_before.rc == 0 and
+            (tailscale_status_before.stdout | trim).startswith('{')
+         else {} }}
+
+- name: Join the tailnet when disconnected
+  when: tailscale_current_status.get('BackendState') != 'Running'
+  block:
+    - name: Load Tailscale secret requirement
+      ansible.builtin.include_vars:
+        file: secrets.yml
+        name: tailscale_secret_requirements
+
+    - name: Resolve the Tailscale auth key from the cloud secret store
+      ansible.builtin.include_role:
+        name: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_mappings: "{{ tailscale_secret_requirements }}"
+        resolve_secrets_name_prefix: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).name_prefix }}"
+        resolve_secrets_environment: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).environment }}"
+
+    - name: Require a nonempty Tailscale auth key
+      ansible.builtin.assert:
+        that: resolve_secrets_result.TAILSCALE_AUTH_KEY | length > 0
+      no_log: true
+
+    - name: Create a temporary auth key file
+      ansible.builtin.tempfile:
+        state: file
+        path: /run
+        prefix: oilscope-tailscale-
+      register: tailscale_auth_file
+      no_log: true
+
+    - name: Authenticate this node
+      block:
+        - name: Write the temporary auth key file
+          ansible.builtin.copy:
+            content: "{{ resolve_secrets_result.TAILSCALE_AUTH_KEY }}"
+            dest: "{{ tailscale_auth_file.path }}"
+            owner: root
+            group: root
+            mode: '0600'
+          no_log: true
+
+        - name: Join the tailnet
+          ansible.builtin.command:
+            argv:
+              - tailscale
+              - up
+              - "--auth-key=file:{{ tailscale_auth_file.path }}"
+              - "--hostname={{ tailscale_hostname }}"
+          no_log: true
+          changed_when: true
+      always:
+        - name: Remove the temporary auth key file
+          ansible.builtin.file:
+            path: "{{ tailscale_auth_file.path }}"
+            state: absent
+          no_log: true
+
+- name: Update the Tailscale hostname when needed
+  ansible.builtin.command:
+    argv: [tailscale, set, "--hostname={{ tailscale_hostname }}"]
+  changed_when: true
+  when:
+    - tailscale_current_status.get('BackendState') == 'Running'
+    - tailscale_current_status.get('Self', {}).get('HostName', '') != tailscale_hostname
+
+- name: Verify Tailscale is connected
+  ansible.builtin.command:
+    argv: [tailscale, status, --json]
+  register: tailscale_status_after
+  changed_when: false
+  until: >-
+    tailscale_status_after.rc == 0 and
+    (tailscale_status_after.stdout | from_json).BackendState == 'Running'
+  retries: 12
+  delay: 5
+
+- name: Read this node's Tailscale IPv4
+  ansible.builtin.command:
+    argv: [tailscale, ip, -4]
+  register: tailscale_ipv4_output
+  changed_when: false
+  until: tailscale_ipv4_output.rc == 0 and (tailscale_ipv4_output.stdout | trim) | length > 0
+  retries: 12
+  delay: 5
+
+- name: Expose the Tailscale IPv4 to subsequent plays
+  ansible.builtin.set_fact:
+    tailscale_ip: "{{ tailscale_ipv4_output.stdout | trim }}"

@@ -1,10 +1,51 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Connect K3s nodes to the private tailnet
+  hosts: k3s_server:k3s_agent
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - oilscope.platform.tailscale
+
+- name: Preserve transport addresses of an existing K3s cluster
+  hosts: k3s_server:k3s_agent
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check whether this node already has K3s installed
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ 'k3s' if inventory_hostname in groups['k3s_server'] else 'k3s-agent' }}.service"
+      register: k3s_existing_service
+
+    - name: Check whether this node was initialized for Tailnet transport
+      ansible.builtin.stat:
+        path: /etc/rancher/k3s/.oilscope-tailnet-transport
+      register: k3s_tailnet_marker
+
+    - name: Identify existing servers that still use private transport
+      ansible.builtin.set_fact:
+        k3s_existing_private_server: >-
+          {{ inventory_hostname in groups['k3s_server'] and
+             k3s_existing_service.stat.exists and
+             not k3s_tailnet_marker.stat.exists }}
+
+    - name: Select one transport for the whole cluster
+      vars:
+        k3s_private_servers: >-
+          {{ groups['k3s_server'] | map('extract', hostvars, 'k3s_existing_private_server')
+             | select('equalto', true) | list }}
+      ansible.builtin.set_fact:
+        k3s_cluster_uses_tailscale: "{{ k3s_private_servers | length == 0 }}"
+        k3s_transport_ip: "{{ tailscale_ip if k3s_private_servers | length == 0 else internal_ip }}"
+
 - name: Stop older K3s agents on nodes becoming servers
   hosts: k3s_server
   become: true
   gather_facts: false
   serial: 1
+  any_errors_fatal: true
   tasks:
     - name: Prepare servers before bootstrapping the quorum
       ansible.builtin.import_role:
@@ -15,6 +56,7 @@
   hosts: k3s_primary
   become: true
   gather_facts: false
+  any_errors_fatal: true
   vars:
     k3s_primary_server: "{{ groups['k3s_primary'][0] }}"
     k3s_first_server: true
@@ -35,6 +77,7 @@
   become: true
   gather_facts: false
   serial: 1
+  any_errors_fatal: true
   vars:
     k3s_primary_server: "{{ groups['k3s_primary'][0] }}"
     k3s_first_server: false
@@ -49,6 +92,7 @@
   hosts: k3s_agent
   become: true
   gather_facts: false
+  any_errors_fatal: true
   vars:
     k3s_primary_server: "{{ groups['k3s_primary'][0] }}"
     k3s_first_server: false

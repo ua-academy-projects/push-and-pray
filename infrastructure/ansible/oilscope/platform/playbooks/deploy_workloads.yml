@@ -15,8 +15,9 @@
           - groups.get('k3s_server', []) | length % 2 == 1
         fail_msg: Discover one K3s primary and at least three odd-numbered K3s servers before deployment.
 
-- name: Deploy Database workload
+- name: Prepare the managed cloud database
   ansible.builtin.import_playbook: database.yml
+  when: database_mode == 'managed'
 
 - name: Install K3s cluster
   ansible.builtin.import_playbook: deploy_k3s.yml

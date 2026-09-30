@@ -17,8 +17,10 @@ VM entries in project configuration contain neither secret mappings nor values.
 The Ansible `secret_versions` role creates provider-specific secret containers
 and uploads their values. For K3s it reads the database, history, fetcher, and
 UI declarations, using the bootstrap server's cloud and location as the secret
-provider scope. It deduplicates containers within each GCP project or AWS
-region. Terraform does not manage application secrets.
+provider scope. The Tailscale role also declares an auth key. Its secret is
+provisioned in every K3s node's provider scope so nodes in different clouds
+can join the same tailnet. The catalog deduplicates containers within each GCP
+project or AWS region. Terraform does not manage these secrets.
 
 The selected `database_mode` also filters the catalog. Managed mode adds
 `RABBITMQ_PASSWORD` and `REDIS_PASSWORD` and does not request the unused Fetcher
@@ -61,6 +63,7 @@ DB_PASSWORD_UI
 OILPRICEAPI_KEY
 RABBITMQ_PASSWORD
 REDIS_PASSWORD
+TAILSCALE_AUTH_KEY
 ```
 
 Only the subset required by the selected mode is requested. Cloud SQL managed
@@ -92,3 +95,7 @@ ansible-playbook oilscope.platform.upload_secret_versions \
 Use `secret_versions_only` to select by runtime variable, source environment
 variable, logical secret ID, or final physical provider name. Upload tasks pass
 values through standard input and use `no_log`; they do not run in check mode.
+For Tailscale provisioning, set `TAILSCALE_AUTH_KEY` on the controller only
+while uploading `secret_versions_only=['TAILSCALE_AUTH_KEY']`. The deployment
+reads the stored value only for a node that needs to join. See
+[Tailscale networking](tailscale.md).

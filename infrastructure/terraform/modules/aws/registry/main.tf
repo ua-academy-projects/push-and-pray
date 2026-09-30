@@ -7,7 +7,7 @@ locals {
 }
 
 resource "aws_ecr_repository" "app" {
-  for_each = toset(["history", "fetcher", "ui"])
+  for_each = toset(["history", "fetcher", "ui", "database-cnpg"])
 
   region = local.region
   name   = "${var.config.name_prefix}-${var.config.environment}-${each.key}"

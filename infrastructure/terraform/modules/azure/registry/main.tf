@@ -35,7 +35,7 @@ output "registry" {
     region = local.region
     server = azurerm_container_registry.app.login_server
     images = {
-      for image in ["history", "fetcher", "ui"] : image => "${azurerm_container_registry.app.login_server}/oilscope/${image}"
+      for image in ["history", "fetcher", "ui", "database-cnpg"] : image => "${azurerm_container_registry.app.login_server}/oilscope/${image}"
     }
   }
 }

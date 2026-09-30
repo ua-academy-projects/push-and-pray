@@ -4,6 +4,7 @@
   hosts: k3s_server:k3s_agent
   become: true
   gather_facts: false
+  any_errors_fatal: true
   tasks:
     - name: Stop older web services on the public node
       ansible.builtin.import_role:
@@ -15,6 +16,7 @@
   hosts: k3s_primary
   become: true
   gather_facts: false
+  any_errors_fatal: true
   tasks:
     - name: Install and configure workloads
       block:

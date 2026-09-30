@@ -1,4 +1,7 @@
 .env
+.env.*
+!/.env.example
+*.env
 .venv/
 __pycache__/
 *.py[cod]
@@ -28,11 +31,20 @@ infrastructure/docker/deployment
 crash.log
 crash.*.log
 *.json
-!infrastructure/terraform/*.json
+/project-config.json
+!infrastructure/terraform/project-config.schema.json
 !.vscode/settings.json
 # Credentials and private keys
 *.pem
 *.key
+*.p8
+*.p12
+*.pfx
+id_rsa
+id_ecdsa
+id_ed25519
+kubeconfig
+*.kubeconfig
 !project-config.example.json
 
 # Built Ansible collection artifacts

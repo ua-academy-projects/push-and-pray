@@ -10,6 +10,8 @@ spec:
   template:
     metadata:
       labels: {app: history}
+      annotations:
+        oilscope.io/database-endpoint: {{ (k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port) | to_json }}
     spec:
       affinity:
         podAntiAffinity:
@@ -57,6 +59,8 @@ spec:
   template:
     metadata:
       labels: {app: fetcher}
+      annotations:
+        oilscope.io/database-endpoint: {{ (k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port) | to_json }}
     spec:
       imagePullSecrets:
         - {name: oilscope-registry}
@@ -86,6 +90,8 @@ spec:
   template:
     metadata:
       labels: {app: ui}
+      annotations:
+        oilscope.io/database-endpoint: {{ (k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port) | to_json }}
     spec:
       affinity:
         podAntiAffinity:

@@ -22,9 +22,9 @@
 - name: Select the registry and database endpoint
   ansible.builtin.set_fact:
     k3s_workloads_registry: "{{ k3s_workloads_registry_output.stdout | from_json }}"
-    k3s_workloads_database_host: "{{ managed_database.host if database_mode == 'managed' else hostvars[groups['k3s_primary'][0]].internal_ip }}"
+    k3s_workloads_database_host: "{{ managed_database.host if database_mode == 'managed' else 'oilscope-db-rw.oilscope.svc.cluster.local' }}"
     k3s_workloads_database_port: "{{ managed_database.port if database_mode == 'managed' else 5432 }}"
-    k3s_workloads_database_sslmode: "{{ managed_database.sslmode if database_mode == 'managed' else 'disable' }}"
+    k3s_workloads_database_sslmode: "{{ managed_database.sslmode if database_mode == 'managed' else 'require' }}"
 
 - name: Require a registry for this cloud
   ansible.builtin.assert:
@@ -49,6 +49,7 @@
             }
             if database_mode == 'managed'
             else {
+              'database_admin': {'runtime_env': 'POSTGRES_PASSWORD', 'secret_id': 'db-password-admin'},
               'fetcher_postgres': {'runtime_env': 'FETCHER_POSTGRES_PASSWORD', 'secret_id': 'db-password-fetcher'},
               'ui_postgres': {'runtime_env': 'UI_POSTGRES_PASSWORD', 'secret_id': 'db-password-ui'}
             }
@@ -159,6 +160,13 @@
   register: k3s_workloads_secrets_apply
   changed_when: "'created' in k3s_workloads_secrets_apply.stdout or 'configured' in k3s_workloads_secrets_apply.stdout"
   no_log: true
+
+- name: Prepare CloudNativePG before application deployment
+  ansible.builtin.import_tasks: cnpg.yml
+  when: database_mode == 'postgres_extensions'
+
+- name: Install the private Kubernetes UI
+  ansible.builtin.import_tasks: headlamp.yml
 
 - name: Remove the old K3s-managed Traefik resources
   ansible.builtin.command:

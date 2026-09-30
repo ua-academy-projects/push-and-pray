@@ -25,9 +25,23 @@ case "$cloud" in
     ;;
 esac
 
-for image in history fetcher ui; do
+images=(history fetcher ui)
+if [[ "$(terraform -chdir=infrastructure/terraform output -raw database_mode)" == postgres_extensions ]]; then
+  images+=(database-cnpg)
+fi
+
+for image in "${images[@]}"; do
   repository="$(jq -r --arg image "$image" '.images[$image]' <<<"$registry_json")"
+  image_tag="$tag"
+  if [[ "$image" == database-cnpg ]]; then
+    # CNPG requires the PostgreSQL major version at the beginning of the tag.
+    image_tag="18-$tag"
+  fi
+  if [[ -z "$repository" || "$repository" == null ]]; then
+    echo "Missing registry repository for $image; apply the registry Terraform changes first." >&2
+    exit 1
+  fi
   docker buildx build --platform linux/amd64 --push \
     --file "infrastructure/docker/Dockerfile.$image" \
-    --tag "$repository:$tag" .
+    --tag "$repository:$image_tag" .
 done
