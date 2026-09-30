@@ -18,6 +18,9 @@
 - name: Deploy cert-manager
   ansible.builtin.import_tasks: cert_manager.yaml
 
+- name: Deploy the CloudNativePG operator
+  ansible.builtin.import_tasks: cnpg.yaml
+
 - name: Deploy RabbitMQ
   ansible.builtin.import_tasks: rabbitmq.yaml
 
@@ -26,3 +29,6 @@
 
 - name: Deploy the application
   ansible.builtin.import_tasks: app.yaml
+
+- name: Deploy Headlamp
+  ansible.builtin.import_tasks: headlamp.yaml

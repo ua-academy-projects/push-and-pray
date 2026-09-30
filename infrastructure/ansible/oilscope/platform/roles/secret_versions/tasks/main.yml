@@ -86,13 +86,6 @@
     label: "{{ secret_versions_entry.0 }}"
 
 
-- name: Decide which passwords Terraform owns
-  ansible.builtin.set_fact:
-    secret_versions_terraform_owned_keys: >-
-      {{ secret_versions_terraform_owned_keys_always
-         + (secret_versions_terraform_owned_keys_managed
-            if (secret_versions_config.managed_db.enabled | default(false)) else []) }}
-
 - name: Collect the Terraform-owned container IDs
   ansible.builtin.set_fact:
     secret_versions_terraform_owned_ids: >-

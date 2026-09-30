@@ -1,0 +1,119 @@
+---
+- name: Download the Tailscale release
+  ansible.builtin.get_url:
+    url: "{{ tailscale_tarball_url }}"
+    dest: "/opt/tailscale_{{ tailscale_version }}_{{ tailscale_arch }}.tgz"
+    checksum: "{{ tailscale_tarball_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Unpack the Tailscale release
+  ansible.builtin.unarchive:
+    src: "/opt/tailscale_{{ tailscale_version }}_{{ tailscale_arch }}.tgz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/tailscale_{{ tailscale_version }}_{{ tailscale_arch }}/tailscaled"
+
+- name: Install the Tailscale binaries
+  ansible.builtin.copy:
+    src: "/opt/tailscale_{{ tailscale_version }}_{{ tailscale_arch }}/{{ item.name }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - { name: tailscale, dest: /usr/bin/tailscale }
+    - { name: tailscaled, dest: /usr/sbin/tailscaled }
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Restart tailscaled
+
+- name: Install the tailscaled systemd unit
+  ansible.builtin.copy:
+    src: "/opt/tailscale_{{ tailscale_version }}_{{ tailscale_arch }}/systemd/tailscaled.service"
+    dest: /etc/systemd/system/tailscaled.service
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart tailscaled
+
+- name: Render the tailscaled defaults file
+  ansible.builtin.template:
+    src: tailscaled.defaults.j2
+    dest: /etc/default/tailscaled
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart tailscaled
+
+- name: Enable IP forwarding for the subnet router
+  ansible.builtin.copy:
+    content: |
+      net.ipv4.ip_forward = 1
+    dest: /etc/sysctl.d/99-tailscale.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sysctl
+
+- name: Apply pending Tailscale changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Start tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Read the Tailscale login state
+  ansible.builtin.command:
+    cmd: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Decide whether the node must log in
+  ansible.builtin.set_fact:
+    tailscale_needs_login: "{{ tailscale_status.rc != 0 or (tailscale_status.stdout | from_json).BackendState != 'Running' }}"
+
+- name: Require an auth key for the first login
+  ansible.builtin.assert:
+    that: tailscale_authkey | default('') | length > 0
+    fail_msg: Pass -e tailscale_authkey=... to join the bastion to the tailnet.
+  when: tailscale_needs_login | bool
+
+- name: Join the tailnet and advertise the VPC subnets
+  ansible.builtin.command: 
+    argv:
+      - tailscale
+      - up
+      - "--auth-key={{ tailscale_authkey }}"
+      - "--hostname={{ tailscale_hostname }}"
+      - "--advertise-routes={{ tailscale_advertise_routes | join(',') }}"
+  no_log: true
+  when: tailscale_needs_login | bool
+
+- name: Read the running Tailscale preferences
+  ansible.builtin.command:
+    cmd: tailscale debug prefs
+  register: tailscale_prefs_raw
+  changed_when: false
+  check_mode: false
+
+- name: Compare the running preferences with the desired ones
+  ansible.builtin.set_fact:
+    tailscale_prefs_drift: "{{ ((tailscale_prefs_raw.stdout | from_json).AdvertiseRoutes | default([], true) | sort) != (tailscale_advertise_routes | sort) or ((tailscale_prefs_raw.stdout | from_json).Hostname | default('', true)) != tailscale_hostname }}"
+
+- name: Apply route and hostname changes
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - "--hostname={{ tailscale_hostname }}"
+      - "--advertise-routes={{ tailscale_advertise_routes | join(',') }}"
+  when: tailscale_prefs_drift | bool

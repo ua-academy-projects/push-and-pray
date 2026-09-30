@@ -6,6 +6,8 @@ locals {
 
   bastion = try(local.selected_vms.bastion, null)
 
+  tailscale_ports = try(var.config.tailscale.enabled, false) ? [for p in try(var.config.tailscale.allowed_ports, []) : tostring(p)] : []
+
   bastion_ssh_ports = local.bastion == null ? [] : distinct([
     tostring(local.bastion.ssh_port),
     "22",

@@ -82,27 +82,40 @@ module "rds" {
   depends_on = [module.network, module.secrets]
 }
 
+resource "random_password" "postgres" {
+  count   = local.has_selected_vms && !local.managed_db_enabled && local.db_password_secret_id != null ? 1 : 0
+  length  = 32
+  special = false
+}
+
+resource "aws_secretsmanager_secret_version" "postgres" {
+  count = local.has_selected_vms && !local.managed_db_enabled && local.db_password_secret_id != null ? 1 : 0
+
+  secret_id     = module.secrets.secret_arns[local.db_password_secret_id]
+  secret_string = random_password.postgres[0].result
+}
+
 resource "random_password" "rabbitmq" {
-  count   = local.has_selected_vms && local.managed_db_enabled ? 1 : 0
+  count   = local.has_selected_vms ? 1 : 0
   length  = 32
   special = false
 }
 
 resource "aws_secretsmanager_secret_version" "rabbitmq" {
-  count = local.has_selected_vms && local.managed_db_enabled && local.rabbitmq_password_secret_id != null ? 1 : 0
+  count = local.has_selected_vms && local.rabbitmq_password_secret_id != null ? 1 : 0
 
   secret_id     = module.secrets.secret_arns[local.rabbitmq_password_secret_id]
   secret_string = random_password.rabbitmq[0].result
 }
 
 resource "random_password" "redis" {
-  count   = local.has_selected_vms && local.managed_db_enabled ? 1 : 0
+  count   = local.has_selected_vms ? 1 : 0
   length  = 32
   special = false
 }
 
 resource "aws_secretsmanager_secret_version" "redis" {
-  count = local.has_selected_vms && local.managed_db_enabled && local.redis_password_secret_id != null ? 1 : 0
+  count = local.has_selected_vms && local.redis_password_secret_id != null ? 1 : 0
 
   secret_id     = module.secrets.secret_arns[local.redis_password_secret_id]
   secret_string = random_password.redis[0].result

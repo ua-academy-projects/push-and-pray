@@ -21,8 +21,8 @@
         name: cloudflare-api-token
         namespace: cert-manager
       type: Opaque
-      stringData:
-        api-token: "{{ cloudflare_api_token }}"
+      data:
+        api-token: "{{ cloudflare_api_token | b64encode }}"
   no_log: true
 
 - name: Create the Let's Encrypt ClusterIssuer

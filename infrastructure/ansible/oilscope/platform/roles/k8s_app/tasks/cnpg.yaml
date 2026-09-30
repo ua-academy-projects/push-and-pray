@@ -1,0 +1,17 @@
+---
+- name: Install the CloudNativePG operator
+  kubernetes.core.helm:
+    name: cnpg
+    chart_ref: cloudnative-pg
+    chart_repo_url: https://cloudnative-pg.io/charts
+    chart_version: "{{ cnpg_chart_version }}"
+    release_namespace: cnpg-system
+    create_namespace: true
+    values:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+    wait: true

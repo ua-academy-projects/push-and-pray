@@ -1,3 +1,14 @@
 ---
 cert_manager_version: "v1.21.2"
+cnpg_chart_version: "0.29.1"
+headlamp_chart_version: "0.45.0"
 
+k8s_app_db_cluster_name: oilscope-db
+k8s_app_db_instances: 2
+k8s_app_db_storage_size: 1Gi
+k8s_app_db_name: oil_tracker
+k8s_app_db_user: oil_tracker
+k8s_app_db_owner_secret: oilscope-db-app
+k8s_app_db_host: "{{ k8s_app_db_cluster_name }}-rw.oilscope.svc"
+
+k8s_app_api_via_tailscale: "{{ (k8s_app_config.tailscale | default({})).enabled | default(false) }}"

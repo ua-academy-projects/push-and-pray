@@ -84,14 +84,28 @@ module "monitoring" {
   resource_group_name = module.resource_group.name
 }
 
+resource "random_password" "postgres" {
+  count   = local.has_selected_vms && !local.managed_db_enabled && local.postgres_password_secret_id != null ? 1 : 0
+  length  = 32
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "postgres" {
+  count = local.has_selected_vms && !local.managed_db_enabled && local.postgres_password_secret_id != null ? 1 : 0
+
+  name         = local.postgres_password_secret_id
+  value        = random_password.postgres[0].result
+  key_vault_id = module.secrets.key_vault_id
+}
+
 resource "random_password" "rabbitmq" {
-  count   = local.has_selected_vms && local.managed_db_enabled ? 1 : 0
+  count   = local.has_selected_vms ? 1 : 0
   length  = 32
   special = false
 }
 
 resource "azurerm_key_vault_secret" "rabbitmq" {
-  count = local.has_selected_vms && local.managed_db_enabled && local.rabbitmq_password_secret_id != null ? 1 : 0
+  count = local.has_selected_vms && local.rabbitmq_password_secret_id != null ? 1 : 0
 
   name         = local.rabbitmq_password_secret_id
   value        = random_password.rabbitmq[0].result
@@ -99,13 +113,13 @@ resource "azurerm_key_vault_secret" "rabbitmq" {
 }
 
 resource "random_password" "redis" {
-  count   = local.has_selected_vms && local.managed_db_enabled ? 1 : 0
+  count   = local.has_selected_vms ? 1 : 0
   length  = 32
   special = false
 }
 
 resource "azurerm_key_vault_secret" "redis" {
-  count = local.has_selected_vms && local.managed_db_enabled && local.redis_password_secret_id != null ? 1 : 0
+  count = local.has_selected_vms && local.redis_password_secret_id != null ? 1 : 0
 
   name         = local.redis_password_secret_id
   value        = random_password.redis[0].result

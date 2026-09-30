@@ -1,0 +1,9 @@
+---
+tailscale_version: "1.102.4"
+tailscale_arch: amd64
+tailscale_tarball_url: "https://pkgs.tailscale.com/stable/tailscale_{{ tailscale_version }}_{{ tailscale_arch }}.tgz"
+tailscale_tarball_sha256: "sha256:50748df1045e60b5b695f19f4c56b0da36c019948b440fb456b6584a50f0d8b9"
+tailscale_hostname: "{{ inventory_hostname }}"
+tailscale_advertise_routes: []
+tailscale_port: 41641
+tailscale_flags: ""

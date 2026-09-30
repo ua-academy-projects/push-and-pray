@@ -1,0 +1,21 @@
+---
+- name: Install Headlamp
+  kubernetes.core.helm:
+    name: headlamp
+    chart_ref: headlamp
+    chart_repo_url: https://kubernetes-sigs.github.io/headlamp/
+    chart_version: "{{ headlamp_chart_version }}"
+    release_namespace: headlamp
+    create_namespace: true
+    values:
+      service:
+        type: ClusterIP
+      ingress:
+        enabled: false
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+    wait: true

@@ -15,11 +15,10 @@ secret_versions_aws_region: ""
 secret_versions_only: []
 
 
-secret_versions_terraform_owned_keys_always:
+secret_versions_terraform_owned_keys:
+  - POSTGRES_PASSWORD
   - RABBITMQ_PASSWORD
   - REDIS_PASSWORD
-secret_versions_terraform_owned_keys_managed:
-  - POSTGRES_PASSWORD
 
 secret_versions_gcloud: gcloud
 secret_versions_aws_cli: aws

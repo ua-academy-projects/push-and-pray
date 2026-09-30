@@ -1,0 +1,35 @@
+---
+- name: Create the PostgreSQL cluster
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: "{{ k8s_app_db_cluster_name }}"
+        namespace: oilscope
+      spec:
+        instances: "{{ k8s_app_db_instances }}"
+        storage:
+          size: "{{ k8s_app_db_storage_size }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        bootstrap:
+          initdb:
+            database: "{{ k8s_app_db_name }}"
+            owner: "{{ k8s_app_db_user }}"
+            secret:
+              name: "{{ k8s_app_db_owner_secret }}"
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: 600
+  register: k8s_app_db_cluster
+  until: k8s_app_db_cluster is succeeded
+  retries: 5
+  delay: 15

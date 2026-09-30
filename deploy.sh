@@ -19,7 +19,6 @@ fi
 
 terraform apply -auto-approve -var "project_config_path=$CONFIG"
 
-managed_db_host="$(terraform output -raw managed_db_private_ip 2>/dev/null || true)"
 tunnel_token="$(terraform output -raw cloudflare_tunnel_token 2>/dev/null || true)"
 
 cd ../ansible
@@ -31,13 +30,16 @@ auth="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/containers/auth.json"
 export OILPRICEAPI_KEY="$(grep -E '^OILPRICEAPI_KEY=' "$ROOT/.env" | cut -d= -f2-)"
 export GHCR_TOKEN="$(python3 -c "import json,base64;print(base64.b64decode(json.load(open('$auth'))['auths']['ghcr.io']['auth']).decode().split(':',1)[1])")"
 
-ansible-galaxy collection build oilscope/platform --output-path /tmp --force >/dev/null
-ansible-galaxy collection install /tmp/oilscope-platform-*.tar.gz --force >/dev/null
+ts_authkey=""
+[ -f ~/.oilscope_tailscale_authkey ] && ts_authkey="$(cat ~/.oilscope_tailscale_authkey)"
 
-ansible-playbook oilscope.platform.bootstrap_bastion -i inventory/oilscope.yml -e project_config_path="$CONFIG"
+ansible-galaxy collection install ./oilscope/platform --force >/dev/null
+
+ansible-playbook oilscope.platform.bootstrap_bastion -i inventory/oilscope.yml \
+  -e project_config_path="$CONFIG" \
+  -e tailscale_authkey="$ts_authkey"
 ansible-playbook oilscope.platform.upload_secret_versions -i inventory/oilscope.yml -e secret_versions_config_file="$CONFIG"
 ansible-playbook oilscope.platform.k3s -i inventory/oilscope.yml \
   -e project_config_path="$CONFIG" \
-  -e app_db_host="$managed_db_host" \
   -e cloudflare_api_token="$cf_token" \
   -e cloudflared_tunnel_token="$tunnel_token"

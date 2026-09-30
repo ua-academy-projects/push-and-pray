@@ -47,6 +47,24 @@
   when: k3s_node_role == "server"
   notify: Restart k3s
 
+- name: Ensure the k3s auto-deploy manifests directory exists
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/server/manifests
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: k3s_node_role == "server"
+
+- name: Run Traefik as a DaemonSet
+  ansible.builtin.copy:
+    src: traefik-config.yaml
+    dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: k3s_node_role == "server"
+
 - name: Install the k3s server
   ansible.builtin.command:
     cmd: /usr/local/bin/k3s-install.sh

@@ -132,6 +132,16 @@ resource "aws_vpc_security_group_ingress_rule" "k3s_server_from_server" {
   ip_protocol                  = "-1"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "k3s_server_from_bastion" {
+  for_each = local.bastion != null && local.tag_present["k3s_server"] ? toset(local.tailscale_ports) : toset([])
+
+  security_group_id            = aws_security_group.k3s_server[0].id
+  referenced_security_group_id = aws_security_group.bastion[0].id
+  from_port                    = tonumber(each.value)
+  to_port                      = tonumber(each.value)
+  ip_protocol                  = "tcp"
+}
+
 
 resource "aws_vpc_security_group_ingress_rule" "history_api" {
   count = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0

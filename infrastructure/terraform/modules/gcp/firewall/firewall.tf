@@ -28,6 +28,21 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
+resource "google_compute_firewall" "k3s_from_bastion" {
+  count = local.bastion != null && local.k3s_present && length(local.k3s_tags) > 0 && length(local.tailscale_ports) > 0 ? 1 : 0
+
+  name    = "${local.resource_prefix}-allow-k3s-from-bastion"
+  network = var.network_id
+
+  source_tags = [var.network_tags.bastion]
+  target_tags = local.k3s_tags
+
+  allow {
+    protocol = "tcp"
+    ports    = local.tailscale_ports
+  }
+}
+
 
 resource "google_compute_firewall" "history_api" {
   count   = local.tag_present["history"] && local.tag_present["ui"] ? 1 : 0
@@ -100,9 +115,7 @@ resource "google_compute_firewall" "redis" {
   }
 }
 
-# Intra-cluster traffic between k3s nodes: API server (6443), kubelet (10250),
-# embedded etcd client/peer (2379-2380) and flannel VXLAN (8472/udp). Both k3s
-# tags are source and target.
+
 resource "google_compute_firewall" "k3s_cluster" {
   count   = local.k3s_present && length(local.k3s_tags) > 0 ? 1 : 0
   name    = "${local.resource_prefix}-allow-k3s-cluster"
