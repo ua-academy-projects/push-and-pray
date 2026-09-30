@@ -95,16 +95,13 @@ another configuration.
 
 ## Prepare K3s application secrets
 
-The application deployment uses two Kubernetes Secrets. Terraform creates the
+The application deployment uses three Kubernetes Secrets. Terraform creates the
 corresponding Google Secret Manager containers, but deliberately does not put
 credential values in Terraform state. Export each value using the environment
 variable derived from its configured container ID, then upload the versions:
 
 ```bash
 export DB_PASSWORD="..."
-export RABBITMQ_PASSWORD="..."
-export RABBITMQ_ERLANG_COOKIE="..."
-export REDIS_PASSWORD="..."
 export EXTERNAL_API_KEY="..."
 export GHCR_TOKEN="..."
 
@@ -126,7 +123,8 @@ ansible-playbook oilscope.platform.synchronize_k3s_secrets \
 ```
 
 This creates the configured namespace, `<name-prefix>-application` as an
-Opaque Secret, and `<name-prefix>-registry` as the GHCR image-pull Secret. It
+Opaque Secret, `<name-prefix>-postgresql-owner` as the CloudNativePG database
+owner Secret, and `<name-prefix>-registry` as the GHCR image-pull Secret. It
 requires the local kubeconfig produced by the K3s playbook, an authenticated
 `gcloud`, and the controller dependencies from `requirements.yml` and
 `requirements.txt`.
@@ -157,29 +155,27 @@ releases from producing unnecessary upgrades. The issuer does not request a
 certificate by itself; the application Ingress makes that request when the
 workloads are ready.
 
-After certificate management is ready, the playbook installs PostgreSQL as a
-standalone Helm release in the application namespace. Stable chart settings
-live in `infrastructure/kubernetes/values/postgresql.yaml`; Ansible overlays the
-configured storage size, PostgreSQL service port, and existing application
-Secret name. The release uses an internal `ClusterIP` Service, a `local-path`
-persistent volume, explicit resource requests and limits, and the
-`POSTGRES_PASSWORD` Secret key for the `oil_tracker` user and database. The
-database image is pinned by digest as well as the chart being pinned by version.
+After certificate management is ready, the playbook installs the official,
+pinned CloudNativePG operator Helm chart. Ansible then declares the configured
+private `database` image as PostgreSQL 18 and creates the configured number of
+database instances, with a minimum of two. The current configuration runs one
+writable primary and one streaming replica, each with a `local-path` persistent
+volume on a different Kubernetes node. Applications use the operator-managed
+`postgresql-rw` Service so failover does not change their connection address.
 
-The playbook next installs a single-node RabbitMQ release. It uses the same
-application Secret without placing credential values in Helm release metadata:
-`RABBITMQ_PASSWORD` authenticates the `oil_tracker` user and
-`RABBITMQ_ERLANG_COOKIE` supplies the Erlang cookie. RabbitMQ is internal-only,
-uses the configured AMQP service port and `local-path` persistent volume, and
-has explicit resource requests and limits. The CloudPirates chart is pinned by
-version and its official RabbitMQ image is pinned by digest.
+CloudNativePG bootstraps the `oil_tracker` database with the dedicated
+basic-auth Secret created by the secrets playbook. A declarative `DatabaseRole`
+keeps the owner password synchronized with that Secret. A declarative
+`Database` resource creates `hstore`, `pg_cron`, `pgcrypto`, and `pgmq` before
+migrations run. RabbitMQ and Redis are not deployed: PGMQ provides durable
+delivery and PostgreSQL stores expiring UI sessions.
 
-Finally, the playbook installs standalone Redis for the UI session store. The
-CloudPirates chart uses the official Redis image pinned by digest, reads
-`REDIS_PASSWORD` from the existing application Secret, and provisions the
-configured service port and `local-path` volume. AOF persistence is enabled,
-memory usage is bounded for the small K3s nodes, and Sentinel and metrics are
-disabled.
+The earlier standalone PostgreSQL, RabbitMQ, and Redis roles and values files
+remain in the collection as historical, non-runnable reference code. They are
+deliberately absent from `deploy_k3s_addons`; the active K3s configuration
+schema contains only the CNPG data-service fields and secrets. Running those
+roles would require restoring their legacy configuration fields and credentials
+and must not be mixed with the active CloudNativePG deployment.
 
 The final add-on is an internal-only Headlamp dashboard in its own namespace.
 It has only a `ClusterIP` Service: no Ingress, HTTPRoute, public load balancer,
@@ -217,13 +213,10 @@ ansible-playbook oilscope.platform.migrate_k3s_database \
 ```
 
 The Job uses the configured private `database` image, the existing Kubernetes
-application and registry Secrets, and the configured internal PostgreSQL
-Service port. It runs the schema selected for the RabbitMQ and Redis application
-architecture and waits for completion before returning. Its deterministic name
-changes with the database image tag, so an unchanged successful migration is
-not run again. The runner's `DATABASE_MODE=managed` value selects that schema;
-Terraform still uses `database.mode=self_managed` because PostgreSQL itself is
-installed inside K3s rather than by a cloud database service.
+application and registry Secrets, and the `postgresql-rw` Service. It runs all
+self-managed migrations, including PGMQ and PostgreSQL session persistence,
+and waits for completion before returning. Its deterministic name changes with
+the database image tag, so an unchanged successful migration is not run again.
 
 ## Deploy the K3s application
 

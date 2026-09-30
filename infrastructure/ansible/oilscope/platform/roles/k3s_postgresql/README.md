@@ -1,30 +1,36 @@
 # K3s PostgreSQL role
 
-Runs on the local Ansible controller and reconciles a pinned, standalone
-PostgreSQL Helm release in the application namespace. The chart uses the
-repository-owned `infrastructure/kubernetes/values/postgresql.yaml` file and
-an immutable PostgreSQL 18 image digest.
+Runs on the local Ansible controller after the CloudNativePG operator is ready.
+The role declares the repository's existing `database` image as PostgreSQL 18
+through a namespaced `ImageCatalog`, then creates a multi-instance PostgreSQL
+cluster in the application namespace.
 
-The values file contains stable, non-secret configuration. The role overlays
-the storage request from `k3s.data_services.postgresql.storage_gb`, the
-PostgreSQL port from `service_ports.postgresql`, and the
-`<name-prefix>-application` Secret name from the project configuration. The
-chart maps the Secret's `POSTGRES_PASSWORD` key to the `oil_tracker` database
-user without copying the password into Helm release values.
+The application image inherits the Docker Official Image's `postgres` account,
+whose UID and GID are both `999`. The role passes those IDs to CloudNativePG
+instead of using the operator defaults of `26`, so the instance manager and
+PostgreSQL run as the account that exists in the image.
 
-PostgreSQL runs as one StatefulSet replica, uses an internal `ClusterIP`
-Service, and requests a `ReadWriteOnce` volume from K3s's `local-path` storage
-class. This is appropriate for the learning environment but does not provide a
-highly available database or storage that can move transparently between
-nodes.
+The instance count comes from `k3s.data_services.postgresql.instances`, whose
+schema-enforced minimum is two. With two instances, CloudNativePG runs one
+writable primary and one streaming replica. Every
+instance receives its own `local-path` persistent volume, and required pod
+anti-affinity spreads the database instances across different Kubernetes
+nodes. Applications connect to the operator-managed `postgresql-rw` Service,
+which always targets the current primary.
 
-Run the role as part of the controller-side add-on playbook from the repository
-root while the SSH tunnel to the private K3s API is active. Helm and the Helm
-Diff plugin must be installed on the controller; Helm Diff prevents unchanged
-OCI releases from creating unnecessary revisions.
+The application owner credentials come from the
+`<name-prefix>-postgresql-owner` basic-auth Secret created by the K3s secrets
+role. The private database image is pulled with the existing registry Secret.
+Superuser login is disabled. A declarative `DatabaseRole` adopts the bootstrap
+owner and keeps its password synchronized when that Secret is rotated.
 
-```bash
-ansible-playbook oilscope.platform.deploy_k3s_addons \
-  -i localhost, \
-  -e k3s_addons_config_file="$PWD/project-config.json"
-```
+After the cluster becomes ready, the role reconciles a `Database` resource for
+`oil_tracker` and creates the `hstore`, `pg_cron`, `pgcrypto`, and `pgmq`
+extensions. It grants the non-superuser application owner `USAGE` on the
+operator-owned `cron` schema and configures pg_cron to execute jobs as
+background workers, avoiding separate password-authenticated localhost
+connections. It also grants `USAGE` and `CREATE` on the PGMQ schema plus
+`SELECT` and `INSERT` on its queue catalog. This lets the migration runner
+create application-owned queue tables while leaving the extension itself under
+operator control. The database migration Job can then schedule its cleanup
+task and initialize PGMQ without receiving superuser privileges.

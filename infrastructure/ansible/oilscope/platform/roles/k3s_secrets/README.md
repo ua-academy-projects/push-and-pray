@@ -1,11 +1,14 @@
 # K3s secrets role
 
 Runs on the local Ansible controller, reads the configured K3s application
-values from Google Secret Manager, and reconciles two Kubernetes Secrets in the
+values from Google Secret Manager, and reconciles three Kubernetes Secrets in the
 application namespace:
 
-- `<name-prefix>-application` contains the PostgreSQL, RabbitMQ, Redis, and
-  external API credentials.
+- `<name-prefix>-application` contains the PostgreSQL and external API
+  credentials consumed by the application and migration Job.
+- `<name-prefix>-postgresql-owner` is a `kubernetes.io/basic-auth` Secret used
+  by CloudNativePG to create the `oil_tracker` database owner and reconcile
+  later password rotations.
 - `<name-prefix>-registry` is a `kubernetes.io/dockerconfigjson` pull Secret for
   GHCR.
 

@@ -20,12 +20,7 @@ keys when it reaches that boundary. Sentinel and metrics are disabled.
 This configuration is appropriate for the learning environment and the UI's
 TTL-based session store, but it is not a highly available Redis deployment.
 
-Run the role as part of the controller-side add-on playbook from the repository
-root while the SSH tunnel to the private K3s API is active. Helm and the Helm
-Diff plugin must be installed on the controller.
-
-```bash
-ansible-playbook oilscope.platform.deploy_k3s_addons \
-  -i localhost, \
-  -e k3s_addons_config_file="$PWD/project-config.json"
-```
+This role is retained as historical, non-runnable reference code. It is not
+called by the current `deploy_k3s_addons` playbook, which deploys CloudNativePG
+and uses PostgreSQL sessions instead. Running it again would first require
+restoring its legacy Redis storage and secret fields to a project configuration.

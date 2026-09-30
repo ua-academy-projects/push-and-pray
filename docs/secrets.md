@@ -43,9 +43,6 @@ K3s mode declares the same kind of identifier mapping once at cluster level:
 "k3s": {
   "secret_mappings": {
     "POSTGRES_PASSWORD": "db-password",
-    "RABBITMQ_PASSWORD": "rabbitmq-password",
-    "RABBITMQ_ERLANG_COOKIE": "rabbitmq-erlang-cookie",
-    "REDIS_PASSWORD": "redis-password",
     "OILPRICEAPI_KEY": "external-api-key",
     "GHCR_TOKEN": "ghcr-token"
   }
@@ -66,7 +63,7 @@ creates namespace-scoped Kubernetes Secrets through the private API endpoint.
 | Terraform Azure secrets module | Create a Key Vault and workload managed identities, and grant vault secret-reader roles; secret values and names are created later by automation |
 | `secret_versions` Ansible role | Reconcile environment values with the latest enabled versions in every required cloud and scope |
 | `resolve_secrets` Ansible role | Read only the current VM's mapped values through its attached cloud identity |
-| `k3s_secrets` Ansible role | Read K3s values from GCP on the controller and reconcile the application and GHCR pull Secrets in the configured namespace |
+| `k3s_secrets` Ansible role | Read K3s values from GCP on the controller and reconcile the application, CloudNativePG owner, and GHCR pull Secrets in the configured namespace |
 
 Terraform deliberately creates no secret versions. Creating a managed database
 is the one exception to the Ansible-only value flow: set the ephemeral
@@ -131,15 +128,11 @@ ansible-playbook oilscope.platform.deploy \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-For K3s, also provide the RabbitMQ Erlang cookie and then use the explicit
-secret upload and cluster synchronization playbooks. The general Compose
-deployment playbook is not used:
+For K3s, use the explicit secret upload and cluster synchronization playbooks.
+The general Compose deployment playbook is not used:
 
 ```bash
 export DB_PASSWORD="..."
-export RABBITMQ_PASSWORD="..."
-export RABBITMQ_ERLANG_COOKIE="..."
-export REDIS_PASSWORD="..."
 export EXTERNAL_API_KEY="..."
 export GHCR_TOKEN="..."
 
@@ -153,8 +146,9 @@ ansible-playbook oilscope.platform.synchronize_k3s_secrets \
   -e k3s_secrets_config_file="$PWD/project-config.json"
 ```
 
-The synchronization creates `<name-prefix>-application` with application/data
-service credentials and `<name-prefix>-registry` with the GHCR Docker
+The synchronization creates `<name-prefix>-application` with application
+credentials, `<name-prefix>-postgresql-owner` with the CloudNativePG database
+owner credentials, and `<name-prefix>-registry` with the GHCR Docker
 configuration. Secret-bearing Ansible tasks use `no_log`; the plaintext values
 are held in controller memory while the role runs and are stored as Kubernetes
 Secret data in the cluster.

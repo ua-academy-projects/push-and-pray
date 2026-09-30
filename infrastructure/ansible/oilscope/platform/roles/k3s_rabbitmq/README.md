@@ -18,12 +18,7 @@ Kubernetes peer discovery is disabled because the deployment has one replica.
 This is appropriate for the learning environment but is not a highly available
 message broker.
 
-Run the role as part of the controller-side add-on playbook from the repository
-root while the SSH tunnel to the private K3s API is active. Helm and the Helm
-Diff plugin must be installed on the controller.
-
-```bash
-ansible-playbook oilscope.platform.deploy_k3s_addons \
-  -i localhost, \
-  -e k3s_addons_config_file="$PWD/project-config.json"
-```
+This role is retained as historical, non-runnable reference code. It is not
+called by the current `deploy_k3s_addons` playbook, which deploys CloudNativePG
+and uses PGMQ instead. Running it again would first require restoring its legacy
+RabbitMQ storage and secret fields to a project configuration.

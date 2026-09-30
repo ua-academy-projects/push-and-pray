@@ -81,10 +81,11 @@ runs RabbitMQ and Redis on the infrastructure VM, and uses no PostgreSQL
 extensions. GCP clients reach Cloud SQL through the Auth Proxy with private IP;
 AWS and Azure clients use private DNS endpoints with TLS.
 
-The GCP K3s deployment installs PostgreSQL, RabbitMQ, and Redis inside the
-cluster as pinned Helm releases. Its Terraform `database.mode` remains
-`self_managed` because no cloud database service is provisioned, while the
-application uses the RabbitMQ and Redis integration layout.
+The GCP K3s deployment uses CloudNativePG with at least two PostgreSQL instances;
+the current configuration runs one primary and one streaming replica. Its
+`database.mode` remains
+`self_managed`; PGMQ provides durable delivery and the PostgreSQL session
+extensions replace separate RabbitMQ and Redis services.
 
 | Component        | Responsibility                                                                                    | Owns                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -93,7 +94,7 @@ application uses the RabbitMQ and Redis integration layout.
 | UI Service       | Serves the React application, proxies read-only requests to History, and manages user preferences | Browser-facing HTTP API and sessions             |
 | PGMQ or RabbitMQ | Provides the selected event transport between Fetcher and History                               | Delivery, retries, and failed-message handling   |
 | PostgreSQL       | Stores observations and, for a self-managed database, hashed UI sessions                         | Durable market data                              |
-| Redis            | Stores expiring UI sessions for managed Compose and K3s                                          | RabbitMQ/Redis architecture session state        |
+| Redis            | Stores expiring UI sessions for managed Compose deployments                                     | RabbitMQ/Redis architecture session state        |
 
 ### Data flow
 
@@ -101,7 +102,7 @@ application uses the RabbitMQ and Redis integration layout.
 2. It sends one HTTPS request to `https://api.oilpriceapi.com/v1/prices/latest` for all
    configured instruments.
 3. The Fetcher publishes a versioned event through the selected messaging backend:
-   PGMQ for self-managed Compose, or RabbitMQ for managed Compose and K3s.
+   PGMQ for self-managed Compose and K3s, or RabbitMQ for managed Compose.
 4. History consumes and validates the event, then persists its observations to
    PostgreSQL before acknowledging successful processing.
 5. Failed events remain eligible for retry according to the selected backend's
@@ -109,13 +110,14 @@ application uses the RabbitMQ and Redis integration layout.
    PGMQ messages that exceed the retry limit are archived.
 6. The UI Service requests saved observations from History over HTTP.
 7. The browser receives only persisted data through the UI Service.
-8. UI preferences are stored in PostgreSQL for self-managed Compose, or Redis
-   for managed Compose and K3s.
+8. UI preferences are stored in PostgreSQL for self-managed Compose and K3s,
+   or Redis for managed Compose.
 
 With self-managed Compose, PGMQ provides durable queue storage inside
 PostgreSQL. Messages are archived only after successful observation persistence;
 otherwise, the visibility timeout makes them available again. With managed
-Compose or K3s, RabbitMQ provides event delivery and dead-letter handling.
+Compose, RabbitMQ provides event delivery and dead-letter handling. K3s uses
+the same PGMQ retry and archival behavior as self-managed Compose.
 Database uniqueness on `(instrument_code, scheduled_for)` keeps redelivery
 idempotent in every architecture.
 
@@ -361,9 +363,9 @@ extensions are created idempotently by migration `003_create_ui_sessions.sql`.
 | `REQUEST_TIMEOUT_SECONDS`         | `15`                 | External HTTP timeout                        |
 | `DATABASE_URL`                    | see `.env.example`   | History and UI PostgreSQL connection         |
 | `MESSAGING_BACKEND`               | `pgmq`               | `pgmq` or `rabbitmq`                         |
-| `RABBITMQ_URL`                    | none                 | RabbitMQ connection for managed Compose/K3s  |
+| `RABBITMQ_URL`                    | none                 | RabbitMQ connection for managed Compose      |
 | `SESSION_BACKEND`                 | `postgresql`         | `postgresql` or `redis`                      |
-| `REDIS_URL`                       | none                 | Redis connection for managed Compose/K3s     |
+| `REDIS_URL`                       | none                 | Redis connection for managed Compose         |
 | `PGMQ_QUEUE`                      | `price_observations` | PostgreSQL queue name                        |
 | `PGMQ_VISIBILITY_TIMEOUT_SECONDS` | `60`                 | Message visibility timeout                   |
 | `PGMQ_POLL_INTERVAL_SECONDS`      | `1`                  | Consumer polling interval                    |

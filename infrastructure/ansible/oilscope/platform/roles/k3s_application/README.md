@@ -14,13 +14,14 @@ The generated connection URLs use Kubernetes dependent environment-variable
 expansion. Passwords generated as hexadecimal strings by the documented secret
 workflow are safe in those URLs.
 
-History connects to the internal PostgreSQL and RabbitMQ Services. Fetcher
-publishes OilPriceAPI observations to RabbitMQ, and UI reads History through
-its internal Service while storing sessions in Redis. The History Service uses
-the configured `service_ports.history_api` value and targets the image's fixed
-port 8001. HTTP startup and readiness probes check dependencies; TCP liveness
-probes only check whether the application process is accepting connections,
-avoiding restart cascades during a transient dependency outage.
+All three workloads connect to the writable `postgresql-rw` CloudNativePG
+Service. Fetcher publishes OilPriceAPI observations to PGMQ, History consumes
+and persists them, and UI reads History through its internal Service while
+storing sessions in PostgreSQL. The History Service uses the configured
+`service_ports.history_api` value and targets the image's fixed port 8001. HTTP
+startup and readiness probes check dependencies; TCP liveness probes only
+check whether the application process is accepting connections, avoiding
+restart cascades during a transient dependency outage.
 
 The deployment playbook runs the existing Kubernetes migration Job first and
 only deploys the application after it succeeds:
