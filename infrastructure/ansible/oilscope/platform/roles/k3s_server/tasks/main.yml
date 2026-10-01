@@ -11,6 +11,54 @@
     state: directory
     mode: "0755"
 
+- name: Configure a common Flannel VXLAN MTU for multicloud networking
+  ansible.builtin.copy:
+    content: |
+      {
+        "Network": "{{ k3s_cluster_cidr }}",
+        "EnableIPv4": true,
+        "EnableIPv6": false,
+        "Backend": {
+          "Type": "vxlan",
+          "Port": 8472,
+          "DirectRouting": false,
+          "MTU": {{ k3s_flannel_mtu }}
+        }
+      }
+    dest: "{{ k3s_flannel_config_path }}"
+    mode: "0600"
+  notify: Restart K3s server
+
+- name: Read the current Flannel VXLAN interface settings
+  ansible.builtin.command:
+    argv: [ip, -o, link, show, flannel.1]
+  register: k3s_flannel_link
+  changed_when: false
+  failed_when: false
+
+- name: Stop K3s when the existing Flannel interface has the wrong MTU
+  ansible.builtin.systemd:
+    name: k3s
+    state: stopped
+  when:
+    - k3s_flannel_link.rc == 0
+    - k3s_flannel_link.stdout is not search('mtu ' ~ (k3s_flannel_mtu | string) ~ ' ')
+
+- name: Remove the stale Flannel VXLAN interface
+  ansible.builtin.command:
+    argv: [ip, link, delete, flannel.1]
+  when:
+    - k3s_flannel_link.rc == 0
+    - k3s_flannel_link.stdout is not search('mtu ' ~ (k3s_flannel_mtu | string) ~ ' ')
+
+- name: Start K3s after recreating the Flannel VXLAN interface
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+  when:
+    - k3s_flannel_link.rc == 0
+    - k3s_flannel_link.stdout is not search('mtu ' ~ (k3s_flannel_mtu | string) ~ ' ')
+
 - name: Download the K3s installer
   ansible.builtin.get_url:
     url: "{{ k3s_install_script_url }}"
@@ -21,6 +69,7 @@
   ansible.builtin.copy:
     content: |
       write-kubeconfig-mode: "0640"
+      flannel-conf: {{ k3s_flannel_config_path }}
       {% if inventory_hostname == groups['k3s_server'][0] %}
       cluster-init: true
       {% endif %}
@@ -57,6 +106,12 @@
 
 - name: Apply K3s server configuration changes before exposing the token
   ansible.builtin.meta: flush_handlers
+
+- name: Ensure the K3s server is running
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    daemon_reload: true
 
 - name: Read the K3s node token from the bootstrap control plane
   ansible.builtin.slurp:

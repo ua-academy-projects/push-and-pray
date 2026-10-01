@@ -29,10 +29,10 @@ module "network" {
   resource_prefix     = local.resource_prefix
   tags                = local.common_labels
 
-  vpc_cidr                     = local.config.network.vpc_cidr
-  management_subnet_cidr       = local.config.network.management_subnet_cidr
-  workload_subnet_cidr         = local.config.network.workload_subnet_cidr
-  managed_database_subnet_cidr = local.config.network.managed_database_subnet_cidr
+  vpc_cidr                     = local.network_config.vpc_cidr
+  management_subnet_cidr       = local.network_config.management_subnet_cidr
+  workload_subnet_cidr         = local.network_config.workload_subnet_cidr
+  managed_database_subnet_cidr = local.network_config.managed_database_subnet_cidr
   managed_database_enabled     = local.managed_database_enabled
 }
 
@@ -54,8 +54,17 @@ module "security" {
   postgresql_port              = local.config.service_ports.postgresql
   rabbitmq_port                = local.config.service_ports.rabbitmq
   redis_port                   = local.config.service_ports.redis
-  managed_database_enabled     = local.managed_database_enabled
-  infrastructure_vm_name       = local.infrastructure_vm_name
+  k3s_node_cidr                = local.network_config.vpc_cidr
+  tailscale_transit_remote_cidrs = [
+    for cloud, network in local.config.network : network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  ]
+  k3s_remote_node_cidrs = [
+    for cloud, network in local.config.network : network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  ]
+  managed_database_enabled = local.managed_database_enabled
+  infrastructure_vm_name   = local.infrastructure_vm_name
 }
 
 resource "azurerm_subnet_network_security_group_association" "managed_database" {
@@ -80,6 +89,34 @@ module "vm" {
   management_subnet_id       = module.network[0].management_subnet_id
   workload_subnet_id         = module.network[0].workload_subnet_id
   network_security_group_ids = module.security[0].network_security_group_ids
+}
+
+resource "azurerm_route_table" "tailscale" {
+  count               = local.has_vms ? 1 : 0
+  name                = "${local.resource_prefix}-tailscale-routes"
+  location            = azurerm_resource_group.main[0].location
+  resource_group_name = azurerm_resource_group.main[0].name
+  tags                = local.common_labels
+}
+
+resource "azurerm_route" "tailscale_remote_cloud" {
+  for_each = local.has_vms ? {
+    for cloud, network in local.config.network : cloud => network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  } : {}
+
+  name                   = "to-${each.key}-tailscale"
+  resource_group_name    = azurerm_resource_group.main[0].name
+  route_table_name       = azurerm_route_table.tailscale[0].name
+  address_prefix         = each.value
+  next_hop_type          = "VirtualAppliance"
+  next_hop_in_ip_address = module.vm[0].private_ips[one([for name, vm in local.resolved_vms : name if vm.role == "bastion"])]
+}
+
+resource "azurerm_subnet_route_table_association" "tailscale_workload" {
+  count          = local.has_vms ? 1 : 0
+  subnet_id      = module.network[0].workload_subnet_id
+  route_table_id = azurerm_route_table.tailscale[0].id
 }
 
 resource "random_password" "managed_database" {

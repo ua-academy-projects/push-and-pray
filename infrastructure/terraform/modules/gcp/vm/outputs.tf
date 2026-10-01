@@ -11,6 +11,14 @@ output "private_ips" {
   }
 }
 
+output "instance_self_links" {
+  description = "Compute Engine instance self-links by logical VM key."
+  value = {
+    for name, instance in google_compute_instance.workload :
+    name => instance.self_link
+  }
+}
+
 output "public_ips" {
   description = "External IPv4 addresses by logical VM key, or null when private."
   value = {

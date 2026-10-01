@@ -46,6 +46,14 @@ variable "redis_port" {
   type = number
 }
 
+variable "k3s_remote_node_cidrs" {
+  type = list(string)
+}
+
+variable "k3s_node_cidr" {
+  type = string
+}
+
 variable "managed_mode" {
   type = bool
 }

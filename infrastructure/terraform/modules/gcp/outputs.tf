@@ -88,9 +88,12 @@ output "monitoring" {
 output "kubernetes" {
   description = "K3s node and Artifact Registry values, or null when Kubernetes is disabled."
   value = local.kubernetes_enabled ? {
-    server_name                       = module.vm[0].names[local.k3s_server_names[0]]
-    server_private_ip                 = module.vm[0].private_ips[local.k3s_server_names[0]]
-    ingress_public_ip                 = try(one([for name, vm in local.k3s_nodes : module.vm[0].public_ips[name] if vm.role == "k3s_server"]), null)
+    server_name       = module.vm[0].names[local.k3s_server_names[0]]
+    server_private_ip = module.vm[0].private_ips[local.k3s_server_names[0]]
+    ingress_public_ip = try(one([
+      for name, vm in local.k3s_nodes : module.vm[0].public_ips[name]
+      if vm.role == "k3s_server" && module.vm[0].public_ips[name] != null
+    ]), null)
     registry                          = "${google_artifact_registry_repository.application[0].location}-docker.pkg.dev/${google_artifact_registry_repository.application[0].project}/${google_artifact_registry_repository.application[0].repository_id}"
     registry_host                     = "${google_artifact_registry_repository.application[0].location}-docker.pkg.dev"
     github_workload_identity_provider = google_iam_workload_identity_pool_provider.github[0].name

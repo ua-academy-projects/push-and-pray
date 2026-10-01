@@ -39,6 +39,114 @@ resource "azurerm_network_security_rule" "bastion_bootstrap_ssh" {
   network_security_group_name = azurerm_network_security_group.vm["bastion"].name
 }
 
+# Packets from a workload node retain their remote-cloud destination while
+# entering the bastion NIC. They therefore do not match Azure's default
+# AllowVNetInBound rule, whose destination must also be VirtualNetwork.
+resource "azurerm_network_security_rule" "bastion_k3s_workload_transit" {
+  for_each = contains(keys(local.vms_by_role), "bastion") ? toset(["6443", "10250", "2379", "2380"]) : toset([])
+
+  name                        = "k3s-transit-${each.value}"
+  priority                    = 250 + index(["6443", "10250", "2379", "2380"], each.value)
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = each.value
+  source_address_prefix       = var.k3s_node_cidr
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm["bastion"].name
+}
+
+resource "azurerm_network_security_rule" "bastion_flannel_workload_transit" {
+  count = contains(keys(local.vms_by_role), "bastion") ? 1 : 0
+
+  name                        = "flannel-transit-8472"
+  priority                    = 260
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "8472"
+  source_address_prefix       = var.k3s_node_cidr
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm["bastion"].name
+}
+
+resource "azurerm_network_security_rule" "bastion_remote_k3s_transit" {
+  for_each = contains(keys(local.vms_by_role), "bastion") ? {
+    for pair in setproduct(toset(var.tailscale_transit_remote_cidrs), toset(["6443", "10250", "2379", "2380"])) :
+    "${pair[0]}-${pair[1]}" => {
+      cidr = pair[0]
+      port = pair[1]
+    }
+  } : {}
+
+  name                        = "remote-k3s-${replace(replace(each.value.cidr, "/", "-"), ".", "-")}-${each.value.port}"
+  priority                    = 270 + index(sort([for pair in setproduct(toset(var.tailscale_transit_remote_cidrs), toset(["6443", "10250", "2379", "2380"])) : "${pair[0]}-${pair[1]}"]), each.key)
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = each.value.port
+  source_address_prefix       = each.value.cidr
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm["bastion"].name
+}
+
+resource "azurerm_network_security_rule" "bastion_remote_flannel_transit" {
+  for_each = contains(keys(local.vms_by_role), "bastion") ? toset(var.tailscale_transit_remote_cidrs) : toset([])
+
+  name                        = "remote-flannel-${replace(replace(each.value, "/", "-"), ".", "-")}-8472"
+  priority                    = 280 + index(sort(var.tailscale_transit_remote_cidrs), each.value)
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "8472"
+  source_address_prefix       = each.value
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm["bastion"].name
+}
+
+resource "azurerm_network_security_rule" "k3s_remote_control_plane" {
+  for_each = contains(keys(local.vms_by_role), "k3s_server") ? {
+    for pair in setproduct(toset(var.k3s_remote_node_cidrs), toset(["6443", "10250", "2379", "2380"])) :
+    "${pair[0]}-${pair[1]}" => { cidr = pair[0], port = pair[1] }
+  } : {}
+
+  name                        = "remote-k3s-peer-${replace(replace(each.value.cidr, "/", "-"), ".", "-")}-${each.value.port}"
+  priority                    = 800 + index(sort([for pair in setproduct(toset(var.k3s_remote_node_cidrs), toset(["6443", "10250", "2379", "2380"])) : "${pair[0]}-${pair[1]}"]), each.key)
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = each.value.port
+  source_address_prefix       = each.value.cidr
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm["k3s_server"].name
+}
+
+resource "azurerm_network_security_rule" "k3s_remote_flannel" {
+  for_each = contains(keys(local.vms_by_role), "k3s_server") ? toset(var.k3s_remote_node_cidrs) : toset([])
+
+  name                        = "remote-k3s-flannel-${replace(replace(each.value, "/", "-"), ".", "-")}-8472"
+  priority                    = 810 + index(sort(var.k3s_remote_node_cidrs), each.value)
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "8472"
+  source_address_prefix       = each.value
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm["k3s_server"].name
+}
+
 resource "azurerm_network_security_rule" "ui_public" {
   for_each = contains(keys(local.vms_by_role), "ui") ? toset([for port in var.ui_public_ports : tostring(port)]) : toset([])
 

@@ -31,6 +31,9 @@ variable "rabbitmq_port" {
 variable "redis_port" {
   type = number
 }
+variable "k3s_node_cidr" { type = string }
+variable "k3s_remote_node_cidrs" { type = list(string) }
+variable "tailscale_transit_remote_cidrs" { type = list(string) }
 variable "enable_bastion_ssh_bootstrap" {
   type = bool
 }

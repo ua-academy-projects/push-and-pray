@@ -68,6 +68,46 @@
   changed_when: false
   no_log: true
 
+- name: Derive the Artifact Registry hostname for Kubernetes image pulls
+  ansible.builtin.set_fact:
+    kubernetes_platform_registry_host: >-
+      {{ kubernetes_platform_config.registry.repository.split('/') | first }}
+
+- name: Obtain a short-lived Artifact Registry access token
+  ansible.builtin.command:
+    argv: [gcloud, auth, print-access-token]
+  register: kubernetes_platform_registry_access_token
+  changed_when: false
+  no_log: true
+
+- name: Render the Artifact Registry pull secret
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - create
+      - secret
+      - docker-registry
+      - "{{ kubernetes_platform_registry_pull_secret_name }}"
+      - "--docker-server={{ kubernetes_platform_registry_host }}"
+      - --docker-username=oauth2accesstoken
+      - "--docker-password={{ kubernetes_platform_registry_access_token.stdout | trim }}"
+      - --dry-run=client
+      - --output=yaml
+  register: kubernetes_platform_registry_pull_secret_manifest
+  changed_when: false
+  no_log: true
+
+- name: Apply the refreshed Artifact Registry pull secret
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ kubernetes_platform_kubeconfig }}", apply, -f, -]
+    stdin: "{{ kubernetes_platform_registry_pull_secret_manifest.stdout }}"
+  changed_when: false
+  no_log: true
+
 - name: Add the cert-manager Helm repository
   ansible.builtin.command:
     argv: [helm, repo, add, jetstack, https://charts.jetstack.io, --force-update]
@@ -88,6 +128,8 @@
       - --create-namespace
       - --set
       - crds.enabled=true
+      - --set
+      - startupapicheck.enabled=false
       - --kubeconfig
       - "{{ kubernetes_platform_kubeconfig }}"
       - --wait
@@ -100,6 +142,11 @@
     argv: [helm, repo, add, cnpg, https://cloudnative-pg.github.io/charts, --force-update]
   changed_when: false
 
+- name: Refresh the CloudNativePG Helm repository index
+  ansible.builtin.command:
+    argv: [helm, repo, update, cnpg]
+  changed_when: false
+
 - name: Install the CloudNativePG operator with Helm
   ansible.builtin.command:
     argv:
@@ -109,7 +156,8 @@
       - cnpg
       - cnpg/cloudnative-pg
       - --version
-      - 1.29.1
+      # Chart version 0.28.3 packages CloudNativePG operator appVersion 1.29.1.
+      - 0.28.3
       - --namespace
       - cnpg-system
       - --create-namespace

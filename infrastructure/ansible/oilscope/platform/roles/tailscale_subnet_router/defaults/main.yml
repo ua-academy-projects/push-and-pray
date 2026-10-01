@@ -1,0 +1,7 @@
+---
+# Supplied only by the controller environment; never store this in project JSON.
+tailscale_auth_key: "{{ lookup('env', 'OILSCOPE_TAILSCALE_AUTH_KEY') }}"
+tailscale_state: /var/lib/tailscale/tailscaled.state
+tailscale_tag: tag:subnet-router
+tailscale_config_path: /etc/sysctl.d/99-oilscope-tailscale.conf
+tailscale_azure_flannel_snat_unit: oilscope-tailscale-flannel-snat.service

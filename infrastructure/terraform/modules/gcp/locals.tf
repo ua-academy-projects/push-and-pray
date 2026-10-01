@@ -130,8 +130,9 @@ locals {
     local.database_mode == "managed" && local.database_vm_name != null
   ) || local.kubernetes_enabled
 
-  has_vms    = length(local.resolved_vms) > 0
-  bastion_vm = local.config.vms.bastion
+  has_vms        = length(local.resolved_vms) > 0
+  network_config = local.config.network[local.cloud_key]
+  bastion_vm     = one([for vm in values(local.resolved_vms) : vm if vm.role == "bastion"])
 
   kubernetes_config  = lookup(local.config, "kubernetes", {})
   kubernetes_enabled = lookup(local.kubernetes_config, "enabled", false)

@@ -5,3 +5,7 @@ kubernetes_platform_project_config_path: >-
 kubernetes_platform_work_dir: "{{ lookup('env', 'HOME') }}/.cache/oilscope/kubernetes"
 kubernetes_platform_kubeconfig: "{{ kubernetes_platform_work_dir }}/kubeconfig"
 kubernetes_platform_helm_version: "v3.17.3"
+# Artifact Registry is private.  The controller refreshes this Kubernetes pull
+# secret on each platform deployment; the OAuth access token itself is not kept
+# in this repository.
+kubernetes_platform_registry_pull_secret_name: oilscope-artifact-registry

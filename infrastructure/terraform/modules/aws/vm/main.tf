@@ -94,15 +94,26 @@ resource "aws_instance" "workload" {
   private_ip = each.value.internal_ip
 
   associate_public_ip_address = each.value.assign_public_ip
+  source_dest_check           = each.value.role != "bastion"
 
   # EC2 user data is consumed by cloud-init on the first boot. Replacing the
   # instance when the script changes keeps the SSH listener aligned with the
   # security group after a bastion port change.
   user_data = each.value.role == "bastion" ? templatefile(
     "${path.module}/templates/bastion-user-data.sh.tftpl",
-    { ssh_port = var.bastion_ssh_port },
-  ) : null
-  user_data_replace_on_change = each.value.role == "bastion"
+    {
+      ssh_port            = var.bastion_ssh_port
+      operator_username   = sort(keys(var.ssh_users))[0]
+      operator_public_key = trimspace(var.ssh_users[sort(keys(var.ssh_users))[0]])
+    },
+    ) : templatefile(
+    "${path.module}/templates/operator-user-data.sh.tftpl",
+    {
+      operator_username   = sort(keys(var.ssh_users))[0]
+      operator_public_key = trimspace(var.ssh_users[sort(keys(var.ssh_users))[0]])
+    },
+  )
+  user_data_replace_on_change = true
 
   # One-minute EC2 metrics allow CloudWatch alarms to honor the monitoring
   # configuration's minute-based durations.

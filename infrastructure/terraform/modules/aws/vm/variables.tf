@@ -29,6 +29,11 @@ variable "bastion_ssh_port" {
   type        = number
 }
 
+variable "ssh_users" {
+  description = "Operator public SSH keys keyed by Linux username. The first username is provisioned on the bastion."
+  type        = map(string)
+}
+
 variable "key_name" {
   type = string
 }

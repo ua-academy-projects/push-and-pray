@@ -1,0 +1,72 @@
+---
+- name: Require a Tailscale auth key
+  ansible.builtin.assert:
+    that: tailscale_auth_key | length > 0
+    fail_msg: Set OILSCOPE_TAILSCALE_AUTH_KEY on the Ansible controller.
+  no_log: true
+
+- name: Enable IPv4 forwarding for the subnet router
+  ansible.builtin.copy:
+    dest: "{{ tailscale_config_path }}"
+    mode: "0644"
+    content: |
+      # Managed by oilscope.platform.tailscale_subnet_router.
+      net.ipv4.ip_forward = 1
+  notify: Apply Tailscale sysctl settings
+
+- name: Install Tailscale
+  ansible.builtin.shell:
+    cmd: curl -fsSL https://tailscale.com/install.sh | sh
+    creates: /usr/bin/tailscale
+  args:
+    executable: /bin/bash
+
+- name: Start Tailscale subnet router
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - --auth-key={{ tailscale_auth_key }}
+      - --advertise-tags={{ tailscale_tag }}
+      - --advertise-routes={{ tailscale_advertise_route }}
+      - --snat-subnet-routes=false
+      - --accept-routes
+  no_log: true
+  changed_when: false
+
+# Azure drops a forwarded VXLAN packet whose outer source is from a remote
+# VPC. Keep Tailscale SNAT disabled for K3s and etcd TCP traffic, but SNAT
+# only the outer Flannel UDP packet as it leaves the Azure subnet router.
+- name: Persist Azure Flannel outer-packet SNAT
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ tailscale_azure_flannel_snat_unit }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=SNAT Flannel VXLAN packets forwarded from Tailscale into Azure
+      After=network-online.target tailscaled.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c '/usr/sbin/iptables -t nat -C POSTROUTING -o {{ ansible_default_ipv4.interface }} -p udp -d {{ oilscope_vpc_cidr }} --dport 8472 -j SNAT --to-source {{ internal_ip }} 2>/dev/null || /usr/sbin/iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -p udp -d {{ oilscope_vpc_cidr }} --dport 8472 -j SNAT --to-source {{ internal_ip }}'
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+  when: oilscope_cloud | default('') == 'azure'
+
+- name: Enable Azure Flannel outer-packet SNAT
+  ansible.builtin.systemd:
+    name: "{{ tailscale_azure_flannel_snat_unit }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  when: oilscope_cloud | default('') == 'azure'
+
+- name: Verify the advertised route is active
+  ansible.builtin.command:
+    argv: [tailscale, status, --json]
+  changed_when: false
+  register: tailscale_status
+  failed_when: tailscale_status.rc != 0

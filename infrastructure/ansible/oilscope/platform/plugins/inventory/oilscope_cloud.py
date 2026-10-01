@@ -152,7 +152,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 self._delegate(cloud, inventory, loader, generated, cache)
 
             self._configure_service_placement(inventory, config)
-            self._configure_ssh_connections(inventory, settings_by_cloud, common)
+            self._configure_ssh_connections(inventory, config, settings_by_cloud, common)
         finally:
             for generated in generated_files:
                 try:
@@ -256,37 +256,32 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         return sorted(values)
 
-    def _bastion_ssh_port(self, config):
+    def _bastion_ports_by_cloud(self, config):
         bastion_role = self.get_option("bastion_role")
         vms = self._require_mapping(config, "vms")
-        ports = [
-            vm.get("ssh_port")
-            for vm in vms.values()
-            if isinstance(vm, dict) and vm.get("role") == bastion_role
-        ]
-
-        if len(ports) != 1:
-            raise AnsibleParserError(
-                f"expected exactly one VM with role {bastion_role!r}, found {len(ports)}"
-            )
-
-        try:
-            return int(ports[0])
-        except (TypeError, ValueError) as port_error:
-            raise AnsibleParserError(
-                f"the {bastion_role!r} VM must define an integer ssh_port"
-            ) from port_error
+        default_cloud = self._require_string(config, "default_cloud")
+        ports = {}
+        for name, vm in vms.items():
+            if not isinstance(vm, dict) or vm.get("role") != bastion_role:
+                continue
+            cloud = vm.get("cloud", default_cloud)
+            if cloud in ports:
+                raise AnsibleParserError(f"expected one {bastion_role!r} in {cloud}, found multiple")
+            try:
+                ports[cloud] = int(vm["ssh_port"])
+            except (KeyError, TypeError, ValueError) as port_error:
+                raise AnsibleParserError(f"vms.{name} must define an integer ssh_port") from port_error
+        return ports
 
     def _common_values(self, config):
-        bastion_port = self._bastion_ssh_port(config)
         connect_port = self.get_option("bastion_connect_port")
 
         return {
             "name_prefix": self._require_string(config, "name_prefix"),
             "environment": self._require_string(config, "environment"),
             "bastion_role": plain(self.get_option("bastion_role")),
-            "bastion_port": bastion_port,
-            "bastion_connect_port": int(connect_port or bastion_port),
+            "bastion_ports": self._bastion_ports_by_cloud(config),
+            "bastion_connect_port": int(connect_port) if connect_port else None,
             "workload_port": int(self.get_option("workload_ssh_port")),
         }
 
@@ -338,28 +333,23 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         inventory.add_host(host_name, group="infrastructure")
         inventory.set_variable(host_name, "oilscope_infrastructure_host", True)
 
-    def _configure_ssh_connections(self, inventory, settings_by_cloud, common):
+    def _configure_ssh_connections(self, inventory, config, settings_by_cloud, common):
         if not settings_by_cloud:
             return
 
         bastion_group = inventory.groups.get(common["bastion_role"])
         workload_group = inventory.groups.get("workloads")
 
-        if bastion_group is None or len(bastion_group.hosts) != 1:
-            count = 0 if bastion_group is None else len(bastion_group.hosts)
-            raise AnsibleParserError(
-                f"expected exactly one discovered bastion host, found {count}"
-            )
+        if bastion_group is None:
+            raise AnsibleParserError("the inventory plugin did not discover any bastion hosts")
 
         if workload_group is None:
             raise AnsibleParserError("the inventory plugin did not create the workloads group")
 
         controller = self._controller_ssh_settings()
-        bastion = bastion_group.hosts[0]
-        bastion_address = bastion.vars.get("ansible_host")
-
-        if not bastion_address:
-            raise AnsibleParserError("the discovered bastion has no ansible_host")
+        bastions = {host.vars.get("oilscope_cloud"): host for host in bastion_group.hosts}
+        if set(bastions) != set(settings_by_cloud):
+            raise AnsibleParserError("each selected cloud must discover exactly one bastion")
 
         for host in inventory.hosts.values():
             inventory.set_variable(host.name, "ansible_user", controller["user"])
@@ -367,23 +357,31 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 host.name, "ansible_ssh_private_key_file", controller["key_file"]
             )
 
-        inventory.set_variable(bastion.name, "ansible_port", common["bastion_connect_port"])
-        inventory.set_variable(bastion.name, "bastion_ssh_port", common["bastion_port"])
-
-        proxy_command = (
-            'ssh -W %h:%p -q '
-            f'-p {common["bastion_connect_port"]} '
-            f'-i {controller["key_file"]} '
-            '-o StrictHostKeyChecking=no '
-            '-o UserKnownHostsFile=/dev/null '
-            '-o IdentitiesOnly=yes '
-            f'{controller["user"]}@{bastion_address}'
-        )
+        for cloud, bastion in bastions.items():
+            port = common["bastion_connect_port"] or common["bastion_ports"][cloud]
+            inventory.set_variable(bastion.name, "ansible_port", port)
+            inventory.set_variable(bastion.name, "bastion_ssh_port", common["bastion_ports"][cloud])
+            inventory.set_variable(
+                bastion.name, "oilscope_vpc_cidr", config["network"][cloud]["vpc_cidr"]
+            )
 
         for host in workload_group.hosts:
+            cloud = host.vars.get("oilscope_cloud")
+            bastion = bastions.get(cloud)
+            if bastion is None or not bastion.vars.get("ansible_host"):
+                raise AnsibleParserError(f"workload {host.name} has no same-cloud bastion")
+            port = common["bastion_connect_port"] or common["bastion_ports"][cloud]
+            proxy_command = (
+                'ssh -W %h:%p -q '
+                f'-p {port} -i {controller["key_file"]} '
+                '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null '
+                f'-o IdentitiesOnly=yes {controller["user"]}@{bastion.vars["ansible_host"]}'
+            )
             inventory.set_variable(host.name, "ansible_port", common["workload_port"])
             inventory.set_variable(
-                host.name, "ansible_ssh_common_args", f'-o ProxyCommand="{proxy_command}"'
+                host.name,
+                "ansible_ssh_common_args",
+                f'-o IdentitiesOnly=yes -o ProxyCommand="{proxy_command}"',
             )
 
     def _build_gcp_settings(self, config, selected_vms, common):

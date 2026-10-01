@@ -6,4 +6,8 @@ write_files:
     content: |
       Port ${ssh_port}
 runcmd:
+  # Ubuntu 26.04 enables systemd socket activation by default. Disable it so
+  # sshd_config's Port value controls the listener instead of ssh.socket:22.
+  - [systemctl, disable, --now, ssh.socket]
+  - [systemctl, enable, --now, ssh.service]
   - [systemctl, restart, ssh]

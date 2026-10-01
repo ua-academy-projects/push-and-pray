@@ -3,6 +3,12 @@ output "bastion_public_ip" {
   value       = lookup(merge(module.gcp.public_ips, module.aws.public_ips, module.azure.public_ips), "bastion", null)
 }
 
+output "tailscale_subnet_router_auth_key" {
+  description = "Reusable tagged auth key for the three subnet-router bastions. Treat as a secret; it is stored in Terraform state."
+  value       = try(tailscale_tailnet_key.subnet_router[0].key, null)
+  sensitive   = true
+}
+
 output "workload_vm_names" {
   description = "VM names by workload across all configured clouds."
   value       = merge(module.gcp.workload_names, module.aws.workload_names, module.azure.workload_names)

@@ -26,3 +26,11 @@ output "instance_ids" {
     name => instance.id
   }
 }
+
+output "network_interface_ids" {
+  description = "Primary network-interface IDs keyed by logical VM name."
+  value = {
+    for name, instance in aws_instance.workload :
+    name => instance.primary_network_interface_id
+  }
+}

@@ -5,8 +5,8 @@ module "network" {
   resource_prefix = local.resource_prefix
   region          = local.config.regions[local.config.default_region][local.cloud_key].region
 
-  management_subnet_cidr = local.config.network.management_subnet_cidr
-  workload_subnet_cidr   = local.config.network.workload_subnet_cidr
+  management_subnet_cidr = local.network_config.management_subnet_cidr
+  workload_subnet_cidr   = local.network_config.workload_subnet_cidr
 
 }
 
@@ -97,6 +97,11 @@ module "security" {
   postgresql_port  = local.config.service_ports.postgresql
   rabbitmq_port    = local.config.service_ports.rabbitmq
   redis_port       = local.config.service_ports.redis
+  k3s_node_cidr    = local.network_config.vpc_cidr
+  k3s_remote_node_cidrs = [
+    for cloud, network in local.config.network : network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  ]
   managed_mode = (
     local.database_mode == "managed" && local.database_vm_name != null
   )
@@ -124,6 +129,23 @@ module "vm" {
   management_subnet_id = module.network[0].management_subnet_id
   workload_subnet_id   = module.network[0].workload_subnet_id
 
+}
+
+# Workload traffic for another cloud first reaches this cloud's subnet router;
+# Tailscale then carries it to the router advertising the destination CIDR.
+resource "google_compute_route" "tailscale_remote_cloud" {
+  for_each = local.has_vms ? {
+    for cloud, network in local.config.network : cloud => network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  } : {}
+
+  name       = "${local.resource_prefix}-to-${each.key}-tailscale"
+  network    = module.network[0].network_id
+  dest_range = each.value
+  # The self-link is only known after instance creation, which makes the route
+  # wait for the bastion instead of racing the Compute Engine API.
+  next_hop_instance      = module.vm[0].instance_self_links[one([for name, vm in local.resolved_vms : name if vm.role == "bastion"])]
+  next_hop_instance_zone = local.bastion_vm.location.zone
 }
 
 resource "google_artifact_registry_repository" "application" {

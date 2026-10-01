@@ -4,3 +4,8 @@ k3s_install_script_url: https://get.k3s.io
 k3s_install_script_path: /usr/local/lib/oilscope/install-k3s.sh
 k3s_server_token_path: /var/lib/rancher/k3s/server/node-token
 k3s_server_config_path: /etc/rancher/k3s/config.yaml
+k3s_cluster_cidr: 10.42.0.0/16
+k3s_flannel_config_path: /etc/rancher/k3s/flannel-conf.json
+# VXLAN adds 50 bytes and Tailscale adds further encapsulation overhead.
+# Use one conservative value on every server in the multicloud cluster.
+k3s_flannel_mtu: 1350

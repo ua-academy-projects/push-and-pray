@@ -1,6 +1,10 @@
 {
   "default_cloud": "gcp",
   "default_region": "europe",
+  "tailscale": {
+    "enabled": false,
+    "manage_policy": false
+  },
   "zone_id": "example",
   "clouds": {
     "gcp": {
@@ -78,20 +82,24 @@
     "image_tag": "xintaro"
   },
   "network": {
-    "vpc_cidr": "10.0.0.0/23",
-    "management_subnet_cidr": "10.0.0.0/29",
-    "workload_subnet_cidr": "10.0.1.0/26",
-    "managed_database_subnet_cidr": "10.0.0.64/26",
-    "database_subnets": [
-      {
-        "cidr": "10.0.0.64/26",
-        "availability_zone": "example-a"
-      },
-      {
-        "cidr": "10.0.0.128/26",
-        "availability_zone": "example-b"
-      }
-    ],
+    "gcp": {
+      "vpc_cidr": "10.10.0.0/16",
+      "management_subnet_cidr": "10.10.0.0/24",
+      "workload_subnet_cidr": "10.10.1.0/24"
+    },
+    "aws": {
+      "vpc_cidr": "10.20.0.0/16",
+      "management_subnet_cidr": "10.20.0.0/24",
+      "workload_subnet_cidr": "10.20.1.0/24",
+      "managed_database_subnet_cidr": "10.20.2.0/24",
+      "database_subnets": []
+    },
+    "azure": {
+      "vpc_cidr": "10.30.0.0/16",
+      "management_subnet_cidr": "10.30.0.0/24",
+      "workload_subnet_cidr": "10.30.1.0/24",
+      "managed_database_subnet_cidr": "10.30.2.0/24"
+    },
     "ui_public_ports": [443]
   },
   "service_ports": {
@@ -184,13 +192,13 @@
     "azure": { "infrastructure_host": "k3s-server" }
   },
   "vms": {
-    "bastion": {
+    "bastion-gcp": {
       "role": "bastion",
       "size": "small",
       "region": "europe",
       "cloud": "gcp",
       "image": "ubuntu-2604",
-      "internal_ip": "10.0.0.5",
+      "internal_ip": "10.10.0.5",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -201,12 +209,13 @@
       "ssh_port": 8787,
       "allowed_cidrs": ["192.0.2.10/32"]
     },
-    "k3s-server": {
+    "k3s-server-gcp": {
       "role": "k3s_server",
       "size": "infra",
       "region": "europe",
       "image": "ubuntu-2604",
-      "internal_ip": "10.0.1.4",
+      "cloud": "gcp",
+      "internal_ip": "10.10.1.4",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
@@ -219,19 +228,46 @@
         "acme_email": "example-operator@example.com"
       }
     },
-    "k3s-agent": {
-      "role": "k3s_agent",
+    "bastion-aws": {
+      "role": "bastion",
+      "size": "small",
+      "region": "europe",
+      "cloud": "aws",
+      "image": "ubuntu-2604",
+      "internal_ip": "10.20.0.5",
+      "boot_disk": { "size_gb": 10, "type": "balanced" },
+      "assign_public_ip": true,
+      "network_tags": ["bastion"],
+      "secret_mappings": {},
+      "ssh_port": 8787,
+      "allowed_cidrs": ["192.0.2.10/32"]
+    },
+    "k3s-server-aws": {
+      "role": "k3s_server",
       "size": "infra",
       "region": "europe",
+      "cloud": "aws",
       "image": "ubuntu-2604",
-      "internal_ip": "10.0.1.5",
+      "internal_ip": "10.20.1.4",
       "boot_disk": {
         "size_gb": 10,
         "type": "balanced"
       },
       "assign_public_ip": false,
-      "network_tags": ["k3s-agent"],
-      "secret_mappings": {}
+      "network_tags": ["k3s-server"],
+      "secret_mappings": {},
+      "public_endpoint": { "hostname": "oilscope.example.com", "acme_email": "example-operator@example.com" }
+    },
+    "bastion-azure": {
+      "role": "bastion", "size": "small", "region": "europe", "cloud": "azure", "image": "ubuntu-2604",
+      "internal_ip": "10.30.0.5", "boot_disk": { "size_gb": 10, "type": "balanced" }, "assign_public_ip": true,
+      "network_tags": ["bastion"], "secret_mappings": {}, "ssh_port": 8787, "allowed_cidrs": ["192.0.2.10/32"]
+    },
+    "k3s-server-azure": {
+      "role": "k3s_server", "size": "infra", "region": "europe", "cloud": "azure", "image": "ubuntu-2604",
+      "internal_ip": "10.30.1.4", "boot_disk": { "size_gb": 10, "type": "balanced" }, "assign_public_ip": false,
+      "network_tags": ["k3s-server"], "secret_mappings": {},
+      "public_endpoint": { "hostname": "oilscope.example.com", "acme_email": "example-operator@example.com" }
     }
   }
 }

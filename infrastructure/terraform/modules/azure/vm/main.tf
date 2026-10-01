@@ -16,10 +16,11 @@ resource "azurerm_public_ip" "vm" {
 resource "azurerm_network_interface" "vm" {
   for_each = var.vms
 
-  name                = "${local.vm_names[each.key]}-nic"
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  tags                = local.tags_by_vm[each.key]
+  name                  = "${local.vm_names[each.key]}-nic"
+  resource_group_name   = var.resource_group_name
+  location              = var.location
+  tags                  = local.tags_by_vm[each.key]
+  ip_forwarding_enabled = each.value.role == "bastion"
 
   ip_configuration {
     name                          = "primary"

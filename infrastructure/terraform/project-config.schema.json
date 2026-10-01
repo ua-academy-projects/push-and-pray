@@ -7,6 +7,7 @@
   "required": [
     "default_cloud",
     "default_region",
+    "tailscale",
     "clouds",
     "regions",
     "sizes",
@@ -35,6 +36,15 @@
     "default_region": {
       "type": "string",
       "minLength": 1
+    },
+    "tailscale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "manage_policy"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "manage_policy": { "type": "boolean" }
+      }
     },
     "clouds": {
       "type": "object",
@@ -256,50 +266,11 @@
     "network": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "vpc_cidr",
-        "management_subnet_cidr",
-        "workload_subnet_cidr",
-        "managed_database_subnet_cidr",
-        "ui_public_ports"
-      ],
+      "required": ["gcp", "aws", "azure", "ui_public_ports"],
       "properties": {
-        "vpc_cidr": {
-            "type": "string",
-            "minLength": 1
-        },
-        "management_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
-        "workload_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
-        "managed_database_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
-        "database_subnets": {
-          "$comment": "Required when database.mode is managed and workloads run on AWS. RDS needs subnets in at least two Availability Zones.",
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["cidr", "availability_zone"],
-            "properties": {
-              "cidr": {
-                "type": "string",
-                "minLength": 1
-              },
-              "availability_zone": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        },
+        "gcp": { "$ref": "#/$defs/cloud_network" },
+        "aws": { "$ref": "#/$defs/cloud_network" },
+        "azure": { "$ref": "#/$defs/cloud_network" },
         "ui_public_ports": {
           "type": "array",
           "items": {
@@ -574,33 +545,35 @@
     "vms": {
       "type": "object",
       "minProperties": 2,
-      "required": ["bastion"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
-      "properties": {
-        "bastion": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/vm"
-            },
-            {
-              "properties": {
-                "role": {
-                  "const": "bastion"
-                }
-              },
-              "required": ["role"]
-            }
-          ]
-        }
-      },
+      "properties": {},
       "additionalProperties": {
         "$ref": "#/$defs/vm"
       }
     }
   },
   "$defs": {
+    "cloud_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vpc_cidr", "management_subnet_cidr", "workload_subnet_cidr"],
+      "properties": {
+        "vpc_cidr": { "type": "string", "minLength": 1 },
+        "management_subnet_cidr": { "type": "string", "minLength": 1 },
+        "workload_subnet_cidr": { "type": "string", "minLength": 1 },
+        "managed_database_subnet_cidr": { "type": "string", "minLength": 1 },
+        "database_subnets": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["cidr", "availability_zone"],
+            "properties": { "cidr": { "type": "string" }, "availability_zone": { "type": "string" } }
+          }
+        }
+      }
+    },
     "service_placement_target": {
       "type": "object",
       "additionalProperties": false,

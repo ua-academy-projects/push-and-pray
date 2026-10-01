@@ -6,7 +6,8 @@ locals {
 
   has_vms = length(local.resolved_vms) > 0
 
-  bastion_vm = local.config.vms.bastion
+  network_config = local.config.network[local.cloud_key]
+  bastion_vm     = one([for vm in values(local.resolved_vms) : vm if vm.role == "bastion"])
 
   common_labels = merge(
     {
@@ -91,7 +92,7 @@ locals {
     for name, workload in local.workload_vms : name => {
       for environment_name, secret_id in workload.secret_mappings :
       environment_name => secret_id
-      if !contains(local.inactive_secret_names_by_role[workload.role], environment_name)
+      if !contains(lookup(local.inactive_secret_names_by_role, workload.role, []), environment_name)
     }
   }
 

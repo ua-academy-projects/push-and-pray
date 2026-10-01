@@ -1,4 +1,12 @@
 ---
+- name: Configure Tailscale subnet routers
+  hosts: bastion
+  become: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.tailscale_subnet_router
+      tailscale_advertise_route: "{{ hostvars[inventory_hostname].oilscope_vpc_cidr }}"
+
 - name: Provision the K3s control plane
   hosts: k3s_server
   serial: 1

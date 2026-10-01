@@ -9,6 +9,11 @@ metadata:
 spec:
   instances: 3
   imageName: {{ registry }}/database-cnpg:18-xintaro
+  imagePullSecrets:
+    - name: {{ kubernetes_platform_registry_pull_secret_name }}
+  # Required only by the in-cluster migration Job to install privileged
+  # extensions. CNPG generates the postgres-superuser Secret.
+  enableSuperuserAccess: true
   bootstrap:
     initdb:
       database: {{ kubernetes_platform_config.database.name | to_json }}
@@ -23,8 +28,9 @@ spec:
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   postgresql:
+    shared_preload_libraries:
+      - pg_cron
     parameters:
-      shared_preload_libraries: pg_cron
       cron.database_name: {{ kubernetes_platform_config.database.name | to_json }}
       cron.use_background_workers: "on"
 ---
@@ -43,6 +49,8 @@ spec:
   template:
     metadata: { labels: { app: redis } }
     spec:
+      imagePullSecrets:
+        - name: {{ kubernetes_platform_registry_pull_secret_name }}
       containers:
         - name: redis
           image: {{ kubernetes_platform_config.sessions.redis_image }}
@@ -66,10 +74,26 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: {{ kubernetes_platform_registry_pull_secret_name }}
       containers:
         - name: migrate
           image: {{ registry }}/database-cnpg:18-xintaro
-          command: [petroscope-migrate]
+          command: [sh, -ec]
+          args:
+            - |
+              PGPASSWORD="$PGSUPERPASSWORD" psql \
+                --host="$PGHOST" \
+                --port="$PGPORT" \
+                --username=postgres \
+                --dbname="$PGDATABASE" \
+                --set=ON_ERROR_STOP=1 <<'SQL'
+              CREATE EXTENSION IF NOT EXISTS pgcrypto;
+              CREATE EXTENSION IF NOT EXISTS pg_cron;
+              CREATE EXTENSION IF NOT EXISTS hstore;
+              CREATE EXTENSION IF NOT EXISTS pgmq;
+              SQL
+              exec petroscope-migrate
           env:
             - { name: PGHOST, value: postgres-rw }
             - { name: PGPORT, value: "5432" }
@@ -79,6 +103,8 @@ spec:
             - { name: PGMQ_QUEUE, value: {{ kubernetes_platform_config.messaging.queue_name | to_json }} }
             - name: PGPASSWORD
               valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
+            - name: PGSUPERPASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-superuser, key: password } }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -89,6 +115,8 @@ spec:
   template:
     metadata: { labels: { app: history } }
     spec:
+      imagePullSecrets:
+        - name: {{ kubernetes_platform_registry_pull_secret_name }}
       containers:
         - name: history
           image: {{ registry }}/history:{{ tag }}
@@ -115,6 +143,8 @@ spec:
   template:
     metadata: { labels: { app: fetcher } }
     spec:
+      imagePullSecrets:
+        - name: {{ kubernetes_platform_registry_pull_secret_name }}
       containers:
         - name: fetcher
           image: {{ registry }}/fetcher:{{ tag }}
@@ -136,6 +166,8 @@ spec:
   template:
     metadata: { labels: { app: ui } }
     spec:
+      imagePullSecrets:
+        - name: {{ kubernetes_platform_registry_pull_secret_name }}
       containers:
         - name: ui
           image: {{ registry }}/ui:{{ tag }}
@@ -166,10 +198,10 @@ metadata:
 spec:
   ingressClassName: traefik
   tls:
-    - hosts: [{{ kubernetes_platform_config.vms['k3s-server'].public_endpoint.hostname }}]
+    - hosts: [{{ kubernetes_platform_config.vms[groups.k3s_server[0] | regex_replace('^' ~ kubernetes_platform_config.name_prefix ~ '-' ~ kubernetes_platform_config.environment ~ '-', '')].public_endpoint.hostname }}]
       secretName: oilscope-ui-tls
   rules:
-    - host: {{ kubernetes_platform_config.vms['k3s-server'].public_endpoint.hostname }}
+    - host: {{ kubernetes_platform_config.vms[groups.k3s_server[0] | regex_replace('^' ~ kubernetes_platform_config.name_prefix ~ '-' ~ kubernetes_platform_config.environment ~ '-', '')].public_endpoint.hostname }}
       http:
         paths:
           - path: /

@@ -19,3 +19,8 @@ output "vpc_id" {
   value = aws_vpc.main.id
 
 }
+
+output "workload_route_table_id" {
+  description = "Route table associated with workload instances."
+  value       = aws_route_table.workload.id
+}

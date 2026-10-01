@@ -27,3 +27,8 @@ provider "azurerm" {
 }
 
 provider "cloudflare" {}
+
+# Credentials come from TAILSCALE_OAUTH_CLIENT_ID and
+# TAILSCALE_OAUTH_CLIENT_SECRET (preferred), or TAILSCALE_API_KEY. Never place
+# either value in project configuration or Terraform variables.
+provider "tailscale" {}

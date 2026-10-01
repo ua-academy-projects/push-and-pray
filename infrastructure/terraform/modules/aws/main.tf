@@ -4,13 +4,13 @@ module "network" {
 
   resource_prefix = local.resource_prefix
 
-  vpc_cidr = local.config.network.vpc_cidr
+  vpc_cidr = local.network_config.vpc_cidr
 
-  management_subnet_cidr = local.config.network.management_subnet_cidr
+  management_subnet_cidr = local.network_config.management_subnet_cidr
 
-  workload_subnet_cidr = local.config.network.workload_subnet_cidr
+  workload_subnet_cidr = local.network_config.workload_subnet_cidr
 
-  database_subnets = lookup(local.config.network, "database_subnets", [])
+  database_subnets = lookup(local.network_config, "database_subnets", [])
 
   availability_zone = local.config.regions[local.config.default_region][local.cloud_key].availability_zone
 
@@ -110,6 +110,15 @@ module "security" {
   postgresql_port  = local.config.service_ports.postgresql
   rabbitmq_port    = local.config.service_ports.rabbitmq
   redis_port       = local.config.service_ports.redis
+  k3s_node_cidr    = local.network_config.vpc_cidr
+  tailscale_transit_remote_cidrs = [
+    for cloud, network in local.config.network : network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  ]
+  k3s_remote_node_cidrs = [
+    for cloud, network in local.config.network : network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  ]
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
   managed_database_enabled     = local.database_mode == "managed" && local.database_vm_name != null
@@ -141,6 +150,7 @@ module "vm" {
   # Configure the SSH daemon before the bastion is reachable from the
   # Internet, so only bastion.ssh_port needs a public security-group rule.
   bastion_ssh_port = local.bastion_vm.ssh_port
+  ssh_users        = local.config.ssh_users
 
   key_name = module.operator_key[0].key_name
 
@@ -152,6 +162,17 @@ module "vm" {
 
   secret_arns_by_vm = local.secret_arns_by_vm
   secret_ids_by_vm  = local.secret_ids_by_vm
+}
+
+resource "aws_route" "tailscale_remote_cloud" {
+  for_each = local.has_vms ? {
+    for cloud, network in local.config.network : cloud => network.vpc_cidr
+    if contains(["gcp", "aws", "azure"], cloud) && cloud != local.cloud_key
+  } : {}
+
+  route_table_id         = module.network[0].workload_route_table_id
+  destination_cidr_block = each.value
+  network_interface_id   = module.vm[0].network_interface_ids[one([for name, vm in local.resolved_vms : name if vm.role == "bastion"])]
 }
 
 module "monitoring" {

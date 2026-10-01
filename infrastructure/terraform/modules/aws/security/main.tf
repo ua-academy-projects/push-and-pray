@@ -20,6 +20,55 @@ resource "aws_vpc_security_group_ingress_rule" "allow_ssh_to_bastion" {
 
 }
 
+# Workload instances route cross-cloud K3s traffic through the bastion's ENI
+# before it is forwarded into tailscale0. AWS therefore evaluates this as
+# ingress to the bastion security group, rather than ingress to the K3s node.
+resource "aws_vpc_security_group_ingress_rule" "allow_k3s_workload_transit_to_bastion" {
+  for_each          = toset(["6443", "10250", "2379", "2380"])
+  security_group_id = aws_security_group.bastion_ssh.id
+  cidr_ipv4         = var.k3s_node_cidr
+
+  ip_protocol = "tcp"
+  from_port   = tonumber(each.value)
+  to_port     = tonumber(each.value)
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_flannel_workload_transit_to_bastion" {
+  security_group_id = aws_security_group.bastion_ssh.id
+  cidr_ipv4         = var.k3s_node_cidr
+
+  ip_protocol = "udp"
+  from_port   = 8472
+  to_port     = 8472
+}
+
+# Tailscale subnet routers SNAT traffic on delivery into the destination VPC.
+# A peer cloud therefore reaches this ENI from its own subnet-router CIDR.
+resource "aws_vpc_security_group_ingress_rule" "allow_remote_k3s_transit_to_bastion" {
+  for_each = {
+    for pair in setproduct(toset(var.tailscale_transit_remote_cidrs), toset(["6443", "10250", "2379", "2380"])) :
+    "${pair[0]}-${pair[1]}" => {
+      cidr = pair[0]
+      port = tonumber(pair[1])
+    }
+  }
+
+  security_group_id = aws_security_group.bastion_ssh.id
+  cidr_ipv4         = each.value.cidr
+  ip_protocol       = "tcp"
+  from_port         = each.value.port
+  to_port           = each.value.port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_remote_flannel_transit_to_bastion" {
+  for_each          = toset(var.tailscale_transit_remote_cidrs)
+  security_group_id = aws_security_group.bastion_ssh.id
+  cidr_ipv4         = each.value
+  ip_protocol       = "udp"
+  from_port         = 8472
+  to_port           = 8472
+}
+
 resource "aws_security_group" "ui" {
   name   = "${var.resource_prefix}-ui-security-group"
   vpc_id = var.vpc_id
@@ -79,6 +128,60 @@ resource "aws_security_group" "history" {
     Name = "history"
   })
 
+}
+
+resource "aws_security_group" "k3s_server" {
+  name   = "${var.resource_prefix}-k3s-server-security-group"
+  vpc_id = var.vpc_id
+  tags   = merge(var.tags, { Name = "k3s-server" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_control_plane" {
+  for_each          = toset(["6443", "10250", "2379", "2380"])
+  security_group_id = aws_security_group.k3s_server.id
+  cidr_ipv4         = var.k3s_node_cidr
+  ip_protocol       = "tcp"
+  from_port         = tonumber(each.value)
+  to_port           = tonumber(each.value)
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_flannel" {
+  security_group_id = aws_security_group.k3s_server.id
+  cidr_ipv4         = var.k3s_node_cidr
+  ip_protocol       = "udp"
+  from_port         = 8472
+  to_port           = 8472
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_remote_control_plane" {
+  for_each = {
+    for pair in setproduct(toset(var.k3s_remote_node_cidrs), toset(["6443", "10250", "2379", "2380"])) :
+    "${pair[0]}-${pair[1]}" => { cidr = pair[0], port = tonumber(pair[1]) }
+  }
+
+  security_group_id = aws_security_group.k3s_server.id
+  cidr_ipv4         = each.value.cidr
+  ip_protocol       = "tcp"
+  from_port         = each.value.port
+  to_port           = each.value.port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_remote_flannel" {
+  for_each          = toset(var.k3s_remote_node_cidrs)
+  security_group_id = aws_security_group.k3s_server.id
+  cidr_ipv4         = each.value
+  ip_protocol       = "udp"
+  from_port         = 8472
+  to_port           = 8472
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_bastion_ssh_to_k3s_server" {
+  security_group_id            = aws_security_group.k3s_server.id
+  referenced_security_group_id = aws_security_group.bastion_ssh.id
+
+  ip_protocol = "tcp"
+  from_port   = 22
+  to_port     = 22
 }
 
 resource "aws_vpc_security_group_ingress_rule" "allow_bastion_ssh_to_infra" {
@@ -225,6 +328,7 @@ resource "aws_vpc_security_group_egress_rule" "allow_internet_egress" {
     history  = aws_security_group.history.id
     fetcher  = aws_security_group.fetcher.id
     ui       = aws_security_group.ui.id
+    k3s      = aws_security_group.k3s_server.id
   }
   security_group_id = each.value
   cidr_ipv4         = "0.0.0.0/0"

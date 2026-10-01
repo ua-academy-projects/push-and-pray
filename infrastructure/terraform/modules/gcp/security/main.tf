@@ -26,6 +26,27 @@ resource "google_compute_firewall" "bastion_ssh_bootstrap" {
   }
 }
 
+# A workload's remote-cloud destination is retained while the packet enters
+# the next-hop bastion. This explicit rule permits GCP workload-to-router
+# transit; without it, the VPC implied ingress deny drops the packet.
+resource "google_compute_firewall" "workload_to_tailscale_bastion" {
+  name    = "${var.resource_prefix}-allow-k3s-transit-to-bastion"
+  network = var.network_id
+
+  source_ranges = [var.k3s_node_cidr]
+  target_tags   = [local.network_tags.bastion]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443", "10250", "2379", "2380"]
+  }
+
+  allow {
+    protocol = "udp"
+    ports    = ["8472"]
+  }
+}
+
 resource "google_compute_firewall" "workload_ssh" {
   name    = "${var.resource_prefix}-allow-workload-ssh"
   network = var.network_id
@@ -95,6 +116,41 @@ resource "google_compute_firewall" "k3s_internal" {
   allow {
     protocol = "tcp"
     ports    = ["6443", "10250"]
+  }
+
+  allow {
+    protocol = "udp"
+    ports    = ["8472"]
+  }
+}
+
+# Embedded etcd is the K3s control-plane datastore. Its peer and client ports
+# must be reachable between server nodes, but never from agent nodes.
+resource "google_compute_firewall" "k3s_etcd" {
+  name    = "${var.resource_prefix}-allow-k3s-etcd"
+  network = var.network_id
+
+  source_tags = [local.network_tags.k3s_server]
+  target_tags = [local.network_tags.k3s_server]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["2379", "2380"]
+  }
+}
+
+# Subnet-router SNAT is disabled, so embedded etcd sees the source IP recorded
+# in each remote peer's certificate rather than a local bastion address.
+resource "google_compute_firewall" "tailscale_router_to_k3s" {
+  name    = "${var.resource_prefix}-allow-tailscale-router-k3s"
+  network = var.network_id
+
+  source_ranges = var.k3s_remote_node_cidrs
+  target_tags   = [local.network_tags.k3s_server]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443", "10250", "2379", "2380"]
   }
 
   allow {

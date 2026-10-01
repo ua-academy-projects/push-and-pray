@@ -1,0 +1,19 @@
+---
+# This playbook deliberately stops after control-plane formation. The existing
+# deploy_kubernetes playbook remains the GCP application-platform workflow.
+- name: Configure subnet routers before joining cross-cloud K3s nodes
+  hosts: bastion
+  become: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.tailscale_subnet_router
+      tailscale_advertise_route: "{{ oilscope_vpc_cidr }}"
+
+- name: Form the three-cloud K3s control plane
+  hosts: k3s_server
+  serial: 1
+  become: true
+  roles:
+    - role: oilscope.platform.host_baseline
+    - role: oilscope.platform.k3s_registry_auth
+    - role: oilscope.platform.k3s_server

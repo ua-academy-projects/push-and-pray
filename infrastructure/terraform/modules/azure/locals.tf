@@ -48,7 +48,8 @@ locals {
     if vm.role != "bastion"
   }
 
-  bastion_vm = local.config.vms.bastion
+  network_config = local.config.network[local.cloud_key]
+  bastion_vm     = one([for vm in values(local.resolved_vms) : vm if vm.role == "bastion"])
 
   ui_vm = try(one([
     for vm in values(local.resolved_vms) : vm

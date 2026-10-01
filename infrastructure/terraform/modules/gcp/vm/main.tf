@@ -25,6 +25,7 @@ resource "google_compute_instance" "workload" {
   machine_type              = each.value.instance_type
   zone                      = each.value.location.zone
   allow_stopping_for_update = true
+  can_ip_forward            = each.value.role == "bastion"
 
   # Unlike ordinary metadata, changing this startup script replaces the VM.
   # That prevents a firewall/sshd port mismatch after changing ssh_port.

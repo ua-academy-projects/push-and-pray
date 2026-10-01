@@ -36,10 +36,9 @@ for compatibility, but it is now multi-cloud. It performs these steps:
    `infrastructure` group. This group can overlap a role group; in the Azure
    development configuration the `fetcher` host belongs to both.
 
-For example, with `default_cloud: gcp` and `vms.bastion.cloud: aws`, the GCP
-delegate queries the zones used by the workload VMs and the AWS delegate
-queries the regions used by the bastion. A configuration containing only AWS
-VMs never calls the GCP delegate.
+For the multi-cloud K3s topology, every cloud has one `role: bastion`. Each
+workload uses the bastion whose `oilscope_cloud` value matches its own, so
+Ansible does not attempt an SSH jump through a different cloud.
 
 ## Controller setup
 
@@ -127,8 +126,8 @@ Both providers expose the same normalized variables:
 - `oilscope_role`
 - `oilscope_cloud`
 
-The inventory plugin returns the complete SSH connection data. The bastion uses
-its public address and `vms.bastion.ssh_port`; workloads use their private
+The inventory plugin returns the complete SSH connection data. Each bastion uses
+its public address and its own `ssh_port`; workloads use their private
 addresses on port 22 through a generated SSH `ProxyCommand`. It also reads
 `OILSCOPE_SSH_USER`, `OILSCOPE_SSH_KEY`, and, only during bootstrap,
 `OILSCOPE_BASTION_CONNECT_PORT`. Therefore no `group_vars` files are needed to
@@ -153,7 +152,7 @@ cloud resources rather than the desired JSON entries.
 
 ## Bastion bootstrap
 
-A new bastion configures `sshd` for `vms.bastion.ssh_port` through its Terraform
+A new bastion configures `sshd` for its configured `ssh_port` through its Terraform
 startup configuration. Terraform opens only that port to
 `vms.bastion.allowed_cidrs`; port 22 is not publicly reachable. Connect using
 the configured port after `terraform apply`.

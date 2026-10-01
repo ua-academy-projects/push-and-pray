@@ -15,13 +15,99 @@
             inherit system;
             config.allowUnfreePredicate = pkg:
               builtins.elem (nixpkgs.lib.getName pkg) [ "terraform" ];
+            overlays = [
+              (final: prev: {
+                python3 = prev.python3.override {
+                  packageOverrides = pyFinal: pyPrev: {
+                    # azure.azcollection 3.21 imports the legacy
+                    # ``activestamp`` module, removed by SDK 11.x.
+                    "azure-mgmt-recoveryservicesbackup" = pyPrev."azure-mgmt-recoveryservicesbackup".overridePythonAttrs (old: {
+                      version = "9.1.0";
+                      pyproject = null;
+                      format = "setuptools";
+                      src = prev.fetchurl {
+                        url = "https://files.pythonhosted.org/packages/d1/10/e3d49f12842a84de410f8ed9831d6dcf6ee04e993f79fe4eb33adf1a9265/azure-mgmt-recoveryservicesbackup-9.1.0.tar.gz";
+                        hash = "sha256-Hp/UBsDJ7iYn9aNx8BL4dzQvf8bzOyVk/NFNbwZjzQ8=";
+                      };
+                    });
+                    "azure-mgmt-resourcehealth" = pyPrev.buildPythonPackage {
+                      pname = "azure-mgmt-resourcehealth";
+                      version = "1.0.0b6";
+                      pyproject = null;
+                      format = "setuptools";
+                      src = prev.fetchurl {
+                        url = "https://files.pythonhosted.org/packages/2f/bc/512a48904416d0a142ab147f029d3b185730796bbbd4bddfc3f7649aa8b5/azure_mgmt_resourcehealth-1.0.0b6.tar.gz";
+                        hash = "sha256-ApGd4cj5kmAI3tO/h9RBw6HNhornRdpUMcQD01Pgrm4=";
+                      };
+                      dependencies = with pyFinal; [
+                        azure-common
+                        azure-mgmt-core
+                        isodate
+                        typing-extensions
+                      ];
+                      doCheck = false;
+                    };
+                  };
+                };
+              })
+            ];
           };
+          ansibleWithCloudSdk = pkgs.python3.withPackages (ps: with ps; [
+            ansible
+            boto3
+            botocore
+            google-auth
+            requests
+            azure-identity
+            azure-mgmt-authorization
+            azure-mgmt-automation
+            azure-mgmt-batch
+            azure-mgmt-cdn
+            azure-mgmt-cognitiveservices
+            azure-mgmt-compute
+            azure-mgmt-containerinstance
+            azure-mgmt-containerregistry
+            azure-mgmt-containerservice
+            azure-mgmt-core
+            azure-mgmt-datafactory
+            azure-mgmt-databricks
+            azure-mgmt-dns
+            azure-mgmt-eventhub
+            azure-mgmt-hybridcompute
+            azure-mgmt-iothub
+            azure-mgmt-loganalytics
+            azure-mgmt-managementgroups
+            azure-mgmt-marketplaceordering
+            azure-mgmt-monitor
+            azure-mgmt-mysqlflexibleservers
+            azure-mgmt-network
+            azure-mgmt-notificationhubs
+            azure-mgmt-postgresqlflexibleservers
+            azure-mgmt-privatedns
+            azure-mgmt-rdbms
+            azure-mgmt-recoveryservicesbackup
+            azure-mgmt-resource
+            ps."azure-mgmt-resourcehealth"
+            azure-mgmt-search
+            azure-mgmt-servicebus
+            azure-mgmt-sql
+            azure-mgmt-storage
+            azure-mgmt-trafficmanager
+            azure-mgmt-web
+            azure-storage-blob
+            azure-storage-file-share
+            microsoft-kiota-authentication-azure
+            msgraph-core
+            msgraph-sdk
+            msrest
+            msrestazure
+          ]);
         in
         {
           default = assert nixpkgs.lib.hasPrefix "1.16." pkgs.terraform.version;
             pkgs.mkShell {
               packages = with pkgs; [
-                ansible
+                ansibleWithCloudSdk
                 ansible-lint
                 awscli2
                 azure-cli
@@ -32,13 +118,6 @@
             kubectl
             kubernetes-helm
             openssl
-                python3Packages.boto3
-                python3Packages.botocore
-                # Required by azure.azcollection.azure_rm when auth_source is "cli".
-                python3Packages.azure-identity
-                python3Packages.azure-mgmt-network
-                python3Packages.google-auth
-                python3Packages.requests
                 python3Packages.virtualenv
                 shellcheck
                 terraform
