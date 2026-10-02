@@ -1,5 +1,22 @@
 # Monitoring and budgets
 
+> **Partly superseded on AWS.** The per-VM agent and collector model below still
+> describes GCP, Azure and the Compose path. On the k3s AWS deployment:
+>
+> - There is no bastion to exclude, and no `ui` role — `logs_enabled` no longer
+>   depends on one.
+> - Cluster health comes from a CronJob publishing `NodesNotReady`,
+>   `PodsNotReady`, `JobsFailed` and `CertificatesNotReady` to a
+>   `<name_prefix>-<environment>/Cluster` namespace. See
+>   [k3s-deployment.md](k3s-deployment.md).
+> - **`collect.py` and the role-keyed `monitoring-metrics.json` do not work
+>   under k3s.** The collector finds containers with
+>   `docker ps --filter label=com.docker.compose.project=…`, and there is no
+>   Docker on a k3s node; the catalog filters metrics by VM roles that no longer
+>   exist. Both are inert only because `application_metrics_enabled` defaults
+>   false. **Enabling it yields zero alarms and no error.**
+> - PVC capacity is not monitored at all.
+
 Terraform defines the cloud resources; Ansible installs the agents and a small
 Python collector on workload VMs. **Bastion is excluded** from dashboards,
 alarms, agent publisher permissions, application collection and EC2 detailed

@@ -1,0 +1,347 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy the platform and application releases
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    helm_versions_path: "{{ playbook_dir }}/../../../../helm/versions.yml"
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Load the pinned chart and image versions
+      ansible.builtin.include_vars:
+        file: "{{ helm_versions_path }}"
+        name: helm_versions
+
+    - name: Resolve the kubeconfig written by the bootstrap
+      ansible.builtin.set_fact:
+        k3s_kubeconfig: >-
+          {{ lookup('ansible.builtin.env', 'HOME') }}/.kube/{{
+          k3s_project.name_prefix }}-{{ k3s_project.environment }}.yaml
+
+    - name: Require the kubeconfig to exist
+      ansible.builtin.stat:
+        path: "{{ k3s_kubeconfig }}"
+      register: k3s_kubeconfig_state
+      failed_when: not k3s_kubeconfig_state.stat.exists
+
+    - name: Report the cluster this run will change
+      ansible.builtin.debug:
+        msg: >-
+          Using {{ k3s_kubeconfig }} against
+          {{ k3s_project.kubernetes.api_endpoint }}, namespace
+          {{ k3s_project.kubernetes.namespace }}.
+
+    - name: Install the EBS CSI driver and the default storage class
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: aws-ebs-csi-driver
+        chart_repo_url: "{{ helm_versions.upstream.storage.repo }}"
+        chart_ref: "{{ helm_versions.upstream.storage.chart }}"
+        chart_version: "{{ helm_versions.upstream.storage.chart_version }}"
+        release_namespace: kube-system
+        values_files:
+          - "{{ playbook_dir }}/../../../../helm/values/aws-ebs-csi-driver.yaml"
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Confirm exactly one default storage class
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+      register: k3s_storage_classes
+
+    - name: Report the storage classes the cluster offers
+      ansible.builtin.debug:
+        msg: >-
+          {{ k3s_storage_classes.resources
+             | map(attribute='metadata.name') | list }}, default:
+          {{ k3s_storage_classes.resources
+             | selectattr('metadata.annotations', 'defined')
+             | selectattr('metadata.annotations["storageclass.kubernetes.io/is-default-class"]',
+                          'defined')
+             | map(attribute='metadata.name') | list }}
+
+    - name: Install Traefik as a host-port DaemonSet
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: traefik
+        chart_repo_url: "{{ helm_versions.upstream.ingress.repo }}"
+        chart_ref: "{{ helm_versions.upstream.ingress.chart }}"
+        chart_version: "{{ helm_versions.upstream.ingress.chart_version }}"
+        release_namespace: kube-system
+        values_files:
+          - "{{ playbook_dir }}/../../../../helm/values/traefik.yaml"
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Confirm Traefik is running on every node
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: apps/v1
+        kind: DaemonSet
+        namespace: kube-system
+        name: traefik
+      register: k3s_traefik_daemonset
+
+    - name: Report Traefik coverage across the nodes
+      ansible.builtin.debug:
+        msg: >-
+          Traefik ready on
+          {{ k3s_traefik_daemonset.resources[0].status.numberReady }} of
+          {{ k3s_traefik_daemonset.resources[0].status.desiredNumberScheduled }}
+          nodes; DNS points only at
+          {{ k3s_project.kubernetes.entry_node }}.
+
+    - name: Mirror the cloud-held secrets into the application namespace
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_secrets
+      vars:
+        k3s_secrets_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_secrets_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        k3s_secrets_prefix: "{{ k3s_project.name_prefix }}"
+        k3s_secrets_mappings: "{{ k3s_project.secret_mappings }}"
+        k3s_secrets_region: >-
+          {{ k3s_project.region_map[k3s_project.region].aws.region }}
+
+    - name: Refuse the self-hosted database branch, which is not implemented
+      ansible.builtin.fail:
+        msg: >-
+          managed_database is false, but no in-cluster PostgreSQL chart exists.
+          Terraform would skip RDS and this playbook would compose a DATABASE_URL
+          pointing at a host that never gets created. Set managed_database to
+          true, or implement the branch first - see step 27 in
+          docs/k3s-implementation-steps.md.
+      when: not (k3s_project.managed_database | bool)
+
+    - name: Read what Terraform published
+      ansible.builtin.set_fact:
+        k3s_outputs: >-
+          {{ lookup('ansible.builtin.file', terraform_outputs_path) | from_json }}
+
+    - name: Resolve the registry host every image reference shares
+      ansible.builtin.set_fact:
+        k3s_registry_host: >-
+          {{ (k3s_outputs.registry.value.values() | list | first).url.split('/')[0] }}
+
+    - name: Read the managed database connection Terraform published
+      ansible.builtin.set_fact:
+        k3s_database: "{{ k3s_outputs.aws_database_connection.value }}"
+      when: k3s_project.managed_database | bool
+
+    - name: Fetch the managed database's CA bundle
+      ansible.builtin.uri:
+        url: "{{ k3s_database.ca_bundle_url }}"
+        return_content: true
+      register: k3s_database_ca
+      when: k3s_project.managed_database | bool
+
+    - name: Publish it where every database client can mount it
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ k3s_project.name_prefix }}-database-ca"
+            namespace: "{{ k3s_project.kubernetes.namespace }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ k3s_project.name_prefix }}"
+              app.kubernetes.io/component: database-ca
+          data:
+            ca.crt: "{{ k3s_database_ca.content }}"
+      when: k3s_project.managed_database | bool
+
+    - name: Read the database administrator credential with the operator's identity
+      ansible.builtin.set_fact:
+        k3s_database_admin: >-
+          {{ lookup('amazon.aws.secretsmanager_secret',
+                    k3s_database.admin_secret_arn,
+                    region=k3s_project.region_map[k3s_project.region].aws.region)
+             | from_json }}
+      when: k3s_project.managed_database | bool
+      no_log: true
+
+    - name: Give the migration Job its own privileged credential
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: Opaque
+          metadata:
+            name: "{{ k3s_project.name_prefix }}-migration"
+            namespace: "{{ k3s_project.kubernetes.namespace }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ k3s_project.name_prefix }}"
+              app.kubernetes.io/component: migration
+          stringData:
+            PGUSER: "{{ k3s_database_admin.username }}"
+            PGPASSWORD: "{{ k3s_database_admin.password }}"
+            runtime-history: "{{ k3s_secrets_resolved.history.POSTGRES_PASSWORD }}"
+            runtime-fetcher: "{{ k3s_secrets_resolved.fetcher.POSTGRES_PASSWORD }}"
+      when: k3s_project.managed_database | bool
+      no_log: true
+
+    - name: Mint a registry pull token with the operator's identity
+      ansible.builtin.command:
+        argv:
+          - aws
+          - ecr
+          - get-login-password
+          - --region
+          - "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+      delegate_to: localhost
+      register: k3s_registry_token
+      changed_when: false
+      no_log: true
+
+    - name: Seed the registry pull secret the CronJob then keeps fresh
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: kubernetes.io/dockerconfigjson
+          metadata:
+            name: "{{ k3s_project.name_prefix }}-registry"
+            namespace: "{{ k3s_project.kubernetes.namespace }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ k3s_project.name_prefix }}"
+              app.kubernetes.io/component: registry-credentials
+          stringData:
+            .dockerconfigjson: >-
+              {{ {'auths': {k3s_registry_host:
+                   {'username': 'AWS',
+                    'password': k3s_registry_token.stdout,
+                    'auth': ('AWS:' ~ k3s_registry_token.stdout) | b64encode}}}
+                 | to_json }}
+      no_log: true
+
+    - name: Compose the connection URLs the services actually read
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_urls
+      vars:
+        k3s_urls_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_urls_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        k3s_urls_prefix: "{{ k3s_project.name_prefix }}"
+        k3s_urls_resolved: "{{ k3s_secrets_resolved }}"
+        k3s_urls_database: "{{ k3s_database | default({}) }}"
+        k3s_urls_rabbitmq: "{{ k3s_project.rabbitmq }}"
+        k3s_urls_redis: "{{ k3s_project.redis }}"
+
+    - name: Install cert-manager and create the issuers
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_certificates
+      vars:
+        k3s_certificates_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_certificates_chart_repo: "{{ helm_versions.upstream.certificates.repo }}"
+        k3s_certificates_chart_version: "{{ helm_versions.upstream.certificates.chart_version }}"
+        k3s_certificates_values_file: >-
+          {{ playbook_dir }}/../../../../helm/values/cert-manager.yaml
+        k3s_certificates_acme_email: "{{ k3s_project.ingress.acme_email }}"
+        k3s_certificates_ingress_class: oilscope
+        k3s_certificates_days: "{{ k3s_project.rabbitmq.certificate_days }}"
+
+    - name: Install the broker
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: "{{ k3s_project.name_prefix }}-rabbitmq"
+        chart_ref: "{{ playbook_dir }}/../../../../helm/charts/oilscope-rabbitmq"
+        release_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        release_values:
+          image: "{{ k3s_project.rabbitmq.image }}"
+          username: "{{ k3s_project.rabbitmq.username }}"
+          vhost: "{{ k3s_project.rabbitmq.vhost }}"
+          port: "{{ k3s_project.rabbitmq.port }}"
+          exchange: "{{ k3s_project.rabbitmq.exchange }}"
+          queue: "{{ k3s_project.rabbitmq.queue }}"
+          routingKey: "{{ k3s_project.rabbitmq.routing_key }}"
+          retryDelayMs: "{{ k3s_project.rabbitmq.retry_delay_ms }}"
+          queueMaxBytes: "{{ k3s_project.rabbitmq.queue_max_bytes }}"
+          memoryMb: "{{ k3s_project.rabbitmq.memory_mb }}"
+          certificateDays: "{{ k3s_project.rabbitmq.certificate_days }}"
+          passwordSecret: "{{ k3s_project.name_prefix }}-rabbitmq"
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Install the session store
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: "{{ k3s_project.name_prefix }}-redis"
+        chart_ref: "{{ playbook_dir }}/../../../../helm/charts/oilscope-redis"
+        release_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        release_values:
+          image: "{{ k3s_project.redis.image }}"
+          port: 6379
+          memoryMb: "{{ k3s_project.redis.memory_mb }}"
+          maxmemoryMb: "{{ k3s_project.redis.maxmemory_mb }}"
+          passwordSecret: "{{ k3s_project.name_prefix }}-redis"
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Deploy the application
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: "{{ k3s_project.name_prefix }}"
+        chart_ref: "{{ playbook_dir }}/../../../../helm/charts/oilscope"
+        release_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        release_values:
+          images:
+            ui: "{{ k3s_outputs.registry.value.ui.image }}"
+            history: "{{ k3s_outputs.registry.value.history.image }}"
+            fetcher: "{{ k3s_outputs.registry.value.fetcher.image }}"
+            database: "{{ k3s_outputs.registry.value.database.image }}"
+          database:
+            host: "{{ k3s_database.host }}"
+            port: "{{ k3s_database.port }}"
+            name: "{{ k3s_database.database }}"
+            sslmode: "{{ k3s_database.sslmode }}"
+            caConfigMap: "{{ k3s_project.name_prefix }}-database-ca"
+          ingress:
+            host: "{{ k3s_project.ingress.hostname }}"
+          broker:
+            service: "{{ k3s_project.name_prefix }}-rabbitmq"
+            tlsSecret: "{{ k3s_project.name_prefix }}-rabbitmq-tls"
+            exchange: "{{ k3s_project.rabbitmq.exchange }}"
+            queue: "{{ k3s_project.rabbitmq.queue }}"
+            routingKey: "{{ k3s_project.rabbitmq.routing_key }}"
+            timeoutSeconds: "{{ k3s_project.rabbitmq.timeout_seconds }}"
+            reconnectSeconds: "{{ k3s_project.rabbitmq.reconnect_seconds }}"
+            maxAttempts: "{{ k3s_project.rabbitmq.max_attempts }}"
+            outboxPollSeconds: "{{ k3s_project.rabbitmq.outbox_poll_seconds }}"
+            outboxBatchSize: "{{ k3s_project.rabbitmq.outbox_batch_size }}"
+          cache:
+            tlsSecret: "{{ k3s_project.name_prefix }}-redis-tls"
+            keyPrefix: "{{ k3s_project.redis.key_prefix }}"
+            sessionTtlSeconds: "{{ k3s_project.redis.session_ttl_seconds }}"
+          migration:
+            secret: "{{ k3s_project.name_prefix }}-migration"
+          registryCredentials:
+            secret: "{{ k3s_project.name_prefix }}-registry"
+            registry: "{{ k3s_registry_host }}"
+            region: "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+          clusterMetrics:
+            region: "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+            metricNamespace: >-
+              {{ k3s_project.name_prefix }}-{{ k3s_project.environment }}/Cluster
+        atomic: true
+        wait: true
+        wait_timeout: 15m

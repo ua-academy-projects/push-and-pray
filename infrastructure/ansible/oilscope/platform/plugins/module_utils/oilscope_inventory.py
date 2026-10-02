@@ -322,3 +322,40 @@ def apply_connection_vars(inventory, config, bastion_role, cloud_name):
             "ansible_ssh_common_args",
             _proxy_command_args(user, key_file, bastion_address, hop_port),
         )
+
+
+def apply_direct_connection_vars(inventory, config, cloud_name):
+    """Give every discovered host the SSH settings for a direct connection.
+
+    The k3s topology has no bastion: every node carries a public address and
+    is contacted on it, so there is no hop to build a ProxyCommand through and
+    no single host whose absence makes the others unreachable.
+
+    OILSCOPE_SSH_KEY is required rather than defaulted. The shared fallback is
+    a gcloud-managed key that no AWS instance ever carries, so defaulting to it
+    turns a missing setting into a permission denied against three hosts.
+    """
+    user = ssh_user()
+    key_file = os.environ.get("OILSCOPE_SSH_KEY")
+
+    if not key_file:
+        raise AnsibleParserError(
+            f"OILSCOPE_SSH_KEY must point at the private key for the {cloud_name} "
+            "nodes. Each node is reached directly on its public address, and no "
+            "key is provisioned on your behalf on this cloud."
+        )
+
+    for host_name in list(inventory.hosts):
+        address = inventory.get_host(host_name).get_vars().get("ansible_host")
+
+        if not address:
+            raise AnsibleParserError(
+                f"discovered {cloud_name} host {host_name!r} has no public address. "
+                "Every node needs assign_public_ip true: there is no bastion to "
+                "reach it through, and kubernetes.ssh_address_mode is 'public'."
+            )
+
+        inventory.set_variable(host_name, "ansible_user", user)
+        inventory.set_variable(host_name, "ansible_ssh_private_key_file", key_file)
+        inventory.set_variable(host_name, "oilscope_ssh_base_args", SSH_BASE_ARGS)
+        inventory.set_variable(host_name, "ansible_ssh_common_args", SSH_BASE_ARGS)

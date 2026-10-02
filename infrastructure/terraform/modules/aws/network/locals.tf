@@ -1,19 +1,4 @@
 locals {
-  enabled = anytrue([
-    for vm in values(var.config.vms) : try(vm.cloud, var.config.default_cloud) == "aws"
-  ])
-
-  resource_prefix   = "${var.config.name_prefix}-${var.config.environment}"
-  availability_zone = lookup(var.config.region_map[var.config.region]["aws"], "availability_zone")
-
-
-  ui_public_ports = [
-    for port in var.config.network.ui_public_ports : tostring(port)
-  ]
-
-  rds_enabled = (
-    local.enabled &&
-    var.config.default_cloud == "aws" &&
-    var.config.managed_database
-  )
+  enabled     = var.config.default_cloud == "aws"
+  rds_enabled = local.enabled && var.config.managed_database
 }

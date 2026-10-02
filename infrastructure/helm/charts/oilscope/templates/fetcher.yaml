@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-fetcher
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "fetcher") | indent 4 }}
+spec:
+  replicas: {{ .Values.services.fetcher.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+{{ include "oilscope.selector" (dict "root" . "component" "fetcher") | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ include "oilscope.selector" (dict "root" . "component" "fetcher") | indent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 30
+{{- if .Values.registryCredentials.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.registryCredentials.secret }}
+{{- end }}
+      containers:
+        - name: fetcher
+          image: {{ .Values.images.fetcher }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.services.fetcher.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-fetcher
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TZ
+              value: UTC
+            - name: DATA_PROVIDER
+              value: {{ .Values.services.fetcher.dataProvider | quote }}
+            - name: FETCH_CRON_HOURS
+              value: {{ .Values.services.fetcher.cronHours | quote }}
+            - name: FETCH_TIMEZONE
+              value: UTC
+            - name: FETCH_ON_STARTUP
+              value: {{ .Values.services.fetcher.fetchOnStartup | quote }}
+            - name: REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.services.fetcher.requestTimeoutSeconds | quote }}
+            - name: LISTEN_ADDRESS
+              value: {{ printf "0.0.0.0:%v" .Values.services.fetcher.port | quote }}
+{{ include "oilscope.brokerEnv" . | indent 12 }}
+          resources:
+{{ toYaml .Values.services.fetcher.resources | indent 12 }}
+          startupProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: broker-ca
+              mountPath: {{ .Values.broker.caPath }}
+              readOnly: true
+            - name: database-ca
+              mountPath: {{ .Values.database.caPath }}
+              readOnly: true
+      volumes:
+        - name: broker-ca
+          secret:
+            secretName: {{ .Values.broker.tlsSecret }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: database-ca
+          configMap:
+            name: {{ .Values.database.caConfigMap }}
+            items:
+              - key: ca.crt
+                path: ca.crt

@@ -5,7 +5,8 @@ provider "google" {
 }
 
 provider "aws" {
-  region = local.config.region_map[local.config.region]["aws"].region
+  region  = local.config.region_map[local.config.region]["aws"].region
+  profile = "oilscope"
 }
 
 # Credentials come from the environment or `az login`, never from the project

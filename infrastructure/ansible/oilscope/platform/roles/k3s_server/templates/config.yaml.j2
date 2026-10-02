@@ -1,0 +1,16 @@
+node-ip: {{ k3s_server_node_ip }}
+advertise-address: {{ k3s_server_node_ip }}
+cluster-cidr: {{ k3s_server_pod_cidr }}
+service-cidr: {{ k3s_server_service_cidr }}
+secrets-encryption: true
+write-kubeconfig-mode: "0600"
+disable:
+  - traefik
+  - servicelb
+  - local-storage
+tls-san:
+{% for san in k3s_server_tls_sans %}
+  - {{ san }}
+{% endfor %}
+node-label:
+  - oilscope.io/entry-node={{ 'true' if k3s_server_is_entry_node else 'false' }}

@@ -5,6 +5,13 @@
 #
 #   ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
 collections:
+  # Provides helm, helm_info and k8s, used by the localhost plays in
+  # playbooks/deploy_k3s.yml. Ships with recent ansible releases, declared here
+  # so the floor is stated rather than inherited from whatever ansible is
+  # installed. >=6.0.0 for the helm module's kubeconfig handling.
+  - name: kubernetes.core
+    version: ">=6.0.0"
+
   # Provides the gcp_compute inventory plugin used by inventory/oilscope.yml.
   - name: google.cloud
     version: ">=1.14.0"

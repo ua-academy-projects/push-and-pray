@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+image: rabbitmq:4.2.9-management
+
+username: oilscope
+vhost: oilscope
+port: 5671
+
+exchange: prices
+queue: price_observations
+routingKey: observations
+retryDelayMs: 30000
+queueMaxBytes: 134217728
+
+memoryMb: 768
+certificateDays: 365
+
+passwordSecret: oilscope-rabbitmq
+passwordKey: RABBITMQ_PASSWORD
+
+issuer: oilscope-internal-ca
+
+storage:
+  className: oilscope-gp3
+  size: 8Gi

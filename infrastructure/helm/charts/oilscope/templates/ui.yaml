@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "ui") | indent 4 }}
+spec:
+  replicas: {{ .Values.services.ui.replicas }}
+  selector:
+    matchLabels:
+{{ include "oilscope.selector" (dict "root" . "component" "ui") | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ include "oilscope.selector" (dict "root" . "component" "ui") | indent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 30
+{{- if .Values.registryCredentials.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.registryCredentials.secret }}
+{{- end }}
+      topologySpreadConstraints:
+{{ include "oilscope.spread" (dict "root" . "component" "ui") | indent 8 }}
+      containers:
+        - name: ui
+          image: {{ .Values.images.ui }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.services.ui.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-ui
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TZ
+              value: UTC
+            - name: HISTORY_SERVICE_URL
+              value: {{ printf "http://%s-history:%v" .Release.Name .Values.services.history.port | quote }}
+            - name: SESSION_COOKIE_SECURE
+              value: "true"
+            - name: SESSION_TTL_SECONDS
+              value: {{ .Values.cache.sessionTtlSeconds | quote }}
+            - name: REDIS_KEY_PREFIX
+              value: {{ .Values.cache.keyPrefix | quote }}
+          resources:
+{{ toYaml .Values.services.ui.resources | indent 12 }}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: cache-ca
+              mountPath: {{ .Values.cache.caPath }}
+              readOnly: true
+      volumes:
+        - name: cache-ca
+          secret:
+            secretName: {{ .Values.cache.tlsSecret }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "ui") | indent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+{{ include "oilscope.selector" (dict "root" . "component" "ui") | indent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.services.ui.port }}
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "ui") | indent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecret }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-ui
+                port:
+                  name: http

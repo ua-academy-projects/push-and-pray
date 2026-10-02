@@ -10,6 +10,7 @@ ignore: |
   .venv/
   node_modules/
   services/ui/frontend/node_modules/
+  infrastructure/helm/charts/*/templates/
 
 rules:
   # Compose files legitimately contain long connection strings and healthcheck

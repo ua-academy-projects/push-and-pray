@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: {{ k3s_certificates_public_issuer }}
+    spec:
+      acme:
+        server: https://acme-v02.api.letsencrypt.org/directory
+        email: {{ k3s_certificates_acme_email }}
+        privateKeySecretRef:
+          name: {{ k3s_certificates_account_secret }}
+        solvers:
+          - http01:
+              ingress:
+                ingressClassName: {{ k3s_certificates_ingress_class }}
+
+  - apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: {{ k3s_certificates_selfsigned_issuer }}
+    spec:
+      selfSigned: {}
+
+  - apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: {{ k3s_certificates_internal_ca_secret }}
+      namespace: {{ k3s_certificates_namespace }}
+    spec:
+      isCA: true
+      commonName: {{ k3s_certificates_internal_issuer }}
+      secretName: {{ k3s_certificates_internal_ca_secret }}
+      duration: {{ k3s_certificates_days | int * k3s_certificates_internal_ca_multiplier * 24 }}h
+      renewBefore: {{ k3s_certificates_days | int * 24 }}h
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: {{ k3s_certificates_selfsigned_issuer }}
+        kind: ClusterIssuer
+        group: cert-manager.io
+
+  - apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: {{ k3s_certificates_internal_issuer }}
+    spec:
+      ca:
+        secretName: {{ k3s_certificates_internal_ca_secret }}

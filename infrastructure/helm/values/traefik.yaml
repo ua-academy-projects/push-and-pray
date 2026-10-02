@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+deployment:
+  kind: DaemonSet
+
+service:
+  enabled: false
+
+ingressClass:
+  enabled: true
+  isDefaultClass: false
+  name: oilscope
+
+ports:
+  traefik:
+    expose:
+      default: false
+  web:
+    port: 8000
+    hostPort: 80
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    port: 8443
+    hostPort: 443
+    http:
+      tls:
+        enabled: true
+
+providers:
+  kubernetesCRD:
+    enabled: true
+  kubernetesIngress:
+    enabled: true
+    publishedService:
+      enabled: false
+  kubernetesGateway:
+    enabled: false
+
+log:
+  level: INFO
+
+accessLog:
+  enabled: true
+  format: json
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 96Mi
+  limits:
+    memory: 192Mi

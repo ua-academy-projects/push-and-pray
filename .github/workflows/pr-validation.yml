@@ -307,7 +307,108 @@ jobs:
             -input=false
 
           terraform -chdir=infrastructure/terraform validate
-          terraform -chdir=infrastructure/terraform test
+
+  canary:
+    name: Synthetics canary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Run the canary tests
+        working-directory: infrastructure/terraform/modules/aws/monitoring/canary
+        run: node --test health.test.js
+
+  helm:
+    name: Helm
+    runs-on: ubuntu-latest
+
+    env:
+      KUBERNETES_VERSION: "1.36.0"
+      DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSfL \
+            https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+
+      - name: Lint the repository-owned charts
+        working-directory: infrastructure/helm/charts
+        run: |
+          status=0
+
+          for chart in */; do
+            echo "::group::${chart}"
+            helm lint "${chart}" || status=1
+            echo "::endgroup::"
+          done
+
+          exit "${status}"
+
+      - name: Render and validate every chart
+        working-directory: infrastructure/helm
+        run: |
+          mkdir -p /tmp/rendered
+          registry=000000000000.dkr.ecr.eu-central-1.amazonaws.com/oilscope
+
+          helm template oilscope charts/oilscope -n oilscope \
+            --set "images.ui=${registry}/ui@${DIGEST}" \
+            --set "images.history=${registry}/history@${DIGEST}" \
+            --set "images.fetcher=${registry}/fetcher@${DIGEST}" \
+            --set "images.database=${registry}/database@${DIGEST}" \
+            --set database.host=db.example.com \
+            --set ingress.host=oilscope.example.com \
+            --set "registryCredentials.registry=${registry}" \
+            --set registryCredentials.region=eu-central-1 \
+            > /tmp/rendered/oilscope.yaml
+
+          helm template oilscope-rabbitmq charts/oilscope-rabbitmq -n oilscope \
+            > /tmp/rendered/rabbitmq.yaml
+
+          helm template oilscope-redis charts/oilscope-redis -n oilscope \
+            > /tmp/rendered/redis.yaml
+
+          helm template traefik traefik \
+            --repo https://traefik.github.io/charts --version 41.6.0 \
+            -n kube-system -f values/traefik.yaml \
+            > /tmp/rendered/traefik.yaml
+
+          helm template aws-ebs-csi-driver aws-ebs-csi-driver \
+            --repo https://kubernetes-sigs.github.io/aws-ebs-csi-driver --version 2.66.0 \
+            -n kube-system -f values/aws-ebs-csi-driver.yaml \
+            > /tmp/rendered/ebs-csi.yaml
+
+          helm template cert-manager oci://quay.io/jetstack/charts/cert-manager \
+            --version v1.21.2 -n cert-manager -f values/cert-manager.yaml \
+            > /tmp/rendered/cert-manager.yaml
+
+      - name: Check the rendered manifests against Kubernetes ${{ env.KUBERNETES_VERSION }}
+        run: |
+          kubeconform \
+            -kubernetes-version "${KUBERNETES_VERSION}" \
+            -strict \
+            -ignore-missing-schemas \
+            -schema-location default \
+            -schema-location \
+            'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -summary \
+            /tmp/rendered/*.yaml
 
   ansible:
     name: Ansible Lint

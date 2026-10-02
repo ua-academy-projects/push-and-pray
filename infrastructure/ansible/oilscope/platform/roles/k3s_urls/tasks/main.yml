@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Build the per-workload connection URLs
+  ansible.builtin.set_fact:
+    k3s_urls_composed:
+      history:
+        DATABASE_URL: >-
+          postgresql+psycopg://{{ k3s_urls_database_user_prefix }}_history:{{
+          k3s_urls_resolved.history.POSTGRES_PASSWORD | urlencode | replace('/', '%2F')
+          }}@{{ k3s_urls_database.host }}:{{ k3s_urls_database.port }}/{{
+          k3s_urls_database.database }}?sslmode=verify-full&sslrootcert={{
+          k3s_urls_database_ca_path }}
+        RABBITMQ_URL: >-
+          amqps://{{ k3s_urls_rabbitmq.username }}:{{
+          k3s_urls_resolved.history.RABBITMQ_PASSWORD | urlencode | replace('/', '%2F')
+          }}@{{ k3s_urls_prefix }}-rabbitmq:{{ k3s_urls_rabbitmq.port }}/{{
+          k3s_urls_rabbitmq.vhost }}
+      fetcher:
+        DATABASE_URL: >-
+          postgres://{{ k3s_urls_database_user_prefix }}_fetcher:{{
+          k3s_urls_resolved.fetcher.POSTGRES_PASSWORD | urlencode | replace('/', '%2F')
+          }}@{{ k3s_urls_database.host }}:{{ k3s_urls_database.port }}/{{
+          k3s_urls_database.database }}?sslmode=verify-full&sslrootcert={{
+          k3s_urls_database_ca_path }}
+        RABBITMQ_URL: >-
+          amqps://{{ k3s_urls_rabbitmq.username }}:{{
+          k3s_urls_resolved.fetcher.RABBITMQ_PASSWORD | urlencode | replace('/', '%2F')
+          }}@{{ k3s_urls_prefix }}-rabbitmq:{{ k3s_urls_rabbitmq.port }}/{{
+          k3s_urls_rabbitmq.vhost }}
+      ui:
+        REDIS_URL: >-
+          rediss://:{{
+          k3s_urls_resolved.ui.REDIS_PASSWORD | urlencode | replace('/', '%2F')
+          }}@{{ k3s_urls_prefix }}-redis:6379/{{ k3s_urls_redis.database
+          }}?ssl_ca_certs={{ k3s_urls_cache_ca_path }}&ssl_cert_reqs=required
+  no_log: true
+
+- name: Add them to each workload's existing Secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_urls_kubeconfig }}"
+    state: patched
+    api_version: v1
+    kind: Secret
+    name: "{{ k3s_urls_prefix }}-{{ item.key }}"
+    namespace: "{{ k3s_urls_namespace }}"
+    definition:
+      stringData: "{{ item.value }}"
+  loop: "{{ k3s_urls_composed | dict2items }}"
+  loop_control:
+    label: "{{ k3s_urls_prefix }}-{{ item.key }}"
+  no_log: true
+
+- name: Report which URL keys each workload now carries
+  ansible.builtin.debug:
+    msg: >-
+      {{ k3s_urls_composed | dict2items
+         | map(attribute='key') | zip(k3s_urls_composed.values()
+         | map('list')) | list }}

@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+controller:
+  replicaCount: 1
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+node:
+  tolerateAllTaints: false
+
+storageClasses:
+  - name: oilscope-gp3
+    annotations:
+      storageclass.kubernetes.io/is-default-class: "true"
+    volumeBindingMode: WaitForFirstConsumer
+    reclaimPolicy: Retain
+    allowVolumeExpansion: true
+    parameters:
+      type: gp3
+      encrypted: "true"

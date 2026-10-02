@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Look for an existing etcd datastore
+  become: true
+  ansible.builtin.stat:
+    path: "{{ k3s_server_etcd_db_dir }}"
+  register: k3s_server_etcd_state
+
+- name: Write the server configuration
+  become: true
+  ansible.builtin.file:
+    path: "{{ k3s_server_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Render the server configuration
+  become: true
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_server_config_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  register: k3s_server_config
+
+- name: Fetch the pinned installer
+  become: true
+  ansible.builtin.get_url:
+    url: "{{ k3s_server_installer_url }}"
+    dest: /usr/local/share/k3s-install.sh
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Initialise the cluster on the first server
+  become: true
+  ansible.builtin.command:
+    cmd: /usr/local/share/k3s-install.sh
+    creates: "{{ k3s_server_binary_path }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_server_version }}"
+    INSTALL_K3S_EXEC: server --cluster-init
+  when:
+    - k3s_server_bootstrap_first
+    - not k3s_server_etcd_state.stat.exists
+
+- name: Join the cluster as an additional server
+  become: true
+  ansible.builtin.command:
+    cmd: /usr/local/share/k3s-install.sh
+    creates: "{{ k3s_server_binary_path }}"
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_server_version }}"
+    INSTALL_K3S_EXEC: server --server https://{{ k3s_server_bootstrap_address }}:6443
+    K3S_TOKEN: "{{ k3s_server_token }}"
+  no_log: true
+  when: not k3s_server_bootstrap_first
+
+- name: Restart k3s after a configuration change
+  become: true
+  ansible.builtin.systemd_service:
+    name: k3s
+    state: restarted
+  when:
+    - k3s_server_config is changed
+    - k3s_server_etcd_state.stat.exists
+
+- name: Enable k3s on boot
+  become: true
+  ansible.builtin.systemd_service:
+    name: k3s
+    enabled: true
+    state: started
+
+- name: Wait for the node to report ready
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      {{ k3s_server_binary_path }} kubectl wait --for=condition=Ready
+      node/{{ ansible_facts.hostname }} --timeout={{ k3s_server_ready_timeout }}s
+  changed_when: false
+
+- name: Wait for this server to appear as a healthy etcd member
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_server_binary_path }}"
+      - kubectl
+      - get
+      - node
+      - "{{ ansible_facts.hostname }}"
+      - -o
+      - jsonpath={.metadata.labels.node-role\.kubernetes\.io/etcd}
+  register: k3s_server_etcd_label
+  until: k3s_server_etcd_label.stdout == "true"
+  retries: "{{ (k3s_server_etcd_member_timeout | int / 10) | int }}"
+  delay: 10
+  changed_when: false
+
+- name: Label this server as a worker
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      {{ k3s_server_binary_path }} kubectl label node {{ ansible_facts.hostname }}
+      node-role.kubernetes.io/worker=true --overwrite
+  register: k3s_server_worker_label
+  changed_when: "'not labeled' not in k3s_server_worker_label.stdout"

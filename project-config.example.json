@@ -127,7 +127,6 @@
     }
   },
   "network": {
-    "management_subnet_cidr": "10.0.0.0/24",
     "workload_subnet_cidr": "10.0.1.0/24",
     "ui_public_ports": [
       80,
@@ -138,106 +137,103 @@
     "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
   },
   "registry": {
-    "repository": "ghcr.io/example-org/example-project",
-    "username": "example-operator",
-    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+    "repository_prefix": "oilscope",
+    "github_repository": "example-org/example-repo",
+    "publish_tag_prefix": "example-v",
+    "image_digests": {
+      "fetcher": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "history": "sha256:123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+      "ui": "sha256:23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01",
+      "database": "sha256:3456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012"
+    }
   },
   "service_ports": {
     "history_api": 8001,
     "postgresql": 5432
   },
   "vms": {
-    "bastion": {
-      "role": "bastion",
-      "size": "micro",
+    "k3s-1": {
+      "role": "kubernetes",
+      "size": "small",
       "image": "ubuntu-26.04",
       "disk_type": "balanced",
-      "disk_size_gb": 10,
-      "internal_ip": "10.0.0.10",
+      "disk_size_gb": 60,
+      "internal_ip": "10.0.1.21",
       "assign_public_ip": true,
       "network_tags": [
-        "bastion"
-      ],
-      "ssh_port": 8787,
-      "allowed_cidrs": [
-        "192.0.2.10/32"
-      ],
-      "secret_mappings": {}
+        "control-plane",
+        "worker"
+      ]
     },
-    "infra": {
-      "role": "database",
-      "size": "micro",
+    "k3s-2": {
+      "role": "kubernetes",
+      "size": "small",
       "image": "ubuntu-26.04",
       "disk_type": "balanced",
-      "disk_size_gb": 10,
-      "internal_ip": "10.0.1.10",
-      "assign_public_ip": false,
-      "network_tags": [
-        "infra"
-      ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token"
-      }
-    },
-    "history": {
-      "role": "history",
-      "size": "micro",
-      "image": "ubuntu-26.04",
-      "disk_type": "balanced",
-      "disk_size_gb": 10,
-      "internal_ip": "10.0.1.11",
-      "assign_public_ip": false,
-      "network_tags": [
-        "history"
-      ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "GHCR_TOKEN": "example-ghcr-token",
-        "RABBITMQ_PASSWORD": "oilscope-dev-rabbitmq-password"
-      }
-    },
-    "fetcher": {
-      "role": "fetcher",
-      "size": "micro",
-      "image": "ubuntu-26.04",
-      "disk_type": "balanced",
-      "disk_size_gb": 10,
-      "internal_ip": "10.0.1.12",
-      "assign_public_ip": false,
-      "network_tags": [
-        "fetcher"
-      ],
-      "secret_mappings": {
-        "POSTGRES_PASSWORD": "example-db-password",
-        "OILPRICEAPI_KEY": "example-api-key",
-        "GHCR_TOKEN": "example-ghcr-token",
-        "RABBITMQ_PASSWORD": "oilscope-dev-rabbitmq-password"
-      }
-    },
-    "ui": {
-      "role": "ui",
-      "size": "micro",
-      "image": "ubuntu-26.04",
-      "disk_type": "balanced",
-      "disk_size_gb": 10,
-      "internal_ip": "10.0.1.13",
+      "disk_size_gb": 60,
+      "internal_ip": "10.0.1.22",
       "assign_public_ip": true,
       "network_tags": [
-        "ui"
-      ],
-      "secret_mappings": {
-        "GHCR_TOKEN": "example-ghcr-token",
-        "REDIS_PASSWORD": "oilscope-dev-redis-password"
-      },
-      "public_endpoint": {
-        "hostname": "oilscope.example.com",
-        "acme_email": "example-operator@example.com"
-      }
+        "control-plane",
+        "worker"
+      ]
+    },
+    "k3s-3": {
+      "role": "kubernetes",
+      "size": "small",
+      "image": "ubuntu-26.04",
+      "disk_type": "balanced",
+      "disk_size_gb": 60,
+      "internal_ip": "10.0.1.23",
+      "assign_public_ip": true,
+      "network_tags": [
+        "control-plane",
+        "worker"
+      ]
     }
   },
+  "secret_mappings": {
+    "history": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "RABBITMQ_PASSWORD": "oilscope-dev-rabbitmq-password"
+    },
+    "fetcher": {
+      "POSTGRES_PASSWORD": "example-db-password",
+      "OILPRICEAPI_KEY": "example-api-key",
+      "RABBITMQ_PASSWORD": "oilscope-dev-rabbitmq-password"
+    },
+    "ui": {
+      "REDIS_PASSWORD": "oilscope-dev-redis-password"
+    },
+    "migration": {
+      "POSTGRES_PASSWORD": "example-db-password"
+    }
+  },
+  "kubernetes": {
+    "version": "v1.36.4+k3s1",
+    "entry_node": "k3s-1",
+    "ssh_address_mode": "public",
+    "admin_allowed_cidrs": [
+      "192.0.2.10/32"
+    ],
+    "api_endpoint": "api.oilscope.example.com",
+    "api_endpoint_mode": "node",
+    "pod_cidr": "10.42.0.0/16",
+    "service_cidr": "10.43.0.0/16",
+    "namespace": "oilscope",
+    "etcd": {
+      "snapshot_schedule_cron": "0 */6 * * *",
+      "snapshot_retention": 28,
+      "backup_destination": "cloud_object_storage"
+    }
+  },
+  "ingress": {
+    "endpoint_mode": "node",
+    "hostname": "oilscope.example.com",
+    "acme_email": "example-operator@example.com",
+    "challenge_type": "http01"
+  },
   "rabbitmq": {
-    "host_vm": "history",
     "image": "rabbitmq:4.2.9-management",
     "port": 5671,
     "username": "oilscope",
@@ -256,7 +252,6 @@
     "certificate_days": 365
   },
   "redis": {
-    "host_vm": "ui",
     "image": "redis:8.6.6",
     "database": 0,
     "key_prefix": "oilscope:session:",

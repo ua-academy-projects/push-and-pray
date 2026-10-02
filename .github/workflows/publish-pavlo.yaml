@@ -1,0 +1,78 @@
+name: Publish to Pavlo AWS
+
+on:
+  push:
+    tags:
+      - "pavlo-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-pavlo-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  AWS_ROLE: arn:aws:iam::441955873558:role/oilscope-prod-image-publisher
+  REPOSITORY_PREFIX: oilscope
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.service }} image
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        service:
+          - fetcher
+          - history
+          - ui
+          - database
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Assume the publisher role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=pavlo-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=pavlo-${{ matrix.service }}
+
+      - name: Report the digest to copy into project-config
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### ${{ matrix.service }}"
+            echo
+            echo '```json'
+            echo "\"${{ matrix.service }}\": \"${DIGEST}\""
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

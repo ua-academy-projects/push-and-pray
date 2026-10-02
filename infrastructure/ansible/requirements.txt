@@ -10,6 +10,13 @@
 google-auth>=2.0.0
 requests>=2.25.0
 
+# kubernetes.core's k8s modules talk to the API through this library. The helm
+# and helm_info modules shell out to the helm binary instead, so they need
+# helm on PATH rather than anything here - see docs/k3s-deployment.md for the
+# local tool versions this deployment was verified against.
+kubernetes>=31.0.0
+PyYAML>=6.0
+
 # The amazon.aws.aws_ec2 inventory plugin used by inventory/oilscope-aws.yml
 # talks to the EC2 API through these libraries, authenticating through the
 # standard boto3 credential chain (environment variables, a shared

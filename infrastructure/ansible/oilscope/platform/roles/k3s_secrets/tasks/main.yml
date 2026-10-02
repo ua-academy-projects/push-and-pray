@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Ensure the application namespace exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_secrets_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ k3s_secrets_namespace }}"
+
+- name: Read each workload's secret values with the operator's own identity
+  ansible.builtin.set_fact:
+    k3s_secrets_resolved: >-
+      {{ k3s_secrets_resolved | default({}) | combine({
+           item.0.key: (k3s_secrets_resolved | default({})).get(item.0.key, {})
+             | combine({
+                 item.1.key: lookup('amazon.aws.secretsmanager_secret',
+                                    item.1.value,
+                                    region=k3s_secrets_region)
+               })
+         }) }}
+  loop: "{{ k3s_secrets_mappings | dict2items | subelements('value') }}"
+  loop_control:
+    label: "{{ item.0.key }}/{{ item.1.key }}"
+  no_log: true
+
+- name: Mirror them into namespace-scoped Kubernetes Secrets
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_secrets_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: Secret
+      type: Opaque
+      metadata:
+        name: "{{ k3s_secrets_prefix }}-{{ item.key }}"
+        namespace: "{{ k3s_secrets_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: "{{ k3s_secrets_prefix }}"
+          app.kubernetes.io/component: "{{ item.key }}"
+      stringData: "{{ item.value }}"
+  loop: "{{ k3s_secrets_resolved | dict2items }}"
+  loop_control:
+    label: "{{ k3s_secrets_prefix }}-{{ item.key }}"
+  no_log: true
+
+- name: Report which secrets exist, by name only
+  ansible.builtin.debug:
+    msg: >-
+      Namespace {{ k3s_secrets_namespace }} now holds
+      {{ k3s_secrets_resolved.keys() | map('regex_replace', '^',
+         k3s_secrets_prefix ~ '-') | list }}. Keys per secret come from
+      secret_mappings; values are never written to Helm values, logs or
+      Terraform outputs.

@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_urls_database_user_prefix: oil_tracker
+k3s_urls_database_ca_path: /etc/oilscope/database/ca.crt
+k3s_urls_broker_ca_path: /etc/oilscope/rabbitmq/ca.crt
+k3s_urls_cache_ca_path: /etc/oilscope/redis/ca.crt

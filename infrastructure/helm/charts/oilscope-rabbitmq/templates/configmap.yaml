@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+data:
+  rabbitmq.conf: |
+    listeners.tcp = none
+    listeners.ssl.default = {{ .Values.port }}
+    ssl_options.cacertfile = /etc/rabbitmq/tls/ca.crt
+    ssl_options.certfile = /etc/rabbitmq/tls/tls.crt
+    ssl_options.keyfile = /etc/rabbitmq/tls/tls.key
+    ssl_options.verify = verify_none
+    ssl_options.fail_if_no_peer_cert = false
+    vm_memory_high_watermark.relative = 0.6
+    disk_free_limit.absolute = 512MB
+    load_definitions = /etc/rabbitmq/definitions.json
+  definitions.json: |
+{{ include "oilscope-rabbitmq.definitions" . | indent 4 }}

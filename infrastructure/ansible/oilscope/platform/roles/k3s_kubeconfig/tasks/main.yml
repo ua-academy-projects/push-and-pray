@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the cluster kubeconfig
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ k3s_kubeconfig_remote_path }}"
+  register: k3s_kubeconfig_remote
+  no_log: true
+
+- name: Retarget the kubeconfig at the API endpoint
+  vars:
+    original: "{{ k3s_kubeconfig_remote.content | b64decode | from_yaml }}"
+  ansible.builtin.set_fact:
+    k3s_kubeconfig_document:
+      apiVersion: v1
+      kind: Config
+      current-context: "{{ k3s_kubeconfig_context }}"
+      clusters:
+        - name: "{{ k3s_kubeconfig_context }}"
+          cluster:
+            server: "https://{{ k3s_kubeconfig_api_endpoint }}:{{ k3s_kubeconfig_api_port }}"
+            certificate-authority-data: "{{ original.clusters[0].cluster['certificate-authority-data'] }}"
+      users:
+        - name: "{{ k3s_kubeconfig_context }}"
+          user:
+            client-certificate-data: "{{ original.users[0].user['client-certificate-data'] }}"
+            client-key-data: "{{ original.users[0].user['client-key-data'] }}"
+      contexts:
+        - name: "{{ k3s_kubeconfig_context }}"
+          context:
+            cluster: "{{ k3s_kubeconfig_context }}"
+            user: "{{ k3s_kubeconfig_context }}"
+  no_log: true
+
+- name: Prepare the local kubeconfig directory
+  become: false
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ k3s_kubeconfig_local_dir }}"
+    state: directory
+    mode: '0700'
+
+- name: Write the local kubeconfig
+  become: false
+  delegate_to: localhost
+  ansible.builtin.copy:
+    content: "{{ k3s_kubeconfig_document | to_nice_yaml(indent=2) }}"
+    dest: "{{ k3s_kubeconfig_local_path }}"
+    mode: '0600'
+  no_log: true
+
+- name: Report where the kubeconfig was written
+  become: false
+  delegate_to: localhost
+  ansible.builtin.debug:
+    msg: >-
+      Wrote {{ k3s_kubeconfig_local_path }}. Pass it explicitly to every
+      kubectl and helm call with --kubeconfig; it is never merged into the
+      default context.

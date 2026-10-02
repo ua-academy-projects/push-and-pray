@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Project Configuration",
-  "description": "Contract for non-secret Terraform project configuration. Cloud-neutral: VMs reference abstract size/image/disk_type/region tiers resolved per-cloud via the *_map dictionaries.",
+  "description": "Contract for non-secret Terraform project configuration. Describes one k3s cluster of exactly three dual-role nodes. Cloud-neutral: VMs reference abstract size/image/disk_type/region tiers resolved per-cloud via the *_map dictionaries.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +21,10 @@
     "service_ports",
     "vms",
     "rabbitmq",
-    "redis"
+    "redis",
+    "kubernetes",
+    "ingress",
+    "secret_mappings"
   ],
   "properties": {
     "monitoring": {
@@ -453,10 +456,16 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
+                "primary_subnet_cidr",
                 "secondary_subnet_cidr",
                 "secondary_availability_zone"
               ],
               "properties": {
+                "primary_subnet_cidr": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Private subnet in the node availability zone."
+                },
                 "secondary_subnet_cidr": {
                   "type": "string",
                   "minLength": 1
@@ -465,7 +474,8 @@
                   "type": "string",
                   "minLength": 1
                 }
-              }
+              },
+              "description": "Two private subnets for the managed database. RDS requires a subnet group spanning two availability zones, and neither subnet may be the public node subnet."
             }
           }
         }
@@ -475,15 +485,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "management_subnet_cidr",
         "workload_subnet_cidr",
         "ui_public_ports"
       ],
       "properties": {
-        "management_subnet_cidr": {
-          "type": "string",
-          "minLength": 1
-        },
         "workload_subnet_cidr": {
           "type": "string",
           "minLength": 1
@@ -499,7 +504,8 @@
           },
           "minItems": 2,
           "maxItems": 2,
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Already contains 80, so the ACME HTTP-01 solver needs no additional opening."
         }
       }
     },
@@ -509,23 +515,61 @@
     "registry": {
       "type": "object",
       "additionalProperties": false,
+      "description": "The selected cloud's native registry: Amazon ECR, Google Artifact Registry or Azure Container Registry, chosen by default_cloud. No credentials live here.",
       "required": [
-        "repository",
-        "username",
-        "image_sha"
+        "repository_prefix",
+        "image_digests"
       ],
+      "dependentRequired": {
+        "github_repository": [
+          "publish_tag_prefix"
+        ]
+      },
       "properties": {
-        "repository": {
+        "repository_prefix": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Repository path prefix within the registry, e.g. \"oilscope\"."
         },
-        "username": {
+        "publish_tag_prefix": {
           "type": "string",
-          "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "description": "Git tag prefix that triggers publishing to this account, e.g. \"pavlo-v\" for tags pavlo-v1.0.0 onward. The publisher role trusts only refs/tags/<prefix>*, so branch pushes and pull requests cannot publish. The prefix names a destination, not a person: anyone who can push a matching tag can publish here."
         },
-        "image_sha": {
+        "create": {
+          "type": "boolean",
+          "default": true,
+          "description": "False references an existing registry instead of creating one."
+        },
+        "image_digests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fetcher",
+            "history",
+            "ui",
+            "database"
+          ],
+          "properties": {
+            "fetcher": {
+              "$ref": "#/$defs/image_digest"
+            },
+            "history": {
+              "$ref": "#/$defs/image_digest"
+            },
+            "ui": {
+              "$ref": "#/$defs/image_digest"
+            },
+            "database": {
+              "$ref": "#/$defs/image_digest"
+            }
+          },
+          "description": "One immutable digest per built image, named after its Dockerfile in infrastructure/docker. The database image is what the migration Job runs."
+        },
+        "github_repository": {
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+          "description": "owner/repo allowed to publish through GitHub Actions OIDC. Omit to create no federation and publish only from an operator's machine."
         }
       }
     },
@@ -551,41 +595,23 @@
     },
     "vms": {
       "type": "object",
-      "minProperties": 2,
-      "required": [
-        "bastion"
-      ],
+      "minProperties": 3,
+      "maxProperties": 3,
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
-      "properties": {
-        "bastion": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/vm"
-            },
-            {
-              "properties": {
-                "role": {
-                  "const": "bastion"
-                }
-              },
-              "required": [
-                "role"
-              ]
-            }
-          ]
-        }
-      },
       "additionalProperties": {
         "$ref": "#/$defs/vm"
-      }
+      },
+      "description": "Exactly three nodes. Names are free-form; k3s-1, k3s-2 and k3s-3 are the convention. Duplicate internal_ip values are not detectable here - see docs/k3s-deployment.md."
+    },
+    "secret_mappings": {
+      "$ref": "#/$defs/workload_secret_mappings"
     },
     "rabbitmq": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "host_vm",
         "image",
         "port",
         "username",
@@ -604,10 +630,6 @@
         "certificate_days"
       ],
       "properties": {
-        "host_vm": {
-          "type": "string",
-          "minLength": 1
-        },
         "image": {
           "type": "string",
           "minLength": 1
@@ -662,7 +684,8 @@
         },
         "memory_mb": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Becomes the RabbitMQ container's Kubernetes memory request and limit."
         },
         "queue_max_bytes": {
           "type": "integer",
@@ -670,7 +693,8 @@
         },
         "certificate_days": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Duration of the cert-manager Certificate issued for the broker by the internal CA."
         }
       }
     },
@@ -678,7 +702,6 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "host_vm",
         "image",
         "database",
         "key_prefix",
@@ -687,10 +710,6 @@
         "maxmemory_mb"
       ],
       "properties": {
-        "host_vm": {
-          "type": "string",
-          "minLength": 1
-        },
         "image": {
           "type": "string",
           "minLength": 1
@@ -709,7 +728,8 @@
         },
         "memory_mb": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Becomes the Redis container's Kubernetes memory request and limit."
         },
         "maxmemory_mb": {
           "type": "integer",
@@ -886,10 +906,141 @@
           "maxLength": 100
         },
         "proxied": {
-          "description": "Must stay false: proxying breaks Traefik's ACME TLS-ALPN-01 challenge.",
+          "description": "Must stay false: proxying terminates TLS at Cloudflare's edge, so the ACME HTTP-01 solver on port 80 is never reached. Nothing applies this schema automatically - see docs/dns.md.",
           "type": "boolean",
           "const": false,
           "default": false
+        }
+      }
+    },
+    "kubernetes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "entry_node",
+        "ssh_address_mode",
+        "admin_allowed_cidrs",
+        "api_endpoint",
+        "pod_cidr",
+        "service_cidr",
+        "namespace",
+        "etcd"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^v\\d+\\.\\d+\\.\\d+\\+k3s\\d+$",
+          "description": "Pinned k3s release, e.g. v1.33.1+k3s1. Ansible installs exactly this; floating channels are not used."
+        },
+        "entry_node": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "The one node that receives user traffic: both ingress.hostname and api_endpoint resolve to its address. Must name a key in vms, which this schema cannot check. Losing it takes down the website and the API endpoint with no automatic failover."
+        },
+        "ssh_address_mode": {
+          "type": "string",
+          "enum": [
+            "public",
+            "private"
+          ],
+          "description": "public contacts nodes on their public addresses; private requires an existing route or VPN from the operator's machine."
+        },
+        "admin_allowed_cidrs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+          },
+          "description": "The only sources allowed to reach SSH and the Kubernetes API. There is no bastion; see docs/k3s-recovery.md for the break-glass path when this list stops matching reality."
+        },
+        "api_endpoint_mode": {
+          "type": "string",
+          "const": "node",
+          "description": "Connect directly to node addresses without a cloud load balancer."
+        },
+        "api_endpoint": {
+          "type": "string",
+          "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$",
+          "description": "Hostname clients and kubeconfig use for the Kubernetes API, and a TLS SAN on every server. There is no load balancer: it resolves to all three node addresses, so failover is client retry, not health checking."
+        },
+        "pod_cidr": {
+          "type": "string",
+          "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$",
+          "description": "Overlap with service_cidr or a subnet is not detectable here and produces a half-working cluster."
+        },
+        "service_cidr": {
+          "type": "string",
+          "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$"
+        },
+        "namespace": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+        },
+        "etcd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "snapshot_schedule_cron",
+            "snapshot_retention",
+            "backup_destination"
+          ],
+          "properties": {
+            "snapshot_schedule_cron": {
+              "type": "string",
+              "minLength": 9,
+              "description": "Offset this per node: one schedule on all three servers makes them take the snapshot and upload cost together."
+            },
+            "snapshot_retention": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Local snapshots kept per server."
+            },
+            "backup_destination": {
+              "type": "string",
+              "enum": [
+                "cloud_object_storage",
+                "none"
+              ],
+              "description": "Snapshots cover etcd only. PostgreSQL, RabbitMQ and Redis volumes need their own backups."
+            }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostname",
+        "acme_email",
+        "challenge_type"
+      ],
+      "properties": {
+        "endpoint_mode": {
+          "type": "string",
+          "const": "node",
+          "description": "Expose ingress directly on node addresses without a cloud load balancer."
+        },
+        "hostname": {
+          "type": "string",
+          "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$",
+          "description": "Public hostname for the UI, and the name the ingress certificate is issued for. Resolves to all three node addresses; Traefik answers on host ports 80 and 443 on every node."
+        },
+        "acme_email": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+        },
+        "challenge_type": {
+          "type": "string",
+          "enum": [
+            "http01",
+            "dns01"
+          ],
+          "description": "http01 answers on port 80 and needs public DNS pointing at the ingress. dns01 is for private ingress or wildcard certificates."
         }
       }
     }
@@ -1029,38 +1180,7 @@
         "required": [
           "database_profile",
           "database_profile_map"
-        ],
-        "properties": {
-          "vms": {
-            "additionalProperties": {
-              "properties": {
-                "role": {
-                  "not": {
-                    "const": "database"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "vms": {
-            "$comment": "Reject a dictionary in which every VM has a non-database role, requiring at least one database VM in application mode.",
-            "not": {
-              "additionalProperties": {
-                "properties": {
-                  "role": {
-                    "not": {
-                      "const": "database"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+        ]
       }
     },
     {
@@ -1452,18 +1572,17 @@
     },
     "vm_network_tags": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 2,
+      "maxItems": 2,
       "uniqueItems": true,
       "items": {
         "type": "string",
         "enum": [
-          "bastion",
-          "infra",
-          "history",
-          "fetcher",
-          "ui"
+          "control-plane",
+          "worker"
         ]
-      }
+      },
+      "description": "Both tags, on every node. Membership only: a tag installs nothing. Kubernetes role labels are applied separately by Ansible."
     },
     "secret_mappings": {
       "$comment": "Maps application environment variable names to non-secret Secret Manager IDs.",
@@ -1487,23 +1606,13 @@
         "disk_size_gb",
         "internal_ip",
         "assign_public_ip",
-        "network_tags",
-        "secret_mappings"
+        "network_tags"
       ],
       "properties": {
         "role": {
           "type": "string",
-          "enum": [
-            "bastion",
-            "database",
-            "history",
-            "fetcher",
-            "ui"
-          ]
-        },
-        "cloud": {
-          "$ref": "#/$defs/cloud_name",
-          "description": "Overrides default_cloud for this VM only. Omit to inherit default_cloud."
+          "const": "kubernetes",
+          "description": "The only role. Administrative SSH sources are configured once at kubernetes.admin_allowed_cidrs, never per VM."
         },
         "size": {
           "type": "string",
@@ -1536,139 +1645,44 @@
         },
         "labels": {
           "$ref": "#/$defs/labels"
-        },
-        "secret_mappings": {
-          "$ref": "#/$defs/secret_mappings",
-          "description": "Required on every VM. Use {} if this VM has no secrets to resolve."
-        },
-        "ssh_port": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
-        },
-        "allowed_cidrs": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "public_endpoint": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "hostname",
-            "acme_email"
-          ],
-          "properties": {
-            "hostname": {
-              "type": "string",
-              "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
-            },
-            "acme_email": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
-            }
-          }
         }
       },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "assign_public_ip": {
-                "const": true
-              }
-            },
-            "required": [
-              "assign_public_ip"
-            ]
-          },
-          "then": {
-            "properties": {
-              "role": {
-                "enum": [
-                  "bastion",
-                  "ui"
-                ]
-              }
-            }
-          }
+      "description": "A Kubernetes node. Every node runs a k3s server with embedded etcd and also schedules workloads."
+    },
+    "image_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Immutable image reference. Tags are never deployed."
+    },
+    "workload_secret_mappings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Secret Manager IDs each workload may read, keyed by workload. Per-workload rather than flat so services keep separate database credentials. rabbitmq and redis are the platform services themselves, which need the credential their clients authenticate with. Names only - never values.",
+      "required": [
+        "history",
+        "fetcher",
+        "ui"
+      ],
+      "properties": {
+        "history": {
+          "$ref": "#/$defs/secret_mappings"
         },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "bastion"
-              }
-            },
-            "required": [
-              "role"
-            ]
-          },
-          "then": {
-            "required": [
-              "ssh_port",
-              "allowed_cidrs"
-            ],
-            "properties": {
-              "assign_public_ip": {
-                "const": true
-              },
-              "network_tags": {
-                "contains": {
-                  "const": "bastion"
-                }
-              },
-              "secret_mappings": {
-                "maxProperties": 0
-              }
-            }
-          },
-          "else": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "ssh_port"
-                  ]
-                },
-                {
-                  "required": [
-                    "allowed_cidrs"
-                  ]
-                }
-              ]
-            }
-          }
+        "fetcher": {
+          "$ref": "#/$defs/secret_mappings"
         },
-        {
-          "if": {
-            "properties": {
-              "role": {
-                "const": "ui"
-              }
-            },
-            "required": [
-              "role"
-            ]
-          },
-          "then": {
-            "required": [
-              "public_endpoint"
-            ],
-            "properties": {
-              "network_tags": {
-                "contains": {
-                  "const": "ui"
-                }
-              }
-            }
-          }
+        "ui": {
+          "$ref": "#/$defs/secret_mappings"
+        },
+        "migration": {
+          "$ref": "#/$defs/secret_mappings"
+        },
+        "rabbitmq": {
+          "$ref": "#/$defs/secret_mappings"
+        },
+        "redis": {
+          "$ref": "#/$defs/secret_mappings"
         }
-      ]
+      }
     }
   }
 }

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_server_installer_url: https://get.k3s.io
+k3s_server_config_dir: /etc/rancher/k3s
+k3s_server_config_path: /etc/rancher/k3s/config.yaml
+k3s_server_data_dir: /var/lib/rancher/k3s
+k3s_server_etcd_db_dir: /var/lib/rancher/k3s/server/db/etcd
+k3s_server_token_path: /var/lib/rancher/k3s/server/token
+k3s_server_kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+k3s_server_binary_path: /usr/local/bin/k3s
+k3s_server_ready_timeout: 300
+k3s_server_etcd_member_timeout: 180

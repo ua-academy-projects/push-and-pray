@@ -1,125 +1,83 @@
-output "gcp_database_connection" {
-  description = "Managed GCP database connection metadata, without password values; null outside GCP cloud database mode."
-  value       = module.gcp_database.connection
-}
+# Commented with the GCP modules in main.tf; uncomment together with them.
+# output "gcp_database_connection" {
+#   description = "Managed GCP database connection metadata, without password values; null outside GCP cloud database mode."
+#   value       = module.gcp_database.connection
+# }
 
-output "azure_database_connection" {
-  description = "Managed Azure database connection metadata, without password values; null outside Azure cloud database mode."
-  value       = module.azure_database.connection
-}
-
-locals {
-  vm_names = merge(
-    { for name, vm in module.gcp_vm.vms : name => vm.name },
-    { for name, vm in module.aws_vm.vms : name => vm.name },
-    { for name, vm in module.azure_vm.vms : name => vm.name },
-  )
-
-  vm_internal_ips = merge(
-    { for name, vm in module.gcp_vm.vms : name => vm.internal_ip },
-    { for name, vm in module.aws_vm.vms : name => vm.internal_ip },
-    { for name, vm in module.azure_vm.vms : name => vm.internal_ip },
-  )
-
-  vm_public_ips = merge(
-    { for name, vm in module.gcp_vm.vms : name => vm.public_ip },
-    { for name, vm in module.aws_vm.vms : name => vm.public_ip },
-    { for name, vm in module.azure_vm.vms : name => vm.public_ip },
-  )
-}
+# Commented with the Azure modules in main.tf; uncomment together with them.
+# output "azure_database_connection" {
+#   description = "Managed Azure database connection metadata, without password values; null outside Azure cloud database mode."
+#   value       = module.azure_database.connection
+# }
 
 output "aws_database_connection" {
   description = "Managed AWS database connection metadata, without password values; null outside AWS cloud database mode."
   value       = module.aws_database.connection
 }
 
-output "bastion_public_ip" {
-  description = "Bastion public IP."
-  value       = local.vm_public_ips["bastion"]
-}
-
-output "workload_vm_names" {
-  description = "VM names by workload."
+output "cluster" {
+  description = "The k3s cluster as deployed: the three nodes, and the names that resolve to the entry node. Ansible reads this from an exported terraform-outputs.json, so a stale export silently feeds old addresses."
   value = {
-    for name, workload in local.config.vms : name => local.vm_names[name]
-    if workload.role != "bastion"
-  }
-}
+    entry_node   = local.config.kubernetes.entry_node
+    api_endpoint = local.config.kubernetes.api_endpoint
+    ingress_host = local.config.ingress.hostname
+    namespace    = local.config.kubernetes.namespace
 
-output "workload_roles" {
-  description = "Roles by workload."
-  value = {
-    for name, workload in local.config.vms : name => workload.role
-    if workload.role != "bastion"
-  }
-}
-
-output "workload_internal_ips" {
-  description = "Internal IPs by workload."
-  value = {
-    for name, workload in local.config.vms : name => local.vm_internal_ips[name]
-    if workload.role != "bastion"
-  }
-}
-
-output "workload_external_ips" {
-  description = "External IPs by workload."
-  value = {
-    for name, workload in local.config.vms : name => local.vm_public_ips[name]
-    if workload.role != "bastion"
-  }
-}
-
-output "workload_network_tags" {
-  description = "GCP network tags by GCP workload."
-  value = {
-    for name, vm in module.gcp_vm.vms : name => vm.network_tags
-    if local.config.vms[name].role != "bastion"
-  }
-}
-
-output "workload_service_account_emails" {
-  description = "GCP service-account emails by GCP workload."
-  value = {
-    for name, vm in module.gcp_vm.vms : name => vm.service_account_email
-    if local.config.vms[name].role != "bastion"
+    nodes = {
+      for name, vm in module.aws_vm.vms : name => {
+        name        = vm.name
+        instance_id = vm.instance_id
+        internal_ip = vm.internal_ip
+        public_ip   = vm.public_ip
+        roles       = local.config.vms[name].network_tags
+      }
+    }
   }
 }
 
 output "secret_ids" {
   description = "Secret container IDs created from the project configuration across all clouds."
   value = sort(distinct(concat(
-    module.gcp_secrets.secret_ids,
     module.aws_secrets.secret_ids,
-    module.azure_secrets.secret_ids,
+    # module.gcp_secrets.secret_ids,
+    # module.azure_secrets.secret_ids,
   )))
 }
 
 output "secret_resource_names" {
   description = "Fully qualified secret resource names by cloud and secret ID. Azure entries are versionless Key Vault URIs; the ARM scope a grant uses is not the same string."
   value = {
-    gcp   = module.gcp_secrets.secret_resource_names
-    aws   = module.aws_secrets.secret_resource_names
-    azure = module.azure_secrets.secret_resource_names
+    aws = module.aws_secrets.secret_resource_names
+    # gcp   = module.gcp_secrets.secret_resource_names
+    # azure = module.azure_secrets.secret_resource_names
   }
 }
 
 output "workload_secret_access" {
-  description = "Secret IDs each workload identity may read. Names only - never values."
+  description = "Secret IDs each workload may read, by workload. Resolved by the operator at deployment time and written into namespace-scoped Kubernetes Secrets. Names only - never values."
   value = {
-    for name, workload in local.config.vms :
-    name => sort(distinct(values(workload.secret_mappings)))
-    if workload.role != "bastion"
+    for workload, mappings in local.config.secret_mappings :
+    workload => sort(distinct(values(mappings)))
   }
 }
 
 output "budgets" {
-  value = { aws = module.aws_budget.summary, gcp = module.gcp_budget.summary, azure = module.azure_budget.summary }
+  value = { aws = module.aws_budget.summary }
 }
 
 output "dns" {
-  description = "The Cloudflare record published for the UI, or null when DNS is managed by hand."
+  description = "The Cloudflare records published for the entry node, or null when DNS is managed by hand."
   value       = module.cloudflare_dns.summary
+}
+
+output "registry" {
+  description = "Container repository URLs and the immutable image reference to deploy for each service."
+  value       = module.aws_registry.repositories
+}
+
+output "registry_publisher_role_arn" {
+  description = "Role GitHub Actions assumes to push images, for the workflow's aws-actions/configure-aws-credentials step."
+  value       = module.aws_registry.publisher_role_arn
 }
 
 output "aws_monitoring" {
@@ -135,45 +93,45 @@ output "aws_monitoring" {
   }
 }
 
-output "gcp_monitoring" {
-  description = "GCP monitoring identifiers and Ops Agent YAML for Ansible deployment."
-  value = {
-    log_bucket_id            = module.gcp_monitoring.log_bucket_id
-    log_filter               = module.gcp_monitoring.log_filter
-    notification_channel_ids = module.gcp_monitoring.notification_channel_ids
-    dashboard_id             = module.gcp_monitoring.dashboard_id
-    alert_policy_ids         = module.gcp_monitoring.alert_policy_ids
-    uptime_check_id          = module.gcp_monitoring.uptime_check_id
-    agent_configurations     = module.gcp_monitoring.agent_configurations
-    collector_configurations = module.gcp_monitoring.collector_configurations
-  }
-}
+# output "gcp_monitoring" {
+#   description = "GCP monitoring identifiers and Ops Agent YAML for Ansible deployment."
+#   value = {
+#     log_bucket_id            = module.gcp_monitoring.log_bucket_id
+#     log_filter               = module.gcp_monitoring.log_filter
+#     notification_channel_ids = module.gcp_monitoring.notification_channel_ids
+#     dashboard_id             = module.gcp_monitoring.dashboard_id
+#     alert_policy_ids         = module.gcp_monitoring.alert_policy_ids
+#     uptime_check_id          = module.gcp_monitoring.uptime_check_id
+#     agent_configurations     = module.gcp_monitoring.agent_configurations
+#     collector_configurations = module.gcp_monitoring.collector_configurations
+#   }
+# }
 
-output "azure_monitoring" {
-  description = "Azure monitoring identifiers and non-secret agent wiring for deployment."
-  value = {
-    workspace_id             = module.azure_monitoring.workspace_id
-    action_group_id          = module.azure_monitoring.action_group_id
-    workbook_id              = module.azure_monitoring.workbook_id
-    availability_test_id     = module.azure_monitoring.availability_test_id
-    alert_ids                = module.azure_monitoring.alert_ids
-    agent_configurations     = module.azure_monitoring.agent_configurations
-    collector_configurations = module.azure_monitoring.collector_configurations
-  }
-}
-
-output "azure_deployment" {
-  description = "Non-secret Azure deployment provenance and the managed identity each workload runs as; the inventory plugin scopes its discovery from the project configuration, not from here."
-  value = {
-    subscription_id     = try(local.config.clouds.azure.subscription_id, null)
-    resource_group_name = module.azure_network.resource_group_name
-    location            = module.azure_network.location
-    key_vault           = module.azure_secrets.vault
-    identities = {
-      for name, vm in module.azure_vm.vms : name => {
-        client_id   = vm.identity_client_id
-        resource_id = vm.identity_resource_id
-      }
-    }
-  }
-}
+# output "azure_monitoring" {
+#   description = "Azure monitoring identifiers and non-secret agent wiring for deployment."
+#   value = {
+#     workspace_id             = module.azure_monitoring.workspace_id
+#     action_group_id          = module.azure_monitoring.action_group_id
+#     workbook_id              = module.azure_monitoring.workbook_id
+#     availability_test_id     = module.azure_monitoring.availability_test_id
+#     alert_ids                = module.azure_monitoring.alert_ids
+#     agent_configurations     = module.azure_monitoring.agent_configurations
+#     collector_configurations = module.azure_monitoring.collector_configurations
+#   }
+# }
+#
+# output "azure_deployment" {
+#   description = "Non-secret Azure deployment provenance and the managed identity each workload runs as; the inventory plugin scopes its discovery from the project configuration, not from here."
+#   value = {
+#     subscription_id     = try(local.config.clouds.azure.subscription_id, null)
+#     resource_group_name = module.azure_network.resource_group_name
+#     location            = module.azure_network.location
+#     key_vault           = module.azure_secrets.vault
+#     identities = {
+#       for name, vm in module.azure_vm.vms : name => {
+#         client_id   = vm.identity_client_id
+#         resource_id = vm.identity_resource_id
+#       }
+#     }
+#   }
+# }

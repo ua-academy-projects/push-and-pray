@@ -34,6 +34,30 @@ offers are credit- and time-limited. RabbitMQ, Redis, the VM fleet, and every
 other project service are ordinary paid compute; this requirement covers RDS
 only, not the deployment as a whole.
 
+## AWS RDS: what destroying it discards
+
+Three settings on the AWS instance make it deliberately disposable, and they
+predate the k3s work — they were chosen when the database was one of several
+things a Compose deployment could rebuild:
+
+| Setting | Value | Effect |
+| --- | --- | --- |
+| `deletion_protection` | `false` | `terraform destroy` removes the instance without a second confirmation |
+| `skip_final_snapshot` | `true` | no final snapshot is taken on delete |
+| `delete_automated_backups` | `true` | the automated backups go with the instance |
+
+Together these mean **a destroy, or a `managed_database` mode switch, discards
+the database and every managed copy of it.** That was the intent, and it makes
+iteration cheap. It is worth re-examining once this database is the only durable
+store in the deployment: under k3s, RabbitMQ and Redis hold transient state, so
+RDS is the only thing whose loss is not recoverable by redeploying.
+
+The administrator password is generated and rotated by RDS
+(`manage_master_user_password`); Terraform stores only the Secrets Manager ARN,
+never the value. `rds.force_ssl` is set in the parameter group so the server
+refuses plaintext connections, complementing the client-side `verify-full` that
+the connection metadata advertises.
+
 ## GCP Cloud SQL sizing
 
 Cloud mode on GCP is not held to an equivalent Free Tier requirement — the

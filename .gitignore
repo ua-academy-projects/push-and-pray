@@ -34,6 +34,15 @@ crash.*.log
 *.key
 !project-config.example.json
 !project-config.cloud-example.json
+project-config.new.json
+
+# Cluster credentials. A kubeconfig carries a cluster-admin client certificate;
+# gitleaks and detect-private-key do not match it, because the key is base64
+# inside YAML rather than a PEM block.
+*.kubeconfig
+kubeconfig
+.kubeconfig/
+**/kube/*.yaml
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz

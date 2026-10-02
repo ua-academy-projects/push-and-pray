@@ -12,10 +12,7 @@ from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
 from ansible.utils.display import Display
 
 from ansible_collections.oilscope.platform.plugins.module_utils.oilscope_inventory import (
-    bastion_ssh_port as compute_bastion_ssh_port,
-)
-from ansible_collections.oilscope.platform.plugins.module_utils.oilscope_inventory import (
-    apply_connection_vars,
+    apply_direct_connection_vars,
     load_project_config,
     plain,
     require_str,
@@ -38,10 +35,10 @@ version_added: "0.2.0"
 author:
   - Push and Pray team
 description:
-  - Derives the AWS region, the C(application)/C(environment) tag filters and
-    the bastion SSH port from the project configuration JSON that Terraform
-    also reads, then hands them to C(amazon.aws.aws_ec2), which performs the
-    discovery. No environment value is repeated here.
+  - Derives the AWS region and the C(application)/C(environment) tag filters
+    from the project configuration JSON that Terraform also reads, then hands
+    them to C(amazon.aws.aws_ec2), which performs the discovery. No environment
+    value is repeated here.
   - The wrapper exists for the same reason C(oilscope.platform.oilscope_gcp)
     exists for GCP - C(aws_ec2) neither reads that file nor evaluates Jinja in
     its own configuration file.
@@ -69,12 +66,6 @@ options:
     default: ../../terraform/env/dev.json
     env:
       - name: OILSCOPE_PROJECT_CONFIG
-  bastion_role:
-    description:
-      - Value of C(role) identifying the bastion, in the configuration and in
-        the instance's C(role) tag.
-    type: str
-    default: bastion
 requirements:
   - amazon.aws collection >= 11.2.0
   - boto3
@@ -90,20 +81,20 @@ notes:
     that need a VM's own configuration entry - C(resolve_secrets),
     C(secret_versions) - should read C(oilscope_vm_key) rather than parsing
     C(inventory_hostname) themselves.
+  - Places every node in both C(k3s_servers) and C(k3s_workers), from the
+    C(<name_prefix>-control-plane) and C(<name_prefix>-worker) instance tags
+    Terraform writes. The two groups hold the same three hosts by design -
+    each node runs a k3s server with embedded etcd and also schedules
+    workloads.
   - Sets the SSH connection variables itself, after discovery - there is no
-    C(group_vars/) directory beside the inventory. Every host gets
-    C(ansible_user) (C(OILSCOPE_SSH_USER), else the controller's own login),
-    C(ansible_ssh_private_key_file) (C(OILSCOPE_SSH_KEY); the gcloud-managed
-    fallback is never provisioned on AWS, so the variable is effectively
-    required here) and C(ansible_ssh_common_args). The bastion also gets
-    C(ansible_port), which C(OILSCOPE_BASTION_CONNECT_PORT) overrides for
-    first-boot bootstrap. Workloads have no public address, so each gets an
-    C(ansible_ssh_common_args) carrying a C(ProxyCommand) through the
-    bastion's discovered address, plus C(oilscope_bastion_address) and
-    C(oilscope_bastion_ssh_port) as data.
-  - A workload's C(ProxyCommand) needs the bastion's discovered address, which
-    a per-host C(compose) expression cannot see, so these are applied in
-    Python once the delegate has finished rather than composed per host.
+    C(group_vars/) directory beside the inventory. There is no bastion - every
+    node has a public address and is contacted on it directly, so no host gets
+    a C(ProxyCommand). Every host gets C(ansible_user) (C(OILSCOPE_SSH_USER),
+    else the controller's own login), C(ansible_ssh_private_key_file) from
+    C(OILSCOPE_SSH_KEY), and C(ansible_ssh_common_args).
+  - C(OILSCOPE_SSH_KEY) is required, not defaulted. The shared fallback is a
+    gcloud-managed key that no AWS instance carries, so defaulting to it turns
+    a missing setting into a permission denied against every node.
   - Uses C(ec2_tags) (added in amazon.aws 11.2.0), not the deprecated C(tags)
     host variable, so tag-keyed groups and composed variables keep working
     after C(tags) is removed.
@@ -150,7 +141,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 display.vvv(f"could not remove {generated}: {cleanup_error}")
 
         validate_inventory_hosts(inventory, config, "AWS")
-        apply_connection_vars(inventory, config, plain(self.get_option("bastion_role")), "AWS")
+        apply_direct_connection_vars(inventory, config, "AWS")
 
     def _build_settings(self, config):
         region_key = require_str(config, "region")
@@ -158,11 +149,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         environment = require_str(config, "environment")
         region = require_str(config, "region_map", region_key, "aws", "region")
 
-        bastion_role = plain(self.get_option("bastion_role"))
-        bastion_port = compute_bastion_ssh_port(config, bastion_role)
         vm_key_pattern = vm_key_regex(name_prefix, environment)
+        control_plane_tag = f"{plain(name_prefix)}-control-plane"
+        worker_tag = f"{plain(name_prefix)}-worker"
 
-        is_bastion = f"ec2_tags.role | default('') == '{bastion_role}'"
         public = "public_ip_address"
         private = "private_ip_address"
 
@@ -175,19 +165,14 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "instance-state-name": "running",
             },
             "hostnames": ["tag:Name"],
-            "keyed_groups": [{"key": "ec2_tags.role", "prefix": "", "separator": ""}],
-            "groups": {"workloads": f"ec2_tags.role is defined and ec2_tags.role != '{bastion_role}'"},
+            "groups": {
+                "k3s_servers": f"'{control_plane_tag}' in ec2_tags",
+                "k3s_workers": f"'{worker_tag}' in ec2_tags",
+            },
             "compose": {
                 "internal_ip": private,
-                # default(..., true) rather than `public if public else ''`:
-                # a private instance has no public_ip_address key at all, and
-                # testing an undefined field's truthiness is exactly what
-                # broke this for private instances - see the GCP plugin's
-                # has_public, which sidesteps the same trap by testing a
-                # field (accessConfigs) that's always present.
                 "public_ip": f"{public} | default('', true)",
-                "ansible_host": f"{public} if ({is_bastion}) else {private}",
-                "bastion_ssh_port": str(bastion_port),
+                "ansible_host": f"{public} | default('', true)",
                 "oilscope_role": "ec2_tags.role | default('')",
                 "oilscope_cloud": "'aws'",
                 "oilscope_vm_key": f"ec2_tags.Name | regex_replace('{vm_key_pattern}', '')",

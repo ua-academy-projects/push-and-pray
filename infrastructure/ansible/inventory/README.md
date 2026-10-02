@@ -1,5 +1,18 @@
 # Inventory
 
+> **`oilscope-aws.yml` no longer works the way this document describes.** The AWS
+> plugin was rewritten for k3s: there is no bastion, no `ProxyCommand`, no
+> `bastion_role` option and no `OILSCOPE_BASTION_CONNECT_PORT`. Every node is
+> contacted directly on its public address, hosts are grouped into `k3s_servers`
+> and `k3s_workers` from the `<name_prefix>-control-plane` and
+> `<name_prefix>-worker` instance tags — both groups holding all three nodes —
+> and `OILSCOPE_SSH_KEY` is **required** rather than defaulted.
+>
+> Everything below still describes `oilscope.yml` (GCP) and
+> `oilscope-azure.yml` (Azure), which have not been converted. Read it with that
+> split in mind until they are, at which point the bastion material goes
+> entirely.
+
 `oilscope.yml` (GCP), `oilscope-aws.yml` (AWS) and `oilscope-azure.yml`
 (Azure) build the deployment inventory from live cloud state, so a `terraform apply` that replaces a VM or
 changes an address is picked up without editing a host list. Use whichever

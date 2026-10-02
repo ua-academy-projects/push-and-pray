@@ -7,6 +7,21 @@ them without handling values. Managed database administrator credentials are
 the exception described below. Everything else applies to both clouds unless
 a section says otherwise.
 
+> **The AWS reader changed with k3s.** Terraform still creates the containers,
+> but it no longer grants any VM identity access to them — the per-VM
+> `secret_mappings` and the instance-role grants are gone. Instead
+> `secret_mappings` is a top-level block keyed by workload, and the operator
+> resolves the values at deploy time with their own identity, writing them into
+> namespace-scoped Kubernetes Secrets.
+>
+> Two consequences. The deploying identity needs `secretsmanager:GetSecretValue`
+> on those secrets, and **nothing grants it explicitly** — it works if the
+> profile is broad and fails with AccessDenied if not. And the composed
+> connection URLs, which embed the password, live in those same Secrets; see
+> [k3s-deployment.md](k3s-deployment.md).
+>
+> The per-VM model below still describes GCP, Azure and the Compose path.
+
 ## Where the catalog comes from
 
 For the current PostgreSQL deployment, use `POSTGRES_PASSWORD` as the mapping

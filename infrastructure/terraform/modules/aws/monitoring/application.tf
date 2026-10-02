@@ -1,13 +1,13 @@
 locals {
   application_catalog = jsondecode(file("${path.module}/../../../monitoring-metrics.json"))
-  application_signals = merge({}, [for name, vm in local.workload_vms : {
+  application_signals = merge({}, [for name, vm in local.nodes : {
     for metric, definition in local.application_catalog : "${name}-${metric}" => {
       name      = name
       metric    = metric
       threshold = try(local.settings[definition.setting], definition.threshold)
     } if contains(definition.roles, var.config.vms[name].role)
   }]...)
-  collector_configurations = { for name, vm in local.workload_vms : name => {
+  collector_configurations = { for name, vm in local.nodes : name => {
     cloud       = "aws"
     vm_key      = name
     namespace   = local.application_namespace

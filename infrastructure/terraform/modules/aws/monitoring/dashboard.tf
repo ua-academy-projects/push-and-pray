@@ -1,5 +1,5 @@
 locals {
-  dashboard_vm_names = sort(keys(local.workload_vms))
+  dashboard_vm_names = sort(keys(local.nodes))
   dashboard_colors = [
     "#1f77b4",
     "#ff7f0e",
@@ -32,7 +32,7 @@ locals {
       metrics = [for name in local.dashboard_vm_names : concat(
         [local.signals[signal_name].namespace, local.signals[signal_name].metric],
         flatten([for dimension_name, dimension_value in merge(
-          { InstanceId = local.workload_vms[name].instance_id },
+          { InstanceId = local.nodes[name].instance_id },
           signal_name == "disk" ? { path = "/", fstype = local.settings.disk_fstype } : {}
         ) : [dimension_name, dimension_value]]),
         [{ label = name, color = local.dashboard_vm_colors[name] }]
@@ -43,7 +43,7 @@ locals {
     [for metric in ["NetworkIn", "NetworkOut"] : {
       title = "VM ${metric == "NetworkIn" ? "network received" : "network sent"} (bytes/5 min)"
       metrics = [for name in local.dashboard_vm_names : [
-        "AWS/EC2", metric, "InstanceId", local.workload_vms[name].instance_id,
+        "AWS/EC2", metric, "InstanceId", local.nodes[name].instance_id,
         { label = name, color = local.dashboard_vm_colors[name] }
       ]]
       stat   = "Sum"

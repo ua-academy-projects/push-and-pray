@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_kubeconfig_remote_path: /etc/rancher/k3s/k3s.yaml
+k3s_kubeconfig_local_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube"
+k3s_kubeconfig_local_path: "{{ k3s_kubeconfig_local_dir }}/{{ k3s_kubeconfig_context }}.yaml"
+k3s_kubeconfig_api_port: 6443

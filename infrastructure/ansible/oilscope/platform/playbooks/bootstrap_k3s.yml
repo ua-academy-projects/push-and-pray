@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Prepare the k3s node hosts
+  hosts: k3s_servers
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+  roles:
+    - role: oilscope.platform.host_baseline
+
+- name: Initialise the cluster on the first server
+  hosts: k3s_servers
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    k3s_server_bootstrap_first: true
+    k3s_server_token: ""
+  pre_tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Leave the joining servers to the next play
+      ansible.builtin.meta: end_host
+      when: oilscope_vm_key != k3s_project.kubernetes.entry_node
+  roles:
+    - role: oilscope.platform.k3s_server
+      vars:
+        k3s_server_version: "{{ k3s_project.kubernetes.version }}"
+        k3s_server_node_ip: "{{ k3s_project.vms[oilscope_vm_key].internal_ip }}"
+        k3s_server_pod_cidr: "{{ k3s_project.kubernetes.pod_cidr }}"
+        k3s_server_service_cidr: "{{ k3s_project.kubernetes.service_cidr }}"
+        k3s_server_is_entry_node: true
+        k3s_server_bootstrap_address: "{{ k3s_project.vms[oilscope_vm_key].internal_ip }}"
+        k3s_server_tls_sans: >-
+          {{ [k3s_project.kubernetes.api_endpoint]
+             + (groups['k3s_servers'] | map('extract', hostvars, 'public_ip') | select | list)
+             + (groups['k3s_servers'] | map('extract', hostvars, 'internal_ip') | select | list) }}
+
+- name: Read the cluster token from the first server
+  hosts: k3s_servers
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Skip every server but the first
+      ansible.builtin.meta: end_host
+      when: oilscope_vm_key != k3s_project.kubernetes.entry_node
+
+    - name: Read the token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/token
+      register: k3s_bootstrap_token
+      no_log: true
+
+    - name: Publish the token to the joining servers
+      ansible.builtin.set_fact:
+        k3s_cluster_token: "{{ k3s_bootstrap_token.content | b64decode | trim }}"
+      no_log: true
+
+- name: Join the remaining servers one at a time
+  hosts: k3s_servers
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+  vars:
+    k3s_server_bootstrap_first: false
+    k3s_entry_host: >-
+      {{ k3s_project.name_prefix }}-{{ k3s_project.environment
+      }}-{{ k3s_project.kubernetes.entry_node }}
+  pre_tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Skip the server that initialised the cluster
+      ansible.builtin.meta: end_host
+      when: oilscope_vm_key == k3s_project.kubernetes.entry_node
+  roles:
+    - role: oilscope.platform.k3s_server
+      vars:
+        k3s_server_version: "{{ k3s_project.kubernetes.version }}"
+        k3s_server_node_ip: "{{ k3s_project.vms[oilscope_vm_key].internal_ip }}"
+        k3s_server_pod_cidr: "{{ k3s_project.kubernetes.pod_cidr }}"
+        k3s_server_service_cidr: "{{ k3s_project.kubernetes.service_cidr }}"
+        k3s_server_is_entry_node: false
+        k3s_server_bootstrap_address: >-
+          {{ k3s_project.vms[k3s_project.kubernetes.entry_node].internal_ip }}
+        k3s_server_token: "{{ hostvars[k3s_entry_host].k3s_cluster_token }}"
+        k3s_server_tls_sans: >-
+          {{ [k3s_project.kubernetes.api_endpoint]
+             + (groups['k3s_servers'] | map('extract', hostvars, 'public_ip') | select | list)
+             + (groups['k3s_servers'] | map('extract', hostvars, 'internal_ip') | select | list) }}
+
+- name: Fetch the kubeconfig to the operator's machine
+  hosts: k3s_servers
+  gather_facts: false
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Fetch from the entry node only
+      ansible.builtin.meta: end_host
+      when: oilscope_vm_key != k3s_project.kubernetes.entry_node
+  roles:
+    - role: oilscope.platform.k3s_kubeconfig
+      vars:
+        k3s_kubeconfig_context: "{{ k3s_project.name_prefix }}-{{ k3s_project.environment }}"
+        k3s_kubeconfig_api_endpoint: "{{ k3s_project.kubernetes.api_endpoint }}"

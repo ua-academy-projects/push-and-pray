@@ -1,13 +1,8 @@
 variable "project_config_path" {
-  description = "Path to the external JSON file containing project-specific configuration."
+  description = "Path to the JSON file containing project-specific configuration, relative to this root. The default resolves to the repository root when Terraform is run with -chdir=infrastructure/terraform. The file is never committed."
   type        = string
   nullable    = false
-  default     = "/Users/pavlo/Desktop/project-config.new.json"
-
-  validation {
-    condition     = fileexists(var.project_config_path)
-    error_message = "project_config_path must point to an existing file."
-  }
+  default     = "../../project-config.new.json"
 }
 
 //for Azure

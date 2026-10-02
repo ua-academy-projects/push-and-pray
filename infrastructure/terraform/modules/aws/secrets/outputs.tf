@@ -1,6 +1,6 @@
 output "secret_ids" {
   description = "AWS secret container IDs created from the project configuration."
-  value       = local.all_secret_ids
+  value       = keys(aws_secretsmanager_secret.this)
 }
 
 output "secret_resource_names" {

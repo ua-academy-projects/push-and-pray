@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+spec:
+  serviceName: {{ .Release.Name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include "oilscope-rabbitmq.definitions" . | sha256sum }}
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.image }}
+          ports:
+            - name: amqps
+              containerPort: {{ .Values.port }}
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .Values.username | quote }}
+            - name: RABBITMQ_DEFAULT_VHOST
+              value: {{ .Values.vhost | quote }}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.passwordSecret }}
+                  key: {{ .Values.passwordKey }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: {{ .Values.memoryMb }}Mi
+            limits:
+              memory: {{ .Values.memoryMb }}Mi
+          livenessProbe:
+            exec:
+              command: [rabbitmq-diagnostics, -q, ping]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 15
+          readinessProbe:
+            exec:
+              command: [rabbitmq-diagnostics, -q, check_running]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+            - name: config
+              mountPath: /etc/rabbitmq/rabbitmq.conf
+              subPath: rabbitmq.conf
+              readOnly: true
+            - name: config
+              mountPath: /etc/rabbitmq/definitions.json
+              subPath: definitions.json
+              readOnly: true
+            - name: tls
+              mountPath: /etc/rabbitmq/tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}
+        - name: tls
+          secret:
+            secretName: {{ .Release.Name }}-tls
+            defaultMode: 0400
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: {{ .Values.storage.className }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

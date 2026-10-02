@@ -1,11 +1,7 @@
 locals {
   postgres_enabled = var.config.default_cloud == "azure" && var.config.managed_database
 
-  budget_enabled = try(var.config.budgets.azure.enabled, false)
-
-  enabled = anytrue([
-    for vm in values(var.config.vms) : try(vm.cloud, var.config.default_cloud) == "azure"
-  ]) || local.postgres_enabled || local.budget_enabled
+  enabled = var.config.default_cloud == "azure"
 
   resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
   location        = var.config.region_map[var.config.region]["azure"].location

@@ -1,0 +1,21 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+spec:
+  secretName: {{ .Release.Name }}-tls
+  duration: {{ mul .Values.certificateDays 24 }}h
+  renewBefore: {{ div (mul .Values.certificateDays 24) 3 }}h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - {{ .Release.Name }}
+    - {{ printf "%s.%s.svc" .Release.Name .Release.Namespace }}
+    - {{ printf "%s.%s.svc.cluster.local" .Release.Name .Release.Namespace }}
+  issuerRef:
+    name: {{ .Values.issuer }}
+    kind: ClusterIssuer
+    group: cert-manager.io

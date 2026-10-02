@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+verified_on: "2026-09-27"
+
+tooling:
+  helm: "3.19.4"
+  kubectl: "1.35.0"
+  kubernetes_core: "6.5.0"
+
+upstream:
+  storage:
+    repo: https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+    chart: aws-ebs-csi-driver
+    chart_version: "2.66.0"
+    app_version: "1.66.0"
+
+  ingress:
+    repo: https://traefik.github.io/charts
+    chart: traefik
+    chart_version: "41.6.0"
+    app_version: "v3.7.13"
+
+  certificates:
+    repo: oci://quay.io/jetstack/charts/cert-manager
+    chart: cert-manager
+    chart_version: "v1.21.2"
+    app_version: "v1.21.2"
+
+owned:
+  broker:
+    chart: oilscope-rabbitmq
+    image: rabbitmq
+    image_tag_source: rabbitmq.image
+  cache:
+    chart: oilscope-redis
+    image: redis
+    image_tag_source: redis.image
+  database:
+    chart: oilscope-postgres
+    image: postgres
+    image_tag_source: null
+
+application:
+  chart: oilscope
+  images_source: registry.image_digests

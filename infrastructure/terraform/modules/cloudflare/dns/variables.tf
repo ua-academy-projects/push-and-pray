@@ -1,12 +1,13 @@
 variable "config" {
-  description = "Project configuration. The hostname, the VM to publish and the Cloudflare settings are all derived from it."
+  description = "Project configuration. Both published hostnames and the entry node they resolve to are derived from it."
   type = object({
-    default_cloud = string
-    vms = map(object({
-      role            = string
-      cloud           = optional(string)
-      public_endpoint = optional(object({ hostname = string }))
-    }))
+    ingress = object({
+      hostname = string
+    })
+    kubernetes = object({
+      api_endpoint = string
+      entry_node   = string
+    })
     cloudflare = optional(object({
       enabled   = optional(bool, false)
       zone_name = optional(string, "")
@@ -17,20 +18,7 @@ variable "config" {
   })
 }
 
-variable "aws_vms" {
-  description = "Created AWS instances keyed by VM configuration name; only the public address is read."
-  type        = map(object({ public_ip = optional(string) }))
-  default     = {}
-}
-
-variable "gcp_vms" {
-  description = "Created GCE instances keyed by VM configuration name; only the public address is read."
-  type        = map(object({ public_ip = optional(string) }))
-  default     = {}
-}
-
-variable "azure_vms" {
-  description = "Created Azure VMs keyed by VM configuration name; only the public address is read."
-  type        = map(object({ public_ip = optional(string) }))
-  default     = {}
+variable "vm" {
+  description = "The aws_vm module. Only the entry node's public address is read."
+  type        = any
 }

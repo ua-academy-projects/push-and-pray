@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-history
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "history") | indent 4 }}
+spec:
+  replicas: {{ .Values.services.history.replicas }}
+  selector:
+    matchLabels:
+{{ include "oilscope.selector" (dict "root" . "component" "history") | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ include "oilscope.selector" (dict "root" . "component" "history") | indent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 30
+{{- if .Values.registryCredentials.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.registryCredentials.secret }}
+{{- end }}
+      topologySpreadConstraints:
+{{ include "oilscope.spread" (dict "root" . "component" "history") | indent 8 }}
+      containers:
+        - name: history
+          image: {{ .Values.images.history }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.services.history.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-history
+          env:
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TZ
+              value: UTC
+{{ include "oilscope.brokerEnv" . | indent 12 }}
+          resources:
+{{ toYaml .Values.services.history.resources | indent 12 }}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: broker-ca
+              mountPath: {{ .Values.broker.caPath }}
+              readOnly: true
+            - name: database-ca
+              mountPath: {{ .Values.database.caPath }}
+              readOnly: true
+      volumes:
+        - name: broker-ca
+          secret:
+            secretName: {{ .Values.broker.tlsSecret }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: database-ca
+          configMap:
+            name: {{ .Values.database.caConfigMap }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-history
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "history") | indent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+{{ include "oilscope.selector" (dict "root" . "component" "history") | indent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.services.history.port }}
+      targetPort: http

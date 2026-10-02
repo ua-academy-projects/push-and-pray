@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+crds:
+  enabled: true
+  keep: true
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+webhook:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+cainjector:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+startupapicheck:
+  enabled: true
+  timeout: 5m

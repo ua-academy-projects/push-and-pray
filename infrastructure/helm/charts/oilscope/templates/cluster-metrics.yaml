@@ -1,0 +1,154 @@
+{{- if .Values.clusterMetrics.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-cluster-metrics
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "cluster-metrics") | indent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-cluster-metrics
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "cluster-metrics") | indent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, pods, persistentvolumeclaims]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list]
+  - apiGroups: [cert-manager.io]
+    resources: [certificates]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-cluster-metrics
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "cluster-metrics") | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-cluster-metrics
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-cluster-metrics
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-cluster-metrics
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "cluster-metrics") | indent 4 }}
+data:
+  collect.sh: |
+    set -eu
+
+    not_true() {
+      tr ' ' '\n' | grep -cvx True || true
+    }
+
+    nodes_not_ready=$(
+      kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
+        | not_true
+    )
+
+    pods_not_ready=$(
+      kubectl get pods -n "$NAMESPACE" --field-selector=status.phase!=Succeeded \
+        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
+        | not_true
+    )
+
+    jobs_failed=$(
+      kubectl get jobs -n "$NAMESPACE" \
+        -o jsonpath='{range .items[*]}{.status.failed}{"\n"}{end}' \
+        | grep -cvE '^(0)?$' || true
+    )
+
+    certificates_not_ready=$(
+      kubectl get certificates --all-namespaces \
+        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
+        | not_true
+    )
+
+    printf '%s %s %s %s\n' \
+      "$nodes_not_ready" "$pods_not_ready" "$jobs_failed" "$certificates_not_ready" \
+      > /shared/counts
+  publish.sh: |
+    set -eu
+    read -r nodes pods jobs certs < /shared/counts
+
+    aws cloudwatch put-metric-data \
+      --region "$AWS_REGION" \
+      --namespace "$METRIC_NAMESPACE" \
+      --metric-data \
+      "MetricName=NodesNotReady,Value=${nodes},Unit=Count" \
+      "MetricName=PodsNotReady,Value=${pods},Unit=Count" \
+      "MetricName=JobsFailed,Value=${jobs},Unit=Count" \
+      "MetricName=CertificatesNotReady,Value=${certs},Unit=Count"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-cluster-metrics
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "cluster-metrics") | indent 4 }}
+spec:
+  schedule: {{ .Values.clusterMetrics.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+{{ include "oilscope.selector" (dict "root" . "component" "cluster-metrics") | indent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ .Release.Name }}-cluster-metrics
+          volumes:
+            - name: shared
+              emptyDir:
+                medium: Memory
+            - name: scripts
+              configMap:
+                name: {{ .Release.Name }}-cluster-metrics
+                defaultMode: 0555
+          initContainers:
+            - name: collect
+              image: {{ .Values.clusterMetrics.kubectlImage }}
+              command: [sh, /scripts/collect.sh]
+              env:
+                - name: NAMESPACE
+                  value: {{ .Release.Namespace }}
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+          containers:
+            - name: publish
+              image: {{ .Values.clusterMetrics.awsCliImage }}
+              command: [sh, /scripts/publish.sh]
+              env:
+                - name: AWS_REGION
+                  value: {{ .Values.clusterMetrics.region | quote }}
+                - name: METRIC_NAMESPACE
+                  value: {{ .Values.clusterMetrics.metricNamespace | quote }}
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+                  readOnly: true
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+{{- end }}

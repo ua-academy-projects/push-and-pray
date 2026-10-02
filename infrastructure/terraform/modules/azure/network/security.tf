@@ -19,13 +19,15 @@ resource "azurerm_network_security_group" "role" {
 locals {
   security_rules = merge(
     {
-      "bastion-ssh" = {
+      for name, vm in local.azure_vms : "bastion-ssh" => {
         role         = "bastion"
         priority     = 100
         description  = "SSH from the configured operator networks"
-        ports        = [tostring(var.config.vms.bastion.ssh_port)]
-        source_cidrs = var.config.vms.bastion.allowed_cidrs
-      }
+        ports        = [tostring(vm.ssh_port)]
+        source_cidrs = vm.allowed_cidrs
+      } if name == "bastion"
+    },
+    {
       "ui-web" = {
         role         = "ui"
         priority     = 110

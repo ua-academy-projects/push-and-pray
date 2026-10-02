@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_certificates_namespace: cert-manager
+k3s_certificates_account_secret: letsencrypt-account-key
+k3s_certificates_public_issuer: letsencrypt
+k3s_certificates_selfsigned_issuer: oilscope-selfsigned
+k3s_certificates_internal_issuer: oilscope-internal-ca
+k3s_certificates_internal_ca_secret: oilscope-internal-ca
+k3s_certificates_internal_ca_multiplier: 10

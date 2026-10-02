@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+images:
+  fetcher: ""
+  history: ""
+  ui: ""
+  database: ""
+
+database:
+  host: ""
+  port: 5432
+  name: oil_tracker
+  sslmode: verify-full
+  caConfigMap: oilscope-database-ca
+  caPath: /etc/oilscope/database
+
+ingress:
+  className: oilscope
+  host: ""
+  clusterIssuer: letsencrypt
+  tlsSecret: oilscope-ingress-tls
+
+broker:
+  service: oilscope-rabbitmq
+  tlsSecret: oilscope-rabbitmq-tls
+  caPath: /etc/oilscope/rabbitmq
+  exchange: prices
+  queue: price_observations
+  routingKey: observations
+  timeoutSeconds: 10
+  reconnectSeconds: 5
+  maxAttempts: 5
+  outboxPollSeconds: 5
+  outboxBatchSize: 50
+
+cache:
+  tlsSecret: oilscope-redis-tls
+  caPath: /etc/oilscope/redis
+  keyPrefix: "oilscope:session:"
+  sessionTtlSeconds: 2592000
+
+services:
+  ui:
+    replicas: 1
+    port: 8080
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {memory: 256Mi}
+  history:
+    replicas: 1
+    port: 8001
+    resources:
+      requests: {cpu: 50m, memory: 192Mi}
+      limits: {memory: 384Mi}
+  fetcher:
+    replicas: 1
+    port: 8002
+    cronHours: "0,6,12,18"
+    fetchOnStartup: "true"
+    requestTimeoutSeconds: "15"
+    dataProvider: oilpriceapi
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {memory: 192Mi}
+
+clusterMetrics:
+  enabled: true
+  schedule: "*/5 * * * *"
+  region: ""
+  metricNamespace: ""
+  awsCliImage: public.ecr.aws/aws-cli/aws-cli:2.32.6
+  kubectlImage: registry.k8s.io/kubectl:v1.35.0
+
+registryCredentials:
+  enabled: true
+  secret: oilscope-registry
+  registry: ""
+  region: ""
+  schedule: "0 */8 * * *"
+  awsCliImage: public.ecr.aws/aws-cli/aws-cli:2.32.6
+  kubectlImage: registry.k8s.io/kubectl:v1.35.0
+
+migration:
+  profile: cloud
+  secret: oilscope-migration
+  userKey: PGUSER
+  passwordKey: PGPASSWORD
+  runtimeUserPrefix: oil_tracker
+  runtimeServices:
+    - history
+    - fetcher
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi

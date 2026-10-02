@@ -18,9 +18,24 @@ have already been persisted in PostgreSQL.
 - Interactive React charts with instrument, date-range, scale, style, comparison,
   smoothing, and moving-average controls.
 - Redis-backed UI preferences with a sliding 30-day TTL.
-- Multi-stage Docker images and one Docker Compose project per VM.
+- Multi-stage Docker images, deployed on AWS as Helm releases on a three-node
+  k3s cluster and on the other clouds as one Docker Compose project per VM.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Passwordless project-specific SSH access and journald-based container logging.
+
+## Deployment paths
+
+There are two, and which one applies depends on the cloud:
+
+| Cloud | Runtime | Start here |
+| ----- | ------- | ---------- |
+| AWS | k3s with embedded etcd, three dual-role nodes, Traefik ingress | [docs/k3s-deployment.md](docs/k3s-deployment.md) |
+| GCP, Azure | one Docker Compose project per VM | [docs/supported-compose-deployment.md](docs/supported-compose-deployment.md) |
+
+Anything below that describes per-VM Compose projects, per-VM service roles or a
+bastion host is the second path. The AWS path has none of those: every node runs
+the control plane and workloads, and operator access is a direct SSH or
+Kubernetes API connection from an allow-listed address.
 
 ## Screenshots
 
@@ -57,7 +72,8 @@ have already been persisted in PostgreSQL.
 | Messaging      | RabbitMQ, with a PostgreSQL publishing outbox |
 | Persistence    | PostgreSQL 18                                 |
 | UI sessions    | Redis, with native TTL expiry                 |
-| Packaging      | Docker Engine and Docker Compose              |
+| Packaging      | Docker Engine; Helm on AWS, Docker Compose elsewhere |
+| Orchestration  | k3s on AWS                                    |
 | Virtualization | Vagrant, QEMU, Ubuntu 24.04 ARM64             |
 
 ## Architecture
@@ -128,7 +144,10 @@ scientific data source.
 ├── database/
 │   └── migrations/                 PostgreSQL migrations
 ├── infrastructure/
+│   ├── ansible/                    oilscope.platform collection: inventory, playbooks, roles
 │   ├── docker/                     Dockerfiles and per-VM Compose files
+│   ├── helm/                       Charts, pinned third-party versions, chart values
+│   ├── terraform/                  Single root over the aws/gcp/azure/cloudflare modules
 │   └── vagrant/
 │       ├── commands/               Host-side deployment commands
 │       ├── config/                 Vagrant configuration template
@@ -155,7 +174,10 @@ RabbitMQ, and Redis.
 
 ## Docker deployment details
 
-The supported production-style deployment pulls prebuilt GHCR images through
+This section describes the Compose path, which is what GCP and Azure still run.
+For AWS, see [docs/k3s-deployment.md](docs/k3s-deployment.md).
+
+The Compose deployment pulls prebuilt GHCR images through
 the `oilscope.platform.compose_project` Ansible role. See
 [the supported Compose deployment guide](docs/supported-compose-deployment.md) for the
 required parent-process environment, the one-command startup, independent VM roles,
@@ -186,6 +208,12 @@ GitHub Actions builds and publishes every application image to GitHub Container 
 | Fetcher     | `ghcr.io/<owner>/push-and-pray/fetcher` |
 | History     | `ghcr.io/<owner>/push-and-pray/history` |
 | UI          | `ghcr.io/<owner>/push-and-pray/ui`      |
+
+The AWS path does not use these. `.github/workflows/publish-pavlo.yaml` builds
+the same four images on a `pavlo-v*` tag and pushes them to ECR, authenticating
+by OIDC with no stored AWS key, then prints each digest to the job summary. The
+Helm charts are deployed by digest, never by tag — so a moving tag like
+`latest` has nothing to point at in that path.
 
 Replace `<owner>` with the lowercase GitHub account or organization that owns the
 repository. Every published image receives the full commit SHA as an immutable tag.
@@ -330,7 +358,9 @@ shared-CA TLS, and an administrator secret; Flexible Server uses a delegated
 subnet, a linked private DNS zone and a Key Vault administrator secret. Ansible
 now resolves connections/CA bundles and runs managed migrations with per-VM
 restricted runtime logins before History starts, and deploys RabbitMQ (on the
-History VM) and Redis (on the UI VM) in both database modes. See
+History VM) and Redis (on the UI VM) in both database modes. On AWS none of
+those per-VM placements apply: RabbitMQ and Redis are single-replica workloads
+the scheduler places, and migrations run as a Helm pre-upgrade Job. See
 [credential handling](docs/secrets.md#managed-database-administrator-credentials)
 for the GCP and Azure Terraform-state exception. No infrastructure was deployed
 as part of implementing these modules.
@@ -341,7 +371,10 @@ Set the required JSON boolean `managed_database` to `true` for provider-managed
 PostgreSQL or `false` for PostgreSQL in Docker on a database-role VM. Use JSON
 booleans, not strings such as `"yes"` or `"no"`. Managed mode requires a
 `database_profile` and forbids database-role VMs; self-hosted mode requires a
-database-role VM. See [database modes](docs/database-modes.md) before changing
+database-role VM. On AWS the choice is gone: the k3s layout has no
+database-role VM, so `managed_database` must be `true` and the deploy playbook
+stops with an explanatory message rather than a partial deployment if it is
+not. See [database modes](docs/database-modes.md) before changing
 the value on an existing deployment. The container's internal migration profile
 names (`application` and `cloud`) remain unchanged.
 
@@ -352,16 +385,33 @@ project JSON carries a branch for all three. The VM definitions stay neutral:
 adding Azure needs no change to `vms`, `network`, `rabbitmq`, `redis`,
 `registry`, `service_ports` or `ssh_users`.
 
-Three things are worth knowing before the first run.
+The configuration schema itself has moved ahead of this: it now accepts only the
+k3s layout — three `kubernetes`-role VMs, a `kubernetes` block, an `ingress`
+block — so a configuration that validates today is an AWS configuration. GCP and
+Azure keep working from a configuration written before that change; they just
+cannot be described by the current schema. Converting them is the remaining
+work, and it is the reason the Compose documents are still in the repository.
 
-**Every plan in this root now needs an Azure subscription.** The `azurerm`
-provider configures itself whenever it appears in a configuration, even when
-every Azure resource is `count = 0`, so an AWS-only or GCP-only
-`terraform plan` fails with `unable to build authorizer for Resource Manager
-API` unless you have run `az login` or exported `ARM_*`. Set
-`ARM_SUBSCRIPTION_ID` (or fill in `clouds.azure.subscription_id`) even for
-deployments that never touch Azure. Credentials themselves still come from the
-environment or the Azure CLI, never from the project JSON.
+Four things are worth knowing before the first run.
+
+**A plan needs credentials only for the cloud it deploys.** This was not true
+until the Azure modules were commented out. While they were instantiated, the
+`azurerm` provider configured itself on every plan — even with every Azure
+resource at `count = 0` — and an AWS-only plan failed with `unable to build
+authorizer for Resource Manager API` unless you had run `az login` or exported
+`ARM_*`.
+
+What changed is that a provider with no resource referring to it is never
+configured. The six `module "azure_*"` blocks in `main.tf` and the outputs
+reading them are commented out, so an AWS plan now needs AWS and Cloudflare
+credentials and nothing else. GCP's modules are still instantiated and resolve
+to `count = 0`, which is enough — the `google` provider is not configured
+either. Verified by planning with the Azure and gcloud credential directories
+pointed at empty paths.
+
+Credentials still come from the environment or a cloud CLI, never from the
+project JSON. [docs/k3s-deployment.md](docs/k3s-deployment.md) lists every one a
+run needs and where each is read from.
 
 **Ansible follows the same selection.** `inventory/oilscope-azure.yml` wraps
 `azure.azcollection.azure_rm`, and the per-cloud task files behind
@@ -372,14 +422,23 @@ to miss: that collection's Python dependencies are not in this repository's
 `OILSCOPE_SSH_KEY` must be set, because the shared fallback is a
 gcloud-managed key that no Azure VM ever carries.
 
-**Azure places VMs by address, not by role.** AWS puts the bastion and the UI
-in the management subnet; GCP puts only the bastion there. The Azure network
-module instead selects the subnet whose CIDR contains each VM's `internal_ip`,
-so a VM block shaped for either cloud deploys unchanged — but it does not
-reconcile the two, and a UI address valid on GCP is still invalid on AWS.
-Azure also reserves the first four and the last address of every subnet, which
-is why both examples now use `10.0.0.0/24` and `10.0.1.0/24` with host
-addresses from `.10` up.
+**Azure places VMs by address, not by role.** GCP puts the bastion in the
+management subnet. The Azure network module instead selects the subnet whose
+CIDR contains each VM's `internal_ip`, so a VM block shaped for either cloud
+deploys unchanged — but it does not reconcile the two. Azure also reserves the
+first four and the last address of every subnet, which is why both examples use
+`10.0.0.0/24` and `10.0.1.0/24` with host addresses from `.10` up.
+
+**AWS no longer has a bastion or a management subnet.** All three k3s nodes sit
+in one subnet routed to the internet gateway, each with an Elastic IP, and are
+reached directly — from the addresses in `kubernetes.admin_allowed_cidrs` only
+for SSH and the Kubernetes API, from anywhere for 80 and 443. The NAT gateway
+went away with the private workload subnet. That is a real reduction in isolation
+compared with the bastion topology, accepted deliberately for a three-node
+cluster whose API server has to be reachable anyway; it is recorded as such in
+[docs/k3s-implementation-log.md](docs/k3s-implementation-log.md). A
+`management`-role VM or a management CIDR in an AWS configuration is from the
+previous topology and the current schema rejects it.
 
 Run migration-runner checks without PostgreSQL using
 `python3 -m unittest discover -s database/tests -v`. These stub the database commands
@@ -506,3 +565,12 @@ uv run ruff check .
 - `SESSION_COOKIE_SECURE=false` is suitable only for local HTTP. Enable it behind HTTPS.
 - PostgreSQL is exposed to the configured LAN for this lab deployment; production
   deployments should restrict its network exposure.
+- On AWS, `kubernetes.admin_allowed_cidrs` is the whole of the access control in
+  front of SSH and the Kubernetes API. An entry of `0.0.0.0/0` there exposes the
+  cluster API to the internet; the schema cannot stop you writing it.
+- The kubeconfig the bootstrap playbook fetches holds a cluster-admin client
+  certificate — a credential equivalent to root on all three nodes, and one
+  that cannot be revoked without replacing the cluster CA. It is written to
+  `~/.kube/<context>.yaml` at mode `0600`, never into this repository and never
+  merged into your default context, so every `kubectl` and `helm` call on this
+  cluster takes an explicit `--kubeconfig`.

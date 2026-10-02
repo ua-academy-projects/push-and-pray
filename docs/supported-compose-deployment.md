@@ -1,5 +1,13 @@
 # Supported Docker Compose deployment
 
+> **This describes the previous deployment, which is being replaced.** Everything
+> below is still accurate for the Compose path and for the GCP and Azure clouds,
+> which have not been converted. The AWS path now runs on k3s — see
+> [k3s-deployment.md](k3s-deployment.md).
+>
+> This document is retired once the cutover completes. Until then, a change to
+> the application may need making in both places.
+
 This deployment pulls prebuilt application and PostgreSQL images. It does not
 build application images on the target machine. The Ansible role installs a
 non-secret `deployment.env` file containing the application image SHA from the

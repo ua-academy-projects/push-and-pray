@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+    app.kubernetes.io/component: migration
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+{{- if .Values.registryCredentials.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.registryCredentials.secret }}
+{{- end }}
+      volumes:
+        - name: bootstrap-sql
+          configMap:
+            name: {{ .Release.Name }}-database-bootstrap
+        - name: database-ca
+          configMap:
+            name: {{ .Values.database.caConfigMap }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        - name: runtime-passwords
+          secret:
+            secretName: {{ .Values.migration.secret }}
+            items:
+{{- range .Values.migration.runtimeServices }}
+              - key: runtime-{{ . }}
+                path: {{ . }}
+{{- end }}
+      containers:
+        - name: migrate
+          image: {{ .Values.images.database }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for service in ${RUNTIME_SERVICES}; do
+                RUNTIME_DB_ROLE="${service}"
+                RUNTIME_DB_USER="${RUNTIME_USER_PREFIX}_${service}"
+                RUNTIME_DB_PASSWORD="$(cat "/etc/oilscope/runtime/${service}")"
+                export RUNTIME_DB_ROLE RUNTIME_DB_USER RUNTIME_DB_PASSWORD
+                psql -X --set=ON_ERROR_STOP=1 --file=/etc/oilscope/sql/roles.sql
+              done
+
+              petroscope-migrate
+
+              for service in ${RUNTIME_SERVICES}; do
+                RUNTIME_DB_ROLE="${service}"
+                RUNTIME_DB_USER="${RUNTIME_USER_PREFIX}_${service}"
+                RUNTIME_DB_PASSWORD="$(cat "/etc/oilscope/runtime/${service}")"
+                export RUNTIME_DB_ROLE RUNTIME_DB_USER RUNTIME_DB_PASSWORD
+                psql -X --set=ON_ERROR_STOP=1 --file=/etc/oilscope/sql/grants.sql
+                PGUSER="${RUNTIME_DB_USER}" PGPASSWORD="${RUNTIME_DB_PASSWORD}" \
+                  psql -X --set=ON_ERROR_STOP=1 --file=/etc/oilscope/sql/verify.sql
+              done
+          env:
+            - name: RUNTIME_SERVICES
+              value: {{ .Values.migration.runtimeServices | join " " | quote }}
+            - name: RUNTIME_USER_PREFIX
+              value: {{ .Values.migration.runtimeUserPrefix | quote }}
+            - name: MIGRATION_PROFILE
+              value: {{ .Values.migration.profile | quote }}
+            - name: PGHOST
+              value: {{ .Values.database.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.database.port | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.database.name | quote }}
+            - name: PGSSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: PGSSLROOTCERT
+              value: {{ printf "%s/ca.crt" .Values.database.caPath | quote }}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.secret }}
+                  key: {{ .Values.migration.userKey }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.secret }}
+                  key: {{ .Values.migration.passwordKey }}
+          volumeMounts:
+            - name: bootstrap-sql
+              mountPath: /etc/oilscope/sql
+              readOnly: true
+            - name: database-ca
+              mountPath: {{ .Values.database.caPath }}
+              readOnly: true
+            - name: runtime-passwords
+              mountPath: /etc/oilscope/runtime
+              readOnly: true
+          resources:
+{{ toYaml .Values.migration.resources | indent 12 }}

@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install cert-manager with its CRDs
+  kubernetes.core.helm:
+    kubeconfig: "{{ k3s_certificates_kubeconfig }}"
+    name: cert-manager
+    chart_ref: "{{ k3s_certificates_chart_repo }}"
+    chart_version: "{{ k3s_certificates_chart_version }}"
+    release_namespace: "{{ k3s_certificates_namespace }}"
+    create_namespace: true
+    values_files:
+      - "{{ k3s_certificates_values_file }}"
+    atomic: true
+    wait: true
+    wait_timeout: 10m
+
+- name: Wait for the cert-manager webhook to serve
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_certificates_kubeconfig }}"
+    api_version: v1
+    kind: Endpoints
+    namespace: "{{ k3s_certificates_namespace }}"
+    name: cert-manager-webhook
+  register: k3s_certificates_webhook
+  until: >-
+    k3s_certificates_webhook.resources | length > 0
+    and k3s_certificates_webhook.resources[0].subsets | default([]) | length > 0
+  retries: 30
+  delay: 10
+
+- name: Create the public and internal issuers
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_certificates_kubeconfig }}"
+    state: present
+    apply: true
+    template: issuers.yaml.j2
+
+- name: Wait for the internal CA certificate to be issued
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_certificates_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    namespace: "{{ k3s_certificates_namespace }}"
+    name: "{{ k3s_certificates_internal_ca_secret }}"
+  register: k3s_certificates_internal_ca
+  until: >-
+    k3s_certificates_internal_ca.resources | default([]) | length > 0
+    and (k3s_certificates_internal_ca.resources[0].status.conditions | default([])
+         | selectattr('type', 'equalto', 'Ready')
+         | selectattr('status', 'equalto', 'True') | list | length) > 0
+  retries: 30
+  delay: 10
+
+- name: Report the issuers available to later releases
+  ansible.builtin.debug:
+    msg: >-
+      Public certificates come from ClusterIssuer
+      {{ k3s_certificates_public_issuer }} over HTTP-01 on ingress class
+      {{ k3s_certificates_ingress_class }}. Internal service certificates come
+      from ClusterIssuer {{ k3s_certificates_internal_issuer }}, whose CA is in
+      secret {{ k3s_certificates_namespace }}/{{ k3s_certificates_internal_ca_secret }}.
