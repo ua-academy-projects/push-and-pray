@@ -106,8 +106,8 @@
     },
     "azure": {
       "subscription_id": "00000000-0000-0000-0000-000000000000",
-      "region": "swedencentral",
-      "zone": "1",
+      "region": "japaneast",
+      "zone": "2",
       "network_cidr": "10.2.0.0/16",
       "subnets": {
         "management": "10.2.0.0/28",
