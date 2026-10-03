@@ -6,7 +6,7 @@ resource "google_sql_database_instance" "main" {
   deletion_protection = var.settings.deletion_protection
 
   settings {
-    tier = var.tier
+    tier              = var.tier
     edition           = "ENTERPRISE"
     availability_type = "ZONAL"
     disk_type         = "PD_SSD"
@@ -41,8 +41,8 @@ resource "google_sql_database_instance" "main" {
 }
 
 resource "google_sql_database" "application" {
-  name     = var.settings.name
-  instance = google_sql_database_instance.main.name
+  name            = var.settings.name
+  instance        = google_sql_database_instance.main.name
   deletion_policy = "ABANDON"
 }
 
