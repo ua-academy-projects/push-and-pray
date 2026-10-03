@@ -6,6 +6,11 @@ locals {
     for name, vm in local.config.vms : name
     if try(vm.cloud, local.config.default_cloud) == "aws"
   ]) > 0
+
+  azure_in_use = length([
+    for name, vm in local.config.vms : name
+    if try(vm.cloud, local.config.default_cloud) == "azure"
+  ]) > 0
 }
 
 provider "google" {
@@ -30,4 +35,24 @@ provider "aws" {
   skip_credentials_validation = !local.aws_in_use
   skip_requesting_account_id  = !local.aws_in_use
   skip_metadata_api_check     = !local.aws_in_use
+}
+
+provider "azurerm" {
+  features {}
+
+  subscription_id = try(local.config.clouds.azure.subscription_id, null)
+
+  resource_provider_registrations = "none"
+  resource_providers_to_register = local.azure_in_use ? [
+    "Microsoft.AlertsManagement",
+    "Microsoft.Compute",
+    "Microsoft.Consumption",
+    "Microsoft.DBforPostgreSQL",
+    "Microsoft.Insights",
+    "Microsoft.KeyVault",
+    "Microsoft.ManagedIdentity",
+    "Microsoft.Network",
+    "Microsoft.OperationalInsights",
+    "Microsoft.Portal",
+  ] : []
 }

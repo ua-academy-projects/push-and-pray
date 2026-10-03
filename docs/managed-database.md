@@ -23,7 +23,8 @@ that pg_cron sweeps. The block is present in this mode too; only `mode` is
 read, so switching is a one-word change and not the addition of ten lines.
 
 `managed` moves PostgreSQL to the cloud's service - Cloud SQL on GCP, RDS on
-AWS - in a subnet of its own. The infra VM does not disappear: it changes what
+AWS, Azure Database for PostgreSQL flexible server on Azure - in a subnet of
+its own. The infra VM does not disappear: it changes what
 it carries. Neither managed service offers the PGMQ extension, so the queue
 moves to a RabbitMQ container on that VM, and the UI sessions move to a Redis
 container next to it. The database keeps only the data.
@@ -127,6 +128,17 @@ security groups of the three workloads and of the infra instance - the latter
 because it runs the migrations. The engine family's default parameter group
 already forces TLS.
 
+**Azure** follows the GCP shape. The flexible server has public access off and
+no address in the network; a private endpoint in the database subnet forwards
+to it, and that endpoint's address is `DATABASE_HOST`, again without a DNS
+zone. The subnet makes the network security group apply to the endpoint, and
+a rule admits port 5432 from the workloads and the infra VM to that subnet - a
+private endpoint cannot join an application security group. The server
+accepts encrypted connections only by default. Two server parameters are set
+for the migrations: `azure.extensions` allows `HSTORE` and `PGCRYPTO`, without
+which Azure refuses `CREATE EXTENSION`; and `shared_preload_libraries` leaves
+out `pg_cron`, which Azure admits only into the `postgres` database.
+
 The firewall rules to the infra VM follow the mode: 5432 in self-hosted mode,
 5672 and 6379 in managed mode, from the same three workloads. A Private
 Service Connect endpoint is not a VM, so it needs no rule of its own on GCP.
@@ -153,6 +165,14 @@ things, and the `managed_database_credentials` playbook does the reconciling:
   request body - never on a command line. The operator needs
   `roles/cloudsql.admin`.
 
+- **Azure** keeps no copy of the administrator password, and insists on one
+  when the server is created. Terraform gives it a random password through a
+  write-only argument, so it is in neither the plan nor the state, and the
+  playbook replaces it the GCP way: from the environment variable or, when
+  unset, from Key Vault, through the Resource Manager API with the password in
+  the request body. The administrator is the application role, as on AWS, and
+  its login is fixed when the server is created.
+
 The playbook runs on the operator's machine, not on a VM: creating a database
 role is administrative, and no workload should hold that right.
 
@@ -166,8 +186,8 @@ URL out of it.
 
 Terraform knows the endpoint, but its state is not something Ansible should
 have to open. The endpoint carries a name derived from `name_prefix` and
-`environment` - `oilscope-dev-database-endpoint` on GCP, `oilscope-dev-database`
-on AWS - so the `oilscope_cloud` inventory plugin asks the cloud API for it
+`environment` - `oilscope-dev-database-endpoint` on GCP and Azure,
+`oilscope-dev-database` on AWS - so the `oilscope_cloud` inventory plugin asks the cloud API for it
 directly whenever the configuration says `managed`, and sets
 `oilscope_managed_database_host` on every host. The group variables turn that
 into `oilscope_database_host`, which every workload role reads. Set
@@ -233,7 +253,11 @@ it.
 account (`FreeTierRestrictionError`). Nothing is wrong with the configuration;
 the limit belongs to the account. One day keeps automated backups and
 point-in-time recovery on in both clouds; zero turns them off, and makes RDS
-noticeably quicker to create and destroy.
+noticeably quicker to create and destroy. Azure cannot turn backups off and
+keeps them at least seven days, so anything below 7 becomes 7 there.
+
+A flexible server's name is its host name under `postgres.database.azure.com`
+and has to be free across all of Azure, not just the subscription.
 
 The pg17 image will not start on a data directory written by PostgreSQL 18.
 An environment that ran the earlier image has to recreate the

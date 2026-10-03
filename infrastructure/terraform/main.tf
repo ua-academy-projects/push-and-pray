@@ -11,3 +11,10 @@ module "aws" {
   config                       = local.config
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
 }
+
+module "azure" {
+  source = "./modules/azure"
+
+  config                       = local.config
+  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
+}

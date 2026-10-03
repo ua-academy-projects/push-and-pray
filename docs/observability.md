@@ -14,6 +14,14 @@ host CPU, memory, disk, network ────────────────
 | --- | --- | --- | --- |
 | GCP | Ops Agent | `projects/<project_id>/logs/journald` | Cloud Monitoring, `agent.googleapis.com/*` |
 | AWS | Fluent Bit + CloudWatch agent | log group `/<name_prefix>-<environment>/journald`, one stream per host | CloudWatch namespace `CWAgent` |
+| Azure | Azure Monitor Agent, reading syslog | workspace `<name_prefix>-<environment>-logs`, tables `Syslog` and `Perf` | platform metrics, no agent needed |
+
+Azure differs in two ways. Its agent exists only as a VM extension, so
+Terraform installs it together with the data collection rule, and the
+`observability_agent` role only makes journald forward to rsyslog and checks
+the agent is running. And it reads syslog, not the journal, so the journal's
+own fields - `CONTAINER_NAME` among them - do not arrive: a container's lines
+are tagged with its ID, and the Azure alerts tell services apart by host.
 
 ## Who does what
 
@@ -97,13 +105,13 @@ fields @timestamp, ClientHost, RequestPath, DownstreamStatus, Duration
 
 Every VM, the bastion included, is watched for the same five things:
 
-| | GCP metric | AWS metric | Alert when |
-| --- | --- | --- | --- |
-| CPU | `instance/cpu/utilization` | `CPUUtilization` | above 0.75 (75 %) for 5 min |
-| Memory | `agent.googleapis.com/memory/bytes_used` | `CWAgent mem_used` | above 1.5 GB for 5 min |
-| Disk writes | `instance/disk/write_ops_count` | `VolumeWriteOps` (root volume) | above 1000 ops/s for 5 min |
-| Network in | `instance/network/received_bytes_count` | `NetworkIn` | above 1 Mbit/s for 5 min |
-| Health | `instance/uptime` | `StatusCheckFailed` | no data for 5 min, or a failed check |
+| | GCP metric | AWS metric | Azure metric | Alert when |
+| --- | --- | --- | --- | --- |
+| CPU | `instance/cpu/utilization` | `CPUUtilization` | `Percentage CPU` | above 0.75 (75 %) for 5 min |
+| Memory | `agent.googleapis.com/memory/bytes_used` | `CWAgent mem_used` | `Perf` `Used Memory MBytes`, a log query | above 1.5 GB for 5 min |
+| Disk writes | `instance/disk/write_ops_count` | `VolumeWriteOps` (root volume) | `OS Disk Write Operations/Sec` | above 1000 ops/s for 5 min |
+| Network in | `instance/network/received_bytes_count` | `NetworkIn` | `Network In Total` | above 1 Mbit/s for 5 min |
+| Health | `instance/uptime` | `StatusCheckFailed` | `VmAvailabilityMetric`, plus resource health | no data for 5 min, or a failed check |
 
 The thresholds are module defaults; `observability.thresholds` in the project
 configuration overrides any of them. The dashboard is `<prefix> hosts` in
@@ -124,7 +132,13 @@ Three more alerts come from the journal rather than from metrics:
   a costs-manager role on that account; without the field no budget is
   created.
 
-Everything goes to `observability.alert_email`. GCP mails it straight away;
+On Azure a stopped VM reports no metric at all and a metric alert ignores
+silence, so health is also watched through resource health, which does report
+it. The dashboard is `<prefix>-hosts` in the portal, without the memory chart,
+which comes from the workspace rather than from the platform. The budget
+covers the environment's resource group.
+
+Everything goes to `observability.alert_email`. GCP and Azure mail it straight away;
 **AWS first sends an SNS subscription confirmation, and nothing arrives until
 that link is clicked.**
 
