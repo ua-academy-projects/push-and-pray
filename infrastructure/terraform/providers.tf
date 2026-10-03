@@ -12,6 +12,15 @@ provider "google" {
   project = try(local.config.clouds.gcp.project_id, null)
   region  = try(local.config.clouds.gcp.region, null)
   zone    = try(local.config.clouds.gcp.zone, null)
+
+  # A budget belongs to the billing account, not to a project, so the Budget
+  # API has no project to charge the request to. With user credentials it then
+  # refuses to answer unless the caller names a quota project - and the
+  # provider ignores the quota_project_id in the ADC file. This names the
+  # project the configuration already uses; the caller needs
+  # serviceusage.services.use on it, which Owner and Editor carry.
+  billing_project       = try(local.config.clouds.gcp.project_id, null)
+  user_project_override = true
 }
 
 provider "aws" {
