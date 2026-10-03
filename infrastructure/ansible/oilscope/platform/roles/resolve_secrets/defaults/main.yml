@@ -40,3 +40,8 @@ resolve_secrets_azure_keyvault_api_version: "7.4"
 # resource group, the way the identity is created; set explicitly for one
 # named otherwise.
 resolve_secrets_azure_identity_id: ""
+
+# Content type of the version Terraform creates a secret with. Key Vault has no
+# secret without a value, so a secret nobody has uploaded to yet holds this
+# placeholder, and reading it as a password must fail.
+resolve_secrets_azure_placeholder_content_type: oilscope-placeholder

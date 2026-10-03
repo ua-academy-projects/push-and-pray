@@ -61,6 +61,19 @@
   loop_control:
     label: "{{ item.key }}"
 
+- name: Refuse a secret that still holds Terraform's placeholder
+  ansible.builtin.assert:
+    that: >-
+      (item.content | from_json).contentType | default('')
+      != resolve_secrets_azure_placeholder_content_type
+    fail_msg: >-
+      {{ item.item.value }} still holds the placeholder Terraform created it
+      with; run upload_secret_versions first
+    quiet: true
+  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
 - name: Build the resolved secrets mapping
   ansible.builtin.set_fact:
     resolve_secrets_result: >-

@@ -55,18 +55,21 @@
       - "{{ managed_database_credentials_vault }}"
       - --name
       - "{{ managed_database_credentials_secret_id }}"
-      - --query
-      - value
       - --output
-      - tsv
+      - json
   register: managed_database_credentials_stored
   changed_when: false
   no_log: true
   when: managed_database_credentials_password | length == 0
 
+# Terraform creates the secret with a placeholder, marked by its content type;
+# that is not a password to hand the server.
 - name: Keep the stored password
   ansible.builtin.set_fact:
-    managed_database_credentials_password: "{{ managed_database_credentials_stored.stdout }}"
+    managed_database_credentials_password: >-
+      {{ '' if (managed_database_credentials_stored.stdout | from_json).contentType | default('')
+               == managed_database_credentials_azure_placeholder_content_type
+         else (managed_database_credentials_stored.stdout | from_json).value }}
   no_log: true
   when: managed_database_credentials_stored is not skipped
 
@@ -76,8 +79,8 @@
     fail_msg: >-
       no password for {{ managed_database_credentials_secret_id }}: export
       ${{ managed_database_credentials_variable }} (the value
-      upload_secret_versions reads) or grant yourself getSecret on
-      {{ managed_database_credentials_vault }}
+      upload_secret_versions reads), or upload it and grant yourself
+      getSecret on {{ managed_database_credentials_vault }}
     quiet: true
 
 # The API takes the password in a request body. az would take it on the

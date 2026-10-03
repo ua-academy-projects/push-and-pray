@@ -32,3 +32,5 @@ managed_database_credentials_key_vault_name: ""
 managed_database_credentials_azure_api_version: "2024-08-01"
 managed_database_credentials_azure_poll_retries: 60
 managed_database_credentials_azure_poll_delay: 10
+# Content type of the placeholder version Terraform creates every secret with.
+managed_database_credentials_azure_placeholder_content_type: oilscope-placeholder
