@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the SSH socket
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - --quiet
+      - ssh.socket
+  register: bastion_ssh_socket
+  changed_when: false
+  failed_when: false
+
+- name: Create the SSH daemon drop-in directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ bastion_sshd_drop_in_path | dirname }}"
+    owner: root
+    group: root
+    mode: "0755"
+    state: directory
+
+- name: Install the bastion SSH configuration
+  become: true
+  ansible.builtin.template:
+    src: 00-oilscope-bastion.conf.j2
+    dest: "{{ bastion_sshd_drop_in_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Restart bastion SSH
+
+- name: Check the SSH configuration
+  become: true
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/sshd
+      - -T
+  register: bastion_sshd_effective_config
+  changed_when: false
+  failed_when: >-
+    bastion_sshd_effective_config.rc != 0
+    or bastion_sshd_expected
+       | difference(bastion_sshd_effective_config.stdout_lines)
+       | length > 0
+    or bastion_sshd_effective_config.stdout_lines
+       | select('match', '^port ')
+       | list
+       | length != 1
+  vars:
+    bastion_sshd_expected:
+      - "port {{ bastion_ssh_port }}"
+      - pubkeyauthentication yes
+      - passwordauthentication no
+      - kbdinteractiveauthentication no
+      - permitemptypasswords no
+      - permitrootlogin no
+      - allowtcpforwarding yes
+      - allowagentforwarding no
+      - gatewayports no
+      - x11forwarding no
+      - permittunnel no
+
+- name: Restart SSH if needed
+  ansible.builtin.meta: flush_handlers

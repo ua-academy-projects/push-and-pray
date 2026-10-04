@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    resolve_secrets_config: >-
+      {{ lookup('ansible.builtin.file', resolve_secrets_config_path) | from_json }}
+
+- name: Derive this VM's configuration key
+  ansible.builtin.set_fact:
+    resolve_secrets_vm_key: >-
+      {{ inventory_hostname
+         | regex_replace('^' ~ (resolve_secrets_config.name_prefix
+                                 ~ '-' ~ resolve_secrets_config.environment
+                                 ~ '-') | regex_escape, '') }}
+
+- name: Select the host's secret mappings
+  ansible.builtin.set_fact:
+    resolve_secrets_mappings: >-
+      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
+         | default({}) }}
+
+- name: Refuse a cloud this role cannot read secrets from
+  ansible.builtin.assert:
+    that: resolve_secrets_cloud in resolve_secrets_supported_clouds
+    fail_msg: >-
+      cannot resolve secrets for cloud '{{ resolve_secrets_cloud }}';
+      supported clouds are {{ resolve_secrets_supported_clouds | join(', ') }}.
+      The dynamic inventory normally supplies oilscope_cloud - set
+      resolve_secrets_cloud explicitly when running outside it.
+    quiet: true
+  when: resolve_secrets_mappings | length > 0
+
+- name: Read the mapped secrets from this cloud's secret store
+  ansible.builtin.include_tasks: "fetch-{{ resolve_secrets_cloud }}.yml"
+  when: resolve_secrets_mappings | length > 0
+
+- name: Default to an empty result when there is nothing to resolve
+  ansible.builtin.set_fact:
+    resolve_secrets_result: "{{ resolve_secrets_result | default({}) }}"
+  no_log: true

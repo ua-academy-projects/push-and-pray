@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Resolve the target region
+  ansible.builtin.set_fact:
+    resolve_secrets_target_region: >-
+      {{ resolve_secrets_region
+         | default(resolve_secrets_config.clouds.aws.region | default(''), true) }}
+
+- name: Fail when the region is unknown
+  ansible.builtin.assert:
+    that: resolve_secrets_target_region | length > 0
+    fail_msg: >-
+      no AWS region to read secrets from; set resolve_secrets_region or
+      clouds.aws.region in the configuration
+    quiet: true
+
+- name: Confirm the AWS CLI is present
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_aws_cli }}"
+      - --version
+  register: resolve_secrets_cli_check
+  changed_when: false
+  failed_when: resolve_secrets_cli_check.rc != 0
+
+- name: Read each mapped secret's current value
+  ansible.builtin.command:
+    argv:
+      - "{{ resolve_secrets_aws_cli }}"
+      - secretsmanager
+      - get-secret-value
+      - --secret-id
+      - "{{ item.value }}"
+      - --region
+      - "{{ resolve_secrets_target_region }}"
+      - --query
+      - SecretString
+      - --output
+      - text
+  register: resolve_secrets_accessed
+  changed_when: false
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Build the resolved secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: item.stdout
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"

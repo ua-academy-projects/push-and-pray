@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+resolve_secrets_config_path: ""
+
+# Which cloud this host runs on. The dynamic inventory stamps oilscope_cloud on
+# every host from the resource's own cloud label or tag, so normally nothing has
+# to be passed in.
+resolve_secrets_cloud: "{{ oilscope_cloud | default('') }}"
+
+# One task file per cloud, selected by name rather than by a conditional, so
+# adding a provider adds a file and not a branch.
+resolve_secrets_supported_clouds:
+  - gcp
+  - aws
+  - azure
+
+# --- GCP ------------------------------------------------------------------
+# Falls back to $GOOGLE_PROJECT, then to clouds.gcp.project_id.
+resolve_secrets_project_id: ""
+resolve_secrets_metadata_url: >-
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+resolve_secrets_secretmanager_url: https://secretmanager.googleapis.com/v1
+
+# --- AWS ------------------------------------------------------------------
+# Falls back to clouds.aws.region. The CLI reaches Secrets Manager with the
+# instance's own role, which it obtains from IMDS itself - including the IMDSv2
+# token exchange our instances require.
+resolve_secrets_region: ""
+resolve_secrets_aws_cli: aws
+
+# --- Azure ----------------------------------------------------------------
+# Falls back to clouds.azure.key_vault_name. Like GCP, the host needs no CLI:
+# the instance metadata service hands out a token for the VM's managed
+# identity, and Key Vault accepts it as a bearer token.
+resolve_secrets_key_vault_name: ""
+resolve_secrets_azure_token_url: http://169.254.169.254/metadata/identity/oauth2/token
+resolve_secrets_azure_keyvault_api_version: "7.4"
+
+# The identity to ask a token for. Named after the VM in the environment's
+# resource group, the way the identity is created; set explicitly for one
+# named otherwise.
+resolve_secrets_azure_identity_id: ""
+
+# Content type of the version Terraform creates a secret with. Key Vault has no
+# secret without a value, so a secret nobody has uploaded to yet holds this
+# placeholder, and reading it as a password must fail.
+resolve_secrets_azure_placeholder_content_type: oilscope-placeholder

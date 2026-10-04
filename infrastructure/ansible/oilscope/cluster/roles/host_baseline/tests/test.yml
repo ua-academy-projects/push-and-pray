@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT-0
+---
+- name: Test the host_baseline role
+  hosts: host_baseline_test
+  become: true
+  tasks:
+    - name: Include the host_baseline role
+      ansible.builtin.include_role:
+        name: oilscope.platform.host_baseline

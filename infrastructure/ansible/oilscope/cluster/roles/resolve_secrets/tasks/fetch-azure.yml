@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Resolve the target vault
+  ansible.builtin.set_fact:
+    resolve_secrets_vault: >-
+      {{ resolve_secrets_key_vault_name
+         | default(resolve_secrets_config.clouds.azure.key_vault_name | default(''), true) }}
+
+- name: Fail when the vault is unknown
+  ansible.builtin.assert:
+    that: resolve_secrets_vault | length > 0
+    fail_msg: >-
+      no Azure Key Vault to read secrets from; set resolve_secrets_key_vault_name
+      or clouds.azure.key_vault_name in the configuration
+    quiet: true
+
+# Named explicitly: a VM can carry more than one identity - enabling Azure
+# Monitor from the portal adds a system-assigned one - and the metadata
+# service would then hand out a token for whichever it prefers, which holds
+# no grant on the vault.
+- name: Resolve the identity that reads the secrets
+  ansible.builtin.set_fact:
+    resolve_secrets_identity: >-
+      {{ resolve_secrets_azure_identity_id
+         | default('/subscriptions/' ~ resolve_secrets_config.clouds.azure.subscription_id
+                   ~ '/resourceGroups/' ~ resolve_secrets_config.name_prefix
+                   ~ '-' ~ resolve_secrets_config.environment
+                   ~ '-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/'
+                   ~ inventory_hostname, true) }}
+
+- name: Fetch an access token from the instance metadata service
+  ansible.builtin.uri:
+    url: >-
+      {{ resolve_secrets_azure_token_url }}?api-version=2018-02-01&resource={{
+      'https://vault.azure.net' | urlencode }}&msi_res_id={{
+      resolve_secrets_identity | urlencode }}
+    headers:
+      Metadata: "true"
+    return_content: true
+  register: resolve_secrets_token
+  no_log: true
+
+- name: Extract the access token
+  ansible.builtin.set_fact:
+    resolve_secrets_access_token: >-
+      {{ (resolve_secrets_token.content | from_json).access_token }}
+  no_log: true
+
+# A secret without a version path returns its latest version.
+- name: Read each mapped secret's latest version
+  ansible.builtin.uri:
+    url: >-
+      https://{{ resolve_secrets_vault }}.vault.azure.net/secrets/{{ item.value
+      }}?api-version={{ resolve_secrets_azure_keyvault_api_version }}
+    headers:
+      Authorization: "Bearer {{ resolve_secrets_access_token }}"
+    return_content: true
+  register: resolve_secrets_accessed
+  no_log: true
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Refuse a secret that still holds Terraform's placeholder
+  ansible.builtin.assert:
+    that: >-
+      (item.content | from_json).contentType | default('')
+      != resolve_secrets_azure_placeholder_content_type
+    fail_msg: >-
+      {{ item.item.value }} still holds the placeholder Terraform created it
+      with; run upload_secret_versions first
+    quiet: true
+  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Build the resolved secrets mapping
+  ansible.builtin.set_fact:
+    resolve_secrets_result: >-
+      {{ resolve_secrets_result | default({}) | combine({
+           item.item.key: (item.content | from_json).value
+         }) }}
+  no_log: true
+  loop: "{{ resolve_secrets_accessed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"

@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: MIT-0
+# Supply test hosts through an external inventory. The inventory must define
+# the host_baseline_test group used by test.yml.
+[host_baseline_test]
