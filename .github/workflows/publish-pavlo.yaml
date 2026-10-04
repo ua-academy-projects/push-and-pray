@@ -57,6 +57,8 @@ jobs:
           context: .
           file: infrastructure/docker/Dockerfile.${{ matrix.service }}
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }}
           labels: |
