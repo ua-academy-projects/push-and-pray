@@ -1,0 +1,160 @@
+{
+  "default_cloud": "gcp",
+  "environment": "dev",
+  "name_prefix": "oilscope",
+  "common_labels": {
+    "project": "example-oil-price-tracker",
+    "team": "example-team"
+  },
+  "ssh_users": {
+    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+  },
+  "registry": {
+    "repository": "ghcr.io/example-org/example-project",
+    "username": "example-operator",
+    "image_sha": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "bastion": {
+    "allowed_cidrs": [
+      "192.0.2.10/32"
+    ]
+  },
+  "observability": {
+    "alert_email": "ops@example.com"
+  },
+  "cluster": {
+    "k3s_version": "v1.33.4+k3s1",
+    "ingress": {
+      "hostname": "oilscope.example.com",
+      "acme_email": "example-operator@example.com",
+      "public_ports": [
+        80,
+        443
+      ]
+    },
+    "ports": [
+      { "name": "kube-apiserver", "protocol": "tcp", "ports": [6443], "roles": ["k3s_server"] },
+      { "name": "etcd", "protocol": "tcp", "ports": [2379, 2380], "roles": ["k3s_server"] },
+      { "name": "kubelet", "protocol": "tcp", "ports": [10250], "roles": ["k3s_server", "k3s_agent"] },
+      { "name": "flannel-vxlan", "protocol": "udp", "ports": [8472], "roles": ["k3s_server", "k3s_agent"] }
+    ]
+  },
+  "secrets": {
+    "K3S_TOKEN": "k3s-token",
+    "TAILSCALE_AUTHKEY": "tailscale-authkey",
+    "GHCR_TOKEN": "ghcr-token",
+    "OILPRICEAPI_KEY": "oilpriceapi-key"
+  },
+  "clouds": {
+    "gcp": {
+      "project_id": "example-project-12345",
+      "region": "europe-west1",
+      "zone": "europe-west1-b",
+      "network_cidr": "10.0.0.0/16",
+      "subnets": {
+        "management": "10.0.0.0/29",
+        "workload": "10.0.1.0/26"
+      },
+      "machine_sizes": {
+        "tiny": "e2-micro",
+        "small": "e2-small",
+        "medium": "e2-medium",
+        "large": "e2-standard-2"
+      },
+      "disk_types": {
+        "standard": "pd-standard",
+        "balanced": "pd-balanced",
+        "fast": "pd-ssd"
+      },
+      "images": {
+        "ubuntu-lts": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64"
+      },
+      "secret_version_managers": [
+        "serviceAccount:example-ci@example-project-12345.iam.gserviceaccount.com"
+      ],
+      "billing_account": "012345-6789AB-CDEF01",
+      "budget_usd": 50
+    },
+    "aws": {
+      "region": "eu-central-1",
+      "zone": "eu-central-1a",
+      "network_cidr": "10.1.0.0/16",
+      "subnets": {
+        "management": "10.1.0.0/28",
+        "workload": "10.1.1.0/26"
+      },
+      "machine_sizes": {
+        "tiny": "t3.micro",
+        "small": "t3.small",
+        "medium": "t3.medium",
+        "large": "t3.large"
+      },
+      "disk_types": {
+        "standard": "standard",
+        "balanced": "gp3",
+        "fast": "io2"
+      },
+      "images": {
+        "ubuntu-lts": "ami-0123456789abcdef0"
+      },
+      "secret_version_managers": [
+        "arn:aws:iam::123456789012:role/example-ci"
+      ],
+      "budget_usd": 20
+    },
+    "azure": {
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "region": "polandcentral",
+      "zone": "2",
+      "network_cidr": "10.2.0.0/16",
+      "subnets": {
+        "management": "10.2.0.0/28",
+        "workload": "10.2.1.0/26"
+      },
+      "machine_sizes": {
+        "tiny": "Standard_B2ats_v2",
+        "small": "Standard_B2als_v2",
+        "medium": "Standard_B2as_v2",
+        "large": "Standard_B4als_v2"
+      },
+      "disk_types": {
+        "standard": "Standard_LRS",
+        "balanced": "StandardSSD_LRS",
+        "fast": "Premium_LRS"
+      },
+      "images": {
+        "ubuntu-lts": "Canonical:ubuntu-26_04-lts:server:latest"
+      },
+      "key_vault_name": "oilscope-dev-kv-example",
+      "secret_version_managers": [
+        "11111111-1111-1111-1111-111111111111"
+      ],
+      "budget_usd": 20
+    }
+  },
+  "node_defaults": {
+    "size": "medium",
+    "image": "ubuntu-lts",
+    "boot_disk": {
+      "size_gb": 20,
+      "type": "balanced"
+    },
+    "assign_public_ip": false
+  },
+  "nodes": {
+    "server-1": {
+      "role": "k3s_server",
+      "assign_public_ip": true
+    },
+    "agent-1": {
+      "role": "k3s_agent",
+      "cloud": "aws",
+      "assign_public_ip": true
+    },
+    "agent-2": {
+      "role": "k3s_agent",
+      "cloud": "azure",
+      "assign_public_ip": true
+    }
+  }
+}

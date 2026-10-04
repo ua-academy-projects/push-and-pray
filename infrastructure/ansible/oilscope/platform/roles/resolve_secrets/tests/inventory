@@ -1,3 +1,0 @@
-localhost ansible_connection=local
-oilscope-dev-bastion ansible_connection=local
-oilscope-dev-infra ansible_connection=local
