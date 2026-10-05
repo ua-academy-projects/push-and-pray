@@ -12,7 +12,7 @@ resource "azurerm_virtual_network" "main" {
   name                = "${local.resource_prefix}-vnet${local.location_suffixes[each.key]}"
   location            = each.value.region
   resource_group_name = azurerm_resource_group.main[each.key].name
-  address_space       = [var.config.network.vpc_cidr]
+  address_space       = [local.cloud_network.vpc_cidr]
   tags                = local.labels
 }
 
@@ -22,7 +22,7 @@ resource "azurerm_subnet" "management" {
   name                            = "management"
   resource_group_name             = azurerm_resource_group.main[each.key].name
   virtual_network_name            = azurerm_virtual_network.main[each.key].name
-  address_prefixes                = [var.config.network.management_subnet_cidr]
+  address_prefixes                = [local.cloud_network.management_subnet_cidr]
   default_outbound_access_enabled = false
 }
 
@@ -32,7 +32,7 @@ resource "azurerm_subnet" "workload" {
   name                            = "workload"
   resource_group_name             = azurerm_resource_group.main[each.key].name
   virtual_network_name            = azurerm_virtual_network.main[each.key].name
-  address_prefixes                = [var.config.network.workload_subnet_cidr]
+  address_prefixes                = [local.cloud_network.workload_subnet_cidr]
   default_outbound_access_enabled = false
 }
 
@@ -84,7 +84,7 @@ resource "azurerm_subnet" "database" {
   name                 = "database"
   resource_group_name  = azurerm_resource_group.main[var.config.default_location].name
   virtual_network_name = azurerm_virtual_network.main[var.config.default_location].name
-  address_prefixes     = [var.config.network.database_subnet_cidrs[0]]
+  address_prefixes     = [local.cloud_network.database_subnet_cidrs[0]]
   service_endpoints    = ["Microsoft.Storage"]
 
   delegation {

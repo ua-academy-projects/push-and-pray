@@ -36,6 +36,25 @@
     definition: "{{ lookup('ansible.builtin.template', 'cnpg-secrets.yaml.j2') | from_yaml_all | list }}"
   no_log: true
 
+- name: Inspect existing PostgreSQL storage before changing WAL volumes
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: oilscope-db
+    namespace: oilscope
+  register: k3s_workloads_cnpg_existing
+
+- name: Require a reviewed migration for an existing cluster without WAL storage
+  ansible.builtin.assert:
+    that: >-
+      k3s_workloads_cnpg_existing.resources | length == 0 or
+      k3s_workloads_cnpg_existing.resources[0].spec.walStorage is defined
+    fail_msg: >-
+      The existing CNPG Cluster has no walStorage. Back up and migrate the
+      database/PVCs before applying this new storage layout; CNPG does not
+      add a WAL volume in place to an initialized cluster.
+
 - name: Configure the two-instance PostgreSQL cluster
   kubernetes.core.k8s:
     kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"

@@ -58,3 +58,4 @@ infrastructure/ansible/inventory/oilscope.gcp.yml
 /graphify-out/
 /AGENTS.md
 .agents
+.codex/

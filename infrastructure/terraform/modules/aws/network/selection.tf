@@ -1,4 +1,5 @@
 locals {
+  cloud_network            = merge(var.config.network, try(var.config.network.cloud_cidrs.aws, {}))
   managed_database_enabled = var.config.database_mode == "managed" && var.config.default_cloud == "aws"
 
   workload_locations = setunion(toset([

@@ -3,9 +3,17 @@
 The `deploy_k3s` playbook installs Tailscale on every discovered `k3s_server`
 and `k3s_agent` before preparing or installing K3s. Each node joins the same
 tailnet under its deterministic inventory name, such as
-`<name_prefix>-<environment>-<vm-key>`. Bastions remain the SSH jump hosts for
-first contact with private nodes; they do not join Tailscale or route subnets.
+`<name_prefix>-<environment>-<vm-key>`. The existing bastion in each active
+cloud also joins the tailnet and advertises that cloud's private VPC CIDR as a
+subnet router. Bastions remain the SSH jump hosts for first contact with nodes.
 The Ansible controller also does not need to join the tailnet.
+
+The shared configuration's `network.cloud_cidrs` gives AWS, GCP, and Azure
+distinct private ranges. The inventory rejects overlapping ranges before
+deployment. Enable advertised routes in the Tailscale admin console (or
+configure route auto-approval in tailnet policy). Linux K3s nodes accept routes
+from the other cloud bastions. Tailnet clients must be allowed by ACL to reach
+the private subnet and accept advertised routes where their OS requires it.
 
 For a new cluster, K3s uses each node's Tailscale IPv4 as `node-ip` and, on
 servers, as `advertise-address`. Joining servers and agents use the primary
@@ -36,7 +44,7 @@ connected node, a repeat run reads the address without authenticating again.
 Use a **reusable, non-ephemeral** Tailscale auth key for these long-lived VMs.
 If device approval is enabled, make it pre-authorized. A tagged key with a
 tailnet policy that permits K3s node-to-node traffic is recommended. Provision
-the same key into every cloud secret scope used by the K3s nodes. If the key
+the same key into every cloud secret scope used by the K3s nodes and bastions. If the key
 expires, connected nodes normally keep working, but replacement nodes need a
 new stored key. Restrict access to the provider secret and rotate it through
 the same upload flow.

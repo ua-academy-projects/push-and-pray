@@ -3,6 +3,7 @@
 """Derive GCP, AWS, and Azure inventory from the shared project configuration."""
 
 import hashlib
+import ipaddress
 import json
 import os
 import shlex
@@ -130,6 +131,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         project_config_path = self._resolve_config_path(path)
         config = self._load_project_config(path)
+        self._validate_cloud_networks(config)
         self.inventory.set_variable("all", "project_config_path", project_config_path)
         database_mode = self._require_string(config.get("database_mode"), "database_mode")
         self.inventory.set_variable("all", "database_mode", database_mode)
@@ -213,6 +215,30 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             )
 
         return config
+
+    def _validate_cloud_networks(self, config):
+        cloud_cidrs = config.get("network", {}).get("cloud_cidrs", {})
+        node_clouds = {
+            vm.get("cloud", config.get("default_cloud"))
+            for vm in config.get("vms", {}).values()
+            if vm.get("role") in ("k3s_server", "k3s_agent")
+        }
+        if len(node_clouds) > 1 and not node_clouds.issubset(cloud_cidrs):
+            raise AnsibleParserError(
+                "multi-cloud K3s requires network.cloud_cidrs for every node cloud"
+            )
+        networks = {}
+        for cloud, settings in cloud_cidrs.items():
+            try:
+                networks[cloud] = ipaddress.ip_network(settings["vpc_cidr"], strict=True)
+            except (KeyError, ValueError) as error:
+                raise AnsibleParserError(f"invalid network.cloud_cidrs.{cloud}.vpc_cidr: {error}") from error
+        for cloud, network in networks.items():
+            for other_cloud, other_network in networks.items():
+                if cloud < other_cloud and network.overlaps(other_network):
+                    raise AnsibleParserError(
+                        f"cloud private networks overlap: {cloud} and {other_cloud}"
+                    )
 
     def _require_string(self, value, path):
         if not value or not isinstance(value, str):

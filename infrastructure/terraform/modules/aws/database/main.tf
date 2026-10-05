@@ -44,7 +44,7 @@ resource "aws_vpc_security_group_egress_rule" "postgres" {
 
   region            = local.region
   security_group_id = aws_security_group.postgres[0].id
-  cidr_ipv4         = var.config.network.vpc_cidr
+  cidr_ipv4         = try(var.config.network.cloud_cidrs.aws.vpc_cidr, var.config.network.vpc_cidr)
   ip_protocol       = "-1"
 }
 

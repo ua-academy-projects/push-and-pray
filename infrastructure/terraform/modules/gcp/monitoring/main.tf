@@ -50,7 +50,7 @@ resource "google_monitoring_alert_policy" "cpu" {
     condition_threshold {
       filter                  = "metric.type=\"compute.googleapis.com/instance/cpu/utilization\" AND resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${each.value.id}\""
       duration                = "300s"
-      comparison              = "COMPARISON_GE"
+      comparison              = "COMPARISON_GT"
       threshold_value         = 0.8
       evaluation_missing_data = "EVALUATION_MISSING_DATA_INACTIVE"
 
@@ -78,7 +78,7 @@ resource "google_monitoring_alert_policy" "filesystem" {
     condition_threshold {
       filter                  = "metric.type=\"agent.googleapis.com/disk/percent_used\" AND metric.labels.state=\"used\" AND resource.type=\"gce_instance\" AND resource.labels.instance_id=\"${each.value.id}\""
       duration                = "300s"
-      comparison              = "COMPARISON_GE"
+      comparison              = "COMPARISON_GT"
       threshold_value         = 85
       evaluation_missing_data = "EVALUATION_MISSING_DATA_INACTIVE"
 
@@ -252,7 +252,7 @@ data "google_project" "monitored" {
 resource "google_billing_budget" "monthly" {
   count = local.monitoring_enabled && local.budget_enabled ? 1 : 0
 
-  billing_account = "billingAccounts/${var.config.monitoring.monthly_budget.gcp_billing_account_id}"
+  billing_account = var.config.monitoring.monthly_budget.gcp_billing_account_id
   display_name    = "${var.config.name_prefix}-${var.config.environment} monthly"
 
   budget_filter {

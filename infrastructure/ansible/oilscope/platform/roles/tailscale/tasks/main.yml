@@ -120,6 +120,37 @@
     - tailscale_current_status.get('BackendState') == 'Running'
     - tailscale_current_status.get('Self', {}).get('HostName', '') != tailscale_hostname
 
+- name: Enable forwarding on subnet routers
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: '1'
+    state: present
+    reload: true
+  loop:
+    - net.ipv4.ip_forward
+    - net.ipv6.conf.all.forwarding
+  when: tailscale_advertise_routes | length > 0
+
+- name: Read current Tailscale preferences
+  ansible.builtin.command:
+    argv: [tailscale, debug, prefs]
+  register: tailscale_preferences
+  changed_when: false
+
+- name: Advertise this bastion's private subnet
+  ansible.builtin.command:
+    argv: [tailscale, set, "--advertise-routes={{ tailscale_advertise_routes | join(',') }}"]
+  vars:
+    tailscale_current_routes: "{{ (tailscale_preferences.stdout | from_json).get('AdvertiseRoutes') | default([], true) }}"
+  when: (tailscale_current_routes | sort) != (tailscale_advertise_routes | sort)
+  changed_when: true
+
+- name: Accept other cloud subnet routes on K3s nodes
+  ansible.builtin.command:
+    argv: [tailscale, set, "--accept-routes={{ tailscale_accept_routes | bool | ternary('true', 'false') }}"]
+  when: ((tailscale_preferences.stdout | from_json).get('RouteAll', false) | bool) != (tailscale_accept_routes | bool)
+  changed_when: true
+
 - name: Verify Tailscale is connected
   ansible.builtin.command:
     argv: [tailscale, status, --json]

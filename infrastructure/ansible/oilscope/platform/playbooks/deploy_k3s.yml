@@ -1,10 +1,29 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Connect existing bastions as cloud subnet routers
+  hosts: bastion
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    tailscale_advertise_routes:
+      - "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).network.get('cloud_cidrs', {}).get(oilscope_cloud, {}).get('vpc_cidr', (lookup('ansible.builtin.file', project_config_path) | from_json).network.vpc_cidr) }}"
+  roles:
+    - oilscope.platform.tailscale
+
 - name: Connect K3s nodes to the private tailnet
   hosts: k3s_server:k3s_agent
   become: true
   gather_facts: true
   any_errors_fatal: true
+  vars:
+    tailscale_project_config: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
+    tailscale_accept_routes: true
+    tailscale_advertise_routes: >-
+      {{ [tailscale_project_config.network.cloud_cidrs.azure.database_subnet_cidrs[0]]
+         if database_mode == 'managed' and tailscale_project_config.default_cloud == 'azure'
+            and oilscope_cloud == 'azure' and inventory_hostname == groups['k3s_primary'][0]
+         else [] }}
   roles:
     - oilscope.platform.tailscale
 
@@ -14,10 +33,10 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
-    - name: Check whether this node already has K3s installed
+    - name: Check whether this node has a K3s datastore
       ansible.builtin.stat:
-        path: "/etc/systemd/system/{{ 'k3s' if inventory_hostname in groups['k3s_server'] else 'k3s-agent' }}.service"
-      register: k3s_existing_service
+        path: /var/lib/rancher/k3s/server/db
+      register: k3s_existing_datastore
 
     - name: Check whether this node was initialized for Tailnet transport
       ansible.builtin.stat:
@@ -28,7 +47,7 @@
       ansible.builtin.set_fact:
         k3s_existing_private_server: >-
           {{ inventory_hostname in groups['k3s_server'] and
-             k3s_existing_service.stat.exists and
+             k3s_existing_datastore.stat.exists and
              not k3s_tailnet_marker.stat.exists }}
 
     - name: Select one transport for the whole cluster

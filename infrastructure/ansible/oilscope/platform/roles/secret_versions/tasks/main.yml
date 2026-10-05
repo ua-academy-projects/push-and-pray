@@ -42,7 +42,7 @@
          }] }}
   loop: [database, history, fetcher, ui]
 
-- name: Collect Tailscale secret targets for every K3s node provider scope
+- name: Collect Tailscale secret targets for every K3s node and bastion provider scope
   ansible.builtin.set_fact:
     secret_versions_targets: >-
       {{ secret_versions_targets + [{
@@ -53,7 +53,16 @@
   loop: "{{ secret_versions_config.vms | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
-  when: item.value.role in ['k3s_server', 'k3s_agent']
+  when: item.value.role in ['k3s_server', 'k3s_agent', 'bastion']
+
+- name: Include the synthesized default bastion's Tailscale secret scope
+  ansible.builtin.set_fact:
+    secret_versions_targets: >-
+      {{ secret_versions_targets + [{
+           'cloud': secret_versions_config.vms.bastion.cloud | default(secret_versions_config.default_cloud),
+           'location': secret_versions_config.vms.bastion.location | default(secret_versions_config.default_location),
+           'role': 'tailscale'
+         }] }}
 
 - name: Collect application roles that need secrets
   ansible.builtin.set_fact:

@@ -36,10 +36,10 @@ resource "azurerm_postgresql_flexible_server" "postgres" {
     precondition {
       condition = alltrue([
         for vm in values(var.config.vms) :
-        try(vm.cloud, var.config.default_cloud) == "azure" && try(vm.location, var.config.default_location) == var.config.default_location
-        if vm.role != "bastion"
+        try(vm.location, var.config.default_location) == var.config.default_location
+        if vm.role != "bastion" && try(vm.cloud, var.config.default_cloud) == "azure"
       ])
-      error_message = "Azure managed mode requires workload VMs in Azure at default_location for private database and service connectivity."
+      error_message = "Azure workload VMs using the private managed database must stay in Azure at default_location."
     }
   }
 }

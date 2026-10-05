@@ -1,4 +1,5 @@
 locals {
+  cloud_network            = merge(var.config.network, try(var.config.network.cloud_cidrs.azure, {}))
   managed_database_enabled = var.config.database_mode == "managed" && var.config.default_cloud == "azure"
   resource_prefix          = "${var.config.name_prefix}-${var.config.environment}"
   labels                   = merge(var.config.common_labels, { environment = var.config.environment })

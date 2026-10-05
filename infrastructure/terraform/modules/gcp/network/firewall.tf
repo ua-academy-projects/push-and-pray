@@ -51,6 +51,24 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
+resource "google_compute_firewall" "private_dashboards" {
+  for_each = {
+    for location, roles in local.roles_by_location : location => roles
+    if local.bastion_vms_by_location[location] != null && contains(roles, "k3s_server")
+  }
+
+  name    = "${local.resource_prefix}-allow-private-dashboards${local.location_suffixes[each.key]}"
+  network = google_compute_network.main[each.key].id
+
+  source_tags = [local.network_tags[each.key].bastion]
+  target_tags = [local.network_tags[each.key].k3s_server]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["30081-30082"]
+  }
+}
+
 resource "google_compute_firewall" "k3s_api" {
   for_each = {
     for location, roles in local.roles_by_location : location => roles
@@ -138,7 +156,7 @@ resource "google_compute_firewall" "ingress_web" {
   network = google_compute_network.main[each.key].id
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags = [for vm in values(each.value) : "${local.resource_prefix}-${vm.role}"
+  target_tags = [for vm in values(each.value) : local.network_tags[each.key][vm.role]
   if vm.role != "bastion" && try(vm.assign_public_ip, false)]
 
   allow {

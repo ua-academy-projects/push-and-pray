@@ -13,6 +13,9 @@ locals {
       vm.role == "k3s_server" && var.config.database_mode == "postgres_extensions" ? [
         { name = "postgresql", ports = [tostring(var.config.database.port)], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] }
       ] : [],
+      vm.role == "k3s_server" ? [
+        { name = "private-dashboards", ports = ["30081", "30082"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role == "bastion"] }
+      ] : [],
       [for rule in [
         { name = "k3s-vxlan", protocol = "Udp", ports = ["8472"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] },
         { name = "k3s-kubelet", ports = ["10250"], sources = [for peer in values(local.vms) : peer.internal_ip if peer.location == vm.location && peer.role != "bastion"] }
@@ -78,7 +81,7 @@ resource "azurerm_network_security_group" "database" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = tostring(var.config.database.port)
-    source_address_prefixes    = concat(local.database_client_ips, [var.config.network.database_subnet_cidrs[0]])
+    source_address_prefixes    = concat(local.database_client_ips, [local.cloud_network.database_subnet_cidrs[0]], [for vm in values(local.vms) : vm.internal_ip if vm.location == var.config.default_location && vm.role == "bastion"])
     destination_address_prefix = "*"
   }
 

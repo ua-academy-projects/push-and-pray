@@ -8,7 +8,7 @@ locals {
 
   network_tags = {
     for location, vms in local.vms_by_location : location => {
-      for role in distinct([for vm in values(vms) : vm.role]) : role => "${local.resource_prefix}-${role}"
+      for role in distinct([for vm in values(vms) : vm.role]) : role => "${local.resource_prefix}-${replace(role, "_", "-")}"
     }
   }
 }

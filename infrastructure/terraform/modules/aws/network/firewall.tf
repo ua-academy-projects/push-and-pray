@@ -58,6 +58,20 @@ resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
   ip_protocol                  = "tcp"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "private_dashboards" {
+  for_each = {
+    for key, instance in local.role_instances : key => instance
+    if instance.role == "k3s_server" && local.bastion_vms_by_location[instance.location] != null
+  }
+
+  region                       = local.locations[each.value.location].region
+  security_group_id            = aws_security_group.role[each.key].id
+  referenced_security_group_id = aws_security_group.role[each.value.location == var.config.default_location ? "bastion" : "${each.value.location}/bastion"].id
+  from_port                    = 30081
+  to_port                      = 30082
+  ip_protocol                  = "tcp"
+}
+
 resource "aws_vpc_security_group_ingress_rule" "k3s_api" {
   for_each = local.k3s_nodes
 

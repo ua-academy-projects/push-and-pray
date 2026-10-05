@@ -134,20 +134,39 @@ kubectl -n oilscope exec deployment/ui -- python -c \
 
 Expect two ready database pods on distinct nodes, four extension rows, an active
 cleanup job, and `pg_is_in_recovery() = false` from both application connections.
+CNPG supplies the `oilscope-db-rw` and `oilscope-db-ro` Services; no separate
+PostgreSQL Service is defined. History, Fetcher, and UI use `-rw` because all
+three write in `postgres_extensions` mode (the UI updates session rows even
+while reading them). The custom pgmq-based database image runs with UID/GID
+999, so the Cluster keeps those explicit IDs instead of CNPG's default 26.
+Its data and WAL volumes both use `local-path`; adding `walStorage` to an
+already running Cluster requires a separately reviewed storage migration.
 Fetcher logs should show successful publication after its next scheduled fetch;
 History logs should show consumption. In managed mode, only History has a DB
 connection; UI uses Redis instead.
 
 ## Private Headlamp access
 
-The pinned Headlamp chart runs in namespace `headlamp` with ClusterIP service
-`headlamp:80`, no Ingress, and no LoadBalancer. Its chart-created cluster-admin
+The pinned Headlamp chart runs in namespace `headlamp` with a NodePort service
+on TCP 30081, no Ingress, and no LoadBalancer. The cloud firewall permits this
+port only from that cloud's bastion. A Tailscale client can reach it through
+the bastion subnet route using a private node IP. Its chart-created cluster-admin
 binding is disabled. The declarative `headlamp-viewer` ServiceAccount retains its
 existing name so current tokens continue to work; a separate `headlamp-admin`
 ClusterRoleBinding now grants it `cluster-admin` across all namespaces, including
 access to Secrets and workload changes. Port-forward restricts network exposure,
 but anyone holding this token has full cluster access. No persistent token is
-created.
+created. Add `headlamp.oilscope.internal` and `homepage.oilscope.internal`
+to the Tailscale client's private DNS or hosts file, both pointing to the
+bootstrap server's `internal_ip` from project configuration. Open
+`http://headlamp.oilscope.internal:30081` or
+`http://homepage.oilscope.internal:30082` while connected to the tailnet.
+For the example configuration, the client's hosts entry is
+`10.10.1.4 headlamp.oilscope.internal homepage.oilscope.internal`; use the
+deployed bootstrap server address for other configurations.
+Homepage has a separate NodePort and read-only access to node/pod metrics;
+its application and Headlamp links include internal health checks. The metrics
+overview depends on a working metrics-server and does not replace monitoring.
 
 To apply only this RBAC change to an existing cluster, run from the repository
 root with an administrator kubeconfig (the template contains no variables):
@@ -163,15 +182,12 @@ kubectl -n headlamp get pods,svc
 kubectl auth can-i get secrets --all-namespaces --as=system:serviceaccount:headlamp:headlamp-viewer
 kubectl auth can-i patch deployments --all-namespaces --as=system:serviceaccount:headlamp:headlamp-viewer
 kubectl -n headlamp create token headlamp-viewer --duration=1h
-kubectl -n headlamp port-forward --address 127.0.0.1 svc/headlamp 8081:80
 ```
 
 Both permission checks should return `yes` after deployment. Existing unexpired
 `headlamp-viewer` tokens gain the same permissions; refresh Headlamp to see them.
-Open <http://127.0.0.1:8081> and paste the temporary token into Headlamp. Keep
-the token local. If port-forward runs on the primary server, also forward your
-laptop's loopback port over the existing SSH/bastion route to that server's
-`127.0.0.1:8081`; no public firewall change is needed.
+Open the private Headlamp hostname and paste the temporary token. Keep the
+token local. The hostname is configured on each client, not in public DNS.
 
 ## Verification limits
 

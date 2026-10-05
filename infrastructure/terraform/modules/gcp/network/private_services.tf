@@ -4,7 +4,8 @@ resource "google_compute_global_address" "database_private_service_range" {
   name          = "${local.resource_prefix}-database-private-services"
   purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
-  prefix_length = var.config.network.database_private_service_prefix_length
+  prefix_length = local.cloud_network.database_private_service_prefix_length
+  address       = try(local.cloud_network.database_private_service_address, null)
   network       = google_compute_network.main[var.config.default_location].id
 }
 

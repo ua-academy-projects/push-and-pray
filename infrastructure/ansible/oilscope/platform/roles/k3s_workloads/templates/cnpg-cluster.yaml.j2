@@ -8,6 +8,8 @@ spec:
   imageName: {{ (k3s_workloads_registry.images['database-cnpg'] ~ ':18-' ~ k3s_workloads_image_tag) | to_json }}
   imagePullSecrets:
     - name: oilscope-registry
+  # The custom pgmq-based image explicitly runs as postgres UID/GID 999;
+  # CNPG's default 26 would not match that image or its data files.
   postgresUID: 999
   postgresGID: 999
   enableSuperuserAccess: false
@@ -42,18 +44,14 @@ spec:
     parameters:
       cron.database_name: {{ k3s_workloads_config.database.name | to_json }}
       cron.use_background_workers: "on"
-      cron.max_running_jobs: "2"
-      shared_buffers: 128MB
-      max_connections: "50"
-      max_worker_processes: "8"
-      max_parallel_workers: "2"
-      max_wal_size: 512MB
-      wal_keep_size: 128MB
   affinity:
     enablePodAntiAffinity: true
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   storage:
+    storageClass: local-path
+    size: 2Gi
+  walStorage:
     storageClass: local-path
     size: 2Gi
   resources:

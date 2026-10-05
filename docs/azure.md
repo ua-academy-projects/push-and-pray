@@ -180,8 +180,10 @@ and [VM availability semantics](https://learn.microsoft.com/en-us/azure/virtual-
 ## Managed PostgreSQL and secrets
 
 `database_mode: "managed"` with `default_cloud: "azure"` selects PostgreSQL
-Flexible Server in `default_location`. All workload VMs must use that cloud and
-location. `postgres_extensions` retains the PostgreSQL container on the first K3s
+Flexible Server in `default_location`. Azure workload VMs must use that
+location; nodes in other clouds use the bastion/Tailscale routes, but their
+access to the private database also requires DNS resolution for its Azure
+private zone. `postgres_extensions` retains the PostgreSQL container on the first K3s
 server. In managed mode, Redis is a Helm release and RabbitMQ is a Kubernetes
 Deployment.
 

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create the Homepage namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: homepage
+
+- name: Configure the private Homepage dashboard and Kubernetes overview
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition: "{{ lookup('ansible.builtin.template', 'homepage.yaml.j2') | from_yaml_all | list }}"

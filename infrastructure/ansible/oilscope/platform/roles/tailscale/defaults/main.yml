@@ -1,3 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 tailscale_hostname: "{{ inventory_hostname }}"
+tailscale_advertise_routes: []
+tailscale_accept_routes: false

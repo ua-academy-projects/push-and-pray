@@ -195,6 +195,16 @@
           "minimum": 16,
           "maximum": 24
         },
+        "cloud_cidrs": {
+          "type": "object",
+          "description": "Optional provider-specific, non-overlapping private networks; falls back to the shared network values.",
+          "additionalProperties": false,
+          "properties": {
+            "aws": { "$ref": "#/$defs/cloud_network_cidrs" },
+            "gcp": { "$ref": "#/$defs/cloud_network_cidrs" },
+            "azure": { "$ref": "#/$defs/cloud_network_cidrs" }
+          }
+        },
         "enable_bastion_ssh_bootstrap": {
           "type": "boolean"
         },
@@ -237,6 +247,22 @@
     }
   },
   "$defs": {
+    "cloud_network_cidrs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vpc_cidr", "management_subnet_cidr", "workload_subnet_cidr", "database_subnet_cidrs"],
+      "properties": {
+        "vpc_cidr": { "type": "string", "minLength": 1 },
+        "management_subnet_cidr": { "type": "string", "minLength": 1 },
+        "workload_subnet_cidr": { "type": "string", "minLength": 1 },
+        "database_subnet_cidrs": {
+          "type": "array", "items": { "type": "string", "minLength": 1 },
+          "minItems": 2, "maxItems": 2, "uniqueItems": true
+        },
+        "database_private_service_prefix_length": { "type": "integer", "minimum": 16, "maximum": 24 },
+        "database_private_service_address": { "type": "string", "minLength": 1 }
+      }
+    },
     "cloud": {
       "type": "string",
       "enum": ["gcp", "aws", "azure"]
@@ -709,9 +735,10 @@
         {
           "if": {
             "properties": {
-              "assign_public_ip": { "const": true }
+              "assign_public_ip": { "const": true },
+              "role": { "not": { "const": "bastion" } }
             },
-            "required": ["assign_public_ip"]
+            "required": ["assign_public_ip", "role"]
           },
           "then": {
             "properties": {

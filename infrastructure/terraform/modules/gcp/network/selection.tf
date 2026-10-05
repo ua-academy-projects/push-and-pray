@@ -1,4 +1,5 @@
 locals {
+  cloud_network            = merge(var.config.network, try(var.config.network.cloud_cidrs.gcp, {}))
   managed_database_enabled = var.config.database_mode == "managed" && var.config.default_cloud == "gcp"
 
   workload_locations = setunion(toset([

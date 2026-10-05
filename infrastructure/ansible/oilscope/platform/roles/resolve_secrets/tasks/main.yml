@@ -5,18 +5,39 @@
     resolve_secrets_result: {}
   no_log: true
 
+- name: Require GCP controller credentials
+  ansible.builtin.assert:
+    that: lookup('ansible.builtin.env', 'GOOGLE_APPLICATION_CREDENTIALS') | length > 0
+    fail_msg: Set GOOGLE_APPLICATION_CREDENTIALS to the controller's service-account credential file before resolving GCP secrets.
+    quiet: true
+  when: resolve_secrets_cloud == 'gcp' and resolve_secrets_mappings | length > 0
+
+- name: Read GCP application secrets
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - secrets
+      - versions
+      - access
+      - latest
+      - "--secret={{ resolve_secrets_name_prefix }}-{{ resolve_secrets_environment }}-{{ item.value.secret_id }}"
+      - "--project={{ resolve_secrets_project_id }}"
+      - "--credential-file-override={{ lookup('ansible.builtin.env', 'GOOGLE_APPLICATION_CREDENTIALS') }}"
+  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  register: resolve_secrets_gcp_values
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  no_log: true
+  when: resolve_secrets_cloud == 'gcp'
+
 - name: Resolve GCP application secrets
   ansible.builtin.set_fact:
     resolve_secrets_result: >-
       {{ resolve_secrets_result | combine({
-           item.value.runtime_env: lookup(
-             'google.cloud.gcp_secret_manager',
-             key=(resolve_secrets_name_prefix ~ '-' ~ resolve_secrets_environment
-                  ~ '-' ~ item.value.secret_id),
-             project=resolve_secrets_project_id
-           )
+           item.item.value.runtime_env: item.stdout
          }) }}
-  loop: "{{ resolve_secrets_mappings | dict2items }}"
+  loop: "{{ resolve_secrets_gcp_values.results | default([]) }}"
   no_log: true
   when: resolve_secrets_cloud == 'gcp'
 

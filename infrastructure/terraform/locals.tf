@@ -8,7 +8,7 @@ locals {
         {
           cloud         = local.project_config.default_cloud
           location      = local.project_config.default_location
-          internal_ip   = cidrhost(local.project_config.network.management_subnet_cidr, 4)
+          internal_ip   = cidrhost(try(local.project_config.network.cloud_cidrs[local.project_config.default_cloud].management_subnet_cidr, local.project_config.network.management_subnet_cidr), 4)
           ssh_port      = 22
           allowed_cidrs = ["0.0.0.0/0"]
         },

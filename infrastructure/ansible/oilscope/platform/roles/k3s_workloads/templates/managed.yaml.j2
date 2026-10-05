@@ -38,6 +38,7 @@ spec:
           readinessProbe:
             exec:
               command: [rabbitmq-diagnostics, -q, ping]
+            timeoutSeconds: 5
             initialDelaySeconds: 20
             periodSeconds: 10
           volumeMounts:

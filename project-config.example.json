@@ -217,32 +217,63 @@
     "workload_subnet_cidr": "10.0.1.0/26",
     "database_subnet_cidrs": ["10.0.2.0/28", "10.0.2.16/28"],
     "database_private_service_prefix_length": 24,
+    "cloud_cidrs": {
+      "gcp": {
+        "vpc_cidr": "10.10.0.0/16",
+        "management_subnet_cidr": "10.10.0.0/28",
+        "workload_subnet_cidr": "10.10.1.0/26",
+        "database_subnet_cidrs": ["10.10.2.0/28", "10.10.2.16/28"],
+        "database_private_service_address": "10.10.3.0"
+      },
+      "aws": {
+        "vpc_cidr": "10.20.0.0/16",
+        "management_subnet_cidr": "10.20.0.0/28",
+        "workload_subnet_cidr": "10.20.1.0/26",
+        "database_subnet_cidrs": ["10.20.2.0/28", "10.20.2.16/28"]
+      },
+      "azure": {
+        "vpc_cidr": "10.30.0.0/16",
+        "management_subnet_cidr": "10.30.0.0/28",
+        "workload_subnet_cidr": "10.30.1.0/26",
+        "database_subnet_cidrs": ["10.30.2.0/28", "10.30.2.16/28"]
+      }
+    },
     "enable_bastion_ssh_bootstrap": false,
     "ingress_public_ports": [80, 443]
   },
   "vms": {
     "bastion": {},
+    "bastion-aws": {
+      "role": "bastion", "cloud": "aws", "size": "micro", "location": "europe",
+      "internal_ip": "10.20.0.4", "assign_public_ip": true,
+      "ssh_port": 22, "allowed_cidrs": ["0.0.0.0/0"]
+    },
+    "bastion-azure": {
+      "role": "bastion", "cloud": "azure", "size": "micro", "location": "europe",
+      "internal_ip": "10.30.0.4", "assign_public_ip": true,
+      "ssh_port": 22, "allowed_cidrs": ["0.0.0.0/0"]
+    },
     "server-1": {
       "role": "k3s_server",
       "cloud": "gcp",
       "size": "small",
       "location": "europe",
-      "internal_ip": "10.0.1.4",
+      "internal_ip": "10.10.1.4",
       "assign_public_ip": true
     },
     "server-2": {
       "role": "k3s_server",
-      "cloud": "gcp",
+      "cloud": "aws",
       "size": "small",
       "location": "europe",
-      "internal_ip": "10.0.1.5"
+      "internal_ip": "10.20.1.4"
     },
     "server-3": {
       "role": "k3s_server",
-      "cloud": "gcp",
+      "cloud": "azure",
       "size": "small",
       "location": "europe",
-      "internal_ip": "10.0.1.6"
+      "internal_ip": "10.30.1.4"
     }
   }
 }
