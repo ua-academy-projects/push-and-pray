@@ -171,6 +171,9 @@
 - name: Install the private Homepage dashboard
   ansible.builtin.import_tasks: homepage.yml
 
+- name: Install lightweight application monitoring
+  ansible.builtin.import_tasks: monitoring.yml
+
 - name: Remove the old K3s-managed Traefik resources
   ansible.builtin.command:
     argv: [kubectl, -n, kube-system, delete, helmchartconfig/traefik, helmchart/traefik, --ignore-not-found, --wait=true]

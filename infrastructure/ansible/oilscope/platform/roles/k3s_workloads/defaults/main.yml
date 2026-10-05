@@ -1,3 +1,4 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 k3s_workloads_terraform_directory: "{{ lookup('ansible.builtin.env', 'PWD') }}/infrastructure/terraform"
+k3s_workloads_private_dns_domain: oilscope.internal

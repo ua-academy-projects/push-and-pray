@@ -11,6 +11,7 @@ spec:
     metadata:
       labels: {app: history}
       annotations:
+        prometheus.io/scrape: "true"
         oilscope.io/database-endpoint: {{ (k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port) | to_json }}
     spec:
       affinity:
@@ -60,6 +61,7 @@ spec:
     metadata:
       labels: {app: fetcher}
       annotations:
+        prometheus.io/scrape: "true"
         oilscope.io/database-endpoint: {{ (k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port) | to_json }}
     spec:
       imagePullSecrets:
@@ -91,6 +93,7 @@ spec:
     metadata:
       labels: {app: ui}
       annotations:
+        prometheus.io/scrape: "true"
         oilscope.io/database-endpoint: {{ (k3s_workloads_database_host ~ ':' ~ k3s_workloads_database_port) | to_json }}
     spec:
       affinity:

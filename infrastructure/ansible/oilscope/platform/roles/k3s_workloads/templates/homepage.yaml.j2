@@ -49,7 +49,7 @@ data:
             podSelector: app=ui
             siteMonitor: http://ui.oilscope.svc.cluster.local:8080/health
         - Headlamp:
-            href: http://headlamp.oilscope.internal:30081
+            href: http://headlamp.{{ k3s_workloads_private_dns_domain }}:30081
             description: Kubernetes cluster management
             siteMonitor: http://headlamp.headlamp.svc.cluster.local/
   bookmarks.yaml: |
@@ -100,7 +100,7 @@ spec:
               valueFrom:
                 fieldRef: {fieldPath: status.podIP}
             - name: HOMEPAGE_ALLOWED_HOSTS
-              value: "$(MY_POD_IP):3000,homepage.oilscope.internal:30082"
+              value: "$(MY_POD_IP):3000,homepage.{{ k3s_workloads_private_dns_domain }}:30082"
           ports:
             - {name: http, containerPort: 3000}
           readinessProbe:

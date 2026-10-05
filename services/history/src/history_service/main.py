@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Query, Response, status
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -62,6 +63,9 @@ app = FastAPI(
     version="2.0.0",
     description=("Owns persistence and serves timestamped market price snapshots."),
     lifespan=lifespan,
+)
+Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(
+    app, include_in_schema=False
 )
 
 

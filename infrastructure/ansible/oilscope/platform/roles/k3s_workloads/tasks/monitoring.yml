@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create the monitoring namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: monitoring
+
+- name: Configure Prometheus and its pod discovery permissions
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition: "{{ lookup('ansible.builtin.template', 'monitoring.yaml.j2') | from_yaml_all | list }}"
+
+- name: Provision the OilScope Grafana dashboard
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: oilscope-dashboard
+        namespace: monitoring
+      data:
+        oilscope.json: "{{ lookup('ansible.builtin.file', role_path ~ '/files/oilscope-dashboard.json') }}"
+
+- name: Install private Grafana from the control host
+  kubernetes.core.helm:
+    release_name: grafana
+    release_namespace: monitoring
+    chart_ref: grafana
+    chart_repo_url: https://grafana-community.github.io/helm-charts
+    chart_version: 12.8.0
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      fullnameOverride: grafana
+      service:
+        type: ClusterIP
+      ingress:
+        enabled: false
+      persistence:
+        enabled: false
+      rbac:
+        create: false
+      serviceAccount:
+        create: false
+      automountServiceAccountToken: false
+      resources:
+        requests: {cpu: 50m, memory: 128Mi}
+        limits: {cpu: 500m, memory: 384Mi}
+      datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              uid: prometheus
+              type: prometheus
+              access: proxy
+              url: http://prometheus.monitoring.svc.cluster.local:9090
+              isDefault: true
+              editable: false
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+            - name: default
+              orgId: 1
+              folder: OilScope
+              type: file
+              disableDeletion: false
+              editable: false
+              options:
+                path: /var/lib/grafana/dashboards/default
+      dashboardsConfigMaps:
+        default: oilscope-dashboard
+
+- name: Expose Grafana on a private tailnet NodePort
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition: "{{ lookup('ansible.builtin.template', 'grafana-tailnet.yaml.j2') | from_yaml }}"

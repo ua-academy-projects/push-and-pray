@@ -14,6 +14,9 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"oil-price-tracker/fetcher/internal/broker"
 	"oil-price-tracker/fetcher/internal/config"
@@ -68,6 +71,12 @@ func main() {
 	}
 
 	collector := service.New(priceProvider, publisher)
+	collectionRuns := promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fetcher_collection_runs_total",
+		Help: "Completed collection attempts by result.",
+	}, []string{"result"})
+	collectionRuns.WithLabelValues("success").Add(0)
+	collectionRuns.WithLabelValues("error").Add(0)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -88,11 +97,14 @@ func main() {
 		defer cancel()
 
 		if _, err := collector.Run(jobContext, slot); err != nil {
+			collectionRuns.WithLabelValues("error").Inc()
 			slog.Error(
 				"scheduled collection ended with an error",
 				"error",
 				err,
 			)
+		} else {
+			collectionRuns.WithLabelValues("success").Inc()
 		}
 	}
 
@@ -130,6 +142,7 @@ func main() {
 	}()
 
 	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	mux.HandleFunc("GET /health", func(
 		response http.ResponseWriter,
@@ -196,6 +209,7 @@ func main() {
 		)
 
 		if err != nil {
+			collectionRuns.WithLabelValues("error").Inc()
 			writeJSON(
 				response,
 				http.StatusBadGateway,
@@ -206,6 +220,7 @@ func main() {
 			return
 		}
 
+		collectionRuns.WithLabelValues("success").Inc()
 		writeJSON(response, http.StatusOK, result)
 	})
 

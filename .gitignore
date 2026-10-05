@@ -31,6 +31,7 @@ infrastructure/docker/deployment
 crash.log
 crash.*.log
 *.json
+!infrastructure/ansible/oilscope/platform/roles/k3s_workloads/files/oilscope-dashboard.json
 /project-config.json
 !infrastructure/terraform/project-config.schema.json
 !.vscode/settings.json

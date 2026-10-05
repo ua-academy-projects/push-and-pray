@@ -18,6 +18,11 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
+    - name: Serve private dashboard names on the primary Tailscale address
+      ansible.builtin.import_role:
+        name: k3s_workloads
+        tasks_from: private_dns
+
     - name: Install and configure workloads
       block:
         - name: Prepare controller access to the K3s API

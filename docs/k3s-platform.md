@@ -156,14 +156,13 @@ existing name so current tokens continue to work; a separate `headlamp-admin`
 ClusterRoleBinding now grants it `cluster-admin` across all namespaces, including
 access to Secrets and workload changes. Port-forward restricts network exposure,
 but anyone holding this token has full cluster access. No persistent token is
-created. Add `headlamp.oilscope.internal` and `homepage.oilscope.internal`
-to the Tailscale client's private DNS or hosts file, both pointing to the
-bootstrap server's `internal_ip` from project configuration. Open
-`http://headlamp.oilscope.internal:30081` or
-`http://homepage.oilscope.internal:30082` while connected to the tailnet.
-For the example configuration, the client's hosts entry is
-`10.10.1.4 headlamp.oilscope.internal homepage.oilscope.internal`; use the
-deployed bootstrap server address for other configurations.
+created. The primary server runs a small resolver on its Tailscale address.
+After the one-time tailnet split-DNS entry for `oilscope.internal` points to
+that address, open `http://headlamp.oilscope.internal:30081`,
+`http://homepage.oilscope.internal:30082`, or
+`http://grafana.oilscope.internal:30083` while connected to the tailnet.
+No client hosts-file entry, SSH tunnel, or port-forward is needed. Grafana
+uses a separate private NodePort; none of these services has a public Ingress.
 Homepage has a separate NodePort and read-only access to node/pod metrics;
 its application and Headlamp links include internal health checks. The metrics
 overview depends on a working metrics-server and does not replace monitoring.
@@ -187,7 +186,7 @@ kubectl -n headlamp create token headlamp-viewer --duration=1h
 Both permission checks should return `yes` after deployment. Existing unexpired
 `headlamp-viewer` tokens gain the same permissions; refresh Headlamp to see them.
 Open the private Headlamp hostname and paste the temporary token. Keep the
-token local. The hostname is configured on each client, not in public DNS.
+token local. The hostname is resolved through the tailnet's split DNS.
 
 ## Verification limits
 

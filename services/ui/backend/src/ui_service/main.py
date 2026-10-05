@@ -9,6 +9,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg import Error as PostgreSQLError
 from redis.exceptions import RedisError
 
@@ -51,6 +52,9 @@ app = FastAPI(
     title="Oil Price Tracker — UI Service",
     version="3.0.0",
     lifespan=lifespan,
+)
+Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(
+    app, include_in_schema=False
 )
 app.state.session_store = (
     RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS)

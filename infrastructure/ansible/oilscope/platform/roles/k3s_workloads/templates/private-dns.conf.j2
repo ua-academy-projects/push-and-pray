@@ -1,0 +1,11 @@
+# Resolve only OilScope's management names, and only on the tailnet interface.
+port=53
+interface=tailscale0
+except-interface=lo
+bind-dynamic
+no-resolv
+no-hosts
+local=/{{ k3s_workloads_private_dns_domain }}/
+host-record=headlamp.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_ip.stdout | trim }}
+host-record=homepage.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_ip.stdout | trim }}
+host-record=grafana.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_ip.stdout | trim }}
