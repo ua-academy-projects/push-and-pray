@@ -41,23 +41,41 @@
       was uploaded.
   when: secret_versions_cloud not in secret_versions_supported_clouds
 
-# The unit of upload is the container. One container is usually read by several
-# workloads, so the mappings are collapsed to (container, workload) pairs first.
+- name: Resolve which workloads carry secret mappings
+  ansible.builtin.set_fact:
+    secret_versions_vms_with_mappings: >-
+      {{ secret_versions_config.vms | default({}) | dict2items
+         | selectattr('value.secret_mappings', 'defined') | list }}
+
+- name: Collapse both configuration shapes to one workload mapping
+  ansible.builtin.set_fact:
+    secret_versions_workloads: >-
+      {{ secret_versions_config.secret_mappings
+         if (secret_versions_config.secret_mappings | default({}) | length) > 0
+         else dict(secret_versions_vms_with_mappings | map(attribute='key')
+                   | zip(secret_versions_vms_with_mappings
+                         | map(attribute='value.secret_mappings'))) }}
+
+- name: Refuse a configuration that maps no secrets at all
+  ansible.builtin.fail:
+    msg: >-
+      {{ secret_versions_config_file }} declares no secret_mappings, neither at
+      the top level nor on any VM, so there is nothing to upload. Check that the
+      path is the project configuration you meant.
+  when: secret_versions_workloads | length == 0
+
 - name: Collect the container and workload pairs
   ansible.builtin.set_fact:
     secret_versions_pairs: >-
       {{ secret_versions_pairs | default([])
-         + (secret_versions_vm.value.secret_mappings | default({}) | dict2items
+         + (secret_versions_workload.value | dict2items
             | map(attribute='value') | unique | list
-            | zip_longest([], fillvalue=secret_versions_vm.key) | list) }}
-  loop: "{{ secret_versions_config.vms | dict2items }}"
+            | zip_longest([], fillvalue=secret_versions_workload.key) | list) }}
+  loop: "{{ secret_versions_workloads | dict2items }}"
   loop_control:
-    loop_var: secret_versions_vm
-    label: "{{ secret_versions_vm.key }}"
+    loop_var: secret_versions_workload
+    label: "{{ secret_versions_workload.key }}"
 
-# The variable name comes from the container ID, not from the key side of
-# secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
-# different secret on every workload and one shell cannot hold them all.
 - name: Derive a variable name for every container
   ansible.builtin.set_fact:
     secret_versions_ids: >-

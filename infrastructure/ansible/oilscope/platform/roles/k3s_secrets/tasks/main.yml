@@ -21,7 +21,10 @@
                                     region=k3s_secrets_region)
                })
          }) }}
-  loop: "{{ k3s_secrets_mappings | dict2items | subelements('value') }}"
+  loop: >-
+    {{ dict(k3s_secrets_mappings.keys()
+            | zip(k3s_secrets_mappings.values() | map('dict2items')))
+       | dict2items | subelements('value') }}
   loop_control:
     label: "{{ item.0.key }}/{{ item.1.key }}"
   no_log: true

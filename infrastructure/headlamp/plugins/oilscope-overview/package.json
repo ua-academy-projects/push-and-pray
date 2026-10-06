@@ -1,0 +1,30 @@
+{
+  "name": "oilscope-overview",
+  "version": "0.1.0",
+  "description": "OilScope Overview: the post-login landing page for the OilScope k3s cluster.",
+  "license": "GPL-2.0-or-later",
+  "private": true,
+  "devDependencies": {
+    "@kinvolk/headlamp-plugin": "0.14.0"
+  },
+  "prettier": "@headlamp-k8s/eslint-config/prettier-config",
+  "eslintConfig": {
+    "extends": [
+      "@headlamp-k8s",
+      "prettier",
+      "plugin:jsx-a11y/recommended"
+    ],
+    "ignorePatterns": [
+      "dist",
+      "node_modules"
+    ]
+  },
+  "scripts": {
+    "start": "headlamp-plugin start",
+    "build": "headlamp-plugin build",
+    "format": "headlamp-plugin format",
+    "lint": "headlamp-plugin lint",
+    "tsc": "headlamp-plugin tsc",
+    "test": "node --test --experimental-strip-types src/lib/*.test.ts"
+  }
+}

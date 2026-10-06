@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure API server OIDC validation one server at a time
+  hosts: k3s_servers
+  become: false
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Decide whether this cluster validates OIDC tokens at all
+      ansible.builtin.set_fact:
+        k3s_oidc_wanted: >-
+          {{ ((k3s_project.headlamp | default({})).enabled | default(false) | bool)
+             and ((k3s_project.headlamp | default({})).auth_mode | default('token'))
+                 == 'oidc' }}
+
+    - name: Report what this server is about to do
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}:
+          {{ 'enabling' if k3s_oidc_wanted | bool else 'removing' }}
+          OIDC token validation. k3s restarts here only if the drop-in actually
+          changes, and the play moves on once every node reports ready.
+          Certificate-based kubeconfig access is unaffected, so the operator
+          kubeconfig stays usable throughout. In the default token auth_mode
+          this playbook is not needed at all.
+
+    - name: Apply the API server's OIDC settings
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_api_oidc
+      vars:
+        k3s_api_oidc_enabled: "{{ k3s_oidc_wanted }}"
+        k3s_api_oidc_issuer_url: >-
+          {{ ((k3s_project.headlamp | default({})).oidc | default({})).issuer_url
+             | default('') }}
+        k3s_api_oidc_client_id: >-
+          {{ ((k3s_project.headlamp | default({})).oidc | default({})).client_id
+             | default('') }}
+        k3s_api_oidc_username_claim: >-
+          {{ ((k3s_project.headlamp | default({})).oidc | default({})).username_claim
+             | default('email') }}
+        k3s_api_oidc_username_prefix: >-
+          {{ ((k3s_project.headlamp | default({})).oidc | default({})).username_prefix
+             | default('oidc:') }}
+        k3s_api_oidc_groups_claim: >-
+          {{ ((k3s_project.headlamp | default({})).oidc | default({})).groups_claim
+             | default('') }}
+        k3s_api_oidc_groups_prefix: >-
+          {{ ((k3s_project.headlamp | default({})).oidc | default({})).groups_prefix
+             | default('oidc:') }}

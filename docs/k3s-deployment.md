@@ -26,12 +26,17 @@ The order matters, and the middle of it is awkward: the application cannot be
 deployed until real image digests exist, and those come from pushing a Git tag.
 
 ```sh
-# 1. Infrastructure
+# 1. Infrastructure, including the secret containers, which are created empty
 terraform -chdir=infrastructure/terraform apply
 
-# 2. Export what Ansible reads. A stale export silently feeds old addresses.
-terraform -chdir=infrastructure/terraform output -json \
-  > "$PWD/terraform-outputs.json"
+# 2. Put a value in every container. Deployment fails on an empty one, and the
+#    variable names come from the container IDs - see docs/secrets.md.
+export OILSCOPE_OILPRICEAPI_KEY=... DB_PASSWORD_FETCHER=... \
+       DB_PASSWORD_HISTORY=... RABBITMQ_PASSWORD=... REDIS_PASSWORD=...
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file="$OILSCOPE_PROJECT_CONFIG" --check
+ansible-playbook oilscope.platform.upload_secret_versions \
+  -e secret_versions_config_file="$OILSCOPE_PROJECT_CONFIG"
 
 # 3. The cluster, and a kubeconfig at ~/.kube/<name_prefix>-<environment>.yaml
 ansible-playbook oilscope.platform.bootstrap_k3s \
@@ -41,22 +46,49 @@ ansible-playbook oilscope.platform.bootstrap_k3s \
 # 4. Build and push the images. The workflow prints each digest in its summary.
 git tag pavlo-v1.0.0 && git push origin pavlo-v1.0.0
 
-# 5. Paste those digests into registry.image_digests, then re-export outputs,
-#    because the image references are built from them.
+# 5. Paste those digests into registry.image_digests and apply again: the
+#    image references the Helm values use are built from them.
 terraform -chdir=infrastructure/terraform apply
-terraform -chdir=infrastructure/terraform output -json \
-  > "$PWD/terraform-outputs.json"
 
 # 6. Platform and application
 ansible-playbook oilscope.platform.deploy_k3s \
-  -e project_config_path="$OILSCOPE_PROJECT_CONFIG" \
-  -e terraform_outputs_path="$PWD/terraform-outputs.json"
+  -e project_config_path="$OILSCOPE_PROJECT_CONFIG"
 ```
+
+Step 2 takes `secret_versions_config_file`, not `project_config_path` like the
+other playbooks. Its default is empty, so passing the wrong name fails with
+`Is a directory` rather than anything about a missing configuration. `--check`
+uploads nothing and prints which environment variable feeds which container.
 
 Step 5 is easy to miss. `registry.image_digests` feeds the Terraform `registry`
 output, which is where the Helm values get their image references — so a digest
-updated in the configuration but not re-applied and re-exported deploys the old
-one.
+updated in the configuration but not re-applied deploys the old one. Confirm the
+digests exist before deploying; ECR expires images and a reference to a deleted
+one fails as an `ImagePullBackOff` inside a Helm pre-install hook, which surfaces
+only as `timed out waiting for the condition`:
+
+```sh
+for s in ui history fetcher database; do
+  printf '%-10s ' "$s"
+  aws ecr describe-images --repository-name "oilscope/$s" \
+    --query 'imageDetails[].[imageTags[0],imageSizeInBytes]' --output text
+done
+```
+
+### Where the deployment reads Terraform's outputs
+
+`deploy_k3s` runs `terraform output -json` against
+`infrastructure/terraform` itself, so the addresses, image references and the
+RDS administrator secret ARN are always the current ones.
+
+Passing `-e terraform_outputs_path=/path/to/terraform-outputs.json` still works
+and makes it read that file instead — useful when deploying from a machine with
+no Terraform state. It is opt-in because a file is only as current as its last
+export, and a stale one silently feeds old addresses. The RDS administrator
+credential is the sharpest case: it lives in an AWS-managed secret whose name
+embeds a per-instance UUID, so it changes every time the database is recreated.
+
+The playbook prints which source it used.
 
 Before applying, run the schema check by hand. Nothing else will:
 
@@ -65,6 +97,11 @@ uvx check-jsonschema \
   --schemafile infrastructure/terraform/project-config.schema.json \
   "$OILSCOPE_PROJECT_CONFIG"
 ```
+
+Step 6 also deploys the operator console when `headlamp.enabled` is true, which
+it is not by default. That path has an extra step before it — teaching the API
+servers to validate operator tokens — and its own hostname, identity provider
+and rollback rules. See [Headlamp, the operator console](headlamp.md).
 
 ### Seeing what a deploy would change
 

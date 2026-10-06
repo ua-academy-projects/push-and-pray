@@ -48,48 +48,52 @@ data:
   collect.sh: |
     set -eu
 
-    not_true() {
-      tr ' ' '\n' | grep -cvx True || true
+    SA=/var/run/secrets/kubernetes.io/serviceaccount
+    API=https://kubernetes.default.svc
+
+    api() {
+      curl -sS --fail-with-body --cacert "${SA}/ca.crt" \
+        -H "Authorization: Bearer $(cat ${SA}/token)" "${API}${1}"
     }
 
-    nodes_not_ready=$(
-      kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
-        | not_true
-    )
+    # A resource counts as not-ready unless its Ready condition is exactly
+    # "True". A node whose kubelet stopped reporting is "Unknown", and an
+    # object with no conditions yet has none at all; both must count.
+    not_ready='[.items[]
+      | select((([.status.conditions[]? | select(.type == "Ready") | .status]
+                 | first) // "Unknown") != "True")] | length'
+
+    nodes_not_ready=$(api /api/v1/nodes | jq "${not_ready}")
 
     pods_not_ready=$(
-      kubectl get pods -n "$NAMESPACE" --field-selector=status.phase!=Succeeded \
-        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
-        | not_true
+      api "/api/v1/namespaces/${NAMESPACE}/pods" \
+        | jq '[.items[] | select(.status.phase != "Succeeded")]
+               | {items: .}' \
+        | jq "${not_ready}"
     )
 
     jobs_failed=$(
-      kubectl get jobs -n "$NAMESPACE" \
-        -o jsonpath='{range .items[*]}{.status.failed}{"\n"}{end}' \
-        | grep -cvE '^(0)?$' || true
+      api "/apis/batch/v1/namespaces/${NAMESPACE}/jobs" \
+        | jq '[.items[] | select((.status.failed // 0) > 0)] | length'
     )
 
+    # cert-manager may not be installed, and the CRD may be absent on a fresh
+    # cluster. A failure here must not mask the other three metrics.
     certificates_not_ready=$(
-      kubectl get certificates --all-namespaces \
-        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' \
-        | not_true
+      api /apis/cert-manager.io/v1/certificates 2>/dev/null \
+        | jq "${not_ready}" 2>/dev/null || echo 0
     )
-
-    printf '%s %s %s %s\n' \
-      "$nodes_not_ready" "$pods_not_ready" "$jobs_failed" "$certificates_not_ready" \
-      > /shared/counts
-  publish.sh: |
-    set -eu
-    read -r nodes pods jobs certs < /shared/counts
 
     aws cloudwatch put-metric-data \
-      --region "$AWS_REGION" \
-      --namespace "$METRIC_NAMESPACE" \
+      --region "${AWS_REGION}" \
+      --namespace "${METRIC_NAMESPACE}" \
       --metric-data \
-      "MetricName=NodesNotReady,Value=${nodes},Unit=Count" \
-      "MetricName=PodsNotReady,Value=${pods},Unit=Count" \
-      "MetricName=JobsFailed,Value=${jobs},Unit=Count" \
-      "MetricName=CertificatesNotReady,Value=${certs},Unit=Count"
+      "MetricName=NodesNotReady,Value=${nodes_not_ready},Unit=Count" \
+      "MetricName=PodsNotReady,Value=${pods_not_ready},Unit=Count" \
+      "MetricName=JobsFailed,Value=${jobs_failed},Unit=Count" \
+      "MetricName=CertificatesNotReady,Value=${certificates_not_ready},Unit=Count"
+
+    echo "published nodes=${nodes_not_ready} pods=${pods_not_ready} jobs=${jobs_failed} certs=${certificates_not_ready}"
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -115,39 +119,21 @@ spec:
           restartPolicy: Never
           serviceAccountName: {{ .Release.Name }}-cluster-metrics
           volumes:
-            - name: shared
-              emptyDir:
-                medium: Memory
             - name: scripts
               configMap:
                 name: {{ .Release.Name }}-cluster-metrics
-                defaultMode: 0555
-          initContainers:
-            - name: collect
-              image: {{ .Values.clusterMetrics.kubectlImage }}
-              command: [sh, /scripts/collect.sh]
-              env:
-                - name: NAMESPACE
-                  value: {{ .Release.Namespace }}
-              volumeMounts:
-                - name: shared
-                  mountPath: /shared
-                - name: scripts
-                  mountPath: /scripts
-                  readOnly: true
           containers:
             - name: publish
               image: {{ .Values.clusterMetrics.awsCliImage }}
-              command: [sh, /scripts/publish.sh]
+              command: [sh, /scripts/collect.sh]
               env:
+                - name: NAMESPACE
+                  value: {{ .Release.Namespace | quote }}
                 - name: AWS_REGION
                   value: {{ .Values.clusterMetrics.region | quote }}
                 - name: METRIC_NAMESPACE
                   value: {{ .Values.clusterMetrics.metricNamespace | quote }}
               volumeMounts:
-                - name: shared
-                  mountPath: /shared
-                  readOnly: true
                 - name: scripts
                   mountPath: /scripts
                   readOnly: true

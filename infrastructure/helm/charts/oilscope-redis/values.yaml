@@ -10,6 +10,8 @@ maxmemoryMb: 128
 passwordSecret: oilscope-redis
 passwordKey: REDIS_PASSWORD
 
+credentialsRevision: "unset"
+
 certificateDays: 365
 issuer: oilscope-internal-ca
 

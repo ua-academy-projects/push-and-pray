@@ -15,6 +15,10 @@ variable "config" {
       comment   = optional(string, "")
       proxied   = optional(bool, false)
     }), {})
+    headlamp = optional(object({
+      enabled  = optional(bool, false)
+      hostname = optional(string, "")
+    }), {})
   })
 }
 

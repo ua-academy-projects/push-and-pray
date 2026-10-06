@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
 {{ include "oilscope.selector" (dict "root" . "component" "history") | indent 8 }}
+      annotations:
+        oilscope.io/credentials-revision: {{ .Values.credentialsRevision | quote }}
     spec:
       terminationGracePeriodSeconds: 30
 {{- if .Values.registryCredentials.enabled }}

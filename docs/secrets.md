@@ -467,6 +467,16 @@ is no undo, and the values are not in state to be recovered from. Before
 destroying a project that anyone else relies on, confirm the values exist
 somewhere else first.
 
+On AWS that is literally true only because the module sets
+`recovery_window_in_days = 0`. Secrets Manager otherwise *schedules* a deletion
+up to 30 days out, and for the whole of that window the **name stays reserved**:
+the values are still recoverable with `restore-secret`, but a rebuild under the
+same names fails with `InvalidRequestException: ... already scheduled for
+deletion`, and the only ways out are to restore and `terraform import` each
+container or to `delete-secret --force-delete-without-recovery`. A window of
+zero trades that recovery path for rebuilds that simply work. Treat a destroy as
+final and keep the values elsewhere.
+
 Azure destroys differently, and it is worth knowing which way. Terraform owns
 no workload secret there, so `destroy` removes the grants and the vault, not
 the individual secrets — but removing the vault takes them with it. The vault

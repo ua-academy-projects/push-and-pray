@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Keep a place for server configuration drop-ins
+  become: true
+  ansible.builtin.file:
+    path: "{{ k3s_api_oidc_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Teach the API server to validate the operators' OIDC tokens
+  become: true
+  ansible.builtin.template:
+    src: oidc.yaml.j2
+    dest: "{{ k3s_api_oidc_config_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  register: k3s_api_oidc_config
+  when: k3s_api_oidc_enabled | bool
+
+- name: Stop validating OIDC tokens
+  become: true
+  ansible.builtin.file:
+    path: "{{ k3s_api_oidc_config_path }}"
+    state: absent
+  register: k3s_api_oidc_removed
+  when: not (k3s_api_oidc_enabled | bool)
+
+- name: Restart this server so the change takes effect
+  become: true
+  ansible.builtin.systemd_service:
+    name: k3s
+    state: restarted
+  when: k3s_api_oidc_config is changed or k3s_api_oidc_removed is changed
+
+- name: Wait for this server's API to answer again
+  become: true
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_api_oidc_binary_path }}"
+      - kubectl
+      - get
+      - --raw
+      - /readyz
+  register: k3s_api_oidc_readyz
+  until: k3s_api_oidc_readyz.rc == 0
+  retries: "{{ (k3s_api_oidc_ready_timeout | int / 10) | int }}"
+  delay: 10
+  changed_when: false
+
+- name: Wait for every node to report ready before moving to the next server
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      {{ k3s_api_oidc_binary_path }} kubectl wait --for=condition=Ready nodes
+      --all --timeout={{ k3s_api_oidc_ready_timeout }}s
+  changed_when: false

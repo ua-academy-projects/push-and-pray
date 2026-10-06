@@ -70,6 +70,11 @@ output "dns" {
   value       = module.cloudflare_dns.summary
 }
 
+output "headlamp" {
+  description = "The operator console's resolved hostname and the entry-node address it points at. Ansible reads this to decide whether to deploy the console; no credential appears here."
+  value       = module.cloudflare_dns.headlamp
+}
+
 output "registry" {
   description = "Container repository URLs and the immutable image reference to deploy for each service."
   value       = module.aws_registry.repositories

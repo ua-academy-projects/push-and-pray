@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
 {{ include "oilscope.selector" (dict "root" . "component" "ui") | indent 8 }}
+      annotations:
+        oilscope.io/credentials-revision: {{ .Values.credentialsRevision | quote }}
     spec:
       terminationGracePeriodSeconds: 30
 {{- if .Values.registryCredentials.enabled }}
@@ -36,11 +38,11 @@ spec:
             - name: TZ
               value: UTC
             - name: HISTORY_SERVICE_URL
-              value: {{ printf "http://%s-history:%v" .Release.Name .Values.services.history.port | quote }}
+              value: {{ printf "http://%s-history:%d" .Release.Name (.Values.services.history.port | int64) | quote }}
             - name: SESSION_COOKIE_SECURE
               value: "true"
             - name: SESSION_TTL_SECONDS
-              value: {{ .Values.cache.sessionTtlSeconds | quote }}
+              value: {{ .Values.cache.sessionTtlSeconds | int64 | quote }}
             - name: REDIS_KEY_PREFIX
               value: {{ .Values.cache.keyPrefix | quote }}
           resources:

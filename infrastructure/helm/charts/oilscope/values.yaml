@@ -69,7 +69,6 @@ clusterMetrics:
   region: ""
   metricNamespace: ""
   awsCliImage: public.ecr.aws/aws-cli/aws-cli:2.32.6
-  kubectlImage: registry.k8s.io/kubectl:v1.35.0
 
 registryCredentials:
   enabled: true
@@ -78,7 +77,8 @@ registryCredentials:
   region: ""
   schedule: "0 */8 * * *"
   awsCliImage: public.ecr.aws/aws-cli/aws-cli:2.32.6
-  kubectlImage: registry.k8s.io/kubectl:v1.35.0
+
+credentialsRevision: "unset"
 
 migration:
   profile: cloud

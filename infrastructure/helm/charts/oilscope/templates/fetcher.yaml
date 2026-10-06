@@ -15,6 +15,8 @@ spec:
     metadata:
       labels:
 {{ include "oilscope.selector" (dict "root" . "component" "fetcher") | indent 8 }}
+      annotations:
+        oilscope.io/credentials-revision: {{ .Values.credentialsRevision | quote }}
     spec:
       terminationGracePeriodSeconds: 30
 {{- if .Values.registryCredentials.enabled }}
@@ -44,9 +46,9 @@ spec:
             - name: FETCH_ON_STARTUP
               value: {{ .Values.services.fetcher.fetchOnStartup | quote }}
             - name: REQUEST_TIMEOUT_SECONDS
-              value: {{ .Values.services.fetcher.requestTimeoutSeconds | quote }}
+              value: {{ .Values.services.fetcher.requestTimeoutSeconds | int64 | quote }}
             - name: LISTEN_ADDRESS
-              value: {{ printf "0.0.0.0:%v" .Values.services.fetcher.port | quote }}
+              value: {{ printf "0.0.0.0:%d" (.Values.services.fetcher.port | int64) | quote }}
 {{ include "oilscope.brokerEnv" . | indent 12 }}
           resources:
 {{ toYaml .Values.services.fetcher.resources | indent 12 }}
@@ -79,3 +81,18 @@ spec:
             items:
               - key: ca.crt
                 path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-fetcher
+  labels:
+{{ include "oilscope.labels" (dict "root" . "component" "fetcher") | indent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+{{ include "oilscope.selector" (dict "root" . "component" "fetcher") | indent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.services.fetcher.port }}
+      targetPort: http

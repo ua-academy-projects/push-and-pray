@@ -298,5 +298,68 @@
     "enabled": false,
     "zone_name": "example.com",
     "ttl": 60
+  },
+  "headlamp": {
+    "enabled": false,
+    "hostname": "headlamp.example.com",
+    "namespace": "headlamp",
+    "auth_mode": "oidc",
+    "replicas": 1,
+    "session_ttl_seconds": 28800,
+    "oidc": {
+      "issuer_url": "https://identity.example.com/realms/example",
+      "client_id": "oilscope-headlamp",
+      "client_secret_secret_id": "oilscope-headlamp-oidc",
+      "scopes": "openid,email,profile,groups",
+      "username_claim": "email",
+      "username_prefix": "oidc:",
+      "groups_claim": "groups",
+      "groups_prefix": "oidc:",
+      "allowed_groups": [
+        "oilscope-operators"
+      ],
+      "allowed_users": []
+    },
+    "overview": {
+      "application_url": "https://oilscope.example.com",
+      "stale_after_seconds": 120,
+      "links": [
+        {
+          "label": "CloudWatch dashboard",
+          "url": "https://example.com/replace-with-your-cloudwatch-dashboard"
+        },
+        {
+          "label": "Deployment guide",
+          "url": "https://example.com/replace-with-your-documentation"
+        }
+      ],
+      "components": [
+        {
+          "name": "ui",
+          "kind": "Deployment",
+          "label": "UI"
+        },
+        {
+          "name": "history",
+          "kind": "Deployment",
+          "label": "History"
+        },
+        {
+          "name": "fetcher",
+          "kind": "Deployment",
+          "label": "Fetcher"
+        },
+        {
+          "name": "rabbitmq",
+          "kind": "StatefulSet",
+          "label": "RabbitMQ"
+        },
+        {
+          "name": "redis",
+          "kind": "StatefulSet",
+          "label": "Redis"
+        }
+      ]
+    }
   }
 }

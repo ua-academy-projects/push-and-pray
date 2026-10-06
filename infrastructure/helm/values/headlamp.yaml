@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+replicaCount: 1
+
+config:
+  inCluster: true
+  unsafeUseServiceAccountToken: false
+  pluginsDir: /headlamp/plugins
+  watchPlugins: false
+  enableHelm: false
+  staticPlugins:
+    enabled: false
+  oidc:
+    secret:
+      create: false
+    externalSecret:
+      enabled: false
+
+clusterRoleBinding:
+  create: false
+
+serviceAccount:
+  create: true
+
+service:
+  type: ClusterIP
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 100
+  runAsGroup: 101
+  privileged: false
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+volumes:
+  - name: oilscope-overview
+    configMap:
+      name: oilscope-overview-plugin
+
+volumeMounts:
+  - name: oilscope-overview
+    mountPath: /headlamp/plugins/oilscope-overview
+    readOnly: true
+
+pluginsManager:
+  enabled: false

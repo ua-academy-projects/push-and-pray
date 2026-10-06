@@ -1,0 +1,15 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ k3s_headlamp_allowlist_middleware }}
+  namespace: {{ k3s_headlamp_namespace }}
+  labels:
+    app.kubernetes.io/part-of: headlamp
+    app.kubernetes.io/component: source-allowlist
+spec:
+  ipAllowList:
+    rejectStatusCode: {{ k3s_headlamp_reject_status_code | int }}
+    sourceRange:
+{% for cidr in k3s_headlamp_allowed_cidrs %}
+      - {{ cidr | to_json }}
+{% endfor %}

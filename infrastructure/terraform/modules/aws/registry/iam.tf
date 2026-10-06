@@ -52,7 +52,10 @@ resource "aws_iam_role" "publisher" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${local.publisher}:ref:refs/tags/${var.config.registry.publish_tag_prefix}*"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${local.publisher}:ref:refs/tags/${var.config.registry.publish_tag_prefix}*",
+              "repo:${replace(local.publisher, "/", "@*/")}@*:ref:refs/tags/${var.config.registry.publish_tag_prefix}*",
+            ]
           }
         }
       }

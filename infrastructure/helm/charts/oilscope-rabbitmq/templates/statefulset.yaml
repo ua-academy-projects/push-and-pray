@@ -19,6 +19,27 @@ spec:
     spec:
       securityContext:
         fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: cookie-permissions
+          image: {{ .Values.image }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              C=/var/lib/rabbitmq/.erlang.cookie
+              if [ -f "$C" ]; then
+                chmod 400 "$C"
+                ls -l "$C"
+              else
+                echo "no cookie yet; the server will create it"
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
       containers:
         - name: rabbitmq
           image: {{ .Values.image }}

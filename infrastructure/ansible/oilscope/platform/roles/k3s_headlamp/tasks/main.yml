@@ -1,0 +1,296 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create the console's own namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ k3s_headlamp_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: headlamp
+
+- name: Install the plugin's pinned build dependencies
+  ansible.builtin.command:
+    cmd: npm ci --no-audit --no-fund
+    chdir: "{{ k3s_headlamp_plugin_dir }}"
+    creates: "{{ k3s_headlamp_plugin_dir }}/node_modules"
+
+- name: Build the OilScope Overview plugin
+  ansible.builtin.command:
+    cmd: npm run build
+    chdir: "{{ k3s_headlamp_plugin_dir }}"
+  changed_when: false
+
+- name: Read the built bundle and its package metadata
+  ansible.builtin.set_fact:
+    k3s_headlamp_plugin_bundle: >-
+      {{ lookup('ansible.builtin.file',
+                k3s_headlamp_plugin_dir ~ '/dist/main.js') }}
+    k3s_headlamp_plugin_version: >-
+      {{ (lookup('ansible.builtin.file',
+                 k3s_headlamp_plugin_dir ~ '/package.json') | from_json).version }}
+
+- name: Publish the plugin and the pointer to its configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ k3s_headlamp_plugin_configmap }}"
+        namespace: "{{ k3s_headlamp_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: headlamp
+          app.kubernetes.io/component: overview-plugin
+          app.kubernetes.io/version: "{{ k3s_headlamp_plugin_version }}"
+      data:
+        main.js: "{{ k3s_headlamp_plugin_bundle }}"
+        package.json: >-
+          {{ {'name': k3s_headlamp_plugin_name,
+              'version': k3s_headlamp_plugin_version,
+              'description': 'OilScope Overview landing page',
+              'isManagedByHeadlampPlugin': false} | to_json }}
+        bootstrap.json: >-
+          {{ {'namespace': k3s_headlamp_application_namespace,
+              'configMapName': k3s_headlamp_overview_configmap} | to_json }}
+
+- name: Resolve the workload names the page expects to find
+  ansible.builtin.set_fact:
+    k3s_headlamp_resolved_components: >-
+      {{ k3s_headlamp_resolved_components | default([]) + [{
+           'name': k3s_headlamp_name_prefix ~ '-' ~ item.name,
+           'kind': item.kind,
+           'label': item.label | default(item.name)
+         }] }}
+  loop: "{{ k3s_headlamp_overview_components }}"
+  loop_control:
+    label: "{{ item.kind }}/{{ item.name }}"
+
+- name: Publish the landing page's non-secret configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ k3s_headlamp_overview_configmap }}"
+        namespace: "{{ k3s_headlamp_application_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: headlamp
+          app.kubernetes.io/component: overview-config
+      data:
+        overview.json: >-
+          {{ {'environment': k3s_headlamp_environment,
+              'clusterName': k3s_headlamp_cluster_name,
+              'namespace': k3s_headlamp_application_namespace,
+              'applicationUrl': k3s_headlamp_application_url,
+              'staleAfterSeconds': k3s_headlamp_stale_after_seconds | int,
+              'links': k3s_headlamp_overview_links,
+              'components': k3s_headlamp_resolved_components | default([]),
+              'migrationJobPrefix': k3s_headlamp_migration_job_prefix,
+              'registryRefreshCronJob': k3s_headlamp_registry_refresh_cronjob,
+              'fetcherService': {'name': k3s_headlamp_fetcher_service,
+                                 'port': k3s_headlamp_fetcher_port}} | to_json }}
+
+- name: Create the read-only identity operators sign in as
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: "{{ k3s_headlamp_service_account }}"
+        namespace: "{{ k3s_headlamp_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: headlamp
+          app.kubernetes.io/component: operator-identity
+  when: k3s_headlamp_auth_mode == 'token'
+
+- name: Give it a token that does not expire
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: Secret
+      type: kubernetes.io/service-account-token
+      metadata:
+        name: "{{ k3s_headlamp_service_account_token_secret }}"
+        namespace: "{{ k3s_headlamp_namespace }}"
+        annotations:
+          kubernetes.io/service-account.name: "{{ k3s_headlamp_service_account }}"
+        labels:
+          app.kubernetes.io/part-of: headlamp
+          app.kubernetes.io/component: operator-identity
+  when: k3s_headlamp_auth_mode == 'token'
+
+- name: Give the console its OIDC client credential
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    definition:
+      apiVersion: v1
+      kind: Secret
+      type: Opaque
+      metadata:
+        name: "{{ k3s_headlamp_oidc_secret }}"
+        namespace: "{{ k3s_headlamp_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: headlamp
+          app.kubernetes.io/component: oidc
+      stringData:
+        OIDC_CLIENT_ID: "{{ k3s_headlamp_oidc_client_id }}"
+        OIDC_CLIENT_SECRET: "{{ k3s_headlamp_oidc_client_secret }}"
+        OIDC_ISSUER_URL: "{{ k3s_headlamp_oidc_issuer_url }}"
+        OIDC_SCOPES: "{{ k3s_headlamp_oidc_scopes }}"
+  no_log: true
+  when: k3s_headlamp_auth_mode == 'oidc'
+
+- name: Authorise the operator identities in Kubernetes itself
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    template: rbac.yaml.j2
+
+- name: Refuse the console to every source but the allow-listed ones
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    apply: true
+    template: middleware.yaml.j2
+  when: k3s_headlamp_allowed_cidrs | length > 0
+
+- name: Remove the source allowlist when every source is permitted
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: absent
+    api_version: traefik.io/v1alpha1
+    kind: Middleware
+    namespace: "{{ k3s_headlamp_namespace }}"
+    name: "{{ k3s_headlamp_allowlist_middleware }}"
+  when: k3s_headlamp_allowed_cidrs | length == 0
+
+- name: Compose the ingress annotations the release applies
+  ansible.builtin.set_fact:
+    k3s_headlamp_ingress_annotations: >-
+      {{ {'cert-manager.io/cluster-issuer': k3s_headlamp_cluster_issuer}
+         | combine(
+             {'traefik.ingress.kubernetes.io/router.middlewares':
+              k3s_headlamp_namespace ~ '-' ~ k3s_headlamp_allowlist_middleware
+              ~ '@kubernetescrd'}
+             if k3s_headlamp_allowed_cidrs | length > 0 else {}) }}
+
+- name: Install the console
+  kubernetes.core.helm:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    name: "{{ k3s_headlamp_release }}"
+    chart_repo_url: "{{ k3s_headlamp_chart_repo }}"
+    chart_ref: "{{ k3s_headlamp_chart }}"
+    chart_version: "{{ k3s_headlamp_chart_version }}"
+    release_namespace: "{{ k3s_headlamp_namespace }}"
+    values_files:
+      - "{{ k3s_headlamp_values_file }}"
+    release_values:
+      replicaCount: "{{ k3s_headlamp_replicas | int }}"
+      config:
+        baseURL: ""
+        sessionTTL: "{{ k3s_headlamp_session_ttl_seconds | int }}"
+        unsafeUseServiceAccountToken: false
+        oidc:
+          secret:
+            create: false
+          externalSecret: >-
+            {{ {'enabled': true,
+                'name': k3s_headlamp_oidc_secret,
+                'hasScopes': true}
+               if k3s_headlamp_auth_mode == 'oidc'
+               else {'enabled': false} }}
+      resources:
+        requests:
+          cpu: "{{ k3s_headlamp_cpu_request_millicores | int }}m"
+          memory: "{{ k3s_headlamp_memory_request_mb | int }}Mi"
+        limits:
+          memory: "{{ k3s_headlamp_memory_limit_mb | int }}Mi"
+      volumes:
+        - name: oilscope-overview
+          configMap:
+            name: "{{ k3s_headlamp_plugin_configmap }}"
+      volumeMounts:
+        - name: oilscope-overview
+          mountPath: "/headlamp/plugins/{{ k3s_headlamp_plugin_name }}"
+          readOnly: true
+      podAnnotations:
+        oilscope.io/oidc-revision: "{{ k3s_headlamp_oidc_revision }}"
+        oilscope.io/plugin-revision: >-
+          {{ k3s_headlamp_plugin_bundle | hash('sha256') }}
+      ingress:
+        enabled: true
+        ingressClassName: "{{ k3s_headlamp_ingress_class }}"
+        annotations: "{{ k3s_headlamp_ingress_annotations }}"
+        hosts:
+          - host: "{{ k3s_headlamp_hostname }}"
+            paths:
+              - path: /
+                type: Prefix
+        tls:
+          - secretName: "{{ k3s_headlamp_tls_secret }}"
+            hosts:
+              - "{{ k3s_headlamp_hostname }}"
+    atomic: true
+    wait: true
+    wait_timeout: "{{ k3s_headlamp_wait_timeout }}"
+
+- name: Wait for the public certificate to be issued
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    namespace: "{{ k3s_headlamp_namespace }}"
+    name: "{{ k3s_headlamp_tls_secret }}"
+  register: k3s_headlamp_certificate
+  until: >-
+    k3s_headlamp_certificate.resources | default([]) | length > 0
+    and (k3s_headlamp_certificate.resources[0].status.conditions | default([])
+         | selectattr('type', 'equalto', 'Ready')
+         | selectattr('status', 'equalto', 'True') | list | length) > 0
+  retries: 30
+  delay: 10
+
+- name: Report how the console is reached and who may use it
+  ansible.builtin.debug:
+    msg: >-
+      https://{{ k3s_headlamp_hostname }} serves the console from namespace
+      {{ k3s_headlamp_namespace }}, reachable from
+      {{ k3s_headlamp_allowed_cidrs if k3s_headlamp_allowed_cidrs | length > 0
+         else 'any source' }}.
+      Signing in lands on OilScope Overview at /c/main/.
+      {{ 'Sign in with the token printed by: kubectl -n '
+         ~ k3s_headlamp_namespace ~ ' get secret '
+         ~ k3s_headlamp_service_account_token_secret
+         ~ " -o jsonpath='{.data.token}' | base64 -d"
+         if k3s_headlamp_auth_mode == 'token'
+         else 'Sign in through the identity provider at '
+              ~ k3s_headlamp_oidc_issuer_url }}.
+      Kubernetes authorises
+      {{ ([k3s_headlamp_namespace ~ '/' ~ k3s_headlamp_service_account]
+          if k3s_headlamp_auth_mode == 'token' else [])
+         + (k3s_headlamp_allowed_groups
+            | map('regex_replace', '^', k3s_headlamp_groups_prefix) | list)
+         + (k3s_headlamp_allowed_users
+            | map('regex_replace', '^', k3s_headlamp_username_prefix) | list) }}
+      through ClusterRole {{ k3s_headlamp_operator_cluster_role }}, which grants
+      no Secret read, no pod exec and no write verb. An empty list means nobody
+      is authorised yet.

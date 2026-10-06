@@ -16,7 +16,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "jinja2>=3.1,<4",
+    "jsonschema>=4.23,<5",
     "pytest>=8.4,<10",
+    "pyyaml>=6,<7",
     "ruff>=0.12,<1",
 ]
 
@@ -25,7 +28,12 @@ package = false
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["services/history/tests", "services/ui/backend/tests", "infrastructure/monitoring/tests"]
+testpaths = [
+    "services/history/tests",
+    "services/ui/backend/tests",
+    "infrastructure/monitoring/tests",
+    "infrastructure/tests",
+]
 pythonpath = ["services/history/src", "services/ui/backend/src"]
 
 [tool.ruff]
@@ -52,3 +60,6 @@ extend-immutable-calls = [
 [tool.ruff.lint.per-file-ignores]
 # assert is the whole point of a test; S101 only makes sense in production code.
 "**/tests/**" = ["S101"]
+# Jinja autoescaping is an HTML defence. This renders Kubernetes YAML, where
+# escaping would corrupt the manifest, and Ansible renders it the same way.
+"infrastructure/tests/test_headlamp_rbac.py" = ["S101", "S701"]

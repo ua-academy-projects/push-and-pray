@@ -149,6 +149,71 @@ jobs:
       - name: Production build
         run: npm run build
 
+  headlamp-plugin:
+    name: Headlamp plugin
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infrastructure/headlamp/plugins/oilscope-overview
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: >-
+            infrastructure/headlamp/plugins/oilscope-overview/package-lock.json
+
+      - name: Install the pinned plugin SDK
+        run: npm ci
+
+      - name: Confirm the plugin SDK matches the pinned console release
+        run: |
+          pinned="$(
+            grep -A 5 '^  console:' ../../../helm/versions.yml \
+              | grep plugin_sdk_version \
+              | sed 's/.*"\(.*\)".*/\1/'
+          )"
+
+          installed="$(
+            node -p "require('./node_modules/@kinvolk/headlamp-plugin/package.json').version"
+          )"
+
+          if [ "${pinned}" != "${installed}" ]; then
+            echo "versions.yml pins plugin SDK ${pinned}, but ${installed} is installed."
+            exit 1
+          fi
+
+          echo "Plugin SDK ${installed} matches infrastructure/helm/versions.yml."
+
+      - name: Typecheck
+        run: npm run tsc
+
+      - name: Run the plugin tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Confirm the bundle still fits in a ConfigMap
+        run: |
+          limit=$((900 * 1024))
+          size="$(wc -c < dist/main.js)"
+
+          if [ "${size}" -gt "${limit}" ]; then
+            echo "dist/main.js is ${size} bytes, over the ${limit} byte budget."
+            echo "A ConfigMap cannot exceed roughly 1 MiB; switch to an image-based"
+            echo "plugin delivery before raising this limit. See docs/headlamp.md."
+            exit 1
+          fi
+
+          echo "dist/main.js is ${size} bytes, within the ${limit} byte budget."
+
   compose:
     name: Docker Compose
     runs-on: ubuntu-latest
@@ -397,6 +462,70 @@ jobs:
           helm template cert-manager oci://quay.io/jetstack/charts/cert-manager \
             --version v1.21.2 -n cert-manager -f values/cert-manager.yaml \
             > /tmp/rendered/cert-manager.yaml
+
+          for mode in token oidc; do
+            oidc_args=(--set config.oidc.externalSecret.enabled=false)
+
+            if [ "${mode}" = "oidc" ]; then
+              oidc_args=(
+                --set config.oidc.externalSecret.enabled=true
+                --set config.oidc.externalSecret.name=headlamp-oidc
+                --set config.oidc.externalSecret.hasScopes=true
+              )
+            fi
+
+            helm template headlamp headlamp \
+              --repo https://kubernetes-sigs.github.io/headlamp/ --version 0.45.0 \
+              -n headlamp -f values/headlamp.yaml \
+              "${oidc_args[@]}" \
+              --set ingress.enabled=true \
+              --set ingress.ingressClassName=oilscope \
+              --set 'ingress.hosts[0].host=headlamp.example.com' \
+              --set 'ingress.hosts[0].paths[0].path=/' \
+              --set 'ingress.hosts[0].paths[0].type=Prefix' \
+              --set 'ingress.tls[0].secretName=headlamp-tls' \
+              --set 'ingress.tls[0].hosts[0]=headlamp.example.com' \
+              > "/tmp/rendered/headlamp-${mode}.yaml"
+          done
+
+      - name: Confirm the console grants itself no standing cluster-admin
+        run: |
+          status=0
+
+          for mode in token oidc; do
+            rendered="/tmp/rendered/headlamp-${mode}.yaml"
+
+            if grep -q "kind: ClusterRoleBinding" "${rendered}"; then
+              echo "${mode}: the Headlamp release rendered a ClusterRoleBinding."
+              echo "clusterRoleBinding.create must stay false: operators are"
+              echo "authorised by their own identity, not by the pod."
+              status=1
+            fi
+
+            if grep -q '\-unsafe-use-service-account-token' "${rendered}"; then
+              echo "${mode}: the release would authenticate every visitor as the"
+              echo "pod's service account, so RBAC could not distinguish them."
+              status=1
+            fi
+
+            if grep -qE 'OIDC_CLIENT_SECRET: +[^$]' "${rendered}"; then
+              echo "${mode}: a literal OIDC client secret appears in the manifest."
+              status=1
+            fi
+          done
+
+          if ! grep -q 'oidc-client-secret=\$(OIDC_CLIENT_SECRET)' \
+            /tmp/rendered/headlamp-oidc.yaml; then
+            echo "oidc: the client secret is not coming from the external Secret."
+            status=1
+          fi
+
+          if grep -q 'oidc-client-secret' /tmp/rendered/headlamp-token.yaml; then
+            echo "token: the release should carry no OIDC arguments at all."
+            status=1
+          fi
+
+          exit "${status}"
 
       - name: Check the rendered manifests against Kubernetes ${{ env.KUBERNETES_VERSION }}
         run: |

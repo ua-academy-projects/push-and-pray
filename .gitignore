@@ -29,6 +29,11 @@ crash.log
 crash.*.log
 *.json
 !infrastructure/terraform/*.json
+!infrastructure/headlamp/plugins/*/package.json
+!infrastructure/headlamp/plugins/*/package-lock.json
+!infrastructure/headlamp/plugins/*/tsconfig.json
+infrastructure/headlamp/plugins/*/dist/
+infrastructure/headlamp/plugins/*/.eslintcache
 # Credentials and private keys
 *.pem
 *.key
