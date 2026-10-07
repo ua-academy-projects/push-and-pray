@@ -20,3 +20,9 @@ k3s_cert_manager_production_server: https://acme-v02.api.letsencrypt.org/directo
 k3s_cert_manager_production_account_secret_name: letsencrypt-production-account-key
 k3s_cert_manager_production_ingress_class: traefik
 k3s_cert_manager_production_wait_timeout: 120
+k3s_cert_manager_cloudflare_api_token: >-
+  {{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') }}
+k3s_cert_manager_cloudflare_secret_name: cloudflare-api-token
+k3s_cert_manager_dns01_issuer_name: letsencrypt-production-dns01
+k3s_cert_manager_dns01_account_secret_name: >-
+  letsencrypt-production-dns01-account-key

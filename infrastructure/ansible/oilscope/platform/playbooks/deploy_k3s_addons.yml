@@ -9,6 +9,9 @@
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
     k3s_addons_config_file: "{{ project_config_path | default('project-config.json') }}"
   roles:
+    - role: oilscope.platform.k3s_traefik
+      vars:
+        k3s_traefik_config_file: "{{ k3s_addons_config_file }}"
     - role: oilscope.platform.k3s_cert_manager
       vars:
         k3s_cert_manager_config_file: "{{ k3s_addons_config_file }}"

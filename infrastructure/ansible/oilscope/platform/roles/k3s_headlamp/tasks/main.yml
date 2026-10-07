@@ -55,3 +55,54 @@
         - kind: ServiceAccount
           name: "{{ k3s_headlamp_admin_service_account }}"
           namespace: "{{ k3s_headlamp_release_namespace }}"
+
+- name: Restrict Headlamp to traffic from the Tailscale subnet router
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'private-source-middleware.yaml.j2')
+         | from_yaml }}
+
+- name: Create the Headlamp HTTPS redirect middleware
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'https-redirect-middleware.yaml.j2')
+         | from_yaml }}
+
+- name: Expose Headlamp through its private hostname
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'ingress.yaml.j2') | from_yaml }}
+
+- name: Wait for cert-manager to create the Headlamp Certificate
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ k3s_headlamp_tls_secret_name }}"
+    namespace: "{{ k3s_headlamp_release_namespace }}"
+  register: k3s_headlamp_certificate
+  changed_when: false
+  retries: "{{ k3s_headlamp_certificate_discovery_retries }}"
+  delay: "{{ k3s_headlamp_certificate_discovery_delay }}"
+  until: k3s_headlamp_certificate.resources | length > 0
+
+- name: Wait for the Headlamp Certificate to become ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_headlamp_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ k3s_headlamp_tls_secret_name }}"
+    namespace: "{{ k3s_headlamp_release_namespace }}"
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_sleep: 5
+    wait_timeout: "{{ k3s_headlamp_certificate_wait_timeout }}"
+  changed_when: false

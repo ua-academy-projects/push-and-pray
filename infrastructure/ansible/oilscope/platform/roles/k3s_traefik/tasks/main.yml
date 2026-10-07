@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_traefik_config: >-
+      {{ lookup('ansible.builtin.file', k3s_traefik_config_file) | from_json }}
+
+- name: Build the Traefik placement configuration
+  ansible.builtin.set_fact:
+    k3s_traefik_agent_replicas: >-
+      {{ k3s_traefik_config.vms | dict2items
+         | selectattr('value.tags', 'contains', 'k3s-agent')
+         | list | length }}
+
+- name: Refuse fewer than two ingress agents
+  ansible.builtin.fail:
+    msg: >-
+      Source-preserving Traefik requires at least two k3s-agent nodes, but the
+      project configuration contains {{ k3s_traefik_agent_replicas }}.
+  when: k3s_traefik_agent_replicas | int < 2
+
+- name: Configure source-preserving Traefik placement
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'helm-chart-config.yaml.j2')
+         | from_yaml }}
+
+- name: Wait for the Traefik Service to preserve source addresses
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: "{{ k3s_traefik_service_name }}"
+    namespace: "{{ k3s_traefik_namespace }}"
+  register: k3s_traefik_service
+  changed_when: false
+  retries: "{{ k3s_traefik_wait_retries }}"
+  delay: "{{ k3s_traefik_wait_delay }}"
+  until: >-
+    k3s_traefik_service.resources | length == 1
+    and k3s_traefik_service.resources[0].spec.externalTrafficPolicy == 'Local'
+
+- name: Wait for every agent-local Traefik replica
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ k3s_traefik_deployment_name }}"
+    namespace: "{{ k3s_traefik_namespace }}"
+  register: k3s_traefik_deployment
+  changed_when: false
+  retries: "{{ k3s_traefik_wait_retries }}"
+  delay: "{{ k3s_traefik_wait_delay }}"
+  until: >-
+    k3s_traefik_deployment.resources | length == 1
+    and
+    (k3s_traefik_deployment.resources[0].status.availableReplicas | default(0)
+     | int) == (k3s_traefik_agent_replicas | int)
+    and
+    (k3s_traefik_deployment.resources[0].status.updatedReplicas | default(0)
+     | int) == (k3s_traefik_agent_replicas | int)

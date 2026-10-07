@@ -1,0 +1,21 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: {{ k3s_traefik_helm_chart_config_name }}
+  namespace: {{ k3s_traefik_namespace }}
+spec:
+  valuesContent: |-
+    deployment:
+      replicas: {{ k3s_traefik_agent_replicas }}
+    nodeSelector:
+      oilscope.io/role: agent
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: traefik
+            topologyKey: kubernetes.io/hostname
+    service:
+      spec:
+        externalTrafficPolicy: Local

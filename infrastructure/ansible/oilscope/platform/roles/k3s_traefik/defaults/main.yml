@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_traefik_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+k3s_traefik_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_traefik_config.environment
+     ~ '.yaml' }}
+k3s_traefik_namespace: kube-system
+k3s_traefik_helm_chart_config_name: traefik
+k3s_traefik_service_name: traefik
+k3s_traefik_deployment_name: traefik
+k3s_traefik_wait_retries: 60
+k3s_traefik_wait_delay: 5

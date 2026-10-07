@@ -19,3 +19,17 @@ k3s_headlamp_timeout: 10m0s
 k3s_headlamp_admin_service_account: headlamp-admin
 k3s_headlamp_admin_cluster_role: cluster-admin
 k3s_headlamp_admin_binding: headlamp-admin
+k3s_headlamp_ingress_name: headlamp
+k3s_headlamp_ingress_class_name: traefik
+k3s_headlamp_ingress_hostname: >-
+  {{ k3s_headlamp_config.k3s.private_services.headlamp.hostname }}
+k3s_headlamp_ingress_service_name: headlamp
+k3s_headlamp_ingress_service_port: 80
+k3s_headlamp_allow_middleware_name: headlamp-private-source
+k3s_headlamp_redirect_middleware_name: headlamp-https-redirect
+k3s_headlamp_cluster_issuer: letsencrypt-production-dns01
+k3s_headlamp_tls_secret_name: >-
+  {{ k3s_headlamp_config.name_prefix ~ '-headlamp-tls' }}
+k3s_headlamp_certificate_discovery_retries: 30
+k3s_headlamp_certificate_discovery_delay: 2
+k3s_headlamp_certificate_wait_timeout: 600

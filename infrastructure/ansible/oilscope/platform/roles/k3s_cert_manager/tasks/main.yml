@@ -20,6 +20,44 @@
     wait: true
     timeout: "{{ k3s_cert_manager_timeout }}"
 
+- name: Read the Cloudflare DNS-01 credential Secret
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_cert_manager_kubeconfig }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ k3s_cert_manager_cloudflare_secret_name }}"
+    namespace: "{{ k3s_cert_manager_release_namespace }}"
+  register: k3s_cert_manager_cloudflare_secret
+  changed_when: false
+
+- name: Refuse a missing Cloudflare API token
+  ansible.builtin.fail:
+    msg: >-
+      Export CLOUDFLARE_API_TOKEN before the first DNS-01 issuer deployment.
+      Use a token restricted to DNS edits for the configured Cloudflare zone.
+  when:
+    - k3s_cert_manager_cloudflare_secret.resources | length == 0
+    - k3s_cert_manager_cloudflare_api_token | length == 0
+
+- name: Create or update the Cloudflare DNS-01 credential Secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_cert_manager_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ k3s_cert_manager_cloudflare_secret_name }}"
+        namespace: "{{ k3s_cert_manager_release_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_cert_manager_config.name_prefix }}"
+      type: Opaque
+      stringData:
+        api-token: "{{ k3s_cert_manager_cloudflare_api_token }}"
+  when: k3s_cert_manager_cloudflare_api_token | length > 0
+  no_log: true
+
 - name: Create the Let's Encrypt production ClusterIssuer
   kubernetes.core.k8s:
     kubeconfig: "{{ k3s_cert_manager_kubeconfig }}"
@@ -42,6 +80,36 @@
             - http01:
                 ingress:
                   ingressClassName: "{{ k3s_cert_manager_production_ingress_class }}"
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: "{{ k3s_cert_manager_production_wait_timeout }}"
+
+- name: Create the Let's Encrypt production DNS-01 ClusterIssuer
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_cert_manager_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: "{{ k3s_cert_manager_dns01_issuer_name }}"
+        labels:
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_cert_manager_config.name_prefix }}"
+      spec:
+        acme:
+          email: "{{ k3s_cert_manager_config.k3s.application.acme_email }}"
+          server: "{{ k3s_cert_manager_production_server }}"
+          privateKeySecretRef:
+            name: "{{ k3s_cert_manager_dns01_account_secret_name }}"
+          solvers:
+            - dns01:
+                cloudflare:
+                  apiTokenSecretRef:
+                    name: "{{ k3s_cert_manager_cloudflare_secret_name }}"
+                    key: api-token
     wait: true
     wait_condition:
       type: Ready
