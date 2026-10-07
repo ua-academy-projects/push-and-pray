@@ -23,9 +23,15 @@ have already been persisted in PostgreSQL.
   cloud-provider observability on AWS, GCP, and Azure.
 - Highly available K3s control plane on GCP with controller-driven Helm add-ons,
   Traefik ingress, cert-manager, and Let's Encrypt TLS.
+- Private K3s network access through a Tailscale subnet router on the bastion,
+  with split DNS from Technitium for internal web tools.
+- Private Homepage service catalog with K3s node resource tiles and health
+  indicators for OilScope, Headlamp, and the bastion-hosted Technitium console.
 
 See [Cloud monitoring](docs/monitoring.md) for the Terraform-managed alerts,
 log metrics, HTTPS checks, and manual notification prerequisites.
+See [Private access with Tailscale](docs/tailscale.md) for the bastion subnet
+router and tailnet policy requirements.
 
 ## Screenshots
 
@@ -205,7 +211,7 @@ collect workload logs. The legacy Vagrant Compose files use journald.
 The GCP K3s path provisions a private three-server embedded-etcd control plane,
 two worker agents, a bastion, a private API load balancer, and an external
 passthrough ingress load balancer. Ansible bootstraps K3s and then runs Helm and
-Kubernetes modules locally through the bastion tunnel. See the
+Kubernetes modules locally through the Tailscale subnet route. See the
 [Ansible collection guide](infrastructure/ansible/oilscope/platform/README.md)
 for the complete infrastructure, secrets, add-on, migration, application, and
 TLS deployment order.

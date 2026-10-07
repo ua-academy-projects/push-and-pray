@@ -140,7 +140,7 @@ ansible-playbook oilscope.platform.upload_secret_versions \
   -i localhost, \
   -e secret_versions_config_file="$PWD/project-config.json"
 
-# Keep the bastion SSH tunnel to 127.0.0.1:6443 running first.
+# Connect Tailscale and verify that the private K3s API is reachable first.
 ansible-playbook oilscope.platform.synchronize_k3s_secrets \
   -i localhost, \
   -e k3s_secrets_config_file="$PWD/project-config.json"

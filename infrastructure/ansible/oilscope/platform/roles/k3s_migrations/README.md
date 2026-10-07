@@ -19,8 +19,8 @@ the configured image tag creates a new Job. A failed Job is deleted and
 recreated on the next run. The role waits for completion and includes pod logs
 in its failure message when they are available.
 
-Keep the SSH tunnel to the private K3s API running, then invoke the role after
-the application Secrets and CloudNativePG cluster exist:
+With the private K3s API reachable through Tailscale, invoke the role after the
+application Secrets and CloudNativePG cluster exist:
 
 ```bash
 ansible-playbook oilscope.platform.migrate_k3s_database \

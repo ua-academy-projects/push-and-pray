@@ -49,11 +49,12 @@ pipx runpip ansible-core install \
 
 The repository requirements also install `kubernetes.core` and its controller
 Python libraries. K3s application automation additionally expects `kubectl`
-and Helm on the WSL/controller host; they connect through the local SSH tunnel
-to the private API and are not installed on the cluster nodes. Install the
-Helm Diff plugin as well so `kubernetes.core.helm` can distinguish real OCI
-chart changes from no-op runs. Pin and verify the plugin according to its
-upstream release instructions rather than installing an unversioned artifact.
+and Helm on the WSL/controller host; they connect to the private API through
+the approved Tailscale subnet route and are not installed on cluster nodes.
+Install the Helm Diff plugin as well so `kubernetes.core.helm` can distinguish
+real OCI chart changes from no-op runs. Pin and verify the plugin according to
+its upstream release instructions rather than installing an unversioned
+artifact.
 
 Build and install this repository's collection:
 

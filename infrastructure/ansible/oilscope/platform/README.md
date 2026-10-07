@@ -93,6 +93,49 @@ The IP address, SSH port, user, and environment-specific filename in these
 examples come from the current `project-config.json`; adjust them when using
 another configuration.
 
+## Configure private VPC access with Tailscale
+
+The bastion can advertise the configured VPC CIDR as a Tailscale subnet route.
+Generate a reusable, ephemeral auth key carrying the `tag:oilscope-bastion`
+tag, make it pre-approved if tailnet device approval is enabled, load it without
+placing the value in shell history, and run the dedicated playbook. Reusability
+allows the key to enroll replacement bastions after Terraform rebuilds;
+ephemerality removes inactive bastion identities from the tailnet automatically.
+
+```bash
+export TAILSCALE_AUTH_KEY="$(cat)"
+# Paste the key, then press Ctrl+D.
+
+ansible-playbook oilscope.platform.configure_tailscale_subnet_router \
+  -i infrastructure/ansible/inventory/oilscope.yml
+
+unset TAILSCALE_AUTH_KEY
+```
+
+The role installs Tailscale from its official stable Ubuntu repository, enables
+IPv4 forwarding, and advertises `network.vpc_cidr`. Approve the route from the
+Tailscale admin console unless the tagged device is covered by an
+`autoApprovers` policy. See the [Tailscale guide](../../../../docs/tailscale.md)
+for the required tag and policy example.
+
+After subnet routing works, install Technitium on the bastion and reconcile the
+exact private Headlamp, Homepage, and Technitium console DNS zones:
+
+```bash
+export TECHNITIUM_ADMIN_PASSWORD="$(cat)"
+# Paste a strong password, then press Ctrl+D.
+
+ansible-playbook oilscope.platform.configure_private_dns \
+  -i infrastructure/ansible/inventory/oilscope.yml
+
+unset TECHNITIUM_ADMIN_PASSWORD
+```
+
+Configure the bastion's private address as a restricted Tailscale nameserver
+for all three hostnames under `k3s.private_services`. Do not publish public
+address records for them or configure Technitium as a global resolver. The
+Tailscale guide contains the complete split-DNS and verification procedure.
+
 ## Prepare K3s application secrets
 
 The application deployment uses three Kubernetes Secrets. Terraform creates the
@@ -113,8 +156,8 @@ ansible-playbook oilscope.platform.upload_secret_versions \
 The names above match the container IDs in the current K3s configuration. The
 mapping rule is documented in [the secrets guide](../../../../docs/secrets.md).
 
-With the SSH tunnel to the private API still running, copy the current values
-from Google Secret Manager into the cluster:
+With the K3s API reachable through the approved Tailscale subnet route, copy
+the current values from Google Secret Manager into the cluster:
 
 ```bash
 ansible-playbook oilscope.platform.synchronize_k3s_secrets \
@@ -131,8 +174,8 @@ requires the local kubeconfig produced by the K3s playbook, an authenticated
 
 ## Deploy K3s add-ons
 
-Keep the SSH tunnel to the private API running, then reconcile the cluster
-add-ons from the local controller:
+With the K3s API reachable through Tailscale, reconcile the cluster add-ons
+from the local controller:
 
 ```bash
 ansible-playbook oilscope.platform.deploy_k3s_addons \
@@ -154,6 +197,13 @@ playbook must be available on the controller. Helm Diff prevents unchanged OCI
 releases from producing unnecessary upgrades. The issuer does not request a
 certificate by itself; the application Ingress makes that request when the
 workloads are ready.
+
+Before certificate management, the add-on playbook customizes the K3s-managed
+Traefik release. It schedules one anti-affined replica on each K3s agent and
+uses `externalTrafficPolicy: Local`. Both the public GCP load balancer and
+private Technitium records target those agents, so ingress remains redundant
+while Kubernetes preserves the source address needed by private-service
+allow-lists.
 
 After certificate management is ready, the playbook installs the official,
 pinned CloudNativePG operator Helm chart. Ansible then declares the configured
@@ -178,28 +228,39 @@ roles would require restoring their legacy configuration fields and credentials
 and must not be mixed with the active CloudNativePG deployment.
 
 The final add-on is an internal-only Headlamp dashboard in its own namespace.
-It has only a `ClusterIP` Service: no Ingress, HTTPRoute, public load balancer,
-DNS record, or firewall rule exposes it. The chart's automatic `cluster-admin`
-binding is disabled. Ansible instead creates a separate `headlamp-admin`
-ServiceAccount explicitly bound to `cluster-admin` for this private cluster.
-With the private API tunnel running, access it from the controller and generate
-a temporary login token:
+Its chart-managed Service remains `ClusterIP`; Ansible creates a separate
+Traefik Ingress at `k3s.private_services.headlamp.hostname`. Technitium provides
+split DNS to tailnet clients, while a Traefik IP allow-list admits only traffic
+forwarded by the Tailscale subnet router. A separate DNS-01 issuer obtains the
+publicly trusted certificate without publishing the endpoint in public DNS.
+No public load balancer, public DNS record, or new cloud firewall rule is
+created for Headlamp.
+
+The chart's automatic `cluster-admin` binding is disabled. Ansible instead
+creates a separate `headlamp-admin` ServiceAccount explicitly bound to
+`cluster-admin` for this private learning cluster. Open the configured HTTPS
+hostname from a tailnet client and generate a temporary login token:
 
 ```bash
-KUBECONFIG="$HOME/.kube/oilscope-dev.yaml" \
-kubectl -n headlamp port-forward \
-  service/headlamp 8088:80 \
-  --address=127.0.0.1
-
 KUBECONFIG="$HOME/.kube/oilscope-dev.yaml" \
 kubectl -n headlamp create token headlamp-admin --duration=8h
 ```
 
-Open `http://127.0.0.1:8088` and paste the temporary token. The port-forward
-process must remain running while Headlamp is in use. The token grants
-unrestricted cluster access: treat it like a root credential, do not store it,
-and close the port-forward when finished. The Headlamp Pod itself continues to
-use a separate unprivileged ServiceAccount.
+The token grants unrestricted cluster access: treat it like a root credential
+and do not store it. The Headlamp Pod itself continues to use a separate
+unprivileged ServiceAccount.
+
+The add-on playbook also deploys a private HTTPS proxy for the bastion-hosted
+Technitium console at `k3s.private_services.technitium.hostname`, followed by
+Homepage at `k3s.private_services.homepage.hostname`. Terraform allows K3s
+nodes to reach only the configured Technitium administration port. Homepage's
+ConfigMap defines service cards and green or red server-side health checks for
+OilScope, Headlamp, and Technitium. These private endpoints use DNS-01
+certificates, source-address allow-lists, and permanent HTTPS redirects.
+Homepage's compact header reports aggregate cluster CPU and memory first,
+followed by the configured servers and agents. Its dedicated ServiceAccount can
+only `get` and `list` core Nodes and `metrics.k8s.io` Nodes; it cannot read
+workloads, Pods, Secrets, or ingress resources.
 
 ## Apply K3s database migrations
 
