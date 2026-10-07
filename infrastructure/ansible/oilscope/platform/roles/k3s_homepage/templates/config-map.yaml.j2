@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ k3s_homepage_config_map_name }}
+  namespace: {{ k3s_homepage_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ k3s_homepage_name }}
+    app.kubernetes.io/part-of: {{ k3s_homepage_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+data:
+  settings.yaml: |
+    title: OilScope services
+    theme: dark
+    color: slate
+    headerStyle: boxedWidgets
+    statusStyle: dot
+    disableIndexing: true
+    hideVersion: true
+    layout:
+      Applications:
+        style: row
+        columns: 3
+  services.yaml: |
+    - Applications:
+        - OilScope:
+            icon: mdi-chart-line
+            href: https://{{ k3s_homepage_config.k3s.application.hostname }}
+            description: Oil and gasoline market dashboard
+            siteMonitor: http://ui.{{ k3s_homepage_config.k3s.application.namespace }}.svc.cluster.local:8080/health
+            statusStyle: dot
+        - Headlamp:
+            icon: mdi-kubernetes
+            href: https://{{ k3s_homepage_config.k3s.private_services.headlamp.hostname }}
+            description: K3s cluster administration
+            siteMonitor: http://headlamp.headlamp.svc.cluster.local:80/
+            statusStyle: dot
+        - Technitium DNS:
+            icon: mdi-dns
+            href: https://{{ k3s_homepage_config.k3s.private_services.technitium.hostname }}
+            description: Private authoritative DNS
+            siteMonitor: http://technitium-admin.technitium.svc.cluster.local:{{ k3s_homepage_config.service_ports.technitium_admin }}/api/dnsClient/healthCheck
+            statusStyle: dot
+  bookmarks.yaml: |
+    []
+  widgets.yaml: |
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: "cluster"
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+    - search:
+        provider: duckduckgo
+        target: _blank
+  docker.yaml: |
+    {}
+  kubernetes.yaml: |
+    mode: cluster
+    ingress: false
+    traefik: false
+    gateway: false
+  proxmox.yaml: |
+    {}
+  custom.css: |
+    #widgets-wrap > .information-widget-kubernetes,
+    #widgets-wrap > #information-widgets-right {
+      flex: 1 1 100%;
+      width: 100%;
+    }
+
+    .information-widget-kubernetes > div {
+      width: 100%;
+    }
+  custom.js: |
+    (() => {
+      const serverNodes = [
+{% for vm_name, vm in k3s_homepage_config.vms.items() if 'k3s-server' in vm.tags %}
+        "{{ k3s_homepage_config.name_prefix }}-{{ k3s_homepage_config.environment }}-{{ vm_name }}".toLowerCase(),
+{% endfor %}
+      ];
+      const agentNodes = [
+{% for vm_name, vm in k3s_homepage_config.vms.items() if 'k3s-agent' in vm.tags %}
+        "{{ k3s_homepage_config.name_prefix }}-{{ k3s_homepage_config.environment }}-{{ vm_name }}".toLowerCase(),
+{% endfor %}
+      ];
+
+      const applyKubernetesNodeOrder = () => {
+        const nodeCards = document.querySelectorAll(
+          ".information-widget-kubernetes > div > div"
+        );
+
+        nodeCards.forEach((nodeCard) => {
+          const label = nodeCard.textContent.toLowerCase();
+
+          if (label.includes("cluster")) {
+            nodeCard.style.order = "0";
+          } else if (serverNodes.some((node) => label.includes(node))) {
+            nodeCard.style.order = "1";
+          } else if (agentNodes.some((node) => label.includes(node))) {
+            nodeCard.style.order = "2";
+          } else {
+            nodeCard.style.order = "3";
+          }
+        });
+      };
+
+      const observer = new MutationObserver(() => {
+        window.requestAnimationFrame(applyKubernetesNodeOrder);
+      });
+
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+      applyKubernetesNodeOrder();
+    })();

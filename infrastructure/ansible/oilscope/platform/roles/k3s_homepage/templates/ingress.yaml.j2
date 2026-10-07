@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ k3s_homepage_name }}
+  namespace: {{ k3s_homepage_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ k3s_homepage_name }}
+    app.kubernetes.io/part-of: {{ k3s_homepage_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+  annotations:
+    cert-manager.io/cluster-issuer: {{ k3s_homepage_cluster_issuer }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ k3s_homepage_namespace }}-{{ k3s_homepage_allow_middleware_name }}@kubernetescrd,{{ k3s_homepage_namespace }}-{{ k3s_homepage_redirect_middleware_name }}@kubernetescrd
+spec:
+  ingressClassName: {{ k3s_homepage_ingress_class_name }}
+  tls:
+    - hosts:
+        - {{ k3s_homepage_ingress_hostname }}
+      secretName: {{ k3s_homepage_tls_secret_name }}
+  rules:
+    - host: {{ k3s_homepage_ingress_hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ k3s_homepage_name }}
+                port:
+                  number: {{ k3s_homepage_service_port }}

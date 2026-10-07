@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ k3s_homepage_name }}
+  namespace: {{ k3s_homepage_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ k3s_homepage_name }}
+    app.kubernetes.io/part-of: {{ k3s_homepage_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+spec:
+  replicas: {{ k3s_homepage_replicas }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ k3s_homepage_name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ k3s_homepage_name }}
+        app.kubernetes.io/part-of: {{ k3s_homepage_config.name_prefix }}
+      annotations:
+        checksum/config: {{ k3s_homepage_config_map_definition.data | to_json | hash('sha256') }}
+    spec:
+      serviceAccountName: {{ k3s_homepage_service_account_name }}
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: homepage
+          image: {{ k3s_homepage_image }}
+          imagePullPolicy: {{ k3s_homepage_image_pull_policy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: {{ k3s_homepage_container_port }}
+              protocol: TCP
+          env:
+            - name: HOMEPAGE_ALLOWED_HOSTS
+              value: {{ k3s_homepage_ingress_hostname }}
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: UTC
+          startupProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ k3s_homepage_ingress_hostname }}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ k3s_homepage_ingress_hostname }}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ k3s_homepage_ingress_hostname }}
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 384Mi
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/config/logs
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ k3s_homepage_config_map_name }}
+        - name: logs
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

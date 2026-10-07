@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_technitium_proxy_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+k3s_technitium_proxy_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_technitium_proxy_config.environment
+     ~ '.yaml' }}
+k3s_technitium_proxy_namespace: technitium
+k3s_technitium_proxy_name: technitium-admin
+k3s_technitium_proxy_endpoint_slice_name: technitium-admin
+k3s_technitium_proxy_backend_address: >-
+  {{ k3s_technitium_proxy_config.bastion.internal_ip }}
+k3s_technitium_proxy_backend_port: >-
+  {{ k3s_technitium_proxy_config.service_ports.technitium_admin }}
+k3s_technitium_proxy_ingress_name: technitium
+k3s_technitium_proxy_ingress_class_name: traefik
+k3s_technitium_proxy_ingress_hostname: >-
+  {{ k3s_technitium_proxy_config.k3s.private_services.technitium.hostname }}
+k3s_technitium_proxy_allow_middleware_name: technitium-private-source
+k3s_technitium_proxy_redirect_middleware_name: technitium-https-redirect
+k3s_technitium_proxy_cluster_issuer: letsencrypt-production-dns01
+k3s_technitium_proxy_tls_secret_name: >-
+  {{ k3s_technitium_proxy_config.name_prefix ~ '-technitium-tls' }}
+k3s_technitium_proxy_certificate_discovery_retries: 30
+k3s_technitium_proxy_certificate_discovery_delay: 2
+k3s_technitium_proxy_certificate_wait_timeout: 600

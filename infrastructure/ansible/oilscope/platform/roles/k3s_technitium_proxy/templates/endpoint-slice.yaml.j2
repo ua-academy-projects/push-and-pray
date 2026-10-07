@@ -1,0 +1,22 @@
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: {{ k3s_technitium_proxy_endpoint_slice_name }}
+  namespace: {{ k3s_technitium_proxy_namespace }}
+  labels:
+    kubernetes.io/service-name: {{ k3s_technitium_proxy_name }}
+    endpointslice.kubernetes.io/managed-by: ansible
+    app.kubernetes.io/name: technitium
+    app.kubernetes.io/part-of: {{ k3s_technitium_proxy_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    appProtocol: http
+    port: {{ k3s_technitium_proxy_backend_port }}
+endpoints:
+  - addresses:
+      - {{ k3s_technitium_proxy_backend_address }}
+    conditions:
+      ready: true

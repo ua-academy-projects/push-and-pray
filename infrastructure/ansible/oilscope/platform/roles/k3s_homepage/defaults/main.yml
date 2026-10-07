@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_homepage_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+k3s_homepage_kubeconfig: >-
+  {{ lookup('ansible.builtin.env', 'HOME')
+     ~ '/.kube/oilscope-'
+     ~ k3s_homepage_config.environment
+     ~ '.yaml' }}
+k3s_homepage_namespace: homepage
+k3s_homepage_name: homepage
+k3s_homepage_config_map_name: homepage-config
+k3s_homepage_service_account_name: homepage
+k3s_homepage_cluster_role_name: homepage-cluster-metrics
+k3s_homepage_cluster_role_binding_name: homepage-cluster-metrics
+k3s_homepage_image: >-
+  ghcr.io/gethomepage/homepage:v2.4.0@sha256:643bd0be730d40f69d58028a55d1a896739333e8815786df42bc97f109ecbe61
+k3s_homepage_image_pull_policy: IfNotPresent
+k3s_homepage_replicas: 1
+k3s_homepage_container_port: 3000
+k3s_homepage_service_port: 3000
+k3s_homepage_ingress_class_name: traefik
+k3s_homepage_ingress_hostname: >-
+  {{ k3s_homepage_config.k3s.private_services.homepage.hostname }}
+k3s_homepage_allow_middleware_name: homepage-private-source
+k3s_homepage_redirect_middleware_name: homepage-https-redirect
+k3s_homepage_cluster_issuer: letsencrypt-production-dns01
+k3s_homepage_tls_secret_name: >-
+  {{ k3s_homepage_config.name_prefix ~ '-homepage-tls' }}
+k3s_homepage_certificate_discovery_retries: 30
+k3s_homepage_certificate_discovery_delay: 2
+k3s_homepage_certificate_wait_timeout: 600
+k3s_homepage_rollout_timeout: 300

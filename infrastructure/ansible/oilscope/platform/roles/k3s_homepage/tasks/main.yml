@@ -1,0 +1,176 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_homepage_config: >-
+      {{ lookup('ansible.builtin.file', k3s_homepage_config_file) | from_json }}
+
+- name: Render the Homepage configuration
+  ansible.builtin.set_fact:
+    k3s_homepage_config_map_definition: >-
+      {{ lookup('ansible.builtin.template', 'config-map.yaml.j2') | from_yaml }}
+
+- name: Create the Homepage namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ k3s_homepage_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: "{{ k3s_homepage_config.name_prefix }}"
+
+- name: Configure Homepage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition: "{{ k3s_homepage_config_map_definition }}"
+
+- name: Create the Homepage service account
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: "{{ k3s_homepage_service_account_name }}"
+        namespace: "{{ k3s_homepage_namespace }}"
+        labels:
+          app.kubernetes.io/name: "{{ k3s_homepage_name }}"
+          app.kubernetes.io/part-of: "{{ k3s_homepage_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+
+- name: Grant Homepage read-only access to node capacity and usage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: "{{ k3s_homepage_cluster_role_name }}"
+        labels:
+          app.kubernetes.io/name: "{{ k3s_homepage_name }}"
+          app.kubernetes.io/part-of: "{{ k3s_homepage_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+      rules:
+        - apiGroups:
+            - ""
+          resources:
+            - nodes
+          verbs:
+            - get
+            - list
+        - apiGroups:
+            - metrics.k8s.io
+          resources:
+            - nodes
+          verbs:
+            - get
+            - list
+
+- name: Bind Homepage to the cluster metrics reader role
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: "{{ k3s_homepage_cluster_role_binding_name }}"
+        labels:
+          app.kubernetes.io/name: "{{ k3s_homepage_name }}"
+          app.kubernetes.io/part-of: "{{ k3s_homepage_config.name_prefix }}"
+          app.kubernetes.io/managed-by: Ansible
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: "{{ k3s_homepage_cluster_role_name }}"
+      subjects:
+        - kind: ServiceAccount
+          name: "{{ k3s_homepage_service_account_name }}"
+          namespace: "{{ k3s_homepage_namespace }}"
+
+- name: Deploy Homepage
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'deployment.yaml.j2') | from_yaml }}
+
+- name: Create the Homepage Service
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'service.yaml.j2') | from_yaml }}
+
+- name: Restrict Homepage to traffic from the Tailscale subnet router
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'private-source-middleware.yaml.j2')
+         | from_yaml }}
+
+- name: Create the Homepage HTTPS redirect middleware
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'https-redirect-middleware.yaml.j2')
+         | from_yaml }}
+
+- name: Expose Homepage through its private hostname
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'ingress.yaml.j2') | from_yaml }}
+
+- name: Wait for Homepage to become available
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ k3s_homepage_name }}"
+    namespace: "{{ k3s_homepage_namespace }}"
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_sleep: 5
+    wait_timeout: "{{ k3s_homepage_rollout_timeout }}"
+  changed_when: false
+
+- name: Wait for cert-manager to create the Homepage Certificate
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ k3s_homepage_tls_secret_name }}"
+    namespace: "{{ k3s_homepage_namespace }}"
+  register: k3s_homepage_certificate
+  changed_when: false
+  retries: "{{ k3s_homepage_certificate_discovery_retries }}"
+  delay: "{{ k3s_homepage_certificate_discovery_delay }}"
+  until: k3s_homepage_certificate.resources | length > 0
+
+- name: Wait for the Homepage Certificate to become ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_homepage_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ k3s_homepage_tls_secret_name }}"
+    namespace: "{{ k3s_homepage_namespace }}"
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_sleep: 5
+    wait_timeout: "{{ k3s_homepage_certificate_wait_timeout }}"
+  changed_when: false

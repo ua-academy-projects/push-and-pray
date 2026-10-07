@@ -1,0 +1,13 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ k3s_homepage_allow_middleware_name }}
+  namespace: {{ k3s_homepage_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ k3s_homepage_name }}
+    app.kubernetes.io/part-of: {{ k3s_homepage_config.name_prefix }}
+    app.kubernetes.io/managed-by: Ansible
+spec:
+  ipAllowList:
+    sourceRange:
+      - {{ k3s_homepage_config.bastion.internal_ip }}/32

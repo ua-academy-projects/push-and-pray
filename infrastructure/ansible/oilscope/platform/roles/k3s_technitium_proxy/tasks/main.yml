@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    k3s_technitium_proxy_config: >-
+      {{ lookup('ansible.builtin.file', k3s_technitium_proxy_config_file)
+         | from_json }}
+
+- name: Create the Technitium proxy namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ k3s_technitium_proxy_namespace }}"
+        labels:
+          app.kubernetes.io/managed-by: Ansible
+          app.kubernetes.io/part-of: >-
+            {{ k3s_technitium_proxy_config.name_prefix }}
+
+- name: Create the Technitium proxy Service
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'service.yaml.j2') | from_yaml }}
+
+- name: Register the bastion as the Technitium Service endpoint
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'endpoint-slice.yaml.j2')
+         | from_yaml }}
+
+- name: Restrict Technitium to traffic from the Tailscale subnet router
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'private-source-middleware.yaml.j2')
+         | from_yaml }}
+
+- name: Create the Technitium HTTPS redirect middleware
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'https-redirect-middleware.yaml.j2')
+         | from_yaml }}
+
+- name: Expose Technitium through its private hostname
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    state: present
+    definition: >-
+      {{ lookup('ansible.builtin.template', 'ingress.yaml.j2') | from_yaml }}
+
+- name: Wait for cert-manager to create the Technitium Certificate
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ k3s_technitium_proxy_tls_secret_name }}"
+    namespace: "{{ k3s_technitium_proxy_namespace }}"
+  register: k3s_technitium_proxy_certificate
+  changed_when: false
+  retries: "{{ k3s_technitium_proxy_certificate_discovery_retries }}"
+  delay: "{{ k3s_technitium_proxy_certificate_discovery_delay }}"
+  until: k3s_technitium_proxy_certificate.resources | length > 0
+
+- name: Wait for the Technitium Certificate to become ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_technitium_proxy_kubeconfig }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ k3s_technitium_proxy_tls_secret_name }}"
+    namespace: "{{ k3s_technitium_proxy_namespace }}"
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_sleep: 5
+    wait_timeout: "{{ k3s_technitium_proxy_certificate_wait_timeout }}"
+  changed_when: false
