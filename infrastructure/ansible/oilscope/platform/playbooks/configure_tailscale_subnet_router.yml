@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Configure the Tailscale subnet router
+  hosts: bastion
+  become: true
+  gather_facts: true
+  force_handlers: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.tailscale_subnet_router

@@ -1,0 +1,224 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    tailscale_subnet_router_config: >-
+      {{ lookup('ansible.builtin.file', tailscale_subnet_router_config_file)
+         | from_json }}
+
+- name: Refuse an unsupported subnet-router operating system
+  ansible.builtin.fail:
+    msg: >-
+      The Tailscale subnet-router role supports Ubuntu, but this host runs
+      {{ ansible_distribution }} {{ ansible_distribution_version }}.
+  when: ansible_distribution != 'Ubuntu'
+
+- name: Install the Tailscale repository signing key
+  ansible.builtin.get_url:
+    url: >-
+      {{ tailscale_subnet_router_repository_base_url
+         ~ '/' ~ ansible_distribution_release ~ '.noarmor.gpg' }}
+    dest: "{{ tailscale_subnet_router_keyring_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the Tailscale package repository
+  ansible.builtin.get_url:
+    url: >-
+      {{ tailscale_subnet_router_repository_base_url
+         ~ '/' ~ ansible_distribution_release ~ '.tailscale-keyring.list' }}
+    dest: "{{ tailscale_subnet_router_repository_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: tailscale_subnet_router_repository
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: "{{ tailscale_subnet_router_package }}"
+    state: present
+    update_cache: "{{ tailscale_subnet_router_repository.changed }}"
+
+- name: Enable IPv4 forwarding for subnet routing
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible: oilscope.platform.tailscale_subnet_router
+      net.ipv4.ip_forward = 1
+    dest: "{{ tailscale_subnet_router_sysctl_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply Tailscale forwarding settings
+
+- name: Apply pending forwarding settings
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Tailscale
+  ansible.builtin.systemd_service:
+    name: "{{ tailscale_subnet_router_service }}"
+    enabled: true
+    state: started
+
+- name: Read the current Tailscale state
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - status
+      - --json
+  register: tailscale_subnet_router_initial_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Record whether the bastion is authenticated
+  ansible.builtin.set_fact:
+    tailscale_subnet_router_authenticated: >-
+      {{ tailscale_subnet_router_initial_status.rc == 0
+         and tailscale_subnet_router_initial_status.stdout | length > 0
+         and (tailscale_subnet_router_initial_status.stdout | from_json)
+             .get('BackendState', '') == 'Running' }}
+
+- name: Authenticate the Tailscale subnet router
+  when: not tailscale_subnet_router_authenticated
+  block:
+    - name: Refuse authentication without a Tailscale auth key
+      ansible.builtin.fail:
+        msg: >-
+          Export a reusable, ephemeral auth key carrying the
+          tag:oilscope-bastion tag as TAILSCALE_AUTH_KEY before the first
+          playbook run. If tailnet device approval is enabled, also create the
+          key as pre-approved.
+      when: tailscale_subnet_router_auth_key | length == 0
+
+    - name: Write the temporary Tailscale auth key
+      ansible.builtin.copy:
+        content: "{{ tailscale_subnet_router_auth_key }}"
+        dest: "{{ tailscale_subnet_router_auth_key_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Join the bastion to the tailnet
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - up
+          - "--auth-key=file:{{ tailscale_subnet_router_auth_key_file }}"
+          - "--hostname={{ tailscale_subnet_router_hostname }}"
+          - "--advertise-routes={{ tailscale_subnet_router_routes | join(',') }}"
+          - --accept-dns=false
+          - --snat-subnet-routes=true
+      changed_when: true
+      no_log: true
+  always:
+    - name: Remove the temporary Tailscale auth key
+      ansible.builtin.file:
+        path: "{{ tailscale_subnet_router_auth_key_file }}"
+        state: absent
+      no_log: true
+
+- name: Read the configured Tailscale hostname
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - get
+      - --json
+      - hostname
+  register: tailscale_subnet_router_current_hostname
+  changed_when: false
+  check_mode: false
+
+- name: Read the configured Tailscale subnet routes
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - get
+      - --json
+      - advertise-routes
+  register: tailscale_subnet_router_current_routes
+  changed_when: false
+  check_mode: false
+
+- name: Read the configured Tailscale DNS preference
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - get
+      - --json
+      - accept-dns
+  register: tailscale_subnet_router_current_accept_dns
+  changed_when: false
+  check_mode: false
+
+- name: Read the configured Tailscale subnet-route SNAT preference
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - get
+      - --json
+      - snat-subnet-routes
+  register: tailscale_subnet_router_current_snat
+  changed_when: false
+  check_mode: false
+
+- name: Reconcile the Tailscale subnet-router preferences
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - "--hostname={{ tailscale_subnet_router_hostname }}"
+      - "--advertise-routes={{ tailscale_subnet_router_routes | join(',') }}"
+      - --accept-dns=false
+      - --snat-subnet-routes=true
+  changed_when: true
+  when: >-
+    tailscale_subnet_router_current_hostname.stdout | from_json
+      != tailscale_subnet_router_hostname
+    or
+    (tailscale_subnet_router_current_routes.stdout | from_json | sort)
+      != (tailscale_subnet_router_routes | sort)
+    or
+    tailscale_subnet_router_current_accept_dns.stdout | from_json | bool
+    or
+    not (tailscale_subnet_router_current_snat.stdout | from_json | bool)
+
+- name: Read the final Tailscale state
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - status
+      - --json
+  register: tailscale_subnet_router_final_status
+  changed_when: false
+  check_mode: false
+
+- name: Refuse an inactive Tailscale subnet router
+  ansible.builtin.fail:
+    msg: >-
+      Tailscale did not reach the Running state on
+      {{ tailscale_subnet_router_hostname }}.
+  when: >-
+    (tailscale_subnet_router_final_status.stdout | from_json)
+    .get('BackendState', '') != 'Running'
+
+- name: Read the bastion Tailscale IPv4 address
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - ip
+      - -4
+  register: tailscale_subnet_router_ipv4
+  changed_when: false
+
+- name: Display the subnet-router activation reminder
+  ansible.builtin.debug:
+    msg:
+      - >-
+        Tailscale address: {{ tailscale_subnet_router_ipv4.stdout | trim }}
+      - >-
+        Advertised route: {{ tailscale_subnet_router_routes | join(', ') }}
+      - >-
+        Approve the advertised route in the Tailscale admin console unless a
+        matching autoApprover already approved it.

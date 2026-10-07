@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+tailscale_subnet_router_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+tailscale_subnet_router_repository_base_url: >-
+  https://pkgs.tailscale.com/stable/ubuntu
+tailscale_subnet_router_keyring_path: >-
+  /usr/share/keyrings/tailscale-archive-keyring.gpg
+tailscale_subnet_router_repository_path: >-
+  /etc/apt/sources.list.d/tailscale.list
+tailscale_subnet_router_package: tailscale
+tailscale_subnet_router_service: tailscaled
+tailscale_subnet_router_sysctl_path: /etc/sysctl.d/99-tailscale.conf
+tailscale_subnet_router_auth_key_file: /run/oilscope-tailscale-auth-key
+tailscale_subnet_router_auth_key: >-
+  {{ lookup('ansible.builtin.env', 'TAILSCALE_AUTH_KEY') }}
+tailscale_subnet_router_hostname: >-
+  {{ tailscale_subnet_router_config.name_prefix
+     ~ '-' ~ tailscale_subnet_router_config.environment ~ '-bastion' }}
+tailscale_subnet_router_routes:
+  - "{{ tailscale_subnet_router_config.network.vpc_cidr }}"
