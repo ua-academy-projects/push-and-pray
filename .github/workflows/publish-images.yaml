@@ -51,3 +51,12 @@ jobs:
       dockerfile: infrastructure/docker/Dockerfile.database
       context: .
       description: Petroscope database
+
+  postgres:
+    name: Publish PostgreSQL image
+    uses: ./.github/workflows/reusable-build-image.yaml
+    with:
+      image-name: ghcr.io/${{ github.repository_owner }}/push-and-pray/postgres
+      dockerfile: infrastructure/docker/Dockerfile.postgres
+      context: .
+      description: Petroscope PostgreSQL for CloudNativePG, with pg_cron, pgmq and the migrations
