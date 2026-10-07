@@ -139,6 +139,12 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        },
+        "technitium_admin": {
+          "description": "Private Technitium DNS administration port on the bastion.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         }
       }
     },
@@ -235,6 +241,7 @@
             }
           },
           "service_ports": {
+            "required": ["technitium_admin"],
             "properties": {
               "postgresql": { "const": 5432 }
             }
@@ -507,6 +514,7 @@
         "cluster_dns",
         "flannel_backend",
         "application",
+        "private_services",
         "data_services",
         "secret_mappings"
       ],
@@ -553,6 +561,23 @@
             }
           }
         },
+        "private_services": {
+          "description": "Private web endpoints resolved by the tailnet's split DNS service.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["headlamp", "homepage", "technitium"],
+          "properties": {
+            "headlamp": {
+              "$ref": "#/$defs/private_web_service"
+            },
+            "homepage": {
+              "$ref": "#/$defs/private_web_service"
+            },
+            "technitium": {
+              "$ref": "#/$defs/private_web_service"
+            }
+          }
+        },
         "data_services": {
           "description": "Persistent data-service sizing for the K3s application deployment.",
           "type": "object",
@@ -577,6 +602,17 @@
             "OILPRICEAPI_KEY",
             "GHCR_TOKEN"
           ]
+        }
+      }
+    },
+    "private_web_service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostname"],
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
         }
       }
     },

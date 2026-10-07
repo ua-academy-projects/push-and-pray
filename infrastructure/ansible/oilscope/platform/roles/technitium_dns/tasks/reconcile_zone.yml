@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Replace the private A record set for {{ technitium_dns_zone.name }}
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/zones/records/add"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ technitium_dns_session_token }}"
+    body_format: form-urlencoded
+    body:
+      domain: "{{ technitium_dns_zone.name }}"
+      zone: "{{ technitium_dns_zone.name }}"
+      type: A
+      ttl: "{{ technitium_dns_record_ttl }}"
+      overwrite: "{{ technitium_dns_address_index == 0 }}"
+      ipAddress: "{{ technitium_dns_address }}"
+    return_content: true
+    status_code: 200
+  loop: "{{ technitium_dns_zone.addresses }}"
+  loop_control:
+    loop_var: technitium_dns_address
+    index_var: technitium_dns_address_index
+    label: "{{ technitium_dns_address }}"
+  no_log: true

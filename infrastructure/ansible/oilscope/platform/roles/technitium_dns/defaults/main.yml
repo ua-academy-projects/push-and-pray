@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+technitium_dns_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+technitium_dns_image: technitium/dns-server:15.5.1
+technitium_dns_root: /opt/oilscope/technitium
+technitium_dns_config_dir: "{{ technitium_dns_root }}/config"
+technitium_dns_secret_dir: "{{ technitium_dns_root }}/secrets"
+technitium_dns_compose_path: "{{ technitium_dns_root }}/compose.yaml"
+technitium_dns_admin_password_file: >-
+  {{ technitium_dns_secret_dir }}/admin-password
+technitium_dns_admin_password: >-
+  {{ lookup('ansible.builtin.env', 'TECHNITIUM_ADMIN_PASSWORD') }}
+technitium_dns_admin_user: admin
+technitium_dns_api_port: >-
+  {{ technitium_dns_config.service_ports.technitium_admin }}
+technitium_dns_port: 53
+technitium_dns_record_ttl: 60
+technitium_dns_project_name: oilscope-dns

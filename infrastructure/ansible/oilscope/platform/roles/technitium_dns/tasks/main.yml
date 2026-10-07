@@ -1,0 +1,206 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    technitium_dns_config: >-
+      {{ lookup('ansible.builtin.file', technitium_dns_config_file) | from_json }}
+
+- name: Build the private DNS configuration
+  ansible.builtin.set_fact:
+    technitium_dns_bind_address: "{{ technitium_dns_config.bastion.internal_ip }}"
+    technitium_dns_server_domain: >-
+      {{ technitium_dns_config.k3s.private_services.technitium.hostname }}
+    technitium_dns_api_url: >-
+      {{ 'http://' ~ technitium_dns_config.bastion.internal_ip
+         ~ ':' ~ technitium_dns_api_port }}
+    technitium_dns_zones:
+      - name: "{{ technitium_dns_config.k3s.private_services.headlamp.hostname }}"
+        addresses: >-
+          {{ technitium_dns_config.vms | dict2items
+             | selectattr('value.tags', 'contains', 'k3s-agent')
+             | map(attribute='value.internal_ip') | sort | list }}
+      - name: "{{ technitium_dns_config.k3s.private_services.homepage.hostname }}"
+        addresses: >-
+          {{ technitium_dns_config.vms | dict2items
+             | selectattr('value.tags', 'contains', 'k3s-agent')
+             | map(attribute='value.internal_ip') | sort | list }}
+      - name: "{{ technitium_dns_config.k3s.private_services.technitium.hostname }}"
+        addresses: >-
+          {{ technitium_dns_config.vms | dict2items
+             | selectattr('value.tags', 'contains', 'k3s-agent')
+             | map(attribute='value.internal_ip') | sort | list }}
+
+- name: Refuse an empty Technitium administrator password
+  ansible.builtin.fail:
+    msg: >-
+      Export TECHNITIUM_ADMIN_PASSWORD before configuring private DNS. The
+      value initializes the Technitium administrator and is required again to
+      reconcile DNS zones.
+  when: technitium_dns_admin_password | length == 0
+
+- name: Create the Technitium directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ technitium_dns_root }}"
+      mode: "0750"
+    - path: "{{ technitium_dns_config_dir }}"
+      mode: "0750"
+    - path: "{{ technitium_dns_secret_dir }}"
+      mode: "0700"
+
+- name: Install the Technitium administrator password file
+  ansible.builtin.copy:
+    content: "{{ technitium_dns_admin_password }}"
+    dest: "{{ technitium_dns_admin_password_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install the Technitium Compose definition
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ technitium_dns_compose_path }}"
+    owner: root
+    group: root
+    mode: "0640"
+
+- name: Start Technitium DNS Server
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-name
+      - "{{ technitium_dns_project_name }}"
+      - --file
+      - "{{ technitium_dns_compose_path }}"
+      - up
+      - --detach
+      - --remove-orphans
+  register: technitium_dns_compose_up
+  changed_when: >-
+    'Started' in technitium_dns_compose_up.stderr
+    or 'Created' in technitium_dns_compose_up.stderr
+    or 'Recreated' in technitium_dns_compose_up.stderr
+
+- name: Wait for the Technitium API
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/status"
+    return_content: true
+    status_code: 200
+  register: technitium_dns_status
+  retries: 30
+  delay: 2
+  until: technitium_dns_status.json.status == 'ok'
+  changed_when: false
+
+- name: Authenticate to the Technitium API
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/user/login"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      user: "{{ technitium_dns_admin_user }}"
+      pass: "{{ technitium_dns_admin_password }}"
+      includeInfo: "true"
+    return_content: true
+    status_code: 200
+  register: technitium_dns_login
+  no_log: true
+
+- name: Record the Technitium session token
+  ansible.builtin.set_fact:
+    technitium_dns_session_token: "{{ technitium_dns_login.json.token }}"
+  no_log: true
+
+- name: Read the authoritative zone catalog
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/zones/list"
+    headers:
+      Authorization: "Bearer {{ technitium_dns_session_token }}"
+    return_content: true
+    status_code: 200
+  register: technitium_dns_zone_catalog
+  changed_when: false
+  no_log: true
+
+- name: Create missing private authoritative zones
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/zones/create"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ technitium_dns_session_token }}"
+    body_format: form-urlencoded
+    body:
+      zone: "{{ item.name }}"
+      type: Primary
+    return_content: true
+    status_code: 200
+  loop: "{{ technitium_dns_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: >-
+    item.name not in
+    (technitium_dns_zone_catalog.json.response.zones
+     | map(attribute='name') | list)
+  no_log: true
+
+- name: Read private zone records
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/zones/records/get"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ technitium_dns_session_token }}"
+    body_format: form-urlencoded
+    body:
+      domain: "{{ item.name }}"
+      zone: "{{ item.name }}"
+      listZone: "true"
+    return_content: true
+    status_code: 200
+  loop: "{{ technitium_dns_zones }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: technitium_dns_zone_records
+  changed_when: false
+  no_log: true
+
+- name: Reconcile private A record sets
+  ansible.builtin.include_tasks: reconcile_zone.yml
+  loop: "{{ technitium_dns_zones }}"
+  loop_control:
+    loop_var: technitium_dns_zone
+    index_var: technitium_dns_zone_index
+    label: "{{ technitium_dns_zone.name }}"
+  when: >-
+    (technitium_dns_zone_records.results[technitium_dns_zone_index]
+     .json.response.records
+     | selectattr('name', 'equalto', technitium_dns_zone.name)
+     | selectattr('type', 'equalto', 'A')
+     | map(attribute='rData.ipAddress') | sort | list)
+    != (technitium_dns_zone.addresses | sort)
+
+- name: End the Technitium API session
+  ansible.builtin.uri:
+    url: "{{ technitium_dns_api_url }}/api/user/logout"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ technitium_dns_session_token }}"
+    return_content: true
+    status_code: 200
+  changed_when: false
+  no_log: true
+
+- name: Display the private DNS endpoints
+  ansible.builtin.debug:
+    msg:
+      - "DNS resolver: {{ technitium_dns_bind_address }}:{{ technitium_dns_port }}"
+      - "Private administration: {{ technitium_dns_api_url }}"
+      - >-
+        Restricted domains: {{ technitium_dns_zones
+        | map(attribute='name') | join(', ') }}

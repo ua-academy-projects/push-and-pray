@@ -35,6 +35,17 @@
       "hostname": "oilscope.example.com",
       "acme_email": "example-operator@example.com"
     },
+    "private_services": {
+      "headlamp": {
+        "hostname": "headlamp.example.com"
+      },
+      "homepage": {
+        "hostname": "homepage.example.com"
+      },
+      "technitium": {
+        "hostname": "technitium.example.com"
+      }
+    },
     "data_services": {
       "postgresql": {
         "instances": 2,
@@ -55,7 +66,8 @@
   },
   "service_ports": {
     "history_api": 8001,
-    "postgresql": 5432
+    "postgresql": 5432,
+    "technitium_admin": 5380
   },
   "bastion": {
     "machine_type": "micro",

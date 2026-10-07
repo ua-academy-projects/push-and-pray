@@ -1,0 +1,39 @@
+# Managed by Ansible. Manual changes will be overwritten.
+services:
+  dns-server:
+    image: {{ technitium_dns_image }}
+    restart: unless-stopped
+    environment:
+      DNS_SERVER_DOMAIN: {{ technitium_dns_server_domain }}
+      DNS_SERVER_ADMIN_PASSWORD_FILE: /run/secrets/admin-password
+      DNS_SERVER_PREFER_IPV6: "false"
+      DNS_SERVER_RECURSION: Deny
+      DNS_SERVER_WEB_SERVICE_LOCAL_ADDRESSES: 0.0.0.0
+      DNS_SERVER_WEB_SERVICE_HTTP_PORT: "{{ technitium_dns_api_port }}"
+    ports:
+      - "{{ technitium_dns_bind_address }}:{{ technitium_dns_port }}:53/udp"
+      - "{{ technitium_dns_bind_address }}:{{ technitium_dns_port }}:53/tcp"
+      - "{{ technitium_dns_bind_address }}:{{ technitium_dns_api_port }}:{{ technitium_dns_api_port }}/tcp"
+    volumes:
+      - {{ technitium_dns_config_dir }}:/etc/dns
+    secrets:
+      - admin-password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS
+          http://127.0.0.1:{{ technitium_dns_api_port }}/api/dnsClient/healthCheck
+          | grep -q '"status":"ok"'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.75
+
+secrets:
+  admin-password:
+    file: {{ technitium_dns_admin_password_file }}
