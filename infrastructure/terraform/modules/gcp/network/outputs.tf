@@ -8,6 +8,11 @@ output "workload_subnet_id" {
   value       = google_compute_subnetwork.workload.id
 }
 
+output "workload_subnet_name" {
+  description = "Name of the workload subnet, used by GKE."
+  value       = google_compute_subnetwork.workload.name
+}
+
 output "network_id" {
   description = "ID of the VPC network used by the security module."
   value       = google_compute_network.main.id

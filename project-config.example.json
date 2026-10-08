@@ -92,7 +92,15 @@
       "management_subnet_cidr": "10.20.0.0/24",
       "workload_subnet_cidr": "10.20.1.0/24",
       "managed_database_subnet_cidr": "10.20.2.0/24",
-      "database_subnets": []
+      "database_subnets": [],
+      "eks_private_subnets": [
+        { "cidr": "10.20.10.0/24", "availability_zone": "example-a" },
+        { "cidr": "10.20.11.0/24", "availability_zone": "example-b" }
+      ],
+      "eks_public_subnets": [
+        { "cidr": "10.20.20.0/24", "availability_zone": "example-a" },
+        { "cidr": "10.20.21.0/24", "availability_zone": "example-b" }
+      ]
     },
     "azure": {
       "vpc_cidr": "10.30.0.0/16",
@@ -174,9 +182,25 @@
   },
   "kubernetes": {
     "enabled": true,
+    "mode": "k3s",
     "k3s_version": "v1.32.3+k3s1",
     "artifact_repository": "oilscope",
     "github_repository": "example-org/push-and-pray",
+    "eks": {
+      "version": "1.35",
+      "public_access_cidrs": ["192.0.2.10/32"],
+      "administrator_principal_arns": ["arn:aws:iam::123456789012:role/example-operator"],
+      "node_instance_type": "t3.medium",
+      "public_endpoint": { "hostname": "oilscope.example.com", "acme_email": "example-operator@example.com" }
+    },
+    "gke": {
+      "version": "1.35",
+      "public_access_cidrs": ["192.0.2.10/32"],
+      "node_machine_type": "e2-medium",
+      "pod_range_cidr": "10.11.0.0/16",
+      "service_range_cidr": "10.12.0.0/20",
+      "public_endpoint": { "hostname": "oilscope.example.com", "acme_email": "example-operator@example.com" }
+    },
     "namespace": "oilscope",
     "secrets": {
       "POSTGRES_PASSWORD": "example-db-password",

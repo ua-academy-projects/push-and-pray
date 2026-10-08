@@ -1,0 +1,8 @@
+---
+gke_platform_project_config_path: >-
+  {{ lookup('env', 'OILSCOPE_PROJECT_CONFIG') | default('../../terraform/env/dev.json', true) }}
+gke_platform_work_dir: "{{ lookup('env', 'HOME') }}/.cache/oilscope/gke"
+gke_platform_connection: {}
+# The shared workload manifest expects the name used by the GKE pull-secret
+# creation task below.
+kubernetes_platform_registry_pull_secret_name: oilscope-artifact-registry

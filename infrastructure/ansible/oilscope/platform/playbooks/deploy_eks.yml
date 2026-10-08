@@ -1,0 +1,7 @@
+---
+- name: Deploy OilScope to Amazon EKS from the local controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: oilscope.platform.eks_platform

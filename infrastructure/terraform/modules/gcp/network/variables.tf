@@ -32,3 +32,9 @@ variable "workload_subnet_cidr" {
     error_message = "workload_subnet_cidr must be a valid CIDR range."
   }
 }
+
+variable "gke_secondary_ranges" {
+  description = "Named secondary CIDR ranges for a VPC-native GKE cluster. Empty when GKE is disabled."
+  type        = map(string)
+  default     = {}
+}

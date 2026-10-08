@@ -1,0 +1,127 @@
+---
+- name: Load the shared project configuration
+  ansible.builtin.include_vars:
+    file: "{{ gke_platform_project_config_path }}"
+    name: kubernetes_platform_config
+
+- name: Require GKE connection values
+  ansible.builtin.assert:
+    that:
+      - kubernetes_platform_config.kubernetes.mode == 'gke'
+      - gke_platform_connection.cluster_name is defined
+      - gke_platform_connection.location is defined
+      - gke_platform_connection.ingress_ip_name is defined
+
+- name: Create the GKE controller work directory
+  ansible.builtin.file:
+    path: "{{ gke_platform_work_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Create an isolated GKE kubeconfig
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - container
+      - clusters
+      - get-credentials
+      - "{{ gke_platform_connection.cluster_name }}"
+      - --project
+      - "{{ kubernetes_platform_config.clouds.gcp.project_id }}"
+      - --zone
+      - "{{ gke_platform_connection.location }}"
+  environment:
+    KUBECONFIG: "{{ gke_platform_work_dir }}/kubeconfig"
+  changed_when: false
+
+- name: Verify GKE API access
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ gke_platform_work_dir }}/kubeconfig", get, nodes]
+  changed_when: false
+
+- name: Read Kubernetes application secrets from Secret Manager
+  ansible.builtin.command:
+    argv: [gcloud, secrets, versions, access, latest, --project, "{{ kubernetes_platform_config.clouds.gcp.project_id }}", --secret, "{{ item.value }}"]
+  loop: "{{ kubernetes_platform_config.kubernetes.secrets | dict2items }}"
+  register: kubernetes_platform_secret_values
+  changed_when: false
+  no_log: true
+
+- name: Render application manifests
+  ansible.builtin.template:
+    src: "{{ item.source }}"
+    dest: "{{ gke_platform_work_dir }}/{{ item.destination }}"
+    mode: "0600"
+  loop:
+    - { source: "{{ role_path }}/../kubernetes_platform/templates/application-secret.yaml.j2", destination: application-secret.yaml }
+    - { source: "{{ role_path }}/../kubernetes_platform/templates/platform.yaml.j2", destination: platform.yaml }
+    - { source: managed-certificate.yaml.j2, destination: managed-certificate.yaml }
+  vars:
+    kubernetes_platform_kubeconfig: "{{ gke_platform_work_dir }}/kubeconfig"
+    kubernetes_platform_registry: "{{ kubernetes_platform_config.registry.repository }}"
+    kubernetes_platform_public_hostname: "{{ kubernetes_platform_config.kubernetes.gke.public_endpoint.hostname }}"
+    kubernetes_platform_gke: true
+    kubernetes_platform_gke_ingress_ip_name: "{{ gke_platform_connection.ingress_ip_name }}"
+    kubernetes_platform_postgres_instances: 1
+    kubernetes_platform_postgres_sync_replicas: 0
+  no_log: true
+
+- name: Apply application secrets
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ gke_platform_work_dir }}/kubeconfig", apply, -f, "{{ gke_platform_work_dir }}/application-secret.yaml"]
+  changed_when: false
+
+- name: Derive the Artifact Registry hostname
+  ansible.builtin.set_fact:
+    kubernetes_platform_registry_host: "{{ kubernetes_platform_config.registry.repository.split('/') | first }}"
+
+- name: Obtain a short-lived Artifact Registry access token
+  ansible.builtin.command:
+    argv: [gcloud, auth, print-access-token]
+  register: kubernetes_platform_registry_access_token
+  changed_when: false
+  no_log: true
+
+- name: Render the Artifact Registry pull secret
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ gke_platform_work_dir }}/kubeconfig"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - create
+      - secret
+      - docker-registry
+      - oilscope-artifact-registry
+      - "--docker-server={{ kubernetes_platform_registry_host }}"
+      - --docker-username=oauth2accesstoken
+      - "--docker-password={{ kubernetes_platform_registry_access_token.stdout | trim }}"
+      - --dry-run=client
+      - --output=yaml
+  register: kubernetes_platform_registry_pull_secret_manifest
+  changed_when: false
+  no_log: true
+
+- name: Apply the refreshed Artifact Registry pull secret
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ gke_platform_work_dir }}/kubeconfig", apply, -f, -]
+    stdin: "{{ kubernetes_platform_registry_pull_secret_manifest.stdout }}"
+  changed_when: false
+  no_log: true
+
+- name: Add CloudNativePG Helm repository
+  ansible.builtin.command:
+    argv: [helm, repo, add, cnpg, https://cloudnative-pg.github.io/charts, --force-update]
+  changed_when: false
+
+- name: Install CloudNativePG operator
+  ansible.builtin.command:
+    argv: [helm, upgrade, --install, cnpg, cnpg/cloudnative-pg, --namespace, cnpg-system, --create-namespace, --kubeconfig, "{{ gke_platform_work_dir }}/kubeconfig", --wait, --timeout, 5m]
+  changed_when: false
+
+- name: Apply GKE managed certificate and workloads
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ gke_platform_work_dir }}/kubeconfig", apply, -f, "{{ gke_platform_work_dir }}/{{ item }}"]
+  loop: [managed-certificate.yaml, platform.yaml]
+  changed_when: false

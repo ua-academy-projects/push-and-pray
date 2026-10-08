@@ -1,6 +1,6 @@
 module "network" {
   source = "./network"
-  count  = local.has_vms ? 1 : 0
+  count  = local.has_vms || local.eks_enabled ? 1 : 0
 
   resource_prefix = local.resource_prefix
 
@@ -10,7 +10,9 @@ module "network" {
 
   workload_subnet_cidr = local.network_config.workload_subnet_cidr
 
-  database_subnets = lookup(local.network_config, "database_subnets", [])
+  database_subnets    = lookup(local.network_config, "database_subnets", [])
+  eks_private_subnets = lookup(local.network_config, "eks_private_subnets", [])
+  eks_public_subnets  = lookup(local.network_config, "eks_public_subnets", [])
 
   availability_zone = local.config.regions[local.config.default_region][local.cloud_key].availability_zone
 
@@ -20,7 +22,7 @@ module "secrets" {
   source     = "./secrets"
   secret_ids = local.all_secret_ids
   tags       = local.common_labels
-  secret_values = local.database_mode == "managed" && local.database_vm_name != null ? merge(
+  secret_values = (local.database_mode == "managed" && local.database_vm_name != null) || local.eks_enabled ? merge(
     { for secret_id in local.managed_database_secret_ids : secret_id => random_password.managed_database[0].result },
     { for secret_id in local.rabbitmq_secret_ids : secret_id => random_password.rabbitmq[0].result },
     { for secret_id in local.redis_secret_ids : secret_id => random_password.redis[0].result },
@@ -28,7 +30,7 @@ module "secrets" {
 }
 
 resource "random_password" "managed_database" {
-  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+  count = (local.database_mode == "managed" && local.database_vm_name != null) || local.eks_enabled ? 1 : 0
 
   length  = 32
   special = true
@@ -45,7 +47,7 @@ resource "random_password" "managed_database" {
 }
 
 resource "random_password" "rabbitmq" {
-  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+  count = (local.database_mode == "managed" && local.database_vm_name != null) || local.eks_enabled ? 1 : 0
 
   length           = 32
   special          = true
@@ -60,7 +62,7 @@ resource "random_password" "rabbitmq" {
 }
 
 resource "random_password" "redis" {
-  count = local.database_mode == "managed" && local.database_vm_name != null ? 1 : 0
+  count = (local.database_mode == "managed" && local.database_vm_name != null) || local.eks_enabled ? 1 : 0
 
   length           = 32
   special          = true
@@ -85,6 +87,18 @@ module "operator_key" {
 
   tags = local.common_labels
 
+}
+
+module "eks" {
+  source = "./eks"
+  count  = local.eks_enabled ? 1 : 0
+
+  resource_prefix    = local.resource_prefix
+  vpc_id             = module.network[0].vpc_id
+  private_subnet_ids = module.network[0].eks_private_subnet_ids
+  public_subnet_ids  = module.network[0].eks_public_subnet_ids
+  settings           = local.kubernetes_config.eks
+  tags               = local.common_labels
 }
 
 module "security" {
@@ -177,7 +191,7 @@ resource "aws_route" "tailscale_remote_cloud" {
 
 module "monitoring" {
   source = "./monitoring"
-  count  = local.monitoring_enabled ? 1 : 0
+  count  = local.monitoring_enabled && !local.eks_enabled ? 1 : 0
 
   resource_prefix              = local.resource_prefix
   tags                         = local.common_labels

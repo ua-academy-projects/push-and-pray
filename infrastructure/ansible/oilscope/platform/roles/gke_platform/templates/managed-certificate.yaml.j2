@@ -1,0 +1,8 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: oilscope-ui
+  namespace: {{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}
+spec:
+  domains:
+    - {{ kubernetes_platform_config.kubernetes.gke.public_endpoint.hostname }}

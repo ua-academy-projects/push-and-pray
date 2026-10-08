@@ -1,13 +1,22 @@
 {% set namespace = kubernetes_platform_config.kubernetes.namespace | default('oilscope') %}
-{% set registry = kubernetes_platform_config.registry.repository %}
+{% set registry = kubernetes_platform_registry | default(kubernetes_platform_config.registry.repository) %}
 {% set tag = kubernetes_platform_config.registry.image_tag %}
+{% set pgmq_queue_sql_literal = "'" ~ (kubernetes_platform_config.messaging.queue_name | replace("'", "''")) ~ "'" %}
+{% set database_user_sql_literal = "'" ~ (kubernetes_platform_config.database.user | replace("'", "''")) ~ "'" %}
+{% set postgres_instances = kubernetes_platform_postgres_instances | default(3) %}
+{% set postgres_sync_replicas = kubernetes_platform_postgres_sync_replicas | default(1) %}
+{% if kubernetes_platform_eks | default(false) or kubernetes_platform_gke | default(false) %}
+{% set public_hostname = kubernetes_platform_public_hostname %}
+{% else %}
+{% set public_hostname = kubernetes_platform_config.vms[groups.k3s_server[0] | regex_replace('^' ~ kubernetes_platform_config.name_prefix ~ '-' ~ kubernetes_platform_config.environment ~ '-', '')].public_endpoint.hostname %}
+{% endif %}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: postgres
   namespace: {{ namespace }}
 spec:
-  instances: 3
+  instances: {{ postgres_instances }}
   imageName: {{ registry }}/database-cnpg:18-xintaro
   imagePullSecrets:
     - name: {{ kubernetes_platform_registry_pull_secret_name }}
@@ -22,8 +31,8 @@ spec:
         name: postgres-app-credentials
   storage:
     size: 2Gi
-  minSyncReplicas: 1
-  maxSyncReplicas: 1
+  minSyncReplicas: {{ postgres_sync_replicas }}
+  maxSyncReplicas: {{ postgres_sync_replicas }}
   affinity:
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
@@ -49,6 +58,9 @@ spec:
   template:
     metadata: { labels: { app: redis } }
     spec:
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
       imagePullSecrets:
         - name: {{ kubernetes_platform_registry_pull_secret_name }}
       containers:
@@ -79,6 +91,7 @@ spec:
       containers:
         - name: migrate
           image: {{ registry }}/database-cnpg:18-xintaro
+          imagePullPolicy: Always
           command: [sh, -ec]
           args:
             - |
@@ -92,6 +105,26 @@ spec:
               CREATE EXTENSION IF NOT EXISTS pg_cron;
               CREATE EXTENSION IF NOT EXISTS hstore;
               CREATE EXTENSION IF NOT EXISTS pgmq;
+              GRANT USAGE ON SCHEMA cron TO {{ kubernetes_platform_config.database.user | to_json }};
+              GRANT USAGE ON SCHEMA pgmq TO {{ kubernetes_platform_config.database.user | to_json }};
+              SELECT pgmq.create({{ pgmq_queue_sql_literal }})
+              WHERE NOT EXISTS (
+                SELECT 1 FROM pgmq.list_queues()
+              WHERE queue_name = {{ pgmq_queue_sql_literal }}
+              );
+              GRANT SELECT ON TABLE pgmq.meta TO {{ kubernetes_platform_config.database.user | to_json }};
+              DO $pgmq_permissions$
+              BEGIN
+                EXECUTE format(
+                  'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE pgmq.%I, pgmq.%I TO %I',
+                  'q_' || {{ pgmq_queue_sql_literal }},
+                  'a_' || {{ pgmq_queue_sql_literal }},
+                  {{ database_user_sql_literal }}
+                );
+              END
+              $pgmq_permissions$;
+              GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgmq
+                TO {{ kubernetes_platform_config.database.user | to_json }};
               SQL
               exec petroscope-migrate
           env:
@@ -120,6 +153,7 @@ spec:
       containers:
         - name: history
           image: {{ registry }}/history:{{ tag }}
+          imagePullPolicy: Always
           env:
             - name: POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
@@ -148,6 +182,7 @@ spec:
       containers:
         - name: fetcher
           image: {{ registry }}/fetcher:{{ tag }}
+          imagePullPolicy: Always
           env:
             - name: POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
@@ -171,6 +206,7 @@ spec:
       containers:
         - name: ui
           image: {{ registry }}/ui:{{ tag }}
+          imagePullPolicy: Always
           env:
             - name: POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: oilscope-application, key: POSTGRES_PASSWORD } }
@@ -193,15 +229,36 @@ kind: Ingress
 metadata:
   name: ui
   namespace: {{ namespace }}
+{% if kubernetes_platform_eks | default(false) %}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: {{ kubernetes_platform_certificate_arn }}
+{% elif kubernetes_platform_gke | default(false) %}
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: {{ kubernetes_platform_gke_ingress_ip_name }}
+    networking.gke.io/managed-certificates: oilscope-ui
+{% else %}
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-cloudflare
+{% endif %}
 spec:
+{% if kubernetes_platform_eks | default(false) %}
+  ingressClassName: alb
+{% elif kubernetes_platform_gke | default(false) %}
+  ingressClassName: gce
+{% else %}
   ingressClassName: traefik
+{% endif %}
+{% if not (kubernetes_platform_eks | default(false)) and not (kubernetes_platform_gke | default(false)) %}
   tls:
-    - hosts: [{{ kubernetes_platform_config.vms[groups.k3s_server[0] | regex_replace('^' ~ kubernetes_platform_config.name_prefix ~ '-' ~ kubernetes_platform_config.environment ~ '-', '')].public_endpoint.hostname }}]
+    - hosts: [{{ public_hostname }}]
       secretName: oilscope-ui-tls
+{% endif %}
   rules:
-    - host: {{ kubernetes_platform_config.vms[groups.k3s_server[0] | regex_replace('^' ~ kubernetes_platform_config.name_prefix ~ '-' ~ kubernetes_platform_config.environment ~ '-', '')].public_endpoint.hostname }}
+    - host: {{ public_hostname }}
       http:
         paths:
           - path: /

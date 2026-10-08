@@ -45,6 +45,24 @@ variable "database_subnets" {
   }
 }
 
+variable "eks_private_subnets" {
+  description = "Private EKS worker subnets. EKS requires at least two Availability Zones."
+  type = list(object({
+    cidr              = string
+    availability_zone = string
+  }))
+  default = []
+}
+
+variable "eks_public_subnets" {
+  description = "Public subnets for internet-facing EKS load balancers."
+  type = list(object({
+    cidr              = string
+    availability_zone = string
+  }))
+  default = []
+}
+
 variable "vpc_cidr" {
   description = "vpc cidr"
   type        = string

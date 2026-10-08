@@ -1,7 +1,9 @@
 locals {
   config = jsondecode(file(var.project_config_path))
 
-  kubernetes_enabled = lookup(lookup(local.config, "kubernetes", {}), "enabled", false)
+  kubernetes_enabled = lookup(lookup(local.config, "kubernetes", {}), "enabled", false) && lookup(lookup(local.config, "kubernetes", {}), "mode", "k3s") == "k3s"
+  eks_enabled        = lookup(lookup(local.config, "kubernetes", {}), "enabled", false) && lookup(lookup(local.config, "kubernetes", {}), "mode", "k3s") == "eks"
+  gke_enabled        = lookup(lookup(local.config, "kubernetes", {}), "enabled", false) && lookup(lookup(local.config, "kubernetes", {}), "mode", "k3s") == "gke"
 
   all_workload_roles = merge(
     module.gcp.workload_roles,
@@ -20,9 +22,9 @@ locals {
     if role == "ui"
   ])
 
-  ui_public_ip = local.kubernetes_enabled ? module.gcp.kubernetes.ingress_public_ip : local.all_public_ips[local.ui_vm_name]
+  ui_public_ip = local.kubernetes_enabled ? module.gcp.kubernetes.ingress_public_ip : local.gke_enabled ? module.gcp.gke.ingress_ip : local.eks_enabled ? null : local.all_public_ips[local.ui_vm_name]
   public_endpoint_vm_name = local.kubernetes_enabled ? one([
     for name, vm in local.config.vms : name
     if vm.role == "k3s_server" && vm.assign_public_ip
-  ]) : local.ui_vm_name
+  ]) : local.eks_enabled || local.gke_enabled ? null : local.ui_vm_name
 }

@@ -41,3 +41,42 @@ ansible-playbook oilscope.platform.deploy_workloads \
 ```
 
 The deployment stops if a workload fails, preventing dependent workloads from being deployed.
+
+## Deploy to Amazon EKS
+
+Apply the EKS Terraform configuration, export the non-secret connection output,
+then run the local-controller playbook. It writes an isolated kubeconfig at
+`~/.cache/oilscope/eks/kubeconfig` and never changes the default kubeconfig.
+
+```bash
+terraform -chdir=infrastructure/terraform output -json aws_kubernetes \
+  | jq '{eks_platform_connection: .}' > /tmp/oilscope-eks.json
+ansible-playbook oilscope.platform.deploy_eks -i localhost, \
+  -e project_config_path=/absolute/path/project-config.json \
+  -e @/tmp/oilscope-eks.json
+```
+
+Pass the output as `eks_platform_connection` when invoking Ansible. The AWS CLI
+identity must be listed in `kubernetes.eks.administrator_principal_arns`; the
+controller also requires `kubectl` and Helm.
+
+## Deploy to Google Kubernetes Engine
+
+GKE Standard uses a dedicated local kubeconfig at
+`~/.cache/oilscope/gke/kubeconfig`. Terraform creates the VPC-native Pod and
+Service CIDR ranges, a three-node `e2-medium` pool, GKE Cloud Operations,
+Persistent Disk CSI, Artifact Registry access, a global ingress IP, and the
+Cloudflare A record. The local controller requires authenticated `gcloud`,
+`kubectl`, and Helm.
+
+```bash
+terraform -chdir=infrastructure/terraform output -json gcp_gke \
+  | jq '{gke_platform_connection: .}' > /tmp/oilscope-gke.json
+ansible-playbook oilscope.platform.deploy_gke -i localhost, \
+  -e project_config_path=/absolute/path/project-config.json \
+  -e @/tmp/oilscope-gke.json
+```
+
+Run the Terraform apply before the playbook. The Google-managed certificate is
+provisioned only after the Cloudflare A record resolves to the static ingress
+IP; certificate activation can take several minutes.

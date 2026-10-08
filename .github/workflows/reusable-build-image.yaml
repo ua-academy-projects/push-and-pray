@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       image-name:
-        description: Fully qualified Artifact Registry image name
+        description: Fully qualified AWS ECR image name
         required: true
         type: string
       dockerfile:
@@ -24,6 +24,16 @@ on:
         required: false
         default: xintaro
         type: string
+      gcp_image_name:
+        description: Fully qualified Artifact Registry image name; leave empty to skip GCP publishing
+        required: false
+        default: ""
+        type: string
+      gcp_registry_host:
+        description: Artifact Registry hostname, for example europe-central2-docker.pkg.dev
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -39,20 +49,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Authenticate to AWS through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_WRITER_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Authenticate to Google Cloud through GitHub OIDC
-        id: auth
+        if: ${{ inputs.gcp_image_name != '' }}
+        id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_ARTIFACT_WRITER_SERVICE_ACCOUNT }}
           token_format: access_token
 
-      - name: Log in to Artifact Registry
+      - name: Log in to Google Artifact Registry
+        if: ${{ inputs.gcp_image_name != '' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ vars.GCP_ARTIFACT_REGISTRY_HOST }}
+          registry: ${{ inputs.gcp_registry_host }}
           username: oauth2accesstoken
-          password: ${{ steps.auth.outputs.access_token }}
+          password: ${{ steps.gcp-auth.outputs.access_token }}
 
       - name: Generate image metadata
         id: metadata
@@ -76,3 +97,28 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha,scope=${{ inputs.image-name }}
           cache-to: type=gha,mode=max,scope=${{ inputs.image-name }}
+
+      - name: Generate GCP image metadata
+        if: ${{ inputs.gcp_image_name != '' }}
+        id: gcp-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.gcp_image_name }}
+          tags: |
+            type=raw,value=${{ inputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.description=${{ inputs.description }}
+
+      - name: Build and publish GCP image
+        if: ${{ inputs.gcp_image_name != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: true
+          tags: ${{ steps.gcp-metadata.outputs.tags }}
+          labels: ${{ steps.gcp-metadata.outputs.labels }}
+          cache-from: type=gha,scope=${{ inputs.gcp_image_name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.gcp_image_name }}

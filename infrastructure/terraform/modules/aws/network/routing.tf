@@ -27,3 +27,15 @@ resource "aws_route" "workload_internet" {
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.nat.id
 }
+
+resource "aws_route_table_association" "eks_private" {
+  for_each       = aws_subnet.eks_private
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.workload.id
+}
+
+resource "aws_route_table_association" "eks_public" {
+  for_each       = aws_subnet.eks_public
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.management.id
+}

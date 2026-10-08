@@ -505,9 +505,10 @@
     "kubernetes": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "k3s_version", "artifact_repository", "github_repository"],
+      "required": ["enabled", "artifact_repository", "github_repository"],
       "properties": {
         "enabled": { "type": "boolean" },
+        "mode": { "enum": ["k3s", "eks", "gke"] },
         "k3s_version": {
           "type": "string",
           "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+$"
@@ -526,6 +527,39 @@
         },
         "secrets": {
           "$ref": "#/$defs/secret_mappings"
+        },
+        "eks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "public_access_cidrs", "administrator_principal_arns", "node_instance_type", "public_endpoint"],
+          "properties": {
+            "version": { "const": "1.35" },
+            "public_access_cidrs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+            "administrator_principal_arns": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^arn:aws:iam::[0-9]{12}:(role|user)/.+" } },
+            "node_instance_type": { "enum": ["t3.micro", "t3.medium"] },
+            "public_endpoint": {
+              "type": "object", "additionalProperties": false,
+              "required": ["hostname", "acme_email"],
+              "properties": { "hostname": { "type": "string", "minLength": 1 }, "acme_email": { "type": "string", "format": "email" } }
+            }
+          }
+        },
+        "gke": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "public_access_cidrs", "node_machine_type", "pod_range_cidr", "service_range_cidr", "public_endpoint"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+            "public_access_cidrs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+            "node_machine_type": { "enum": ["e2-medium", "e2-standard-2"] },
+            "pod_range_cidr": { "type": "string", "minLength": 1 },
+            "service_range_cidr": { "type": "string", "minLength": 1 },
+            "public_endpoint": {
+              "type": "object", "additionalProperties": false,
+              "required": ["hostname", "acme_email"],
+              "properties": { "hostname": { "type": "string", "minLength": 1 }, "acme_email": { "type": "string", "format": "email" } }
+            }
+          }
         }
       }
     },
@@ -544,7 +578,7 @@
     },
     "vms": {
       "type": "object",
-      "minProperties": 2,
+      "minProperties": 0,
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -571,6 +605,14 @@
             "required": ["cidr", "availability_zone"],
             "properties": { "cidr": { "type": "string" }, "availability_zone": { "type": "string" } }
           }
+        },
+        "eks_private_subnets": {
+          "type": "array", "minItems": 2,
+          "items": { "type": "object", "additionalProperties": false, "required": ["cidr", "availability_zone"], "properties": { "cidr": { "type": "string" }, "availability_zone": { "type": "string" } } }
+        },
+        "eks_public_subnets": {
+          "type": "array", "minItems": 2,
+          "items": { "type": "object", "additionalProperties": false, "required": ["cidr", "availability_zone"], "properties": { "cidr": { "type": "string" }, "availability_zone": { "type": "string" } } }
         }
       }
     },

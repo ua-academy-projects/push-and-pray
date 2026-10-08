@@ -24,3 +24,13 @@ output "workload_route_table_id" {
   description = "Route table associated with workload instances."
   value       = aws_route_table.workload.id
 }
+
+output "eks_private_subnet_ids" {
+  description = "Private subnets used by EKS worker nodes."
+  value       = values(aws_subnet.eks_private)[*].id
+}
+
+output "eks_public_subnet_ids" {
+  description = "Public subnets used by internet-facing EKS load balancers."
+  value       = values(aws_subnet.eks_public)[*].id
+}

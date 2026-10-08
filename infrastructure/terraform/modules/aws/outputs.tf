@@ -52,6 +52,11 @@ output "monitoring_summary" {
   value       = local.monitoring_enabled ? module.monitoring[0].summary : null
 }
 
+output "kubernetes" {
+  description = "EKS connection and ECR values, or null when AWS EKS mode is disabled."
+  value       = local.eks_enabled ? module.eks[0].summary : null
+}
+
 output "database_connection" {
   description = "Database connection values resolved from self-managed PostgreSQL or private managed RDS."
   value = local.database_vm_name == null ? null : local.database_mode == "managed" ? {

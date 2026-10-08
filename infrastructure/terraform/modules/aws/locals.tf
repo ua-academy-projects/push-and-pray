@@ -4,10 +4,13 @@ locals {
 
   resource_prefix = "${local.config.name_prefix}-${local.config.environment}"
 
+  kubernetes_config = lookup(local.config, "kubernetes", {})
+  eks_enabled       = lookup(local.kubernetes_config, "mode", "k3s") == "eks" && lookup(local.kubernetes_config, "enabled", false)
+
   has_vms = length(local.resolved_vms) > 0
 
   network_config = local.config.network[local.cloud_key]
-  bastion_vm     = one([for vm in values(local.resolved_vms) : vm if vm.role == "bastion"])
+  bastion_vm     = try(one([for vm in values(local.resolved_vms) : vm if vm.role == "bastion"]), null)
 
   common_labels = merge(
     {
@@ -74,9 +77,10 @@ locals {
 
   # Secret mappings are cloud-neutral configuration. This AWS wrapper turns
   # their secret IDs into AWS Secret Manager containers and, below, ARNs.
-  all_secret_ids = distinct(flatten([
-    for vm in values(local.workload_vms) : values(vm.secret_mappings)
-  ]))
+  all_secret_ids = distinct(concat(
+    flatten([for vm in values(local.workload_vms) : values(vm.secret_mappings)]),
+    local.eks_enabled ? values(lookup(local.kubernetes_config, "secrets", {})) : [],
+  ))
 
   inactive_secret_names_by_role = local.database_mode == "self_managed" ? {
     for role in ["database", "history", "fetcher", "ui"] :
@@ -101,26 +105,26 @@ locals {
     name => distinct(values(secret_mappings))
   }
 
-  managed_database_secret_ids = toset(flatten([
+  managed_database_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "POSTGRES_PASSWORD"
     ]
-  ]))
+  ]), local.eks_enabled ? compact([lookup(local.kubernetes_config.secrets, "POSTGRES_PASSWORD", null)]) : []))
 
-  rabbitmq_secret_ids = toset(flatten([
+  rabbitmq_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "RABBITMQ_PASSWORD"
     ]
-  ]))
+  ]), local.eks_enabled ? compact([lookup(local.kubernetes_config.secrets, "RABBITMQ_PASSWORD", null)]) : []))
 
-  redis_secret_ids = toset(flatten([
+  redis_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "REDIS_PASSWORD"
     ]
-  ]))
+  ]), local.eks_enabled ? compact([lookup(local.kubernetes_config.secrets, "REDIS_PASSWORD", null)]) : []))
 
   # Keys are stable VM names from the JSON. The ARN values become known after
   # the Secret Manager resources are created, which is safe for IAM policies.
@@ -139,8 +143,8 @@ locals {
     if vm.role == "database"
   ]), null)
 
-  ui_vm = one([
+  ui_vm = try(one([
     for _, vm in local.resolved_vms : vm
     if vm.role == "ui"
-  ])
+  ]), null)
 }

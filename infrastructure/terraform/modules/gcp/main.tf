@@ -1,13 +1,32 @@
 module "network" {
   source = "./network"
-  count  = local.has_vms ? 1 : 0
+  count  = local.has_vms || local.gke_enabled ? 1 : 0
 
   resource_prefix = local.resource_prefix
   region          = local.config.regions[local.config.default_region][local.cloud_key].region
 
   management_subnet_cidr = local.network_config.management_subnet_cidr
   workload_subnet_cidr   = local.network_config.workload_subnet_cidr
+  gke_secondary_ranges = local.gke_enabled ? {
+    pods     = local.kubernetes_config.gke.pod_range_cidr
+    services = local.kubernetes_config.gke.service_range_cidr
+  } : {}
 
+}
+
+module "gke" {
+  source = "./gke"
+  count  = local.gke_enabled ? 1 : 0
+
+  project_id      = local.config.clouds.gcp.project_id
+  resource_prefix = local.resource_prefix
+  location        = local.config.regions[local.config.default_region][local.cloud_key].zone
+  network_id      = module.network[0].network_id
+  subnetwork_name = module.network[0].workload_subnet_name
+  settings        = local.kubernetes_config.gke
+  labels          = local.common_labels
+
+  depends_on = [module.network]
 }
 
 module "database" {
@@ -149,7 +168,7 @@ resource "google_compute_route" "tailscale_remote_cloud" {
 }
 
 resource "google_artifact_registry_repository" "application" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.k3s_enabled || local.gke_enabled ? 1 : 0
 
   project       = local.config.clouds.gcp.project_id
   location      = local.config.regions[local.config.default_region].gcp.region
@@ -160,7 +179,7 @@ resource "google_artifact_registry_repository" "application" {
 }
 
 resource "google_artifact_registry_repository_iam_member" "k3s_reader" {
-  for_each = local.kubernetes_enabled ? toset(keys(local.k3s_nodes)) : toset([])
+  for_each = local.k3s_enabled ? toset(keys(local.k3s_nodes)) : toset([])
 
   project    = google_artifact_registry_repository.application[0].project
   location   = google_artifact_registry_repository.application[0].location
@@ -170,7 +189,7 @@ resource "google_artifact_registry_repository_iam_member" "k3s_reader" {
 }
 
 resource "google_iam_workload_identity_pool" "github" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.k3s_enabled || local.gke_enabled ? 1 : 0
 
   project                   = local.config.clouds.gcp.project_id
   workload_identity_pool_id = "${local.resource_prefix}-github"
@@ -178,7 +197,7 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.k3s_enabled || local.gke_enabled ? 1 : 0
 
   project                            = local.config.clouds.gcp.project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
@@ -195,7 +214,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 }
 
 resource "google_service_account" "github_artifact_writer" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.k3s_enabled || local.gke_enabled ? 1 : 0
 
   project      = local.config.clouds.gcp.project_id
   account_id   = "${local.resource_prefix}-github-ar"
@@ -203,7 +222,7 @@ resource "google_service_account" "github_artifact_writer" {
 }
 
 resource "google_artifact_registry_repository_iam_member" "github_writer" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.k3s_enabled || local.gke_enabled ? 1 : 0
 
   project    = google_artifact_registry_repository.application[0].project
   location   = google_artifact_registry_repository.application[0].location
@@ -213,7 +232,7 @@ resource "google_artifact_registry_repository_iam_member" "github_writer" {
 }
 
 resource "google_service_account_iam_member" "github_workload_identity" {
-  count = local.kubernetes_enabled ? 1 : 0
+  count = local.k3s_enabled || local.gke_enabled ? 1 : 0
 
   service_account_id = google_service_account.github_artifact_writer[0].name
   role               = "roles/iam.workloadIdentityUser"

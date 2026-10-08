@@ -89,9 +89,19 @@ output "gcp_kubernetes" {
   value       = module.gcp.kubernetes
 }
 
+output "gcp_gke" {
+  description = "GKE connection and ingress values, or null when GKE mode is disabled."
+  value       = module.gcp.gke
+}
+
 output "aws_monitoring" {
   description = "AWS CloudWatch and SNS resource identifiers, or null when monitoring is disabled."
   value       = module.aws.monitoring_summary
+}
+
+output "aws_kubernetes" {
+  description = "AWS EKS connection and ECR values, or null when EKS mode is disabled."
+  value       = module.aws.kubernetes
 }
 
 output "azure_monitoring" {

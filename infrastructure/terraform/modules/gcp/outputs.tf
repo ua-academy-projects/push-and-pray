@@ -101,6 +101,11 @@ output "kubernetes" {
   } : null
 }
 
+output "gke" {
+  description = "GKE connection and ingress values, or null when GKE mode is disabled."
+  value       = local.gke_enabled ? module.gke[0].summary : null
+}
+
 output "database_connection" {
   description = "Database connection values resolved from self-managed PostgreSQL or managed Cloud SQL."
 

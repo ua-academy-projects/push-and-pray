@@ -113,11 +113,13 @@
                 azure-cli
                 check-jsonschema
                 git
-                google-cloud-sdk
-            jq
-            kubectl
-            kubernetes-helm
-            openssl
+                (google-cloud-sdk.withExtraComponents [
+                  google-cloud-sdk.components.gke-gcloud-auth-plugin
+                ])
+                jq
+                kubectl
+                kubernetes-helm
+                openssl
                 python3Packages.virtualenv
                 shellcheck
                 terraform

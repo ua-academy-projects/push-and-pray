@@ -48,7 +48,7 @@ locals {
   ]), null)
 
   monitoring_config  = lookup(local.config, "monitoring", {})
-  monitoring_enabled = local.has_vms && !local.kubernetes_enabled && lookup(local.monitoring_config, "enabled", false)
+  monitoring_enabled = local.has_vms && !local.k3s_enabled && !local.gke_enabled && lookup(local.monitoring_config, "enabled", false)
   monitoring_settings = {
     notification_email = lookup(
       local.monitoring_config,
@@ -110,32 +110,34 @@ locals {
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "POSTGRES_PASSWORD"
     ]
-  ]), local.kubernetes_enabled ? [lookup(local.kubernetes_config.secrets, "POSTGRES_PASSWORD")] : []))
+  ]), local.k3s_enabled || local.gke_enabled ? compact([lookup(local.kubernetes_config.secrets, "POSTGRES_PASSWORD", null)]) : []))
 
   rabbitmq_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "RABBITMQ_PASSWORD"
     ]
-  ]), local.kubernetes_enabled ? [lookup(local.kubernetes_config.secrets, "RABBITMQ_PASSWORD")] : []))
+  ]), local.k3s_enabled || local.gke_enabled ? compact([lookup(local.kubernetes_config.secrets, "RABBITMQ_PASSWORD", null)]) : []))
 
   redis_secret_ids = toset(concat(flatten([
     for secret_mappings in values(local.active_secret_mappings_by_vm) : [
       for environment_name, secret_id in secret_mappings : secret_id
       if environment_name == "REDIS_PASSWORD"
     ]
-  ]), local.kubernetes_enabled ? [lookup(local.kubernetes_config.secrets, "REDIS_PASSWORD")] : []))
+  ]), local.k3s_enabled || local.gke_enabled ? compact([lookup(local.kubernetes_config.secrets, "REDIS_PASSWORD", null)]) : []))
 
   generated_passwords_enabled = (
     local.database_mode == "managed" && local.database_vm_name != null
-  ) || local.kubernetes_enabled
+  ) || local.k3s_enabled || local.gke_enabled
 
   has_vms        = length(local.resolved_vms) > 0
   network_config = local.config.network[local.cloud_key]
   bastion_vm     = one([for vm in values(local.resolved_vms) : vm if vm.role == "bastion"])
 
   kubernetes_config  = lookup(local.config, "kubernetes", {})
-  kubernetes_enabled = lookup(local.kubernetes_config, "enabled", false)
+  k3s_enabled        = lookup(local.kubernetes_config, "enabled", false) && lookup(local.kubernetes_config, "mode", "k3s") == "k3s"
+  gke_enabled        = lookup(local.kubernetes_config, "enabled", false) && lookup(local.kubernetes_config, "mode", "k3s") == "gke"
+  kubernetes_enabled = local.k3s_enabled
   k3s_nodes = {
     for name, vm in local.resolved_vms : name => vm
     if contains(["k3s_server", "k3s_agent"], vm.role)

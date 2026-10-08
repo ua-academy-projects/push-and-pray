@@ -253,3 +253,30 @@
       - job/oilscope-migrations
       - --timeout=10m
   changed_when: false
+
+- name: Restart the Fetcher after the database schema becomes ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - rollout
+      - restart
+      - deployment/fetcher
+  changed_when: false
+
+- name: Wait for the restarted Fetcher to become ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_platform_kubeconfig }}"
+      - --namespace
+      - "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}"
+      - rollout
+      - status
+      - deployment/fetcher
+      - --timeout=5m
+  changed_when: false

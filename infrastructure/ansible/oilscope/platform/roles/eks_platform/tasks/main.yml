@@ -1,0 +1,133 @@
+---
+- name: Load the shared project configuration
+  ansible.builtin.include_vars:
+    file: "{{ eks_platform_project_config_path }}"
+    name: kubernetes_platform_config
+
+- name: Require EKS connection values
+  ansible.builtin.assert:
+    that:
+      - kubernetes_platform_config.kubernetes.mode == 'eks'
+      - eks_platform_connection.cluster_name is defined
+      - eks_platform_connection.region is defined
+      - eks_platform_connection.ecr_repository_url is defined
+      - eks_platform_connection.certificate_arn is defined
+
+- name: Create the EKS controller work directory
+  ansible.builtin.file:
+    path: "{{ eks_platform_work_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Create an isolated EKS kubeconfig
+  ansible.builtin.command:
+    argv:
+      - aws
+      - eks
+      - update-kubeconfig
+      - --region
+      - "{{ eks_platform_connection.region }}"
+      - --name
+      - "{{ eks_platform_connection.cluster_name }}"
+      - --alias
+      - "{{ eks_platform_connection.cluster_name }}"
+      - --kubeconfig
+      - "{{ eks_platform_work_dir }}/kubeconfig"
+  changed_when: false
+
+- name: Verify EKS API access
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ eks_platform_work_dir }}/kubeconfig", get, nodes]
+  changed_when: false
+
+- name: Read Kubernetes application secrets from AWS Secrets Manager
+  ansible.builtin.command:
+    argv: [aws, secretsmanager, get-secret-value, --region, "{{ eks_platform_connection.region }}", --secret-id, "{{ item.value }}", --query, SecretString, --output, text]
+  loop: "{{ kubernetes_platform_config.kubernetes.secrets | dict2items }}"
+  register: kubernetes_platform_secret_values
+  changed_when: false
+  no_log: true
+
+- name: Render application secrets and workload manifest
+  ansible.builtin.template:
+    src: "{{ item.source }}"
+    dest: "{{ eks_platform_work_dir }}/{{ item.destination }}"
+    mode: "0600"
+  loop:
+    - { source: "{{ role_path }}/../kubernetes_platform/templates/application-secret.yaml.j2", destination: application-secret.yaml }
+    - { source: "{{ role_path }}/../kubernetes_platform/templates/platform.yaml.j2", destination: platform.yaml }
+  vars:
+    kubernetes_platform_kubeconfig: "{{ eks_platform_work_dir }}/kubeconfig"
+    kubernetes_platform_registry: "{{ eks_platform_connection.ecr_repository_url }}"
+    kubernetes_platform_certificate_arn: "{{ eks_platform_connection.certificate_arn }}"
+    kubernetes_platform_public_hostname: "{{ kubernetes_platform_config.kubernetes.eks.public_endpoint.hostname }}"
+    kubernetes_platform_eks: true
+    # Free Tier workers cannot safely host the three-instance HA database.
+    kubernetes_platform_postgres_instances: 1
+    kubernetes_platform_postgres_sync_replicas: 0
+  no_log: true
+
+- name: Apply application secrets
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ eks_platform_work_dir }}/kubeconfig", apply, -f, "{{ eks_platform_work_dir }}/application-secret.yaml"]
+  changed_when: false
+
+- name: Add Helm repositories
+  ansible.builtin.command:
+    argv: [helm, repo, add, "{{ item.name }}", "{{ item.url }}", --force-update]
+  loop:
+    - { name: eks, url: https://aws.github.io/eks-charts }
+    - { name: cnpg, url: https://cloudnative-pg.github.io/charts }
+  changed_when: false
+
+- name: Install AWS Load Balancer Controller
+  ansible.builtin.command:
+    argv: [helm, upgrade, --install, aws-load-balancer-controller, eks/aws-load-balancer-controller, --namespace, kube-system, --set, "clusterName={{ eks_platform_connection.cluster_name }}", --set, "region={{ eks_platform_connection.region }}", --kubeconfig, "{{ eks_platform_work_dir }}/kubeconfig", --wait, --timeout, 5m]
+  changed_when: false
+
+- name: Install CloudNativePG operator
+  ansible.builtin.command:
+    argv: [helm, upgrade, --install, cnpg, cnpg/cloudnative-pg, --namespace, cnpg-system, --create-namespace, --kubeconfig, "{{ eks_platform_work_dir }}/kubeconfig", --wait, --timeout, 5m]
+  changed_when: false
+
+- name: Apply EKS workloads
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ eks_platform_work_dir }}/kubeconfig", apply, -f, "{{ eks_platform_work_dir }}/platform.yaml"]
+  changed_when: false
+
+- name: Wait for the Application Load Balancer hostname
+  ansible.builtin.command:
+    argv: [kubectl, --kubeconfig, "{{ eks_platform_work_dir }}/kubeconfig", --namespace, "{{ kubernetes_platform_config.kubernetes.namespace | default('oilscope') }}", get, ingress, ui, "-o=jsonpath={.status.loadBalancer.ingress[0].hostname}"]
+  register: eks_platform_alb_hostname
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: eks_platform_alb_hostname.stdout | trim | length > 0
+
+- name: Find the public Cloudflare DNS record
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ kubernetes_platform_config.zone_id }}/dns_records?type=CNAME&name={{ kubernetes_platform_config.kubernetes.eks.public_endpoint.hostname }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ (kubernetes_platform_secret_values.results | selectattr('item.key', 'equalto', 'CLOUDFLARE_API_TOKEN') | map(attribute='stdout') | first | trim) }}"
+    return_content: true
+  register: eks_platform_cloudflare_record
+  no_log: true
+
+- name: Create or update the public Cloudflare DNS record
+  ansible.builtin.uri:
+    url: >-
+      https://api.cloudflare.com/client/v4/zones/{{ kubernetes_platform_config.zone_id }}/dns_records
+      {{ '/' ~ eks_platform_cloudflare_record.json.result[0].id if eks_platform_cloudflare_record.json.result | length else '' }}
+    method: "{{ 'PUT' if eks_platform_cloudflare_record.json.result | length else 'POST' }}"
+    headers:
+      Authorization: "Bearer {{ (kubernetes_platform_secret_values.results | selectattr('item.key', 'equalto', 'CLOUDFLARE_API_TOKEN') | map(attribute='stdout') | first | trim) }}"
+    body_format: json
+    body:
+      type: CNAME
+      name: "{{ kubernetes_platform_config.kubernetes.eks.public_endpoint.hostname }}"
+      content: "{{ eks_platform_alb_hostname.stdout | trim }}"
+      ttl: 1
+      proxied: false
+    status_code: [200, 201]
+  no_log: true

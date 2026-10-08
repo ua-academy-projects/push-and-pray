@@ -1,0 +1,4 @@
+eks_platform_project_config_path: >-
+  {{ lookup('env', 'OILSCOPE_PROJECT_CONFIG') | default('../../terraform/env/dev.json', true) }}
+eks_platform_work_dir: "{{ lookup('env', 'HOME') }}/.cache/oilscope/eks"
+eks_platform_connection: {}
