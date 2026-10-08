@@ -18,8 +18,7 @@ jobs:
     name: Publish Fetcher image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ${{ vars.AWS_ECR_REPOSITORY }}/fetcher
-      gcp_image_name: ${{ vars.GCP_ARTIFACT_REGISTRY != '' && format('{0}/fetcher', vars.GCP_ARTIFACT_REGISTRY) || '' }}
+      gcp_image_name: ${{ format('{0}/fetcher', vars.GCP_ARTIFACT_REGISTRY) }}
       gcp_registry_host: ${{ vars.GCP_ARTIFACT_REGISTRY_HOST }}
       dockerfile: infrastructure/docker/Dockerfile.fetcher
       context: .
@@ -29,8 +28,7 @@ jobs:
     name: Publish History image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ${{ vars.AWS_ECR_REPOSITORY }}/history
-      gcp_image_name: ${{ vars.GCP_ARTIFACT_REGISTRY != '' && format('{0}/history', vars.GCP_ARTIFACT_REGISTRY) || '' }}
+      gcp_image_name: ${{ format('{0}/history', vars.GCP_ARTIFACT_REGISTRY) }}
       gcp_registry_host: ${{ vars.GCP_ARTIFACT_REGISTRY_HOST }}
       dockerfile: infrastructure/docker/Dockerfile.history
       context: .
@@ -40,8 +38,7 @@ jobs:
     name: Publish UI image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ${{ vars.AWS_ECR_REPOSITORY }}/ui
-      gcp_image_name: ${{ vars.GCP_ARTIFACT_REGISTRY != '' && format('{0}/ui', vars.GCP_ARTIFACT_REGISTRY) || '' }}
+      gcp_image_name: ${{ format('{0}/ui', vars.GCP_ARTIFACT_REGISTRY) }}
       gcp_registry_host: ${{ vars.GCP_ARTIFACT_REGISTRY_HOST }}
       dockerfile: infrastructure/docker/Dockerfile.ui
       context: .
@@ -51,8 +48,7 @@ jobs:
     name: Publish database image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ${{ vars.AWS_ECR_REPOSITORY }}/database
-      gcp_image_name: ${{ vars.GCP_ARTIFACT_REGISTRY != '' && format('{0}/database', vars.GCP_ARTIFACT_REGISTRY) || '' }}
+      gcp_image_name: ${{ format('{0}/database', vars.GCP_ARTIFACT_REGISTRY) }}
       gcp_registry_host: ${{ vars.GCP_ARTIFACT_REGISTRY_HOST }}
       dockerfile: infrastructure/docker/Dockerfile.database
       context: .
@@ -62,8 +58,7 @@ jobs:
     name: Publish CloudNativePG database image
     uses: ./.github/workflows/reusable-build-image.yaml
     with:
-      image-name: ${{ vars.AWS_ECR_REPOSITORY }}/database-cnpg
-      gcp_image_name: ${{ vars.GCP_ARTIFACT_REGISTRY != '' && format('{0}/database-cnpg', vars.GCP_ARTIFACT_REGISTRY) || '' }}
+      gcp_image_name: ${{ format('{0}/database-cnpg', vars.GCP_ARTIFACT_REGISTRY) }}
       gcp_registry_host: ${{ vars.GCP_ARTIFACT_REGISTRY_HOST }}
       image_tag: 18-xintaro
       dockerfile: infrastructure/docker/Dockerfile.database.cnpg
