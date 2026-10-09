@@ -1,0 +1,12 @@
+# CloudNativePG reads the PostgreSQL major version from the start of an image
+# tag (17, 17.6-...). Ours are commit SHAs, from which it read nonsense, so
+# the catalog states the version outright and the operator trusts it.
+apiVersion: postgresql.cnpg.io/v1
+kind: ImageCatalog
+metadata:
+  name: {{ database_cluster_name }}
+  namespace: {{ database_namespace }}
+spec:
+  images:
+    - major: {{ database_pg_major }}
+      image: {{ database_image }}

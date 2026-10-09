@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+galaxy_info:
+  author: Zoia Holubkova
+  description: Run the application's PostgreSQL cluster on CloudNativePG and migrate its schema
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+  galaxy_tags:
+    - kubernetes
+    - postgresql
+
+dependencies: []

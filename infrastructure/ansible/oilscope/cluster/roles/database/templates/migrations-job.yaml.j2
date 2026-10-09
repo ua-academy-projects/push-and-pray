@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ database_cluster_name }}-migrate-{{ database_image.split(':')[-1][:12] }}
+  namespace: {{ database_namespace }}
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: {{ database_pull_secret }}
+      containers:
+        - name: migrate
+          image: {{ database_image }}
+          command:
+            - petroscope-migrate
+          env:
+            - name: PGHOST
+              value: {{ database_cluster_name }}-rw
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: {{ database_name }}
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ database_cluster_name }}-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ database_cluster_name }}-app
+                  key: password

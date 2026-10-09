@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+database_kubeconfig: "{{ oilscope_kubeconfig }}"
+database_namespace: "{{ oilscope_namespace }}"
+
+database_cluster_name: oilscope-db
+
+# Image built from infrastructure/docker/Dockerfile.postgres.
+database_image: ""
+# Must match PG_MAJOR in the Dockerfile: the image catalog tells the operator
+# which major version the image holds.
+database_pg_major: 17
+database_pull_secret: ghcr-pull
+
+database_cloud: ""
+database_instances: 2
+database_storage_gb: 5
+database_name: oil_tracker
+database_owner: oil_tracker
+
+database_resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+database_ready_timeout: 900

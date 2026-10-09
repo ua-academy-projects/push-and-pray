@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the role's input
+  ansible.builtin.assert:
+    that:
+      - redis_version | length > 0
+      - redis_password | length > 0
+      - redis_cloud | length > 0
+    fail_msg: redis_version, redis_password and redis_cloud are required
+    quiet: true
+
+- name: Store the Redis password as configuration
+  kubernetes.core.k8s:
+    kubeconfig: "{{ redis_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ redis_release_name }}-config"
+        namespace: "{{ redis_namespace }}"
+      stringData:
+        auth.conf: "requirepass {{ redis_password }}\n"
+  no_log: true
+
+- name: Store the Redis password for the client inside the pod
+  kubernetes.core.k8s:
+    kubeconfig: "{{ redis_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ redis_release_name }}-env"
+        namespace: "{{ redis_namespace }}"
+      stringData:
+        REDISCLI_AUTH: "{{ redis_password }}"
+  no_log: true
+
+- name: Install Redis
+  kubernetes.core.helm:
+    kubeconfig: "{{ redis_kubeconfig }}"
+    name: "{{ redis_release_name }}"
+    chart_ref: redis
+    chart_repo_url: "{{ redis_repo_url }}"
+    chart_version: "{{ redis_version }}"
+    release_namespace: "{{ redis_namespace }}"
+    values: "{{ lookup('ansible.builtin.template', 'values.yaml.j2') | from_yaml }}"
+    wait: true

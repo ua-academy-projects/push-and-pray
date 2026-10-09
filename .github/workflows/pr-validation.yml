@@ -292,6 +292,7 @@ jobs:
           - database
           - fetcher
           - history
+          - postgres
           - ui
 
     steps:

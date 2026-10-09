@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+cloudnative_pg_kubeconfig: "{{ oilscope_kubeconfig }}"
+cloudnative_pg_version: ""
+cloudnative_pg_namespace: cnpg-system
+cloudnative_pg_repo_url: https://cloudnative-pg.github.io/charts

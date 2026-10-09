@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install the CloudNativePG operator
+  kubernetes.core.helm:
+    kubeconfig: "{{ cloudnative_pg_kubeconfig }}"
+    name: cnpg
+    chart_ref: cloudnative-pg
+    chart_repo_url: "{{ cloudnative_pg_repo_url }}"
+    chart_version: "{{ cloudnative_pg_version }}"
+    release_namespace: "{{ cloudnative_pg_namespace }}"
+    create_namespace: true
+    wait: true

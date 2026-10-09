@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the role's input
+  ansible.builtin.assert:
+    that:
+      - app_namespace_registry_username | length > 0
+      - app_namespace_registry_token | length > 0
+    fail_msg: the registry username and token are both needed to pull private images
+    quiet: true
+
+- name: Create the application namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ app_namespace_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ app_namespace_name }}"
+
+# The images on GHCR are private, so every pod that runs one names this
+# Secret. Its content is the same JSON docker login writes to config.json.
+- name: Store the registry credentials
+  kubernetes.core.k8s:
+    kubeconfig: "{{ app_namespace_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ app_namespace_pull_secret }}"
+        namespace: "{{ app_namespace_name }}"
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: >-
+          {{ {'auths': {app_namespace_registry: {
+                'username': app_namespace_registry_username,
+                'password': app_namespace_registry_token,
+                'auth': (app_namespace_registry_username ~ ':' ~ app_namespace_registry_token) | b64encode
+             }}} | to_json | b64encode }}
+  no_log: true

@@ -1,0 +1,21 @@
+# Only what differs from the chart's defaults.
+
+# A Secret whose files are appended to redis.conf - here, requirepass.
+extraSecretRedisConfigs: {{ redis_release_name }}-config
+
+# REDISCLI_AUTH in the container, so the chart's probes - plain
+# "redis-cli ping" - authenticate. Without it redis-cli answers NOAUTH and
+# still exits 0, and the probes would pass without checking anything.
+extraRedisEnvSecrets:
+  - {{ redis_release_name }}-env
+
+# Sessions survive a restart. Without a size the chart keeps the data in an
+# emptyDir, which goes with the pod.
+storage:
+  requestedSize: {{ redis_storage_gb }}Gi
+
+resources:
+  {{ redis_resources | to_nice_yaml(indent=2) | trim | indent(2) }}
+
+nodeSelector:
+  cloud: {{ redis_cloud }}

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+app_namespace_kubeconfig: "{{ oilscope_kubeconfig }}"
+app_namespace_name: "{{ oilscope_namespace }}"
+
+# The registry the private images are pulled from, and who pulls them.
+app_namespace_registry: ghcr.io
+app_namespace_registry_username: ""
+app_namespace_registry_token: ""
+
+# Pods name this Secret under imagePullSecrets.
+app_namespace_pull_secret: ghcr-pull

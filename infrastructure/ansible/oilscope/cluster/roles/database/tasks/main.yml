@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Instances must sit on different nodes of one cloud, so that cloud needs at
+# least as many nodes as there are instances - or the extra ones stay Pending
+# forever instead of failing.
+- name: Check the role's input
+  ansible.builtin.assert:
+    that:
+      - database_image | length > 0
+      - database_cloud | length > 0
+      - >-
+        groups['nodes'] | default([]) | map('extract', hostvars, 'oilscope_cloud')
+        | select('equalto', database_cloud) | list | length >= database_instances | int
+    fail_msg: >-
+      database_image and database_cloud are required, and {{ database_cloud }}
+      needs at least {{ database_instances }} nodes for {{ database_instances }}
+      instances
+    quiet: true
+
+- name: Declare the PostgreSQL image and its major version
+  kubernetes.core.k8s:
+    kubeconfig: "{{ database_kubeconfig }}"
+    state: present
+    template: image-catalog.yaml.j2
+
+- name: Create the PostgreSQL cluster
+  kubernetes.core.k8s:
+    kubeconfig: "{{ database_kubeconfig }}"
+    state: present
+    template: cluster.yaml.j2
+    wait: true
+    wait_condition:
+      type: Ready
+      status: "True"
+    wait_timeout: "{{ database_ready_timeout }}"
+
+- name: Apply the schema migrations
+  kubernetes.core.k8s:
+    kubeconfig: "{{ database_kubeconfig }}"
+    state: present
+    template: migrations-job.yaml.j2
+    wait: true
+    wait_condition:
+      type: Complete
+      status: "True"
+    wait_timeout: 300

@@ -1,0 +1,41 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ database_cluster_name }}
+  namespace: {{ database_namespace }}
+spec:
+  instances: {{ database_instances }}
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ImageCatalog
+    name: {{ database_cluster_name }}
+    major: {{ database_pg_major }}
+  imagePullSecrets:
+    - name: {{ database_pull_secret }}
+
+  storage:
+    size: {{ database_storage_gb }}Gi
+
+  resources:
+    {{ database_resources | to_nice_yaml(indent=2) | trim | indent(4) }}
+
+  affinity:
+    nodeSelector:
+      cloud: {{ database_cloud }}
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+
+  postgresql:
+    shared_preload_libraries:
+      - pg_cron
+    parameters:
+      cron.database_name: {{ database_name }}
+
+  bootstrap:
+    initdb:
+      database: {{ database_name }}
+      owner: {{ database_owner }}
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_cron
+        - GRANT USAGE ON SCHEMA cron TO {{ database_owner }}
+        - GRANT pg_read_all_settings TO {{ database_owner }}
