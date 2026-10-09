@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the role's input
+  ansible.builtin.assert:
+    that:
+      - headlamp_version | length > 0
+      - headlamp_hostname | length > 0
+      - headlamp_allowed_ranges | length > 0
+    fail_msg: >-
+      headlamp_version, headlamp_hostname and headlamp_allowed_ranges are
+      required - without allowed ranges anyone could reach it
+    quiet: true
+
+- name: Install Headlamp
+  kubernetes.core.helm:
+    kubeconfig: "{{ headlamp_kubeconfig }}"
+    name: headlamp
+    chart_ref: headlamp
+    chart_repo_url: "{{ headlamp_repo_url }}"
+    chart_version: "{{ headlamp_version }}"
+    release_namespace: "{{ headlamp_namespace }}"
+    create_namespace: true
+    values_files:
+      - "{{ role_path }}/files/values.yaml"
+    wait: true
+
+- name: Create the read-only account people sign in as
+  kubernetes.core.k8s:
+    kubeconfig: "{{ headlamp_kubeconfig }}"
+    state: present
+    template: viewer.yaml.j2
+
+# One template, the Middleware before the Ingress that names it.
+- name: Publish Headlamp to the tailnet only
+  kubernetes.core.k8s:
+    kubeconfig: "{{ headlamp_kubeconfig }}"
+    state: present
+    template: ingress.yaml.j2

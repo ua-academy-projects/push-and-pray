@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+headlamp_kubeconfig: "{{ oilscope_kubeconfig }}"
+headlamp_version: ""
+headlamp_namespace: headlamp
+headlamp_repo_url: https://kubernetes-sigs.github.io/headlamp/
+
+headlamp_hostname: ""
+# Who may open it: the tailnet. Traefik sees the real client address because
+# it answers on the node the request reached (the traefik role).
+headlamp_allowed_ranges: []
+
+# The account a person signs in as; its token is what Headlamp shows with.
+headlamp_viewer: headlamp-viewer

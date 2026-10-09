@@ -1,0 +1,14 @@
+# Only what differs from the chart's defaults.
+
+# By default the chart binds Headlamp's own service account to cluster-admin.
+# Headlamp acts with the token the person signs in with, so the pod itself
+# needs no rights in the cluster at all.
+clusterRoleBinding:
+  create: false
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

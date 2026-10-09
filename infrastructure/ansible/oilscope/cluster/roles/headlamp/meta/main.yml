@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+galaxy_info:
+  author: Zoia Holubkova
+  description: Run Headlamp, the Kubernetes web UI, for the tailnet only
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.16"
+  galaxy_tags:
+    - kubernetes
+
+dependencies: []

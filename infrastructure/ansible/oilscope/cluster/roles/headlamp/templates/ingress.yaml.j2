@@ -1,0 +1,38 @@
+# A name only the tailnet resolves is no protection on its own: Traefik picks
+# the route by the Host header, which anyone on the internet can send to the
+# public address. This answers 403 to everyone outside the allowed ranges.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: tailnet-only
+  namespace: {{ headlamp_namespace }}
+spec:
+  ipAllowList:
+    sourceRange:
+{% for range in headlamp_allowed_ranges %}
+      - {{ range }}
+{% endfor %}
+---
+# Plain HTTP: the name is internal, so Let's Encrypt cannot check it over
+# HTTP-01, and the traffic already travels inside the tailnet's WireGuard
+# tunnel up to the bastion.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: headlamp
+  namespace: {{ headlamp_namespace }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: {{ headlamp_namespace }}-tailnet-only@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: {{ headlamp_hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: headlamp
+                port:
+                  number: 80

@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Everything that runs inside the cluster, installed from the controller with
+# Helm and manifests. The kubeconfig comes from the k3s playbook.
+#
+#   ansible-playbook oilscope.cluster.deploy \
+#     -i infrastructure/ansible/inventory/oilscope.yml
+
+- name: Run Traefik on every node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: oilscope.cluster.traefik
+
+- name: Install cert-manager
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: oilscope.cluster.cert_manager
+      vars:
+        cert_manager_version: "{{ oilscope_config.cluster.charts.cert_manager.version }}"
+
+# Only k3s_server nodes may read the secret store; the plays below take the
+# values from their facts, in memory.
+- name: Read the cluster's secrets on the servers
+  hosts: k3s_server
+  gather_facts: false
+  roles:
+    - role: oilscope.cluster.resolve_secrets
+
+- name: Run the data services
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    deploy_secrets: >-
+      {{ hostvars[groups['k3s_server'] | sort | first].resolve_secrets_result }}
+  roles:
+    - role: oilscope.cluster.app_namespace
+      vars:
+        app_namespace_registry_username: "{{ oilscope_config.registry.username }}"
+        app_namespace_registry_token: "{{ deploy_secrets.GHCR_TOKEN }}"
+
+    - role: oilscope.cluster.cloudnative_pg
+      vars:
+        cloudnative_pg_version: "{{ oilscope_config.cluster.charts.cloudnative_pg.version }}"
+
+    - role: oilscope.cluster.database
+      vars:
+        database_image: >-
+          {{ oilscope_config.registry.repository }}/postgres:{{ oilscope_config.registry.image_sha }}
+        database_cloud: "{{ oilscope_config.database.cloud }}"
+        database_instances: "{{ oilscope_config.database.instances }}"
+        database_storage_gb: "{{ oilscope_config.database.storage_gb }}"
+
+    - role: oilscope.cluster.redis
+      vars:
+        redis_version: "{{ oilscope_config.cluster.charts.redis.version }}"
+        redis_password: "{{ deploy_secrets.REDIS_PASSWORD }}"
+        redis_cloud: "{{ oilscope_config.redis.cloud }}"
+        redis_storage_gb: "{{ oilscope_config.redis.storage_gb }}"
+
+- name: Run the application
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    deploy_secrets: >-
+      {{ hostvars[groups['k3s_server'] | sort | first].resolve_secrets_result }}
+  roles:
+    - role: oilscope.cluster.app
+      vars:
+        app_image_repository: "{{ oilscope_config.registry.repository }}"
+        app_image_tag: "{{ oilscope_config.registry.image_sha }}"
+        app_cloud: "{{ oilscope_config.app.cloud }}"
+        app_hostname: "{{ oilscope_config.cluster.ingress.hostname }}"
+        app_oilpriceapi_key: "{{ deploy_secrets.OILPRICEAPI_KEY }}"
+        app_redis_password: "{{ deploy_secrets.REDIS_PASSWORD }}"
+
+- name: Run Headlamp for the tailnet
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: oilscope.cluster.headlamp
+      vars:
+        headlamp_version: "{{ oilscope_config.cluster.charts.headlamp.version }}"
+        headlamp_hostname: "{{ oilscope_config.headlamp.hostname }}"
+        headlamp_allowed_ranges:
+          - "{{ oilscope_config.tailscale.address_range }}"
