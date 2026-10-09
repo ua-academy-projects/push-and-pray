@@ -36,6 +36,13 @@ module "aws_vm" {
   network = module.aws_network
 }
 
+module "aws_eks" {
+  source = "./modules/aws/eks"
+
+  config  = local.config
+  network = module.aws_network
+}
+
 # module "gcp_secrets" {
 #   source = "./modules/gcp/secrets"
 #
@@ -55,13 +62,15 @@ module "aws_registry" {
 
   config = local.config
   vm     = module.aws_vm
+  eks    = module.aws_eks
 }
 
 module "aws_database" {
   source = "./modules/aws/database"
 
-  config  = local.config
-  network = module.aws_network
+  config     = local.config
+  network    = module.aws_network
+  kubernetes = module.aws_eks
 }
 
 module "aws_budget" {

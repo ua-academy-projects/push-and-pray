@@ -8,11 +8,11 @@ locals {
   settings              = var.config.monitoring
   region                = var.config.region_map[var.config.region].aws.region
   nodes                 = var.vms
-  enabled               = local.settings.enabled && (length(local.nodes) > 0 || local.synthetics_enabled || local.database_enabled)
+  enabled               = local.settings.enabled && (length(local.nodes) > 0 || local.synthetics_enabled || local.database_enabled || var.config.managed_kubernetes)
   logs_enabled          = local.enabled && local.settings.logs_enabled
   alarms_enabled        = local.enabled && local.settings.alarms_enabled
   agent_enabled         = local.enabled && local.settings.agent_metrics_enabled
-  synthetics_enabled    = local.settings.enabled && local.settings.synthetics.enabled && (local.settings.synthetics.clouds == null ? length(local.nodes) > 0 : contains(local.settings.synthetics.clouds, "aws"))
+  synthetics_enabled    = local.settings.enabled && local.settings.synthetics.enabled && (local.settings.synthetics.clouds == null ? (length(local.nodes) > 0 || var.config.managed_kubernetes) : contains(local.settings.synthetics.clouds, "aws"))
   recipients            = local.enabled ? local.settings.email_recipients : toset([])
   notifications_enabled = local.enabled && length(local.recipients) > 0
   log_group_name        = "/${var.config.name_prefix}/${var.config.environment}/traefik"

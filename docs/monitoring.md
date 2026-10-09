@@ -16,6 +16,16 @@
 >   exist. Both are inert only because `application_metrics_enabled` defaults
 >   false. **Enabling it yields zero alarms and no error.**
 > - PVC capacity is not monitored at all.
+>
+> **And a further narrowing under `managed_kubernetes: true`.** The node-level
+> half of everything below is produced by the `monitoring_agent` role over SSH
+> and by alarms dimensioned on `InstanceId`. EKS nodes are reached by neither, so
+> on that platform `agent_metrics_enabled`, `service_logs_enabled`,
+> `application_metrics_enabled` and the Traefik access-log group yield **nothing,
+> with no error** — the same silent-inertness trap as `collect.py` above. What
+> does work there: the `Cluster` CronJob and its four alarms, the RDS metrics,
+> the HTTP metric filters' alarms where a log group exists, and the synthetics
+> canary. See [Kubernetes modes](kubernetes-modes.md#what-differs-in-practice).
 
 Terraform defines the cloud resources; Ansible installs the agents and a small
 Python collector on workload VMs. **Bastion is excluded** from dashboards,

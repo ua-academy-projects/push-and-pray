@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+eks_kubeconfig_local_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube"
+eks_kubeconfig_local_path: "{{ eks_kubeconfig_local_dir }}/{{ eks_kubeconfig_context }}.yaml"
+eks_kubeconfig_command: aws
+eks_kubeconfig_api_version: client.authentication.k8s.io/v1beta1

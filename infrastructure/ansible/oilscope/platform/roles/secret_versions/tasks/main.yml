@@ -12,9 +12,11 @@
 - name: Determine each VM's effective cloud
   ansible.builtin.set_fact:
     secret_versions_effective_clouds: >-
-      {{ secret_versions_config.vms.values()
-         | map(attribute='cloud', default=secret_versions_config.default_cloud)
-         | unique | list }}
+      {{ ((secret_versions_config.vms | default({})).values()
+          | map(attribute='cloud', default=secret_versions_config.default_cloud)
+          | unique | list)
+         if (secret_versions_config.vms | default({}) | length) > 0
+         else [secret_versions_config.default_cloud] }}
 
 - name: Refuse a mixed-cloud configuration
   ansible.builtin.fail:

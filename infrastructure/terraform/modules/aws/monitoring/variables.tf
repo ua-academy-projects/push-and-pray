@@ -1,11 +1,12 @@
 variable "config" {
   description = "Project naming, region, VM roles, and optional monitoring settings."
   type = object({
-    name_prefix = string
-    environment = string
-    region      = string
-    region_map  = map(object({ aws = object({ region = string }) }))
-    vms         = map(object({ role = string }))
+    name_prefix        = string
+    environment        = string
+    region             = string
+    region_map         = map(object({ aws = object({ region = string }) }))
+    vms                = optional(map(object({ role = string })), {})
+    managed_kubernetes = optional(bool, false)
     monitoring = optional(object({
       enabled                         = optional(bool, true)
       email_recipients                = optional(set(string), [])

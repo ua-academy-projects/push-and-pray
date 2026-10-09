@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+cloudflare_records_api: https://api.cloudflare.com/client/v4
+cloudflare_records_token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') }}"
+cloudflare_records_type: CNAME
+cloudflare_records_ttl: 60
+cloudflare_records_proxied: false
+cloudflare_records_comment: Managed by oilscope.platform.deploy_cluster
+cloudflare_records_names: []

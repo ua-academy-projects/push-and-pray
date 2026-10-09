@@ -16,12 +16,19 @@ output "aws_database_connection" {
 }
 
 output "cluster" {
-  description = "The k3s cluster as deployed: the three nodes, and the names that resolve to the entry node. Ansible reads this from an exported terraform-outputs.json, so a stale export silently feeds old addresses."
+  description = "The cluster as deployed, for whichever Kubernetes platform managed_kubernetes selected. On k3s: the three nodes and the names that resolve to the entry node. On EKS: the endpoint and cluster name AWS publishes, with no nodes and no entry node, because no single machine receives traffic. Ansible reads this from an exported terraform-outputs.json, so a stale export silently feeds old addresses."
   value = {
-    entry_node   = local.config.kubernetes.entry_node
-    api_endpoint = local.config.kubernetes.api_endpoint
+    platform     = module.aws_eks.enabled ? "eks" : "k3s"
     ingress_host = local.config.ingress.hostname
     namespace    = local.config.kubernetes.namespace
+    region       = local.config.region_map[local.config.region].aws.region
+
+    entry_node = module.aws_eks.enabled ? null : try(local.config.kubernetes.entry_node, null)
+    api_endpoint = (
+      module.aws_eks.enabled
+      ? module.aws_eks.endpoint
+      : try(local.config.kubernetes.api_endpoint, null)
+    )
 
     nodes = {
       for name, vm in module.aws_vm.vms : name => {
@@ -32,6 +39,16 @@ output "cluster" {
         roles       = local.config.vms[name].network_tags
       }
     }
+
+    eks = module.aws_eks.enabled ? {
+      cluster_name               = module.aws_eks.cluster_name
+      endpoint                   = module.aws_eks.endpoint
+      certificate_authority_data = module.aws_eks.certificate_authority_data
+      node_group_name            = module.aws_eks.node_group_name
+      vpc_id                     = module.aws_eks.vpc_id
+      cluster_security_group_id  = module.aws_eks.cluster_security_group_id
+      oidc_identity_provider     = module.aws_eks.oidc_identity_provider
+    } : null
   }
 }
 

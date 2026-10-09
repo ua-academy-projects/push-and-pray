@@ -1,5 +1,27 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Confirm this configuration selects the self-hosted cluster
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Refuse a configuration that selects managed Kubernetes
+      ansible.builtin.fail:
+        msg: >-
+          managed_kubernetes is true, so Terraform created an EKS cluster and no
+          node VMs. There is nothing here to install k3s on, and the AWS
+          inventory discovers no hosts, so every later play would be skipped and
+          this run would report success having done nothing. Run
+          oilscope.platform.bootstrap_eks instead.
+      when: k3s_project.managed_kubernetes | default(false) | bool
+
 - name: Prepare the k3s node hosts
   hosts: k3s_servers
   become: true

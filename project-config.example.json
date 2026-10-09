@@ -260,6 +260,7 @@
     "maxmemory_mb": 128
   },
   "managed_database": false,
+  "managed_kubernetes": false,
   "budgets": {
     "aws": {
       "enabled": false,

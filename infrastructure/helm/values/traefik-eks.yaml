@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+deployment:
+  kind: DaemonSet
+
+service:
+  enabled: true
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=true
+
+ingressClass:
+  enabled: true
+  isDefaultClass: false
+  name: oilscope
+
+ports:
+  traefik:
+    expose:
+      default: false
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    http:
+      tls:
+        enabled: true
+
+providers:
+  kubernetesCRD:
+    enabled: true
+  kubernetesIngress:
+    enabled: true
+    publishedService:
+      enabled: false
+  kubernetesGateway:
+    enabled: false
+
+log:
+  level: INFO
+
+accessLog:
+  enabled: true
+  format: json
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 96Mi
+  limits:
+    memory: 192Mi

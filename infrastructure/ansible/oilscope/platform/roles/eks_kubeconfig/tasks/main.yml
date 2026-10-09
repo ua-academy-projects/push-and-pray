@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Require the AWS CLI the credential plugin shells out to
+  ansible.builtin.command:
+    cmd: "{{ eks_kubeconfig_command }} --version"
+  register: eks_kubeconfig_cli
+  changed_when: false
+
+- name: Compose the kubeconfig
+  ansible.builtin.set_fact:
+    eks_kubeconfig_document:
+      apiVersion: v1
+      kind: Config
+      current-context: "{{ eks_kubeconfig_context }}"
+      clusters:
+        - name: "{{ eks_kubeconfig_context }}"
+          cluster:
+            server: "{{ eks_kubeconfig_endpoint }}"
+            certificate-authority-data: "{{ eks_kubeconfig_certificate_authority }}"
+      users:
+        - name: "{{ eks_kubeconfig_context }}"
+          user:
+            exec:
+              apiVersion: "{{ eks_kubeconfig_api_version }}"
+              command: "{{ eks_kubeconfig_command }}"
+              args:
+                - --region
+                - "{{ eks_kubeconfig_region }}"
+                - eks
+                - get-token
+                - --cluster-name
+                - "{{ eks_kubeconfig_cluster_name }}"
+                - --output
+                - json
+              interactiveMode: Never
+              provideClusterInfo: false
+      contexts:
+        - name: "{{ eks_kubeconfig_context }}"
+          context:
+            cluster: "{{ eks_kubeconfig_context }}"
+            user: "{{ eks_kubeconfig_context }}"
+
+- name: Prepare the local kubeconfig directory
+  ansible.builtin.file:
+    path: "{{ eks_kubeconfig_local_dir }}"
+    state: directory
+    mode: '0700'
+
+- name: Write the local kubeconfig
+  ansible.builtin.copy:
+    content: "{{ eks_kubeconfig_document | to_nice_yaml(indent=2) }}"
+    dest: "{{ eks_kubeconfig_local_path }}"
+    mode: '0600'
+
+- name: Confirm the credential plugin can reach the cluster
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ eks_kubeconfig_local_path }}"
+    api_version: v1
+    kind: Node
+  register: eks_kubeconfig_nodes
+  until: eks_kubeconfig_nodes.resources | default([]) | length > 0
+  retries: 30
+  delay: 10
+
+- name: Report where the kubeconfig was written and what it authenticates as
+  ansible.builtin.debug:
+    msg: >-
+      Wrote {{ eks_kubeconfig_local_path }} for
+      {{ eks_kubeconfig_cluster_name }}, {{ eks_kubeconfig_nodes.resources | length }}
+      node(s) ready. It holds no credential: every call runs
+      {{ eks_kubeconfig_command }} eks get-token with your own AWS identity, so
+      access follows the cluster's EKS access entries and is revoked by removing
+      one. Pass it explicitly to every kubectl and helm call with --kubeconfig;
+      it is never merged into the default context.

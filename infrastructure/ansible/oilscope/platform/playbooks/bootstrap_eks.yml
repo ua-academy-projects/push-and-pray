@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Prepare access to the managed Kubernetes cluster
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    terraform_root: >-
+      {{ (playbook_dir ~ '/../../../../terraform') | ansible.builtin.realpath }}
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: eks_project
+
+    - name: Refuse a configuration that selects the self-hosted cluster
+      ansible.builtin.fail:
+        msg: >-
+          managed_kubernetes is false or absent, so this configuration describes
+          the self-hosted k3s cluster. Run oilscope.platform.bootstrap_k3s
+          against the AWS inventory instead; this playbook would write a
+          kubeconfig for an EKS cluster Terraform never created.
+      when: not (eks_project.managed_kubernetes | default(false) | bool)
+
+    - name: Refuse a cloud without a managed Kubernetes implementation
+      ansible.builtin.fail:
+        msg: >-
+          managed_kubernetes is true but default_cloud is
+          {{ eks_project.default_cloud }}. Amazon EKS is the only managed
+          Kubernetes this project implements; GKE and AKS are separate work.
+          Set default_cloud to aws, or set managed_kubernetes to false.
+      when: eks_project.default_cloud != 'aws'
+
+    - name: Ask Terraform directly what it published
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_root }} output -json
+      register: eks_terraform_output
+      changed_when: false
+      when: terraform_outputs_path | default('') | length == 0
+
+    - name: Read what Terraform published
+      ansible.builtin.set_fact:
+        eks_outputs: >-
+          {{ (lookup('ansible.builtin.file', terraform_outputs_path) | from_json)
+             if terraform_outputs_path | default('') | length > 0
+             else (eks_terraform_output.stdout | from_json) }}
+
+    - name: Report where the cluster's coordinates came from
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Read from ' ~ terraform_outputs_path ~ ', which is only as current
+             as the last export.'
+             if terraform_outputs_path | default('') | length > 0
+             else 'Read live from ' ~ terraform_root ~ ', so it cannot be stale.' }}
+
+    - name: Require Terraform to have created the cluster
+      ansible.builtin.fail:
+        msg: >-
+          Terraform's cluster output reports platform
+          {{ eks_outputs.cluster.value.platform }}, with no eks section. Run
+          terraform apply for this configuration before bootstrapping access.
+      when: eks_outputs.cluster.value.eks is not mapping
+
+    - name: Write the operator kubeconfig
+      ansible.builtin.include_role:
+        name: oilscope.platform.eks_kubeconfig
+      vars:
+        eks_kubeconfig_context: >-
+          {{ eks_project.name_prefix }}-{{ eks_project.environment }}
+        eks_kubeconfig_cluster_name: "{{ eks_outputs.cluster.value.eks.cluster_name }}"
+        eks_kubeconfig_endpoint: "{{ eks_outputs.cluster.value.eks.endpoint }}"
+        eks_kubeconfig_certificate_authority: >-
+          {{ eks_outputs.cluster.value.eks.certificate_authority_data }}
+        eks_kubeconfig_region: "{{ eks_outputs.cluster.value.region }}"
+
+    - name: Resolve the kubeconfig just written
+      ansible.builtin.set_fact:
+        eks_kubeconfig: >-
+          {{ lookup('ansible.builtin.env', 'HOME') }}/.kube/{{
+          eks_project.name_prefix }}-{{ eks_project.environment }}.yaml
+
+    - name: Read the storage classes the cluster ships with
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ eks_kubeconfig }}"
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+      register: eks_storage_classes
+
+    - name: Stop the cluster's own gp2 class from being the default one
+      kubernetes.core.k8s:
+        kubeconfig: "{{ eks_kubeconfig }}"
+        state: patched
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: gp2
+        definition:
+          metadata:
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "false"
+      when: >-
+        eks_storage_classes.resources
+        | selectattr('metadata.name', 'equalto', 'gp2')
+        | list | length > 0
+
+    - name: Report what remains to be deployed
+      ansible.builtin.debug:
+        msg: >-
+          Access to {{ eks_outputs.cluster.value.eks.cluster_name }} is ready at
+          {{ eks_kubeconfig }}. The cluster is empty: run
+          oilscope.platform.deploy_cluster next, which installs the load balancer
+          controller, Traefik, cert-manager, the broker, the cache, the
+          application and the console, and publishes the DNS records once the
+          load balancer exists. Storage classes present now:
+          {{ eks_storage_classes.resources | map(attribute='metadata.name') | list }};
+          oilscope-gp3 is created by the deployment and is what every volume
+          names.

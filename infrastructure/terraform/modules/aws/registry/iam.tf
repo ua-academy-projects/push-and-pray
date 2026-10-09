@@ -1,8 +1,35 @@
 resource "aws_iam_role_policy" "node_pull" {
-  count = local.enabled && try(var.vm.node_role_name, null) != null ? 1 : 0
+  count = local.enabled && !local.managed_kubernetes && try(var.vm.node_role_name, null) != null ? 1 : 0
 
   name = "${var.config.name_prefix}-${var.config.environment}-node-registry-pull"
   role = var.vm.node_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+        ]
+        Resource = values(local.repository_arns)
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "refresh_pull" {
+  count = local.enabled && local.managed_kubernetes && try(var.eks.registry_refresh_role_name, null) != null ? 1 : 0
+
+  name = "${var.config.name_prefix}-${var.config.environment}-registry-refresh"
+  role = var.eks.registry_refresh_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"

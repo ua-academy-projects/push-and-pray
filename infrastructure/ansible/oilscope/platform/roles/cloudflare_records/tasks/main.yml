@@ -1,0 +1,122 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Require a token to change DNS with
+  ansible.builtin.fail:
+    msg: >-
+      cloudflare.enabled is true but CLOUDFLARE_API_TOKEN is unset. In managed
+      Kubernetes mode these records are published here rather than by Terraform,
+      because the load balancer they point at is created by Traefik's Service and
+      has no name until now. Export the same token Terraform's provider reads, or
+      set cloudflare.enabled to false and create the records by hand - see
+      docs/dns.md.
+  when: cloudflare_records_token | length == 0
+
+- name: Find the zone that owns these names
+  ansible.builtin.uri:
+    url: "{{ cloudflare_records_api }}/zones?name={{ cloudflare_records_zone }}"
+    headers:
+      Authorization: "Bearer {{ cloudflare_records_token }}"
+    return_content: true
+  register: cloudflare_records_zone_lookup
+  no_log: true
+
+- name: Require exactly one matching zone
+  ansible.builtin.fail:
+    msg: >-
+      the token resolved {{ cloudflare_records_zone_lookup.json.result | length }}
+      zones for {{ cloudflare_records_zone }}, not one. A token scoped to a
+      different account, or a zone name that is not the apex, both land here.
+  when: cloudflare_records_zone_lookup.json.result | length != 1
+
+- name: Read every record already published for each name
+  ansible.builtin.uri:
+    url: >-
+      {{ cloudflare_records_api }}/zones/{{
+      cloudflare_records_zone_lookup.json.result[0].id }}/dns_records?name={{ item }}
+    headers:
+      Authorization: "Bearer {{ cloudflare_records_token }}"
+    return_content: true
+  register: cloudflare_records_existing
+  loop: "{{ cloudflare_records_names }}"
+  no_log: true
+
+- name: Collect the names already answered by a record of another type
+  ansible.builtin.set_fact:
+    cloudflare_records_conflicting: >-
+      {{ cloudflare_records_existing.results
+         | map(attribute='json.result') | flatten
+         | rejectattr('type', 'equalto', cloudflare_records_type)
+         | map(attribute='name') | unique | list }}
+
+- name: Refuse to publish over a record of a different type
+  ansible.builtin.fail:
+    msg: >-
+      {{ cloudflare_records_conflicting | join(', ') }} already answer with a
+      record of another type - almost certainly the A records Terraform
+      published for the entry node when this deployment was self-hosted. DNS
+      cannot hold a CNAME and an A for the same name, so this run will not
+      overwrite them and will not delete them either: an A record pointing at a
+      live node is a working deployment, and removing it is a decision with an
+      outage in it. Delete them deliberately once the self-hosted cluster is
+      finished with, then run this playbook again. See
+      docs/kubernetes-modes.md.
+  when: cloudflare_records_conflicting | length > 0
+
+- name: Create the records that do not exist yet
+  ansible.builtin.uri:
+    url: >-
+      {{ cloudflare_records_api }}/zones/{{
+      cloudflare_records_zone_lookup.json.result[0].id }}/dns_records
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_records_token }}"
+    body_format: json
+    body:
+      name: "{{ item.item }}"
+      type: "{{ cloudflare_records_type }}"
+      content: "{{ cloudflare_records_target }}"
+      ttl: "{{ cloudflare_records_ttl | int }}"
+      proxied: "{{ cloudflare_records_proxied | bool }}"
+      comment: "{{ cloudflare_records_comment }}"
+    status_code: 200
+  loop: "{{ cloudflare_records_existing.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.json.result | length == 0
+  no_log: true
+
+- name: Point the records that already exist at the current load balancer
+  ansible.builtin.uri:
+    url: >-
+      {{ cloudflare_records_api }}/zones/{{
+      cloudflare_records_zone_lookup.json.result[0].id }}/dns_records/{{
+      item.json.result[0].id }}
+    method: PATCH
+    headers:
+      Authorization: "Bearer {{ cloudflare_records_token }}"
+    body_format: json
+    body:
+      name: "{{ item.item }}"
+      type: "{{ cloudflare_records_type }}"
+      content: "{{ cloudflare_records_target }}"
+      ttl: "{{ cloudflare_records_ttl | int }}"
+      proxied: "{{ cloudflare_records_proxied | bool }}"
+      comment: "{{ cloudflare_records_comment }}"
+    status_code: 200
+  loop: "{{ cloudflare_records_existing.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - item.json.result | length > 0
+    - item.json.result[0].content != cloudflare_records_target
+  no_log: true
+
+- name: Report which names now resolve to the load balancer
+  ansible.builtin.debug:
+    msg: >-
+      {{ cloudflare_records_names }} are {{ cloudflare_records_type }} records
+      for {{ cloudflare_records_target }} in zone {{ cloudflare_records_zone }},
+      TTL {{ cloudflare_records_ttl }}. Proxying stays off: it would terminate
+      TLS at Cloudflare's edge and the ACME HTTP-01 solver would never be
+      reached. Terraform does not own these records in managed Kubernetes mode
+      and will not revert or remove them.

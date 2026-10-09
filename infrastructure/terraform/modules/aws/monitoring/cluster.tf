@@ -3,7 +3,7 @@ locals {
 
   cluster_signals = {
     NodesNotReady = {
-      description = "A k3s node is not Ready. etcd keeps quorum while one is down, but losing the entry node takes the website and the API endpoint with it."
+      description = "A cluster node is not Ready. On k3s, etcd keeps quorum while one is down, but losing the entry node takes the website and the API endpoint with it. On EKS the node group replaces the node and the load balancer stops sending it traffic."
       periods     = 2
     }
     PodsNotReady = {

@@ -1897,3 +1897,130 @@ broke.
 **What I would do differently**
 
 -
+
+---
+
+## `managed_kubernetes` — Amazon EKS as a second hosting mode
+
+Status: `implemented, not applied` · 2026-10-06 · plan in
+[eks-implementation-steps.md](eks-implementation-steps.md) · reference in
+[kubernetes-modes.md](kubernetes-modes.md)
+
+A second Kubernetes hosting mode, shaped like `managed_database`: one top-level
+JSON boolean, defaulting to the existing behaviour when absent. No infrastructure
+was applied as part of this work.
+
+**Decisions worth recording, because the alternatives were real**
+
+- **The switch is not required in the schema**, unlike `managed_database`.
+  Requiring it would invalidate every configuration written before it existed,
+  for no gain: absent and `false` have to mean the same thing anyway.
+- **The two selectors stay independent at the configuration layer, and the
+  `managed_database: false` refusal stays at the deployment layer.** All four
+  combinations validate and plan. Encoding "EKS implies a managed database" as a
+  schema rule was rejected: it is not true of the platform, only of what has been
+  built, and writing it into the contract would have to be unwritten when step 27
+  is picked up.
+- **Ingress through the AWS Load Balancer Controller, not a Terraform-owned
+  NLB.** The Terraform-owned option would have left Traefik's values byte
+  identical and kept one owner for the security group; the controller is the
+  AWS-documented path and gives pod-IP targets. The cost paid for that choice is
+  the next item.
+- **DNS moves to Ansible in EKS mode.** The controller creates the load balancer
+  from Traefik's `Service`, so its name does not exist during `terraform apply`
+  and cannot go in a record then. Terraform's module creates nothing in that mode
+  and says `managed_by: "ansible"`. One record, two owners depending on the mode,
+  is worse documentation but better than two owners in one mode.
+- **A leftover record of the other type is refused, not deleted.** DNS holds a
+  `CNAME` or an `A` for a name, not both, so a mode switch hits this. Deleting an
+  `A` record that may still point at a live node is a decision with an outage in
+  it, so the run stops and names the hostnames instead.
+- **Pod Identity, not the node instance role.** On k3s the EBS CSI controller,
+  the metrics CronJob and the registry refresh all borrow the node role through
+  IMDS, which `k3s-deployment.md` already calls out as a tradeoff it cannot
+  close. On EKS each gets its own role bound to its namespace and service
+  account. The payoff beyond the security one: Pod Identity needs no service
+  account annotation, so **not one Helm chart changed**.
+- **The node group is single-AZ.** EKS demands two subnets; the second carries
+  nothing. Spreading the node group would let a pod be scheduled where its zonal
+  EBS volume cannot follow, which is the same reasoning that made the k3s layout
+  single-AZ.
+- **`deploy_k3s.yml` became a one-line alias for `deploy_cluster.yml`.** The
+  playbook was always `hosts: localhost` against a kubeconfig, so it was already
+  most of the way to platform-neutral. Renaming without an alias would have
+  broken every documented command for no benefit.
+- **Core addons are not pinned.** `vpc-cni`, `kube-proxy` and `coredns` are left
+  at whatever EKS installs with a new cluster; only `eks-pod-identity-agent` is
+  declared. This is the one place the work departs from the project's
+  pin-everything habit, and it is a scope limit, not a judgement.
+
+**Tension with house rule 4, again**
+
+Three new `ansible.builtin.fail` guards — `bootstrap_k3s` against an EKS
+configuration, `bootstrap_eks` against a self-hosted one, `configure_k3s_oidc`
+against EKS. Same argument as the step 27 refusal: without them `bootstrap_k3s`
+discovers no hosts, skips every play and reports success having done nothing,
+which is the failure mode the `deploy.sh` wrapper exists to prevent and cannot
+catch here.
+
+The validation coverage rule 4 forbids in Terraform and Ansible went into
+`infrastructure/tests/test_project_config_schema.py` instead: 42 cases driving
+the schema directly, including all four hosting combinations and the
+absent-switch case.
+
+**What is not covered**
+
+- Node CloudWatch agent metrics, the per-instance EC2 alarms and the Traefik
+  access-log group do not exist on EKS. They come from the `monitoring_agent`
+  role over SSH and from `InstanceId` dimensions, and EKS nodes offer neither.
+- No SSH and no SSM agent configuration, so there is no node break-glass path at
+  all on EKS. A broken node is replaced by the node group.
+- `ssh_users` and `network.ui_public_ports` stay required and are unread in EKS
+  mode.
+- Node CloudWatch agent metrics and the per-instance alarms: see above.
+
+**First apply, 2026-10-07: one real bug**
+
+Applied against `oilscope-prod`. The cluster, node group, RDS, secret containers
+and ECR repositories all came up as planned. Then `bootstrap_eks` failed with a
+Kubernetes `401 Unauthorized` on every retry.
+
+Cause: `aws_eks_cluster.access_config.bootstrap_cluster_creator_admin_permissions`
+**defaults to `false` in the Terraform provider**, not to the API's `true`. The
+module omitted the field and assumed the creating principal would be granted
+access. It was not: `list-access-entries` held only the EKS service-linked role
+and the node role, so no human identity could authenticate and the cluster was
+unreachable — exactly the trap `kubernetes-modes.md` had just finished
+documenting as a thing to avoid.
+
+Fix: set the flag explicitly to `false`, so the behaviour is stated rather than
+inherited, and always create an access entry plus an
+`AmazonEKSClusterAdminPolicy` association for the applying identity, derived from
+`aws_caller_identity`. An assumed-role ARN is rewritten to its role ARN, which is
+the form an access entry accepts; `admin_principal_arns` is merged into the same
+set, so naming your own identity there is harmless. Verified on the live cluster:
+`plan` adds the two access resources and replaces nothing.
+
+Two lessons worth keeping. A provider default that differs from the API default
+is not something a plan will warn about. And "the identity that ran apply keeps
+access" was written into three documents and one schema description before anyone
+checked it was true.
+
+**Second finding, same day: client IP preservation**
+
+Headlamp answered `Not Found` at its hostname while running correctly. Traefik's
+access log showed `ClientAddr` as `10.10.1.237` on every request — the NLB's own
+ENI address — because **NLB IP targets disable client IP preservation by
+default**. The Headlamp `IPAllowList` middleware rejects with status 404 by
+design, so a source allow-list that matched nothing produced a 404 that looks
+exactly like a missing route.
+
+Fixed by adding `preserve_client_ip.enabled=true` to the Service's
+`aws-load-balancer-target-group-attributes` in `values/traefik-eks.yaml`.
+
+The general lesson, which is the same one as the access-entry bug: moving from
+host ports to a load balancer changes what the ingress controller observes, and
+the observable symptom of that change was a 404 from an unrelated-looking
+component. Anything that acts on a client address — allow-lists, rate limits,
+access logs, future geo rules — has to be re-verified on EKS rather than assumed
+to carry over.

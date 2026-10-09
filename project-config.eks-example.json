@@ -1,0 +1,312 @@
+{
+  "default_cloud": "aws",
+  "managed_database": true,
+  "managed_kubernetes": true,
+  "database_profile": "economy",
+  "database_profile_map": {
+    "economy": {
+      "aws": {
+        "instance_class": "db.t4g.micro",
+        "engine_version": "18",
+        "allocated_storage_gb": 20,
+        "storage_type": "gp2",
+        "max_allocated_storage_gb": 0,
+        "multi_az": false,
+        "backup_retention_days": 1
+      },
+      "gcp": {
+        "tier": "db-f1-micro",
+        "edition": "ENTERPRISE",
+        "disk_size_gb": 10,
+        "disk_type": "PD_SSD",
+        "disk_autoresize": false,
+        "database_version": "POSTGRES_18",
+        "backup_retained_count": 1,
+        "availability_type": "ZONAL"
+      },
+      "azure": {
+        "sku_name": "B_Standard_B1ms",
+        "postgres_version": "18",
+        "storage_mb": 32768,
+        "storage_tier": "P4",
+        "backup_retention_days": 7,
+        "high_availability": "Disabled",
+        "standby_availability_zone": null
+      }
+    }
+  },
+  "region": "eu-central",
+  "environment": "dev",
+  "name_prefix": "oilscope",
+  "monitoring": {
+    "enabled": true,
+    "logs_enabled": true,
+    "alarms_enabled": false,
+    "dashboard_enabled": false,
+    "agent_metrics_enabled": false,
+    "application_metrics_enabled": false,
+    "service_logs_enabled": false,
+    "database_metrics_enabled": false,
+    "detailed_monitoring_enabled": false,
+    "email_recipients": [],
+    "log_retention_days": 7,
+    "cpu_threshold_percent": 80,
+    "memory_threshold_percent": 85,
+    "disk_threshold_percent": 85,
+    "http_error_threshold": 1,
+    "disk_fstype": "ext4",
+    "outbox_count_threshold": 100,
+    "outbox_age_seconds": 600,
+    "rabbitmq_queue_threshold": 1000,
+    "rabbitmq_unacked_threshold": 100,
+    "rabbitmq_dead_threshold": 1,
+    "redis_memory_threshold_percent": 85,
+    "freshness_seconds": 28800,
+    "database_connections_threshold": 80,
+    "database_free_storage_bytes": 1073741824,
+    "database_cpu_threshold_percent": 80,
+    "database_disk_threshold_percent": 85,
+    "synthetics": {
+      "enabled": false,
+      "hostname": "oilscope.example.com",
+      "path": "/health",
+      "period_minutes": 5,
+      "runtime_version": "syn-nodejs-puppeteer-17.0",
+      "clouds": null,
+      "browser_enabled": false
+    }
+  },
+  "size_map": {
+    "micro": {
+      "gcp": "e2-micro",
+      "aws": "t3.micro",
+      "azure": "Standard_B1ms"
+    },
+    "small": {
+      "gcp": "e2-small",
+      "aws": "t3.small",
+      "azure": "Standard_B2s"
+    },
+    "medium": {
+      "gcp": "e2-medium",
+      "aws": "t3.medium",
+      "azure": "Standard_B2ms"
+    },
+    "large": {
+      "gcp": "e2-standard-2",
+      "aws": "t3.large",
+      "azure": "Standard_B4ms"
+    }
+  },
+  "region_map": {
+    "eu-central": {
+      "gcp": {
+        "region": "europe-central2",
+        "zone": "europe-central2-a"
+      },
+      "aws": {
+        "region": "eu-central-1",
+        "availability_zone": "eu-central-1a"
+      },
+      "azure": {
+        "location": "germanywestcentral",
+        "availability_zone": "1"
+      }
+    }
+  },
+  "disk_type_map": {
+    "standard": {
+      "gcp": "pd-standard",
+      "aws": "gp3",
+      "azure": "Standard_LRS"
+    },
+    "balanced": {
+      "gcp": "pd-balanced",
+      "aws": "gp3",
+      "azure": "StandardSSD_LRS"
+    },
+    "ssd": {
+      "gcp": "pd-ssd",
+      "aws": "io2",
+      "azure": "Premium_LRS"
+    }
+  },
+  "image_map": {
+    "ubuntu-26.04": {
+      "gcp": "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64",
+      "aws": "/aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id",
+      "azure": {
+        "publisher": "Canonical",
+        "offer": "ubuntu-26_04-lts",
+        "sku": "server",
+        "version": "latest"
+      }
+    }
+  },
+  "clouds": {
+    "gcp": {
+      "project_id": "example-project-12345"
+    },
+    "aws": {
+      "vpc_cidr": "10.0.0.0/16",
+      "rds_network": {
+        "primary_subnet_cidr": "10.0.0.0/24",
+        "secondary_subnet_cidr": "10.0.2.0/24",
+        "secondary_availability_zone": "eu-central-1b"
+      },
+      "eks_network": {
+        "secondary_subnet_cidr": "10.0.4.0/24",
+        "secondary_availability_zone": "eu-central-1b"
+      }
+    },
+    "azure": {
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "resource_group_name": "oilscope-dev-rg",
+      "vnet_cidr": "10.0.0.0/16",
+      "admin_username": "example-operator",
+      "key_vault": {
+        "soft_delete_retention_days": 7,
+        "purge_protection_enabled": false
+      },
+      "postgres_network": {
+        "subnet_cidr": "10.0.3.0/28",
+        "private_dns_zone_name": "oilscope-dev.postgres.database.azure.com"
+      }
+    }
+  },
+  "network": {
+    "workload_subnet_cidr": "10.0.1.0/24",
+    "ui_public_ports": [
+      80,
+      443
+    ]
+  },
+  "ssh_users": {
+    "example-operator": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExamplePublicKeyOnly000000000000000 example-operator"
+  },
+  "registry": {
+    "repository_prefix": "oilscope",
+    "github_repository": "example-org/example-repo",
+    "publish_tag_prefix": "example-v",
+    "image_digests": {
+      "fetcher": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "history": "sha256:123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+      "ui": "sha256:23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01",
+      "database": "sha256:3456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012"
+    }
+  },
+  "service_ports": {
+    "history_api": 8001,
+    "postgresql": 5432
+  },
+  "secret_mappings": {
+    "history": {
+      "POSTGRES_PASSWORD": "oilscope-dev-history-db-password",
+      "RABBITMQ_PASSWORD": "oilscope-dev-rabbitmq-password"
+    },
+    "fetcher": {
+      "POSTGRES_PASSWORD": "oilscope-dev-fetcher-db-password",
+      "OILPRICEAPI_KEY": "example-api-key",
+      "RABBITMQ_PASSWORD": "oilscope-dev-rabbitmq-password"
+    },
+    "ui": {
+      "REDIS_PASSWORD": "oilscope-dev-redis-password"
+    },
+    "migration": {
+      "POSTGRES_PASSWORD": "oilscope-dev-migration-db-password"
+    }
+  },
+  "kubernetes": {
+    "eks": {
+      "version": "1.34",
+      "public_api_access": true,
+      "admin_principal_arns": [],
+      "node_group": {
+        "size": "small",
+        "disk_size_gb": 60,
+        "desired_size": 3,
+        "min_size": 2,
+        "max_size": 4,
+        "capacity_type": "ON_DEMAND",
+        "ami_type": "AL2023_x86_64_STANDARD"
+      }
+    },
+    "admin_allowed_cidrs": [
+      "192.0.2.10/32"
+    ],
+    "api_endpoint_mode": "load_balancer",
+    "service_cidr": "10.43.0.0/16",
+    "namespace": "oilscope"
+  },
+  "ingress": {
+    "endpoint_mode": "load_balancer",
+    "hostname": "oilscope.example.com",
+    "acme_email": "example-operator@example.com",
+    "challenge_type": "http01"
+  },
+  "rabbitmq": {
+    "image": "rabbitmq:4.2.9-management",
+    "port": 5671,
+    "username": "oilscope",
+    "vhost": "oilscope",
+    "exchange": "prices",
+    "queue": "price_observations",
+    "routing_key": "observations",
+    "retry_delay_ms": 30000,
+    "max_attempts": 5,
+    "timeout_seconds": 10,
+    "reconnect_seconds": 5,
+    "outbox_poll_seconds": 5,
+    "outbox_batch_size": 50,
+    "memory_mb": 768,
+    "queue_max_bytes": 134217728,
+    "certificate_days": 365
+  },
+  "redis": {
+    "image": "redis:8.6.6",
+    "database": 0,
+    "key_prefix": "oilscope:session:",
+    "session_ttl_seconds": 2592000,
+    "memory_mb": 256,
+    "maxmemory_mb": 128
+  },
+  "budgets": {
+    "aws": {
+      "enabled": false,
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [
+        50,
+        100
+      ],
+      "email_recipients": []
+    },
+    "gcp": {
+      "enabled": false,
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [
+        50,
+        100
+      ],
+      "email_recipients": [],
+      "billing_account_id": ""
+    },
+    "azure": {
+      "enabled": false,
+      "monthly_amount": 100,
+      "currency": "USD",
+      "actual_thresholds": [
+        50,
+        100
+      ],
+      "email_recipients": [],
+      "start_date": "2026-10-01T00:00:00Z"
+    }
+  },
+  "cloudflare": {
+    "enabled": false,
+    "zone_name": "example.com",
+    "ttl": 60
+  }
+}

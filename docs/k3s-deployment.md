@@ -3,6 +3,13 @@
 This document collects the rules the code does not state itself, because the
 project keeps no comments in Terraform or Ansible and no validations in either.
 
+**This document describes `managed_kubernetes: false`**, the self-hosted cluster,
+which is the default and what an omitted key means. For Amazon EKS, and for what
+switching between the two costs, see [Kubernetes modes](kubernetes-modes.md).
+Everything from "Helm from the operator's machine" onward applies to both modes
+except where that document's [differences table](kubernetes-modes.md#what-differs-in-practice)
+says otherwise.
+
 ## Before the first run
 
 Four things have to be in the environment. None live in the repository.
@@ -51,9 +58,14 @@ git tag pavlo-v1.0.0 && git push origin pavlo-v1.0.0
 terraform -chdir=infrastructure/terraform apply
 
 # 6. Platform and application
-ansible-playbook oilscope.platform.deploy_k3s \
+ansible-playbook oilscope.platform.deploy_cluster \
   -e project_config_path="$OILSCOPE_PROJECT_CONFIG"
 ```
+
+`oilscope.platform.deploy_k3s` is now a one-line alias for `deploy_cluster`,
+which deploys to whichever platform `managed_kubernetes` selected. Both names
+work; the playbook was always `hosts: localhost` against a kubeconfig, so it
+needed almost no change to serve both.
 
 Step 2 takes `secret_versions_config_file`, not `project_config_path` like the
 other playbooks. Its default is empty, so passing the wrong name fails with
@@ -77,7 +89,7 @@ done
 
 ### Where the deployment reads Terraform's outputs
 
-`deploy_k3s` runs `terraform output -json` against
+`deploy_cluster` runs `terraform output -json` against
 `infrastructure/terraform` itself, so the addresses, image references and the
 RDS administrator secret ARN are always the current ones.
 
@@ -435,7 +447,7 @@ once and forget.
 
 The arrangement is two halves:
 
-- **Seeded at deploy time.** `deploy_k3s.yml` runs `aws ecr get-login-password`
+- **Seeded at deploy time.** `deploy_cluster.yml` runs `aws ecr get-login-password`
   with the operator's identity and writes a `dockerconfigjson` Secret. This is
   what makes the first deployment work, before any schedule has fired.
 - **Kept fresh by a CronJob**, every 8 hours, in the application namespace. An

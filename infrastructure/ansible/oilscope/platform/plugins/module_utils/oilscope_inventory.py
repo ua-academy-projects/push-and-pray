@@ -127,8 +127,13 @@ def effective_cloud(vm, config):
 
 
 def vms_for_cloud(config, cloud_name):
-    """The subset of `vms` that resolve to the given cloud."""
-    vms = config.get("vms", {})
+    """The subset of `vms` that resolve to the given cloud.
+
+    `vms` is absent in managed Kubernetes mode, where the nodes belong to a
+    cloud-managed node group and no configuration entry names them, so an
+    absent key means "no VMs" rather than a malformed configuration.
+    """
+    vms = config.get("vms") or {}
     cloud_key = plain(cloud_name).lower()
 
     return {
@@ -154,7 +159,7 @@ def validate_inventory_hosts(inventory, config, cloud_name):
         host_vars = host.get_vars()
         vm_key = host_vars.get("oilscope_vm_key")
 
-        if not vm_key or vm_key not in config.get("vms", {}):
+        if not vm_key or vm_key not in (config.get("vms") or {}):
             raise AnsibleParserError(
                 f"discovered {cloud_name} host {host_name!r} does not map to any VM "
                 f"in the project configuration (derived key: {vm_key!r}); check that "
@@ -334,7 +339,15 @@ def apply_direct_connection_vars(inventory, config, cloud_name):
     OILSCOPE_SSH_KEY is required rather than defaulted. The shared fallback is
     a gcloud-managed key that no AWS instance ever carries, so defaulting to it
     turns a missing setting into a permission denied against three hosts.
+
+    A configuration with managed_kubernetes true has no node VMs to reach, so
+    discovery finds nothing and there is no connection to configure. Requiring
+    the key there would fail a correct configuration on a setting nothing in it
+    uses.
     """
+    if not inventory.hosts:
+        return
+
     user = ssh_user()
     key_file = os.environ.get("OILSCOPE_SSH_KEY")
 

@@ -13,11 +13,21 @@ deployment, the permission model, what each panel reads, and recovery.
 
 ## Scope
 
-- AWS k3s only. The GCP and Azure trees still carry the Compose-era design.
-- The console shares the existing entry node, Elastic IP, Traefik ingress and
-  `letsencrypt` issuer, and therefore inherits the entry-node limitation
-  described in [k3s deployment](k3s-deployment.md#one-entry-node-no-load-balancer):
-  if that node is lost, the console is unreachable until DNS is repointed.
+- AWS only, on either Kubernetes platform. The GCP and Azure trees still carry
+  the Compose-era design.
+- The console shares whatever the application is reached through: the Traefik
+  ingress, the `oilscope` ingress class and the `letsencrypt` issuer in both
+  modes. With `managed_kubernetes: false` that means the entry node and its
+  Elastic IP, so the console inherits the entry-node limitation described in
+  [k3s deployment](k3s-deployment.md#one-entry-node-no-load-balancer): if that
+  node is lost, the console is unreachable until DNS is repointed. With
+  `managed_kubernetes: true` it is reached through the same load balancer as the
+  application, so no single node's loss hides it — see
+  [Kubernetes modes](kubernetes-modes.md).
+- `oidc` mode configures the API server differently per platform: a drop-in
+  applied by `configure_k3s_oidc` on k3s, an `aws_eks_identity_provider_config`
+  applied by `terraform apply` on EKS. The console's own configuration is
+  identical either way.
 - The managed PostgreSQL database is not a cluster workload. The page says so
   and links to CloudWatch rather than inventing a pod-shaped health indicator
   for it.
@@ -397,7 +407,7 @@ In the default `token` mode there are two steps:
 terraform -chdir=infrastructure/terraform apply
 
 # 2. Platform, application and console
-ansible-playbook oilscope.platform.deploy_k3s \
+ansible-playbook oilscope.platform.deploy_cluster \
   -e project_config_path="$PWD/project-config.json"
 ```
 
@@ -619,8 +629,9 @@ the fetcher service explicitly. If `name_prefix` changed, the Role still names
 the old service.
 
 **The certificate never goes Ready.** The ACME HTTP-01 challenge needs public
-DNS pointing at the entry node and port 80 reachable. Check the Order and
-Challenge objects in the `headlamp` namespace.
+DNS and port 80 reachable — pointing at the entry node on k3s, at the load
+balancer on EKS, where `deploy_cluster` publishes that record itself and will
+have said so. Check the Order and Challenge objects in the `headlamp` namespace.
 
 ## Validation
 

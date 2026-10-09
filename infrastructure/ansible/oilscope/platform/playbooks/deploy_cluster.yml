@@ -1,0 +1,672 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy the platform and application releases
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    helm_root: "{{ (playbook_dir ~ '/../../../../helm') | ansible.builtin.realpath }}"
+    helm_versions_path: "{{ helm_root }}/versions.yml"
+    terraform_root: >-
+      {{ (playbook_dir ~ '/../../../../terraform') | ansible.builtin.realpath }}
+    headlamp_plugin_dir: >-
+      {{ (playbook_dir ~ '/../../../../headlamp/plugins/oilscope-overview')
+         | ansible.builtin.realpath }}
+    k3s_release_atomic: true
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Load the pinned chart and image versions
+      ansible.builtin.include_vars:
+        file: "{{ helm_versions_path }}"
+        name: helm_versions
+
+    - name: Decide which Kubernetes platform this run deploys to
+      ansible.builtin.set_fact:
+        k3s_managed_kubernetes: >-
+          {{ k3s_project.managed_kubernetes | default(false) | bool }}
+
+    - name: Refuse a cloud without a managed Kubernetes implementation
+      ansible.builtin.fail:
+        msg: >-
+          managed_kubernetes is true but default_cloud is
+          {{ k3s_project.default_cloud }}. Amazon EKS is the only managed
+          Kubernetes this project implements; GKE and AKS are separate work.
+          Set default_cloud to aws, or set managed_kubernetes to false.
+      when:
+        - k3s_managed_kubernetes | bool
+        - k3s_project.default_cloud != 'aws'
+
+    - name: Resolve the kubeconfig written by the bootstrap
+      ansible.builtin.set_fact:
+        k3s_kubeconfig: >-
+          {{ lookup('ansible.builtin.env', 'HOME') }}/.kube/{{
+          k3s_project.name_prefix }}-{{ k3s_project.environment }}.yaml
+
+    - name: Require the kubeconfig to exist
+      ansible.builtin.stat:
+        path: "{{ k3s_kubeconfig }}"
+      register: k3s_kubeconfig_state
+      failed_when: not k3s_kubeconfig_state.stat.exists
+
+    - name: Ask Terraform directly what it published
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_root }} output -json
+      register: k3s_terraform_output
+      changed_when: false
+      when: terraform_outputs_path | default('') | length == 0
+
+    - name: Read what Terraform published
+      ansible.builtin.set_fact:
+        k3s_outputs: >-
+          {{ (lookup('ansible.builtin.file', terraform_outputs_path) | from_json)
+             if terraform_outputs_path | default('') | length > 0
+             else (k3s_terraform_output.stdout | from_json) }}
+
+    - name: Report where the deployment's addresses and images came from
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Read from ' ~ terraform_outputs_path ~ ', which is only as current
+             as the last export.'
+             if terraform_outputs_path | default('') | length > 0
+             else 'Read live from ' ~ terraform_root ~ ', so it cannot be stale.' }}
+
+    - name: Read the cluster Terraform published
+      ansible.builtin.set_fact:
+        k3s_cluster: "{{ k3s_outputs.cluster.value }}"
+
+    - name: Refuse a cluster output from before the hosting switch existed
+      ansible.builtin.fail:
+        msg: >-
+          the cluster output names no platform, so it was produced before
+          managed_kubernetes existed. Re-run terraform apply, or re-export
+          terraform-outputs.json from a current state; this run cannot tell which
+          platform the addresses in it belong to.
+      when: k3s_cluster.platform is not defined
+
+    - name: Refuse a configuration and a cluster that disagree
+      ansible.builtin.fail:
+        msg: >-
+          the configuration selects
+          {{ 'eks' if k3s_managed_kubernetes | bool else 'k3s' }} but Terraform's
+          cluster output reports {{ k3s_cluster.platform }}. Run terraform apply
+          for this configuration first; deploying into the other platform's
+          cluster would install this release twice over.
+      when: >-
+        k3s_cluster.platform != ('eks' if k3s_managed_kubernetes | bool else 'k3s')
+
+    - name: Report the cluster this run will change
+      ansible.builtin.debug:
+        msg: >-
+          Using {{ k3s_kubeconfig }} against the {{ k3s_cluster.platform }}
+          cluster at {{ k3s_cluster.api_endpoint }}, namespace
+          {{ k3s_project.kubernetes.namespace }}.
+
+    - name: Give the load balancer controller the cluster it manages
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: aws-load-balancer-controller
+        chart_repo_url: "{{ helm_versions.upstream.load_balancer.repo }}"
+        chart_ref: "{{ helm_versions.upstream.load_balancer.chart }}"
+        chart_version: "{{ helm_versions.upstream.load_balancer.chart_version }}"
+        release_namespace: kube-system
+        release_values:
+          clusterName: "{{ k3s_cluster.eks.cluster_name }}"
+          region: "{{ k3s_cluster.region }}"
+          vpcId: "{{ k3s_cluster.eks.vpc_id }}"
+          serviceAccount:
+            create: true
+            name: aws-load-balancer-controller
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+      when: k3s_managed_kubernetes | bool
+
+    - name: Install the EBS CSI driver and the default storage class
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: aws-ebs-csi-driver
+        chart_repo_url: "{{ helm_versions.upstream.storage.repo }}"
+        chart_ref: "{{ helm_versions.upstream.storage.chart }}"
+        chart_version: "{{ helm_versions.upstream.storage.chart_version }}"
+        release_namespace: kube-system
+        values_files:
+          - "{{ helm_root }}/values/aws-ebs-csi-driver.yaml"
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Confirm exactly one default storage class
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+      register: k3s_storage_classes
+
+    - name: Report the storage classes the cluster offers
+      ansible.builtin.debug:
+        msg: >-
+          {{ k3s_storage_classes.resources
+             | map(attribute='metadata.name') | list }}, default:
+          {{ k3s_storage_classes.resources
+             | selectattr('metadata.annotations', 'defined')
+             | selectattr('metadata.annotations["storageclass.kubernetes.io/is-default-class"]',
+                          'defined')
+             | map(attribute='metadata.name') | list }}
+
+    - name: Install Traefik as the ingress controller
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: traefik
+        chart_repo_url: "{{ helm_versions.upstream.ingress.repo }}"
+        chart_ref: "{{ helm_versions.upstream.ingress.chart }}"
+        chart_version: "{{ helm_versions.upstream.ingress.chart_version }}"
+        release_namespace: kube-system
+        values_files:
+          - "{{ helm_root }}/values/traefik{{ '-eks' if k3s_managed_kubernetes | bool else '' }}.yaml"
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Confirm Traefik is running on every node
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: apps/v1
+        kind: DaemonSet
+        namespace: kube-system
+        name: traefik
+      register: k3s_traefik_daemonset
+
+    - name: Wait for the load balancer the controller creates for it
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        api_version: v1
+        kind: Service
+        namespace: kube-system
+        name: traefik
+      register: k3s_traefik_service
+      until: >-
+        k3s_traefik_service.resources | default([]) | length > 0
+        and (k3s_traefik_service.resources[0].status.loadBalancer.ingress
+             | default([]) | length) > 0
+      retries: 40
+      delay: 15
+      when: k3s_managed_kubernetes | bool
+
+    - name: Resolve the name the public hostnames must point at
+      ansible.builtin.set_fact:
+        k3s_ingress_target: >-
+          {{ k3s_traefik_service.resources[0].status.loadBalancer.ingress[0].hostname }}
+      when: k3s_managed_kubernetes | bool
+
+    - name: Report Traefik coverage and how traffic reaches it
+      ansible.builtin.debug:
+        msg: >-
+          Traefik ready on
+          {{ k3s_traefik_daemonset.resources[0].status.numberReady }} of
+          {{ k3s_traefik_daemonset.resources[0].status.desiredNumberScheduled }}
+          nodes;
+          {{ 'traffic arrives through ' ~ k3s_ingress_target
+             ~ ', which load balances across every ready pod'
+             if k3s_managed_kubernetes | bool
+             else 'DNS points only at ' ~ k3s_project.kubernetes.entry_node }}.
+
+    - name: Point the public hostnames at the load balancer
+      ansible.builtin.include_role:
+        name: oilscope.platform.cloudflare_records
+      vars:
+        cloudflare_records_zone: "{{ k3s_project.cloudflare.zone_name }}"
+        cloudflare_records_target: "{{ k3s_ingress_target }}"
+        cloudflare_records_ttl: "{{ k3s_project.cloudflare.ttl | default(60) }}"
+        cloudflare_records_proxied: "{{ k3s_project.cloudflare.proxied | default(false) }}"
+        cloudflare_records_names: >-
+          {{ [k3s_project.ingress.hostname]
+             + ([(k3s_project.headlamp | default({})).hostname]
+                if (k3s_project.headlamp | default({})).enabled | default(false) | bool
+                else []) }}
+      when:
+        - k3s_managed_kubernetes | bool
+        - k3s_project.cloudflare.enabled | default(false) | bool
+
+    - name: Say which hostnames still have to be published by hand
+      ansible.builtin.debug:
+        msg: >-
+          cloudflare.enabled is false, so nothing published DNS. Certificate
+          issuance and every request depend on
+          {{ [k3s_project.ingress.hostname]
+             + ([(k3s_project.headlamp | default({})).hostname]
+                if (k3s_project.headlamp | default({})).enabled | default(false) | bool
+                else []) }}
+          resolving as CNAME records to {{ k3s_ingress_target }}. Create them
+          now, before the rest of this run waits on a certificate that cannot be
+          issued - see docs/dns.md.
+      when:
+        - k3s_managed_kubernetes | bool
+        - not (k3s_project.cloudflare.enabled | default(false) | bool)
+
+    - name: Mirror the cloud-held secrets into the application namespace
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_secrets
+      vars:
+        k3s_secrets_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_secrets_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        k3s_secrets_prefix: "{{ k3s_project.name_prefix }}"
+        k3s_secrets_mappings: "{{ k3s_project.secret_mappings }}"
+        k3s_secrets_region: >-
+          {{ k3s_project.region_map[k3s_project.region].aws.region }}
+
+    - name: Refuse the self-hosted database branch, which is not implemented
+      ansible.builtin.fail:
+        msg: >-
+          managed_database is false, but no in-cluster PostgreSQL chart exists on
+          either Kubernetes platform. Terraform would skip the managed database
+          and this playbook would compose a DATABASE_URL pointing at a host that
+          never gets created. managed_kubernetes does not change this: the two
+          settings are independent, and the database one still has only the
+          managed branch built. Set managed_database to true, or implement the
+          branch first - see step 27 in docs/k3s-implementation-steps.md.
+      when: not (k3s_project.managed_database | bool)
+
+    - name: Resolve the registry host every image reference shares
+      ansible.builtin.set_fact:
+        k3s_registry_host: >-
+          {{ (k3s_outputs.registry.value.values() | list | first).url.split('/')[0] }}
+
+    - name: Ask the registry whether each image reference resolves
+      ansible.builtin.command:
+        argv:
+          - aws
+          - ecr
+          - describe-images
+          - --region
+          - "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+          - --repository-name
+          - "{{ item.value.url.split('/', 1)[1] }}"
+          - --image-ids
+          - "imageDigest={{ item.value.digest }}"
+      register: k3s_image_probe
+      loop: "{{ k3s_outputs.registry.value | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse image references the registry does not have
+      ansible.builtin.fail:
+        msg: >-
+          {{ k3s_missing_images | join(', ') }} name a digest that is not in the
+          registry, so every pod using them would sit in ImagePullBackOff. The
+          migration Job runs as a Helm pre-install hook, so this surfaces only as
+          'timed out waiting for the condition' fifteen minutes later, with the
+          release rolled back and the evidence deleted. Almost always this means
+          a new tag was published and registry.image_digests still holds the
+          previous build's digests - update them and run terraform apply, because
+          these references come from Terraform's registry output, which is read
+          from state rather than from the configuration file.
+      vars:
+        k3s_missing_images: >-
+          {{ k3s_image_probe.results | selectattr('rc', 'ne', 0)
+             | map(attribute='item.key') | list }}
+      when: k3s_missing_images | length > 0
+
+    - name: Read the managed database connection Terraform published
+      ansible.builtin.set_fact:
+        k3s_database: "{{ k3s_outputs.aws_database_connection.value }}"
+      when: k3s_project.managed_database | bool
+
+    - name: Fetch the managed database's CA bundle
+      ansible.builtin.uri:
+        url: "{{ k3s_database.ca_bundle_url }}"
+        return_content: true
+      register: k3s_database_ca
+      when: k3s_project.managed_database | bool
+
+    - name: Publish it where every database client can mount it
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ k3s_project.name_prefix }}-database-ca"
+            namespace: "{{ k3s_project.kubernetes.namespace }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ k3s_project.name_prefix }}"
+              app.kubernetes.io/component: database-ca
+          data:
+            ca.crt: "{{ k3s_database_ca.content }}"
+      when: k3s_project.managed_database | bool
+
+    - name: Read the database administrator credential with the operator's identity
+      ansible.builtin.set_fact:
+        k3s_database_admin: >-
+          {{ lookup('amazon.aws.secretsmanager_secret',
+                    k3s_database.admin_secret_arn,
+                    region=k3s_project.region_map[k3s_project.region].aws.region)
+             | from_json }}
+      when: k3s_project.managed_database | bool
+      no_log: true
+
+    - name: Give the migration Job its own privileged credential
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: Opaque
+          metadata:
+            name: "{{ k3s_project.name_prefix }}-migration"
+            namespace: "{{ k3s_project.kubernetes.namespace }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ k3s_project.name_prefix }}"
+              app.kubernetes.io/component: migration
+          stringData:
+            PGUSER: "{{ k3s_database_admin.username }}"
+            PGPASSWORD: "{{ k3s_database_admin.password }}"
+            runtime-history: "{{ k3s_secrets_resolved.history.POSTGRES_PASSWORD }}"
+            runtime-fetcher: "{{ k3s_secrets_resolved.fetcher.POSTGRES_PASSWORD }}"
+      when: k3s_project.managed_database | bool
+      no_log: true
+
+    - name: Mint a registry pull token with the operator's identity
+      ansible.builtin.command:
+        argv:
+          - aws
+          - ecr
+          - get-login-password
+          - --region
+          - "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+      delegate_to: localhost
+      register: k3s_registry_token
+      changed_when: false
+      no_log: true
+
+    - name: Seed the registry pull secret the CronJob then keeps fresh
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: kubernetes.io/dockerconfigjson
+          metadata:
+            name: "{{ k3s_project.name_prefix }}-registry"
+            namespace: "{{ k3s_project.kubernetes.namespace }}"
+            labels:
+              app.kubernetes.io/part-of: "{{ k3s_project.name_prefix }}"
+              app.kubernetes.io/component: registry-credentials
+          stringData:
+            .dockerconfigjson: >-
+              {{ {'auths': {k3s_registry_host:
+                   {'username': 'AWS',
+                    'password': k3s_registry_token.stdout,
+                    'auth': ('AWS:' ~ k3s_registry_token.stdout) | b64encode}}}
+                 | to_json }}
+      no_log: true
+
+    - name: Compose the connection URLs the services actually read
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_urls
+      vars:
+        k3s_urls_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_urls_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        k3s_urls_prefix: "{{ k3s_project.name_prefix }}"
+        k3s_urls_resolved: "{{ k3s_secrets_resolved }}"
+        k3s_urls_database: "{{ k3s_database | default({}) }}"
+        k3s_urls_rabbitmq: "{{ k3s_project.rabbitmq }}"
+        k3s_urls_redis: "{{ k3s_project.redis }}"
+
+    - name: Install cert-manager and create the issuers
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_certificates
+      vars:
+        k3s_certificates_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_certificates_chart_repo: "{{ helm_versions.upstream.certificates.repo }}"
+        k3s_certificates_chart_version: "{{ helm_versions.upstream.certificates.chart_version }}"
+        k3s_certificates_values_file: >-
+          {{ helm_root }}/values/cert-manager.yaml
+        k3s_certificates_acme_email: "{{ k3s_project.ingress.acme_email }}"
+        k3s_certificates_ingress_class: oilscope
+        k3s_certificates_days: "{{ k3s_project.rabbitmq.certificate_days }}"
+
+    - name: Install the broker
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: "{{ k3s_project.name_prefix }}-rabbitmq"
+        chart_ref: "{{ helm_root }}/charts/oilscope-rabbitmq"
+        release_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        release_values:
+          image: "{{ k3s_project.rabbitmq.image }}"
+          username: "{{ k3s_project.rabbitmq.username }}"
+          vhost: "{{ k3s_project.rabbitmq.vhost }}"
+          port: "{{ k3s_project.rabbitmq.port }}"
+          exchange: "{{ k3s_project.rabbitmq.exchange }}"
+          queue: "{{ k3s_project.rabbitmq.queue }}"
+          routingKey: "{{ k3s_project.rabbitmq.routing_key }}"
+          retryDelayMs: "{{ k3s_project.rabbitmq.retry_delay_ms }}"
+          queueMaxBytes: "{{ k3s_project.rabbitmq.queue_max_bytes }}"
+          memoryMb: "{{ k3s_project.rabbitmq.memory_mb }}"
+          certificateDays: "{{ k3s_project.rabbitmq.certificate_days }}"
+          passwordSecret: "{{ k3s_project.name_prefix }}-rabbitmq"
+        atomic: "{{ k3s_release_atomic | bool }}"
+        wait: true
+        wait_timeout: 10m
+
+    # The chart mounts its own rabbitmq.conf, which is the file the image's
+    # entrypoint would write default_user/default_pass into, so
+    # RABBITMQ_DEFAULT_USER and RABBITMQ_DEFAULT_PASS never take effect and the
+    # definitions file declares no users. The user is therefore created here,
+    # against a broker that is already running, rather than from a postStart
+    # hook: rabbitmqctl run during boot creates the Erlang cookie itself with
+    # the wrong permissions, after which the node refuses to start at all.
+    - name: Ensure the broker's application user exists
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        namespace: "{{ k3s_project.kubernetes.namespace }}"
+        pod: "{{ k3s_project.name_prefix }}-rabbitmq-0"
+        command: >-
+          rabbitmqctl add_user {{ k3s_project.rabbitmq.username }}
+          {{ k3s_secrets_resolved.rabbitmq.RABBITMQ_PASSWORD }}
+      register: k3s_broker_add_user
+      failed_when: false
+      changed_when: k3s_broker_add_user.return_code == 0
+      no_log: true
+
+    - name: Set the broker user's password to the current secret
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        namespace: "{{ k3s_project.kubernetes.namespace }}"
+        pod: "{{ k3s_project.name_prefix }}-rabbitmq-0"
+        command: >-
+          rabbitmqctl change_password {{ k3s_project.rabbitmq.username }}
+          {{ k3s_secrets_resolved.rabbitmq.RABBITMQ_PASSWORD }}
+      changed_when: true
+      no_log: true
+
+    - name: Grant it access to the application vhost
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        namespace: "{{ k3s_project.kubernetes.namespace }}"
+        pod: "{{ k3s_project.name_prefix }}-rabbitmq-0"
+        command: >-
+          rabbitmqctl set_permissions --vhost {{ k3s_project.rabbitmq.vhost }}
+          {{ k3s_project.rabbitmq.username }} .* .* .*
+      changed_when: true
+
+    - name: Report which users the broker now has
+      kubernetes.core.k8s_exec:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        namespace: "{{ k3s_project.kubernetes.namespace }}"
+        pod: "{{ k3s_project.name_prefix }}-rabbitmq-0"
+        command: rabbitmqctl -q list_users
+      register: k3s_broker_users
+      changed_when: false
+
+    - name: Fail if the application user is still missing
+      ansible.builtin.fail:
+        msg: >-
+          The broker has no {{ k3s_project.rabbitmq.username }} user, so History
+          and Fetcher will loop on "PLAIN login refused". Users present:
+          {{ k3s_broker_users.stdout }}
+      when: k3s_project.rabbitmq.username not in k3s_broker_users.stdout
+
+    - name: Install the session store
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: "{{ k3s_project.name_prefix }}-redis"
+        chart_ref: "{{ helm_root }}/charts/oilscope-redis"
+        release_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        release_values:
+          image: "{{ k3s_project.redis.image }}"
+          port: 6379
+          memoryMb: "{{ k3s_project.redis.memory_mb }}"
+          maxmemoryMb: "{{ k3s_project.redis.maxmemory_mb }}"
+          passwordSecret: "{{ k3s_project.name_prefix }}-redis"
+          credentialsRevision: >-
+            {{ k3s_secrets_resolved.redis.REDIS_PASSWORD | hash('sha256') }}
+        atomic: true
+        wait: true
+        wait_timeout: 10m
+
+    - name: Deploy the application
+      kubernetes.core.helm:
+        kubeconfig: "{{ k3s_kubeconfig }}"
+        name: "{{ k3s_project.name_prefix }}"
+        chart_ref: "{{ helm_root }}/charts/oilscope"
+        release_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        release_values:
+          credentialsRevision: >-
+            {{ k3s_secrets_resolved | to_json | hash('sha256') }}
+          images:
+            ui: "{{ k3s_outputs.registry.value.ui.image }}"
+            history: "{{ k3s_outputs.registry.value.history.image }}"
+            fetcher: "{{ k3s_outputs.registry.value.fetcher.image }}"
+            database: "{{ k3s_outputs.registry.value.database.image }}"
+          database:
+            host: "{{ k3s_database.host }}"
+            port: "{{ k3s_database.port }}"
+            name: "{{ k3s_database.database }}"
+            sslmode: "{{ k3s_database.sslmode }}"
+            caConfigMap: "{{ k3s_project.name_prefix }}-database-ca"
+          ingress:
+            host: "{{ k3s_project.ingress.hostname }}"
+          broker:
+            service: "{{ k3s_project.name_prefix }}-rabbitmq"
+            tlsSecret: "{{ k3s_project.name_prefix }}-rabbitmq-tls"
+            exchange: "{{ k3s_project.rabbitmq.exchange }}"
+            queue: "{{ k3s_project.rabbitmq.queue }}"
+            routingKey: "{{ k3s_project.rabbitmq.routing_key }}"
+            timeoutSeconds: "{{ k3s_project.rabbitmq.timeout_seconds }}"
+            reconnectSeconds: "{{ k3s_project.rabbitmq.reconnect_seconds }}"
+            maxAttempts: "{{ k3s_project.rabbitmq.max_attempts }}"
+            outboxPollSeconds: "{{ k3s_project.rabbitmq.outbox_poll_seconds }}"
+            outboxBatchSize: "{{ k3s_project.rabbitmq.outbox_batch_size }}"
+          cache:
+            tlsSecret: "{{ k3s_project.name_prefix }}-redis-tls"
+            keyPrefix: "{{ k3s_project.redis.key_prefix }}"
+            sessionTtlSeconds: "{{ k3s_project.redis.session_ttl_seconds }}"
+          migration:
+            secret: "{{ k3s_project.name_prefix }}-migration"
+          registryCredentials:
+            secret: "{{ k3s_project.name_prefix }}-registry"
+            registry: "{{ k3s_registry_host }}"
+            region: "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+          clusterMetrics:
+            region: "{{ k3s_project.region_map[k3s_project.region].aws.region }}"
+            metricNamespace: >-
+              {{ k3s_project.name_prefix }}-{{ k3s_project.environment }}/Cluster
+        atomic: "{{ k3s_release_atomic | bool }}"
+        wait: true
+        wait_timeout: 15m
+
+    - name: Decide whether the operator console is part of this deployment
+      ansible.builtin.set_fact:
+        k3s_headlamp_settings: "{{ k3s_project.headlamp | default({}) }}"
+
+    - name: Read the console's OIDC client secret with the operator's identity
+      ansible.builtin.set_fact:
+        k3s_headlamp_client_secret: >-
+          {{ lookup('amazon.aws.secretsmanager_secret',
+                    k3s_headlamp_settings.oidc.client_secret_secret_id,
+                    region=k3s_project.region_map[k3s_project.region].aws.region) }}
+      when:
+        - k3s_headlamp_settings.enabled | default(false) | bool
+        - (k3s_headlamp_settings.auth_mode | default('token')) == 'oidc'
+      no_log: true
+
+    - name: Deploy the operator console and its OilScope Overview landing page
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_headlamp
+      vars:
+        k3s_headlamp_kubeconfig: "{{ k3s_kubeconfig }}"
+        k3s_headlamp_plugin_dir: "{{ headlamp_plugin_dir }}"
+        k3s_headlamp_values_file: "{{ helm_root }}/values/headlamp.yaml"
+        k3s_headlamp_chart_version: >-
+          {{ k3s_headlamp_settings.chart_version
+             | default(helm_versions.upstream.console.chart_version) }}
+        k3s_headlamp_namespace: "{{ k3s_headlamp_settings.namespace | default('headlamp') }}"
+        k3s_headlamp_hostname: "{{ k3s_headlamp_settings.hostname }}"
+        k3s_headlamp_replicas: "{{ k3s_headlamp_settings.replicas | default(1) }}"
+        k3s_headlamp_cpu_request_millicores: >-
+          {{ k3s_headlamp_settings.cpu_request_millicores | default(50) }}
+        k3s_headlamp_memory_request_mb: >-
+          {{ k3s_headlamp_settings.memory_request_mb | default(128) }}
+        k3s_headlamp_memory_limit_mb: >-
+          {{ k3s_headlamp_settings.memory_limit_mb | default(256) }}
+        k3s_headlamp_session_ttl_seconds: >-
+          {{ k3s_headlamp_settings.session_ttl_seconds | default(28800) }}
+        k3s_headlamp_ingress_class: oilscope
+        k3s_headlamp_cluster_issuer: letsencrypt
+        k3s_headlamp_allowed_cidrs: >-
+          {{ k3s_headlamp_settings.allowed_cidrs
+             | default(k3s_project.kubernetes.admin_allowed_cidrs) }}
+        k3s_headlamp_application_namespace: "{{ k3s_project.kubernetes.namespace }}"
+        k3s_headlamp_environment: "{{ k3s_project.environment }}"
+        k3s_headlamp_cluster_name: >-
+          {{ k3s_project.name_prefix }}-{{ k3s_project.environment }}
+        k3s_headlamp_application_url: >-
+          {{ (k3s_headlamp_settings.overview | default({})).application_url
+             | default('https://' ~ k3s_project.ingress.hostname) }}
+        k3s_headlamp_stale_after_seconds: >-
+          {{ (k3s_headlamp_settings.overview | default({})).stale_after_seconds
+             | default(120) }}
+        k3s_headlamp_overview_links: >-
+          {{ (k3s_headlamp_settings.overview | default({})).links | default([]) }}
+        k3s_headlamp_overview_components: >-
+          {{ (k3s_headlamp_settings.overview | default({})).components | default([]) }}
+        k3s_headlamp_name_prefix: "{{ k3s_project.name_prefix }}"
+        k3s_headlamp_fetcher_service: "{{ k3s_project.name_prefix }}-fetcher"
+        k3s_headlamp_fetcher_port: http
+        k3s_headlamp_migration_job_prefix: "{{ k3s_project.name_prefix }}-migration"
+        k3s_headlamp_registry_refresh_cronjob: >-
+          {{ k3s_project.name_prefix }}-registry-refresh
+        k3s_headlamp_auth_mode: "{{ k3s_headlamp_settings.auth_mode | default('token') }}"
+        k3s_headlamp_oidc_issuer_url: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).issuer_url | default('') }}
+        k3s_headlamp_oidc_client_id: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).client_id | default('') }}
+        k3s_headlamp_oidc_client_secret: "{{ k3s_headlamp_client_secret | default('') }}"
+        k3s_headlamp_oidc_scopes: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).scopes
+             | default('openid,email,profile') }}
+        k3s_headlamp_oidc_revision: >-
+          {{ (k3s_headlamp_client_secret | default('none')) | hash('sha256') }}
+        k3s_headlamp_allowed_groups: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).allowed_groups | default([]) }}
+        k3s_headlamp_allowed_users: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).allowed_users | default([]) }}
+        k3s_headlamp_groups_prefix: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).groups_prefix | default('oidc:') }}
+        k3s_headlamp_username_prefix: >-
+          {{ (k3s_headlamp_settings.oidc | default({})).username_prefix | default('oidc:') }}
+      when: k3s_headlamp_settings.enabled | default(false) | bool

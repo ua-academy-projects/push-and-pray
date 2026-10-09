@@ -1,6 +1,8 @@
 locals {
   headlamp_published = var.config.headlamp.enabled && var.config.headlamp.hostname != ""
 
+  self_hosted = !var.config.managed_kubernetes
+
   records = merge(
     {
       ingress = var.config.ingress.hostname
@@ -11,12 +13,12 @@ locals {
 }
 
 data "cloudflare_zone" "selected" {
-  count  = var.config.cloudflare.enabled ? 1 : 0
+  count  = var.config.cloudflare.enabled && local.self_hosted ? 1 : 0
   filter = { name = var.config.cloudflare.zone_name }
 }
 
 resource "cloudflare_dns_record" "entry" {
-  for_each = var.config.cloudflare.enabled ? local.records : {}
+  for_each = var.config.cloudflare.enabled && local.self_hosted ? local.records : {}
 
   zone_id = data.cloudflare_zone.selected[0].zone_id
   name    = each.value

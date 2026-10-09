@@ -19,7 +19,9 @@ resource "aws_security_group" "rds" {
     protocol    = "tcp"
 
     security_groups = [
-      var.network.security_group_ids.kubernetes,
+      try(var.config.managed_kubernetes, false)
+      ? var.kubernetes.cluster_security_group_id
+      : var.network.security_group_ids.kubernetes,
     ]
   }
 }

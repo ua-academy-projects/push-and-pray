@@ -39,6 +39,7 @@ infrastructure/headlamp/plugins/*/.eslintcache
 *.key
 !project-config.example.json
 !project-config.cloud-example.json
+!project-config.eks-example.json
 project-config.new.json
 
 # Cluster credentials. A kubeconfig carries a cluster-admin client certificate;

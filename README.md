@@ -25,12 +25,17 @@ have already been persisted in PostgreSQL.
 
 ## Deployment paths
 
-There are two, and which one applies depends on the cloud:
+Which one applies depends on the cloud, and on AWS on `managed_kubernetes`:
 
 | Cloud | Runtime | Start here |
 | ----- | ------- | ---------- |
-| AWS | k3s with embedded etcd, three dual-role nodes, Traefik ingress | [docs/k3s-deployment.md](docs/k3s-deployment.md) |
+| AWS, `managed_kubernetes: false` | k3s with embedded etcd, three dual-role nodes, Traefik ingress | [docs/k3s-deployment.md](docs/k3s-deployment.md) |
+| AWS, `managed_kubernetes: true` | Amazon EKS, one managed node group, the same Traefik ingress behind a load balancer | [docs/kubernetes-modes.md](docs/kubernetes-modes.md) |
 | GCP, Azure | one Docker Compose project per VM | [docs/supported-compose-deployment.md](docs/supported-compose-deployment.md) |
+
+The two AWS rows share the images, the Helm charts, the secrets, the migration
+Job and the operator console; they differ in who runs the control plane and how
+traffic reaches it.
 
 Anything below that describes per-VM Compose projects, per-VM service roles or a
 bastion host is the second path. The AWS path has none of those: every node runs
@@ -376,12 +381,45 @@ Set the required JSON boolean `managed_database` to `true` for provider-managed
 PostgreSQL or `false` for PostgreSQL in Docker on a database-role VM. Use JSON
 booleans, not strings such as `"yes"` or `"no"`. Managed mode requires a
 `database_profile` and forbids database-role VMs; self-hosted mode requires a
-database-role VM. On AWS the choice is gone: the k3s layout has no
-database-role VM, so `managed_database` must be `true` and the deploy playbook
-stops with an explanatory message rather than a partial deployment if it is
-not. See [database modes](docs/database-modes.md) before changing
-the value on an existing deployment. The container's internal migration profile
-names (`application` and `cloud`) remain unchanged.
+database-role VM.
+
+On the Kubernetes layout — either platform — `managed_database` must be `true`.
+Not because the layout has no database-role VM, but because **no in-cluster
+PostgreSQL chart has been written**: the self-hosted branch was judged strictly
+worse than RDS on durability and availability and deliberately left unbuilt, and
+the deploy playbook stops with an explanatory message rather than producing a
+partial deployment. The specification is kept in
+[step 27](docs/k3s-implementation-steps.md#step-27--managed_database-false) for
+whenever it is picked up. `managed_kubernetes` does not change this either way.
+
+See [database modes](docs/database-modes.md) before changing the value on an
+existing deployment. The container's internal migration profile names
+(`application` and `cloud`) remain unchanged.
+
+### Selecting Kubernetes hosting
+
+Set the optional JSON boolean `managed_kubernetes` to `true` for Amazon EKS or
+`false` for the self-hosted three-node k3s cluster. **An omitted key means
+`false`**, so a configuration written before this key existed keeps working
+unchanged; both committed examples set it explicitly anyway.
+
+`true` is AWS-only and is rejected — never silently downgraded — with any other
+`default_cloud`. It replaces `vms`, `kubernetes.version`, `entry_node`,
+`ssh_address_mode`, `api_endpoint`, `pod_cidr` and `etcd` with a
+`kubernetes.eks` block and `clouds.aws.eks_network`, needs no `OILSCOPE_SSH_KEY`,
+and gives the operator a kubeconfig that holds no credential. It also costs an
+EKS control-plane charge and a Network Load Balancer the self-hosted mode does
+not have.
+
+The switch is independent of `managed_database`: all four combinations are valid
+configurations, and the same images, charts, secrets, migration Job, ingress
+class and operator console run on both platforms.
+
+**Changing it on an existing deployment builds a second, empty cluster and
+abandons the first. Nothing is migrated** — not persistent volumes, not broker
+messages, not sessions — and switching back restores nothing. Read
+[Kubernetes modes](docs/kubernetes-modes.md) first; it lists what survives, what
+does not, and the deployment sequence for each mode.
 
 ### Selecting a cloud
 
@@ -390,12 +428,14 @@ project JSON carries a branch for all three. The VM definitions stay neutral:
 adding Azure needs no change to `vms`, `network`, `rabbitmq`, `redis`,
 `registry`, `service_ports` or `ssh_users`.
 
-The configuration schema itself has moved ahead of this: it now accepts only the
-k3s layout — three `kubernetes`-role VMs, a `kubernetes` block, an `ingress`
-block — so a configuration that validates today is an AWS configuration. GCP and
-Azure keep working from a configuration written before that change; they just
-cannot be described by the current schema. Converting them is the remaining
-work, and it is the reason the Compose documents are still in the repository.
+The configuration schema itself has moved ahead of this: it now accepts only a
+Kubernetes layout — either three `kubernetes`-role VMs for the self-hosted
+cluster, or a `kubernetes.eks` block for EKS, plus a `kubernetes` block and an
+`ingress` block — so a configuration that validates today is an AWS
+configuration. GCP and Azure keep working from a configuration written before
+that change; they just cannot be described by the current schema. Converting
+them is the remaining work, and it is the reason the Compose documents are still
+in the repository.
 
 Four things are worth knowing before the first run.
 
@@ -559,6 +599,10 @@ uv run ruff check .
 (cd services/fetcher && go test ./...)
 (cd services/ui/frontend && npm run typecheck && npm run build)
 ```
+
+Nothing validates a project configuration automatically: the real file lives
+outside the repository and is never committed. Check it by hand with
+`check-jsonschema` against `infrastructure/terraform/project-config.schema.json`.
 
 ## Security notes
 

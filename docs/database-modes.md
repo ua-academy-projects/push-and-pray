@@ -15,6 +15,15 @@ touches their data — see ["Database-mode switch, or the first cutover from
 PGMQ/SQL sessions"](#database-mode-switch-or-the-first-cutover-from-pgmqsql-sessions)
 below for what does.
 
+It also does not select the Kubernetes platform. `managed_kubernetes` is a
+separate switch and the two never read each other: all four combinations are
+valid configurations, and the managed database's resources are keyed on
+`managed_database` alone, so they survive a Kubernetes-platform change untouched.
+See [Kubernetes modes](kubernetes-modes.md). One thing to carry across from
+there: on **either** Kubernetes platform `managed_database` must be `true`,
+because no in-cluster PostgreSQL chart exists — not because of anything the
+platform does.
+
 ## AWS RDS Free Tier
 
 Cloud mode on AWS provisions a Free Tier-eligible RDS for PostgreSQL

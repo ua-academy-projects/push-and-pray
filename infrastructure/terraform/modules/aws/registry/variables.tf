@@ -4,6 +4,11 @@ variable "config" {
 }
 
 variable "vm" {
-  description = "The aws_vm module. Only the shared node role is read, to grant it pull-only access."
+  description = "The aws_vm module. Only the shared k3s node role is read, to grant it pull-only access."
+  type        = any
+}
+
+variable "eks" {
+  description = "The aws_eks module. Only the registry credential refresh role is read, to grant it the same pull-only access the k3s node role gets."
   type        = any
 }

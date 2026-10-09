@@ -1,5 +1,14 @@
 # DNS
 
+**This document describes `managed_kubernetes: false`.** With
+`managed_kubernetes: true` the records are `CNAME`s to a load balancer and they
+are published by `deploy_cluster`, not by Terraform, because the load balancer's
+name does not exist while `terraform apply` is running. The reasons, the
+conflict a leftover `A` record causes, and the rest of the differences are in
+[Kubernetes modes](kubernetes-modes.md#why-ansible-publishes-dns-on-eks-and-terraform-does-on-k3s).
+Everything below about the zone, the token, proxying and verification applies to
+both modes.
+
 Terraform publishes two Cloudflare records, both DNS-only `A` records pointing at
 the same address: the Elastic IP of the node named by `kubernetes.entry_node`.
 One is the application hostname, the other the Kubernetes API hostname. Applying
@@ -57,8 +66,11 @@ one.
 | TTL | `cloudflare.ttl`, 60 seconds by default |
 | Proxied | always `false` — see below |
 
-`terraform output -json dns` reports both records' identity, hostname, address,
-TTL and the entry node they point at, without exposing the token.
+`terraform output -json dns` reports who publishes the records, the zone, the
+hostnames involved, and — for the records Terraform created — their identity,
+address, type and TTL, without exposing the token. `managed_by` is `terraform`
+here and `ansible` in managed Kubernetes mode, where `entries` is empty because
+Terraform created nothing.
 
 ### Why one address, and what it costs
 

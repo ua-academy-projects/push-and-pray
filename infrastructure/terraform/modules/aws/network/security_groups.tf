@@ -1,5 +1,5 @@
 resource "aws_security_group" "kubernetes" {
-  count = local.enabled ? 1 : 0
+  count = local.k3s_enabled ? 1 : 0
 
   name        = "${var.config.name_prefix}-${var.config.environment}-kubernetes-sg"
   description = "Access to k3s nodes"

@@ -28,6 +28,13 @@ resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.workload[0].id
 }
 
+resource "aws_route_table_association" "eks_secondary" {
+  count = local.eks_enabled ? 1 : 0
+
+  route_table_id = aws_route_table.public[0].id
+  subnet_id      = aws_subnet.eks_secondary[0].id
+}
+
 
 resource "aws_route_table_association" "rds_primary" {
   count = local.rds_enabled ? 1 : 0

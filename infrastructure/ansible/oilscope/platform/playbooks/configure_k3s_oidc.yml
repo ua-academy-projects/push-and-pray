@@ -1,5 +1,27 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Confirm the API servers are ones this project operates
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Load the cluster configuration
+      ansible.builtin.include_vars:
+        file: "{{ project_config_path }}"
+        name: k3s_project
+
+    - name: Refuse to configure an API server this project does not run
+      ansible.builtin.fail:
+        msg: >-
+          managed_kubernetes is true, so AWS runs the control plane and there is
+          no server to write a drop-in on. The EKS API server's OIDC validation
+          is an aws_eks_identity_provider_config in modules/aws/eks, applied by
+          terraform apply when headlamp.enabled is true and headlamp.auth_mode
+          is oidc. This playbook is for the self-hosted cluster only.
+      when: k3s_project.managed_kubernetes | default(false) | bool
+
 - name: Configure API server OIDC validation one server at a time
   hosts: k3s_servers
   become: false

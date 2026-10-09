@@ -454,6 +454,21 @@ jobs:
             -n kube-system -f values/traefik.yaml \
             > /tmp/rendered/traefik.yaml
 
+          helm template traefik traefik \
+            --repo https://traefik.github.io/charts --version 41.6.0 \
+            -n kube-system -f values/traefik-eks.yaml \
+            > /tmp/rendered/traefik-eks.yaml
+
+          helm template aws-load-balancer-controller aws-load-balancer-controller \
+            --repo https://aws.github.io/eks-charts --version 3.6.0 \
+            -n kube-system \
+            --set clusterName=oilscope-dev \
+            --set region=eu-central-1 \
+            --set vpcId=vpc-0000000000000000 \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            > /tmp/rendered/load-balancer-controller.yaml
+
           helm template aws-ebs-csi-driver aws-ebs-csi-driver \
             --repo https://kubernetes-sigs.github.io/aws-ebs-csi-driver --version 2.66.0 \
             -n kube-system -f values/aws-ebs-csi-driver.yaml \
@@ -487,6 +502,44 @@ jobs:
               --set 'ingress.tls[0].hosts[0]=headlamp.example.com' \
               > "/tmp/rendered/headlamp-${mode}.yaml"
           done
+
+      - name: Confirm each ingress mode reaches Traefik the way its platform needs
+        run: |
+          status=0
+
+          if ! grep -q 'hostPort: 80' /tmp/rendered/traefik.yaml; then
+            echo "k3s: Traefik no longer binds host port 80. There is no load"
+            echo "balancer in that mode, so nothing would reach the cluster."
+            status=1
+          fi
+
+          if grep -q 'hostPort:' /tmp/rendered/traefik-eks.yaml; then
+            echo "eks: Traefik binds a host port. Targets are pod IPs behind the"
+            echo "NLB there, and a host port would only duplicate the path."
+            status=1
+          fi
+
+          if ! grep -q 'type: LoadBalancer' /tmp/rendered/traefik-eks.yaml; then
+            echo "eks: Traefik has no LoadBalancer Service, so the controller"
+            echo "would create no NLB and the ingress host would not resolve."
+            status=1
+          fi
+
+          if grep -q 'type: LoadBalancer' /tmp/rendered/traefik.yaml; then
+            echo "k3s: Traefik asks for a LoadBalancer Service, which stays"
+            echo "pending forever: ServiceLB is disabled and there is no controller."
+            status=1
+          fi
+
+          for mode in traefik traefik-eks; do
+            if ! grep -q 'name: oilscope' "/tmp/rendered/${mode}.yaml"; then
+              echo "${mode}: the oilscope IngressClass is gone, so every chart"
+              echo "Ingress names a class that does not exist."
+              status=1
+            fi
+          done
+
+          exit "${status}"
 
       - name: Confirm the console grants itself no standing cluster-admin
         run: |

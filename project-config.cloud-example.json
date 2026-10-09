@@ -1,6 +1,7 @@
 {
   "default_cloud": "aws",
   "managed_database": true,
+  "managed_kubernetes": false,
   "database_profile": "economy",
   "database_profile_map": {
     "economy": {

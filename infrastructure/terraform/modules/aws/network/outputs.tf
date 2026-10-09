@@ -13,6 +13,13 @@ output "rds_subnet_ids" {
   ] : []
 }
 
+output "eks_subnet_ids" {
+  value = local.eks_enabled ? [
+    aws_subnet.workload[0].id,
+    aws_subnet.eks_secondary[0].id
+  ] : []
+}
+
 output "security_group_ids" {
   value = {
     kubernetes = try(aws_security_group.kubernetes[0].id, null)
