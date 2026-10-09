@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+traefik_kubeconfig: "{{ oilscope_kubeconfig }}"
+traefik_rollout_retries: 30

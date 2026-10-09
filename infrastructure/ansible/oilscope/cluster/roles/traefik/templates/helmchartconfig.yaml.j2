@@ -1,0 +1,21 @@
+# k3s installs Traefik itself, from a HelmChart in kube-system. A
+# HelmChartConfig of the same name is how k3s takes extra values for that
+# chart; its helm controller reinstalls Traefik with them.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    # A Traefik on every node, so the node a request reaches can answer it
+    # itself instead of handing it to the one node that ran Traefik.
+    deployment:
+      kind: DaemonSet
+    # Answer on the node the request arrived at, without passing it on to
+    # another one - passing it on replaces the client's address with the
+    # node's, and the ipAllowList of internal services then sees nodes, not
+    # clients.
+    service:
+      spec:
+        externalTrafficPolicy: Local

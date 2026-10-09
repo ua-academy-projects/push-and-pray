@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Give the bundled Traefik its values
+  kubernetes.core.k8s:
+    kubeconfig: "{{ traefik_kubeconfig }}"
+    state: present
+    template: helmchartconfig.yaml.j2
+
+# The helm controller reinstalls the chart in its own Job, so the change takes
+# a moment to show. Done once every node runs a ready Traefik.
+- name: Wait for Traefik on every node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ traefik_kubeconfig }}"
+    kind: DaemonSet
+    namespace: kube-system
+    name: traefik
+  register: traefik_daemonset
+  until: >-
+    traefik_daemonset.resources | length > 0
+    and traefik_daemonset.resources[0].status.numberReady | default(0)
+        == traefik_daemonset.resources[0].status.desiredNumberScheduled | default(-1)
+  retries: "{{ traefik_rollout_retries }}"
+  delay: 10

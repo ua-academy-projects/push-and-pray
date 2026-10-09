@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# tasks file for cert_manager
+- name: Install cert-manager
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: oci://quay.io/jetstack/charts/cert-manager
+    chart_version: "{{ cert_manager_version }}"
+    release_namespace: "{{ cert_manager_namespace }}"
+    create_namespace: true
+    values_files:
+      - "{{ role_path }}/files/values.yaml"
+    wait: true
+    kubeconfig: "{{ cert_manager_kubeconfig }}"
+
+- name: Create the Let's Encrypt cluster issuers
+  kubernetes.core.k8s:
+    state: present
+    template: cluster-issuers.yaml.j2
+    kubeconfig: "{{ cert_manager_kubeconfig }}"

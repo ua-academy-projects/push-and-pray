@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# defaults file for cert_manager
+cert_manager_version: "{{ oilscope_config.cluster.charts.cert_manager.version }}"
+cert_manager_namespace: "cert-manager"
+cert_manager_kubeconfig: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/oilscope-dev.yaml"
