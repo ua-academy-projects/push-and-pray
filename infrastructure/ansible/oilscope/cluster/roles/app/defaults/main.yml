@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+app_kubeconfig: "{{ oilscope_kubeconfig }}"
+app_namespace: "{{ oilscope_namespace }}"
+
+# <registry.repository> and <registry.image_sha>: every service's image is
+# <repository>/<service>:<sha>.
+app_image_repository: ""
+app_image_tag: ""
+app_pull_secret: ghcr-pull
+
+app_cloud: ""
+app_hostname: ""
+# letsencrypt-staging while trying things out: prod limits how often the same
+# certificate may be issued again.
+app_cluster_issuer: letsencrypt-prod
+
+# Secret values, resolved on a server and handed over in memory.
+app_oilpriceapi_key: ""
+app_redis_password: ""
+
+# What the database and Redis roles create. CloudNativePG names the Service
+# of the primary <cluster>-rw and the Secret with the owner's password
+# <cluster>-app; the Redis release is its own Service.
+app_database_cluster: oilscope-db
+app_database_name: oil_tracker
+app_database_user: oil_tracker
+app_redis_service: redis
+
+# The images run as this user (Dockerfile: useradd --uid 10001). Kubernetes
+# can only prove a container is not root from a number, and the images name
+# the user.
+app_run_as_user: 10001
+
+app_resources:
+  history:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+  fetcher:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {memory: 128Mi}
+  ui:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+app_rollout_timeout: 300

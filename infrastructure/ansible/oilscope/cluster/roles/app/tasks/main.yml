@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the role's input
+  ansible.builtin.assert:
+    that:
+      - app_image_repository | length > 0
+      - app_image_tag | length > 0
+      - app_cloud | length > 0
+      - app_hostname | length > 0
+      - app_oilpriceapi_key | length > 0
+      - app_redis_password | length > 0
+    fail_msg: >-
+      app_image_repository, app_image_tag, app_cloud, app_hostname and both
+      secret values are required
+    quiet: true
+
+# The pods carry this in an annotation, so a changed secret value changes the
+# pod template and Kubernetes rolls the pods; otherwise they would keep the
+# old value until something else restarted them.
+- name: Fingerprint the secret values
+  ansible.builtin.set_fact:
+    app_secret_checksum: >-
+      {{ (app_oilpriceapi_key ~ '\n' ~ app_redis_password) | hash('sha256') }}
+
+- name: Store the application's secrets
+  kubernetes.core.k8s:
+    kubeconfig: "{{ app_kubeconfig }}"
+    state: present
+    template: secret.yaml.j2
+  no_log: true
+
+# In dependency order: the UI is ready only once the History Service answers.
+# wait makes each step finish its rollout before the next one starts, so a
+# broken image stops the play here instead of surfacing later as a 502.
+- name: Run the services
+  kubernetes.core.k8s:
+    kubeconfig: "{{ app_kubeconfig }}"
+    state: present
+    template: "{{ item }}.yaml.j2"
+    wait: true
+    wait_timeout: "{{ app_rollout_timeout }}"
+  loop:
+    - history
+    - fetcher
+    - ui
+
+# Only this Ingress is redirected, not every HTTP request Traefik receives:
+# Let's Encrypt checks domain ownership over plain HTTP, through a separate
+# Ingress cert-manager creates, and a global redirect would send that check
+# to HTTPS as well.
+- name: Redirect plain HTTP to HTTPS
+  kubernetes.core.k8s:
+    kubeconfig: "{{ app_kubeconfig }}"
+    state: present
+    template: redirect-https.yaml.j2
+
+- name: Publish the UI over HTTPS
+  kubernetes.core.k8s:
+    kubeconfig: "{{ app_kubeconfig }}"
+    state: present
+    template: ingress.yaml.j2

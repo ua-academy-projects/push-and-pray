@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ui
+  namespace: {{ app_namespace }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ app_cluster_issuer }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ app_namespace }}-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - {{ app_hostname }}
+      secretName: oilscope-tls
+  rules:
+    - host: {{ app_hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ui
+                port:
+                  name: http

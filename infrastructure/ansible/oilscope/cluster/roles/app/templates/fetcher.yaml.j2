@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fetcher
+  namespace: {{ app_namespace }}
+  labels:
+    app.kubernetes.io/name: fetcher
+    app.kubernetes.io/part-of: oilscope
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fetcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fetcher
+        app.kubernetes.io/part-of: oilscope
+      annotations:
+        checksum/secret: "{{ app_secret_checksum }}"
+    spec:
+      imagePullSecrets:
+        - name: {{ app_pull_secret }}
+      nodeSelector:
+        cloud: {{ app_cloud }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ app_run_as_user }}
+        runAsGroup: {{ app_run_as_user }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fetcher
+          image: {{ app_image_repository }}/fetcher:{{ app_image_tag }}
+          ports:
+            - name: http
+              containerPort: 8002
+          env:
+            - name: OILPRICEAPI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: oilscope-app
+                  key: OILPRICEAPI_KEY
+            - name: DATA_PROVIDER
+              value: oilpriceapi
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ app_database_cluster }}-app
+                  key: password
+            - name: DATABASE_URL
+              value: "postgres://{{ app_database_user }}:$(DB_PASSWORD)@{{ app_database_cluster }}-rw:5432/{{ app_database_name }}?sslmode=require"
+            - name: QUEUE_BACKEND
+              value: pgmq
+            - name: PGMQ_QUEUE
+              value: price_observations
+            - name: FETCH_CRON_HOURS
+              value: "0,6,12,18"
+            - name: FETCH_TIMEZONE
+              value: UTC
+            - name: FETCH_ON_STARTUP
+              value: "true"
+            - name: REQUEST_TIMEOUT_SECONDS
+              value: "15"
+            - name: LISTEN_ADDRESS
+              value: 0.0.0.0:8002
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TZ
+              value: UTC
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{ app_resources.fetcher | to_nice_yaml(indent=2) | trim | indent(12) }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fetcher
+  namespace: {{ app_namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: fetcher
+  ports:
+    - name: http
+      port: 8002
+      targetPort: http

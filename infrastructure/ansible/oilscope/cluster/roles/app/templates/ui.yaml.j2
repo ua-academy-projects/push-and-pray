@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  namespace: {{ app_namespace }}
+  labels:
+    app.kubernetes.io/name: ui
+    app.kubernetes.io/part-of: oilscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ui
+        app.kubernetes.io/part-of: oilscope
+      annotations:
+        checksum/secret: "{{ app_secret_checksum }}"
+    spec:
+      imagePullSecrets:
+        - name: {{ app_pull_secret }}
+      nodeSelector:
+        cloud: {{ app_cloud }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ app_run_as_user }}
+        runAsGroup: {{ app_run_as_user }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ui
+          image: {{ app_image_repository }}/ui:{{ app_image_tag }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: HISTORY_SERVICE_URL
+              value: http://history:8001
+            # Sessions in Redis; the UI then needs no database credentials.
+            - name: SESSION_BACKEND
+              value: redis
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oilscope-app
+                  key: REDIS_PASSWORD
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ app_redis_service }}:6379/0"
+            - name: SESSION_TTL_SECONDS
+              value: "2592000"
+            # The browser reaches the UI only through HTTPS at the ingress.
+            - name: SESSION_COOKIE_SECURE
+              value: "true"
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TZ
+              value: UTC
+          # /health checks the History Service and Redis.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{ app_resources.ui | to_nice_yaml(indent=2) | trim | indent(12) }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  namespace: {{ app_namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

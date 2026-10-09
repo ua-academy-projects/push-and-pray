@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: history
+  namespace: {{ app_namespace }}
+  labels:
+    app.kubernetes.io/name: history
+    app.kubernetes.io/part-of: oilscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: history
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: history
+        app.kubernetes.io/part-of: oilscope
+      annotations:
+        # A changed Secret does not restart the pods that read it. Its
+        # checksum here does: a new value changes the pod template.
+        checksum/secret: "{{ app_secret_checksum }}"
+    spec:
+      imagePullSecrets:
+        - name: {{ app_pull_secret }}
+      nodeSelector:
+        cloud: {{ app_cloud }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ app_run_as_user }}
+        runAsGroup: {{ app_run_as_user }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: history
+          image: {{ app_image_repository }}/history:{{ app_image_tag }}
+          ports:
+            - name: http
+              containerPort: 8001
+          env:
+            # Must come before DATABASE_URL: $(DB_PASSWORD) only expands
+            # variables defined earlier in the list.
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ app_database_cluster }}-app
+                  key: password
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://{{ app_database_user }}:$(DB_PASSWORD)@{{ app_database_cluster }}-rw:5432/{{ app_database_name }}?sslmode=require"
+            - name: QUEUE_BACKEND
+              value: pgmq
+            - name: PGMQ_QUEUE
+              value: price_observations
+            - name: PGMQ_VISIBILITY_TIMEOUT_SECONDS
+              value: "60"
+            - name: PGMQ_POLL_INTERVAL_SECONDS
+              value: "1"
+            - name: PGMQ_MAX_ATTEMPTS
+              value: "5"
+            - name: LOG_LEVEL
+              value: INFO
+            - name: TZ
+              value: UTC
+          # /health runs SELECT 1 against the database. That decides whether
+          # the pod gets traffic; it must not decide whether it is restarted,
+          # or every pod would restart in a loop while the database is away.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{ app_resources.history | to_nice_yaml(indent=2) | trim | indent(12) }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: history
+  namespace: {{ app_namespace }}
+spec:
+  selector:
+    app.kubernetes.io/name: history
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http
