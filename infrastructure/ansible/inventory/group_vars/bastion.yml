@@ -1,3 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 bastion_ssh_port: "{{ oilscope_ssh_port }}"
+
+# Each bastion is the Tailscale subnet router of its own cloud: it advertises
+# that cloud's range, and takes the other clouds' routes once there are any.
+tailscale_port: "{{ oilscope_config.tailscale.port }}"
+tailscale_advertise_tags: "{{ oilscope_config.tailscale.router_tags }}"
+tailscale_advertise_routes:
+  - "{{ oilscope_config.clouds[oilscope_cloud].network_cidr }}"
+tailscale_accept_routes: >-
+  {{ oilscope_config.nodes.values()
+     | map(attribute='cloud', default=oilscope_config.default_cloud)
+     | unique | length > 1 }}

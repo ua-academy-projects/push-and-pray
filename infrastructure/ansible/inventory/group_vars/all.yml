@@ -14,21 +14,16 @@ oilscope_ssh_base_args: >-
   -o IdentitiesOnly=yes
 ansible_ssh_common_args: "{{ oilscope_ssh_base_args }}"
 
+# The cluster configuration Terraform reads. Exporting OILSCOPE_PROJECT_CONFIG
+# points the inventory plugin and these variables at the same file; -e
+# project_config_path=... still overrides it for one run.
+project_config_path: "{{ lookup('ansible.builtin.env', 'OILSCOPE_PROJECT_CONFIG') }}"
 oilscope_config: >-
   {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
 
-oilscope_database_mode: "{{ oilscope_config.database.mode | default('self-hosted') }}"
-oilscope_database_managed: "{{ oilscope_database_mode == 'managed' }}"
-oilscope_queue_backend: "{{ 'amqp' if oilscope_database_managed else 'pgmq' }}"
-oilscope_session_backend: "{{ 'redis' if oilscope_database_managed else 'postgres' }}"
+# The kubeconfig the k3s playbook saves on the controller. Every role that
+# talks to the cluster from here - Helm releases, manifests - reads this one.
+oilscope_kubeconfig: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/oilscope-dev.yaml"
 
-oilscope_database_name: "{{ oilscope_config.database.name | default('oil_tracker') }}"
-oilscope_database_user: "{{ oilscope_config.database.username | default('oil_tracker') }}"
-oilscope_database_sslmode: "{{ 'require' if oilscope_database_managed else 'disable' }}"
-
-oilscope_postgresql_port: "{{ oilscope_config.service_ports.postgresql | default(5432) }}"
-oilscope_amqp_port: "{{ oilscope_config.service_ports.amqp | default(5672) }}"
-oilscope_redis_port: "{{ oilscope_config.service_ports.redis | default(6379) }}"
-
-oilscope_amqp_user: "{{ oilscope_database_user }}"
-oilscope_amqp_vhost: "{{ oilscope_database_name }}"
+# The namespace the application and its data services live in.
+oilscope_namespace: oilscope

@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Nodes are reached over the tailnet. The bastion of every cloud advertises
+# that cloud's range, so a controller joined to the tailnet with routes
+# accepted connects to a node's internal address directly - no tunnel, no
+# bastion hop on every run.
+#
+# Before the bastions run Tailscale, or while the tailnet is down, pass
+# -e oilscope_nodes_via_bastion=true to hop through the bastion of the node's
+# own cloud instead; the cloud firewall admits SSH from it for exactly that.
+oilscope_nodes_via_bastion: false
+
+oilscope_bastion_candidates: >-
+  {{ groups['bastion'] | default([])
+     | map('extract', hostvars)
+     | selectattr('oilscope_cloud', 'equalto', oilscope_cloud)
+     | list }}
+
+oilscope_bastion: >-
+  {{ oilscope_bastion_candidates[0]
+     if oilscope_bastion_candidates
+     else undef('no bastion was discovered on cloud ' ~ oilscope_cloud
+                ~ ', which hosts this node') }}
+
+ansible_ssh_common_args: >-
+  {{ oilscope_ssh_base_args }}
+  {% if oilscope_nodes_via_bastion | bool %}
+  -o ProxyCommand="ssh -W %h:%p -q
+  -p {{ oilscope_bastion.oilscope_ssh_port }}
+  -i {{ ansible_ssh_private_key_file }}
+  {{ oilscope_ssh_base_args }}
+  {{ ansible_user }}@{{ oilscope_bastion.ansible_host }}"
+  {% endif %}

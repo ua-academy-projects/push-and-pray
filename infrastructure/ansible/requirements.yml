@@ -1,15 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Ansible collections the controller needs, beyond this repository's own
-# oilscope.platform collection.
-#
-#   ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
 collections:
-  # Discovery plugins the oilscope_cloud inventory plugin delegates to, one per
-  # cloud the project configuration can place a workload on.
+  - name: ansible.posix
+    version: ">=2.0.0"
   - name: google.cloud
     version: ">=1.14.0"
   - name: amazon.aws
     version: ">=9.0.0"
   - name: azure.azcollection
     version: ">=3.0.0"
+  - name: kubernetes.core
+    version: ">=6.6.0"
