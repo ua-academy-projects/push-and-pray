@@ -7,8 +7,26 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"oil-price-tracker/fetcher/internal/model"
 	"oil-price-tracker/fetcher/internal/provider"
+)
+
+var (
+	collectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fetcher_collections_total",
+		Help: "Collection runs by result.",
+	}, []string{"result"})
+	observationsPublished = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "fetcher_observations_published_total",
+		Help: "Observations published to the queue.",
+	})
+	lastSuccess = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "fetcher_last_success_timestamp_seconds",
+		Help: "Unix time of the last successful collection.",
+	})
 )
 
 type Publisher interface {
@@ -61,6 +79,9 @@ func (service *Service) Run(ctx context.Context, slot time.Time) (model.FetchRes
 	service.last = &result
 	service.lastErr = ""
 	service.mu.Unlock()
+	collectionsTotal.WithLabelValues("success").Inc()
+	observationsPublished.Add(float64(result.Published))
+	lastSuccess.SetToCurrentTime()
 	slog.Info("collection published", "observations", result.Published)
 	return result, nil
 }
@@ -80,5 +101,6 @@ func (service *Service) recordError(err error) {
 	service.mu.Lock()
 	service.lastErr = err.Error()
 	service.mu.Unlock()
+	collectionsTotal.WithLabelValues("error").Inc()
 	slog.Error("collection failed", "error", err)
 }

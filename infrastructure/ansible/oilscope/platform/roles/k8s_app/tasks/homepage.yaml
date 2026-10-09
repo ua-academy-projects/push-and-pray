@@ -1,0 +1,131 @@
+---
+- name: Install Homepage
+  kubernetes.core.helm:
+    name: homepage
+    chart_ref: homepage
+    chart_repo_url: https://jameswynn.github.io/helm-charts
+    chart_version: "{{ homepage_chart_version }}"
+    release_namespace: homepage
+    create_namespace: true
+    values:
+      enableRbac: true
+      serviceAccount:
+        create: true
+      env:
+        - name: HOMEPAGE_ALLOWED_HOSTS
+          value: "{{ k8s_app_homepage_host }},localhost:3000"
+      ingress:
+        main:
+          enabled: "{{ k8s_app_internal_ingress }}"
+          ingressClassName: traefik
+          annotations:
+            cert-manager.io/cluster-issuer: "{{ k8s_app_internal_issuer }}"
+          hosts:
+            - host: "{{ k8s_app_homepage_host }}"
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: homepage-tls
+              hosts:
+                - "{{ k8s_app_homepage_host }}"
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+      config:
+        kubernetes:
+          mode: cluster
+        settingsString: |
+          title: OilScope
+          headerStyle: boxed
+          layout:
+            OilScope:
+              style: row
+              columns: 3
+            Data:
+              style: row
+              columns: 3
+            Platform:
+              style: row
+              columns: 2
+        widgets:
+          - kubernetes:
+              cluster:
+                show: true
+                cpu: true
+                memory: true
+                showLabel: true
+                label: k3s
+              nodes:
+                show: true
+                cpu: true
+                memory: true
+                showLabel: true
+          - search:
+              provider: duckduckgo
+              target: _blank
+        services:
+          - OilScope:
+              - Web UI:
+                  href: "https://{{ k8s_app_public_endpoint.hostname }}"
+                  description: Public application
+                  icon: mdi-oil
+                  siteMonitor: http://ui.oilscope.svc/health
+              - History API:
+                  description: Price history service
+                  icon: mdi-chart-line
+                  siteMonitor: http://history.oilscope.svc:8001/health
+              - Fetcher:
+                  description: Price fetcher worker
+                  icon: mdi-download
+                  namespace: oilscope
+                  app: fetcher
+                  podSelector: app=fetcher
+          - Data:
+              - PostgreSQL:
+                  description: CloudNativePG cluster
+                  icon: si-postgresql
+                  namespace: oilscope
+                  app: "{{ k8s_app_db_cluster_name }}"
+                  podSelector: "cnpg.io/cluster={{ k8s_app_db_cluster_name }}"
+              - RabbitMQ:
+                  description: Price event queue
+                  icon: si-rabbitmq
+                  namespace: oilscope
+                  app: rabbitmq
+                  podSelector: app.kubernetes.io/name=rabbitmq
+              - Redis:
+                  description: UI sessions
+                  icon: si-redis
+                  namespace: oilscope
+                  app: redis
+                  podSelector: app.kubernetes.io/name=redis
+          - Platform:
+              - Headlamp:
+                  href: "https://{{ k8s_app_headlamp_host }}"
+                  description: Kubernetes UI
+                  icon: si-kubernetes
+                  siteMonitor: http://headlamp.headlamp.svc
+              - Homepage:
+                  href: "https://{{ k8s_app_homepage_host }}"
+                  description: This dashboard
+                  icon: mdi-view-dashboard
+        bookmarks:
+          - Project:
+              - GitHub:
+                  - icon: si-github
+                    href: https://github.com/ua-academy-projects/push-and-pray
+          - Consoles:
+              - Tailscale:
+                  - icon: si-tailscale
+                    href: https://login.tailscale.com/admin/machines
+              - AWS:
+                  - icon: si-amazonwebservices
+                    href: https://console.aws.amazon.com/
+              - Cloudflare:
+                  - icon: si-cloudflare
+                    href: https://dash.cloudflare.com/
+    wait: true

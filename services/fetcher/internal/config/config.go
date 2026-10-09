@@ -24,6 +24,7 @@ type Config struct {
 	FetchOnStartup bool
 	RequestTimeout time.Duration
 	ListenAddress  string
+	MetricsAddress string
 }
 
 func Load() (Config, error) {
@@ -93,6 +94,7 @@ func Load() (Config, error) {
 		FetchOnStartup: fetchOnStartup,
 		RequestTimeout: time.Duration(timeoutSeconds) * time.Second,
 		ListenAddress:  env("LISTEN_ADDRESS", ":8002"),
+		MetricsAddress: env("METRICS_ADDRESS", ""),
 	}, nil
 }
 

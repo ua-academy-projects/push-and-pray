@@ -1,0 +1,9 @@
+---
+internal_dns_coredns_version: "1.14.7"
+internal_dns_coredns_arch: amd64
+internal_dns_coredns_url: "https://github.com/coredns/coredns/releases/download/v{{ internal_dns_coredns_version }}/coredns_{{ internal_dns_coredns_version }}_linux_{{ internal_dns_coredns_arch }}.tgz"
+internal_dns_coredns_sha256: "sha256:9a09356438c6d9591cb80011a2a7a52f87fc3a113f6690e41f243f98b98faac9"
+internal_dns_domain: ""
+internal_dns_listen_address: "{{ internal_ip }}"
+internal_dns_targets: []
+internal_dns_ttl: 60

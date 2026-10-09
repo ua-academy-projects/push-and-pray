@@ -9,6 +9,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import start_http_server
+from prometheus_fastapi_instrumentator import Instrumentator
 from psycopg import Error as PostgreSQLError
 
 from .redis_session_store import RedisSessionStore
@@ -31,10 +33,13 @@ SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 SESSION_BACKEND = os.getenv("SESSION_BACKEND", "postgres").lower()
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+METRICS_PORT = int(os.getenv("METRICS_PORT", "0"))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if METRICS_PORT:
+        start_http_server(METRICS_PORT)
     app.state.client = httpx.AsyncClient(base_url=HISTORY_SERVICE_URL, timeout=10.0)
     try:
         yield
@@ -47,6 +52,7 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
+Instrumentator(excluded_handlers=["/health"]).instrument(app)
 if SESSION_BACKEND == "redis":
     app.state.session_store = RedisSessionStore(REDIS_URL, SESSION_TTL_SECONDS)
 else:

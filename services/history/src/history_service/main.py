@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Query, Response, status
+from prometheus_client import start_http_server
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -49,6 +51,10 @@ async def lifespan(_: FastAPI):
 
     logger.info("database schema is ready")
 
+    if settings.metrics_port:
+        start_http_server(settings.metrics_port)
+        logger.info("metrics server listening on port %s", settings.metrics_port)
+
     await consumer.start()
 
     try:
@@ -63,6 +69,7 @@ app = FastAPI(
     description=("Owns persistence and serves timestamped market price snapshots."),
     lifespan=lifespan,
 )
+Instrumentator(excluded_handlers=["/health"]).instrument(app)
 
 
 @app.get("/health", tags=["operations"])

@@ -1,0 +1,85 @@
+---
+- name: Require a domain and at least one target
+  ansible.builtin.assert:
+    that:
+      - internal_dns_domain | length > 0
+      - internal_dns_targets | length > 0
+    fail_msg: internal_dns_domain and internal_dns_targets must be set.
+
+- name: Download the CoreDNS release
+  ansible.builtin.get_url:
+    url: "{{ internal_dns_coredns_url }}"
+    dest: "/opt/coredns_{{ internal_dns_coredns_version }}_{{ internal_dns_coredns_arch }}.tgz"
+    checksum: "{{ internal_dns_coredns_sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the CoreDNS release directory
+  ansible.builtin.file:
+    path: "/opt/coredns_{{ internal_dns_coredns_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Unpack the CoreDNS release
+  ansible.builtin.unarchive:
+    src: "/opt/coredns_{{ internal_dns_coredns_version }}_{{ internal_dns_coredns_arch }}.tgz"
+    dest: "/opt/coredns_{{ internal_dns_coredns_version }}"
+    remote_src: true
+    creates: "/opt/coredns_{{ internal_dns_coredns_version }}/coredns"
+
+- name: Install the CoreDNS binary
+  ansible.builtin.copy:
+    src: "/opt/coredns_{{ internal_dns_coredns_version }}/coredns"
+    dest: /usr/local/bin/coredns
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart coredns
+
+- name: Create the coredns system user
+  ansible.builtin.user:
+    name: coredns
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Ensure the CoreDNS config directory exists
+  ansible.builtin.file:
+    path: /etc/coredns
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Render the Corefile
+  ansible.builtin.template:
+    src: Corefile.j2
+    dest: /etc/coredns/Corefile
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart coredns
+
+- name: Render the CoreDNS systemd unit
+  ansible.builtin.template:
+    src: coredns.service.j2
+    dest: /etc/systemd/system/coredns.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart coredns
+
+- name: Apply pending CoreDNS changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Start CoreDNS
+  ansible.builtin.systemd:
+    name: coredns
+    state: started
+    enabled: true
+    daemon_reload: true

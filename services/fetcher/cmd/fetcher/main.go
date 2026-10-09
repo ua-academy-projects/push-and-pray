@@ -14,6 +14,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"oil-price-tracker/fetcher/internal/broker"
 	"oil-price-tracker/fetcher/internal/config"
@@ -213,6 +214,28 @@ func main() {
 		WriteTimeout:      30 * time.Second,
 	}
 
+	var metricsServer *http.Server
+
+	if configuration.MetricsAddress != "" {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("GET /metrics", promhttp.Handler())
+
+		metricsServer = &http.Server{
+			Addr:              configuration.MetricsAddress,
+			Handler:           metricsMux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+
+		go func() {
+			slog.Info("metrics server started", "address", configuration.MetricsAddress)
+
+			if err := metricsServer.ListenAndServe(); err != nil &&
+				!errors.Is(err, http.ErrServerClosed) {
+				slog.Error("metrics server failed", "error", err)
+			}
+		}()
+	}
+
 	go func() {
 		slog.Info(
 			"API Fetcher started",
@@ -241,6 +264,12 @@ func main() {
 
 	if err := server.Shutdown(shutdownContext); err != nil {
 		slog.Error("HTTP shutdown failed", "error", err)
+	}
+
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(shutdownContext); err != nil {
+			slog.Error("metrics shutdown failed", "error", err)
+		}
 	}
 }
 

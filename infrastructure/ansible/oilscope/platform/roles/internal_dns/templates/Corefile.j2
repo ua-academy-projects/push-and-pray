@@ -1,0 +1,13 @@
+{{ internal_dns_domain }} {
+    bind {{ internal_dns_listen_address }}
+    template IN A {{ internal_dns_domain }} {
+{% for target in internal_dns_targets %}
+        answer "{% raw %}{{ .Name }}{% endraw %} {{ internal_dns_ttl }} IN A {{ target }}"
+{% endfor %}
+    }
+    template IN AAAA {{ internal_dns_domain }} {
+        rcode NOERROR
+    }
+    errors
+    log
+}

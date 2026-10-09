@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    metrics_port: int = 0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
