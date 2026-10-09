@@ -1,0 +1,17 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: oilscope
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [ui, history, fetcher]
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.interval }}
+{{- end }}

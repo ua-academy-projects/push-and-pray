@@ -22,10 +22,18 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.fetcher.port }}
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.fetcher.secret }}
           env:
+            {{- if .Values.metrics.enabled }}
+            - name: METRICS_ADDRESS
+              value: "0.0.0.0:{{ .Values.metrics.port }}"
+            {{- end }}
             - name: DATA_PROVIDER
               value: "oilpriceapi"
             - name: QUEUE_BACKEND

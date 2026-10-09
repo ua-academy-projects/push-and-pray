@@ -5,6 +5,11 @@ image:
 
 imagePullSecret: ghcr-pull
 
+metrics:
+  enabled: false
+  port: 9000
+  interval: 30s
+
 ui:
   enabled: true
   replicas: 1

@@ -22,10 +22,18 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.history.port }}
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.history.secret }}
           env:
+            {{- if .Values.metrics.enabled }}
+            - name: METRICS_PORT
+              value: "{{ .Values.metrics.port }}"
+            {{- end }}
             - name: QUEUE_BACKEND
               value: "{{ .Values.history.queueBackend }}"
             - name: LOG_LEVEL
