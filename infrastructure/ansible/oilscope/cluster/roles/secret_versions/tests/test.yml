@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Run with -e project_config_path=<path to a project configuration JSON>, e.g.
-# the repository's project-config.example.json.
+# Run with -e project_config_path=<path to a cluster configuration JSON>, e.g.
+# the repository's cluster-config.example.json.
 #
 # Both plays expect the role to refuse: there is no configuration in the first,
 # and no secret values in the environment in the second. ignore_errors on
@@ -23,7 +23,7 @@
           ansible.builtin.include_role:
             name: secret_versions
           vars:
-            secret_versions_config_file: /nonexistent/project-config.json
+            secret_versions_config_file: /nonexistent/cluster-config.json
 
         - name: Fail because the role accepted a missing configuration
           ansible.builtin.fail:

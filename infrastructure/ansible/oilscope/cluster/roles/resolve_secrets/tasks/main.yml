@@ -1,23 +1,27 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Read the project configuration
+- name: Read the cluster configuration
   ansible.builtin.set_fact:
     resolve_secrets_config: >-
       {{ lookup('ansible.builtin.file', resolve_secrets_config_path) | from_json }}
 
-- name: Derive this VM's configuration key
+- name: Derive this host's node key
   ansible.builtin.set_fact:
-    resolve_secrets_vm_key: >-
+    resolve_secrets_node_key: >-
       {{ inventory_hostname
          | regex_replace('^' ~ (resolve_secrets_config.name_prefix
                                  ~ '-' ~ resolve_secrets_config.environment
                                  ~ '-') | regex_escape, '') }}
 
-- name: Select the host's secret mappings
+# Only a k3s_server node holds a grant on the secrets - Terraform gives it to
+# nothing else - so only a k3s_server node asks. A bastion is no entry of nodes
+# at all, an agent is one with another role; both get nothing to read.
+- name: Select the secrets this host may read
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
-      {{ resolve_secrets_config.vms[resolve_secrets_vm_key].secret_mappings
-         | default({}) }}
+      {{ resolve_secrets_config.secrets | default({})
+         if (resolve_secrets_config.nodes[resolve_secrets_node_key].role | default('')) == 'k3s_server'
+         else {} }}
 
 - name: Refuse a cloud this role cannot read secrets from
   ansible.builtin.assert:
@@ -30,7 +34,7 @@
     quiet: true
   when: resolve_secrets_mappings | length > 0
 
-- name: Read the mapped secrets from this cloud's secret store
+- name: Read the secrets from this cloud's secret store
   ansible.builtin.include_tasks: "fetch-{{ resolve_secrets_cloud }}.yml"
   when: resolve_secrets_mappings | length > 0
 

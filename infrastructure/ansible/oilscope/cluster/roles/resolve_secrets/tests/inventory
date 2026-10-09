@@ -1,3 +1,4 @@
 localhost ansible_connection=local
-oilscope-dev-bastion ansible_connection=local
-oilscope-dev-infra ansible_connection=local
+oilscope-dev-bastion-gcp ansible_connection=local
+oilscope-dev-agent-1 ansible_connection=local
+oilscope-dev-server-1 ansible_connection=local

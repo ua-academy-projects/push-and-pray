@@ -1,18 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Run with -e project_config_path=<path to a project configuration JSON>,
-# e.g. the repository's project-config.example.json, or a real one.
+# Run with -e project_config_path=<path to a cluster configuration JSON>, e.g.
+# the repository's cluster-config.example.json, or a real one.
 #
-# The role derives which vms entry is "this host" from inventory_hostname,
+# The role derives which nodes entry is "this host" from inventory_hostname,
 # by stripping the config's own "<name_prefix>-<environment>-" prefix (the
-# same convention Terraform uses to name every instance). The second play
-# below targets a host literally named "oilscope-dev-bastion", so the config
-# passed in must use name_prefix "oilscope" and environment "dev".
+# same convention Terraform uses to name every instance), so the config passed
+# in must use name_prefix "oilscope" and environment "dev", and have a
+# k3s_server node "server-1" and a k3s_agent node "agent-1".
 #
-# That host is deliberately one vms does not list at all: a bastion is core
-# infrastructure derived from the top-level bastion block, never a workload
-# entry. The role must answer with an empty mapping rather than fail, which is
-# what this play checks.
+# Nothing here reaches a cloud: every host either reads nothing or is refused
+# before the first request.
 - name: Test the resolve_secrets role (missing configuration)
   hosts: localhost
   connection: local
@@ -28,7 +26,7 @@
           ansible.builtin.include_role:
             name: resolve_secrets
           vars:
-            resolve_secrets_config_path: /nonexistent/project-config.json
+            resolve_secrets_config_path: /nonexistent/cluster-config.json
 
         - name: Fail because the role accepted a missing configuration
           ansible.builtin.fail:
@@ -38,45 +36,52 @@
           ansible.builtin.debug:
             msg: the role refused the missing configuration, as it should
 
-- name: Test the resolve_secrets role (host with no secret mappings)
-  hosts: oilscope-dev-bastion
+# A bastion is no entry of nodes at all, and an agent is one without the
+# server role. Neither holds a grant, so both must answer with an empty result
+# rather than ask - and fail.
+- name: Test the resolve_secrets role (hosts that read nothing)
+  hosts: oilscope-dev-bastion-gcp:oilscope-dev-agent-1
   connection: local
   gather_facts: false
   tasks:
-    - name: Include the role for a host with no secret mappings
+    - name: Include the role for a host that reads no secrets
       ansible.builtin.include_role:
         name: resolve_secrets
       vars:
         resolve_secrets_config_path: "{{ project_config_path }}"
+        resolve_secrets_cloud: gcp
 
     - name: Expect an empty result rather than a failure
       ansible.builtin.assert:
         that:
-          - resolve_secrets_result is defined
+          - resolve_secrets_mappings == {}
           - resolve_secrets_result == {}
         quiet: true
 
-- name: Test the resolve_secrets role (cloud it cannot read from)
-  hosts: oilscope-dev-infra
+- name: Test the resolve_secrets role (server on a cloud it cannot read from)
+  hosts: oilscope-dev-server-1
   connection: local
   gather_facts: false
   tasks:
-    # infra does have secret_mappings, so the cloud check is reached. A cloud
-    # with no fetch-<cloud>.yml must be refused by name, with a message that
-    # says which clouds are supported.
+    # A server does read secrets, so the cloud check is reached. A cloud with
+    # no fetch-<cloud>.yml must be refused by name, with a message that says
+    # which clouds are supported.
     - name: Expect the role to refuse an unsupported cloud
       block:
-        - name: Include the role for a host on an unsupported cloud
+        - name: Include the role for a server on an unsupported cloud
           ansible.builtin.include_role:
             name: resolve_secrets
           vars:
             resolve_secrets_config_path: "{{ project_config_path }}"
-            resolve_secrets_cloud: azure
+            resolve_secrets_cloud: oracle
 
         - name: Fail because the role accepted an unsupported cloud
           ansible.builtin.fail:
             msg: the role must refuse a cloud it has no fetch tasks for
       rescue:
-        - name: Report the expected refusal
-          ansible.builtin.debug:
-            msg: the role refused the unsupported cloud, as it should
+        - name: Expect the refusal to come after selecting every secret
+          ansible.builtin.assert:
+            that:
+              - resolve_secrets_mappings | length == resolve_secrets_config.secrets | length
+              - "'oracle' in ansible_failed_result.msg"
+            quiet: true

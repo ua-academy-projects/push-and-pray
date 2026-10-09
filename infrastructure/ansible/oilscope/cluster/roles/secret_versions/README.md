@@ -1,12 +1,13 @@
 # Secret versions role
 
-Adds a new version to every secret container declared in the project
-configuration, taking each value from the environment of the operator running
-the play. It runs on `localhost`: this is an operator task against the cloud
+Adds a new version to every secret container the cluster configuration's
+`secrets` block declares, taking each value from the environment of the
+operator running the play. It runs on `localhost`: this is an operator task against the cloud
 APIs, not host configuration.
 
-A container exists on every cloud its readers are placed on, so the role works
-out, per container, which clouds hold it and uploads the same value to each.
+Only `k3s_server` nodes read secrets, so a container exists on every cloud
+that runs a server - Terraform creates it there and nowhere else. The role
+works out which clouds those are and uploads the same value to each.
 Which tool does the writing is chosen by file name — `tasks/upload-gcp.yml`,
 `tasks/upload-aws.yml` or `tasks/upload-azure.yml` — so supporting another
 provider means adding a file, not a conditional.
@@ -28,8 +29,10 @@ the other half: the payload, and nothing else.
 - The upload task is marked `no_log`, so the value stays out of the Ansible
   output and out of any callback log, at every verbosity.
 - Every value and every container is checked before the first version is added.
-  A run either writes all of them or none: half-rotated is the state that
-  leaves one workload on the new credential and the rest on the old one.
+  A missing value stops the run before anything is written: half-rotated is
+  the state that leaves one host on the new credential and the rest on the old
+  one. A cloud API failing during the writes themselves can still leave a
+  partial rotation; run again once the cause is fixed.
 
 Run it with `--check` first. In check mode the role performs every check and
 adds nothing.
@@ -53,13 +56,16 @@ A cloud that holds no container needs neither its tool nor a credential: the
 role only touches the clouds the catalog names.
 
 The containers must already exist: `terraform apply` creates them from the same
-configuration file this role reads. Azure is the exception - Key Vault has no
-secret without a value, so the first upload creates it.
+configuration file this role reads. On Azure, where a secret cannot exist
+without a value, Terraform creates each one holding a placeholder that
+`resolve_secrets` refuses to read; the first upload replaces it.
 
 ## Required variables
 
-- `secret_versions_config_file`: path to the project configuration JSON — the
-  same file `project_config_path` points at in Terraform.
+- `secret_versions_config_file`: path to the cluster configuration JSON — the
+  same file `project_config_path` points at in Terraform. Defaults to
+  `project_config_path`, which `group_vars/all.yml` takes from
+  `OILSCOPE_PROJECT_CONFIG`.
 
 ## Optional variables
 
@@ -88,27 +94,26 @@ Azure only:
 
 ## Which variable holds which value
 
-The variable name is derived from the container ID, with the
-`<name_prefix>-<environment>-` prefix dropped while that stays unambiguous:
+The variable is the key of the `secrets` block, as written:
+
+```json
+"secrets": {
+  "K3S_TOKEN": "k3s-token",
+  "TAILSCALE_AUTHKEY": "tailscale-authkey"
+}
+```
+
+`K3S_TOKEN` feeds the container `k3s-token`. The block is the same for the
+whole cluster, so one name means one value everywhere and nothing has to be
+derived. Two variables naming the same container are refused: both would be
+written in one run, and the last would win.
+
+The role prints the mapping before it uploads anything — including which
+clouds hold each container and which servers read it — so there is nothing to
+guess:
 
 ```
-oilscope-dev-db-password-fetcher   ->  DB_PASSWORD_FETCHER
-oilscope-dev-oilpriceapi-key       ->  OILPRICEAPI_KEY
-```
-
-It is deliberately not the key side of `secret_mappings`. That key is the
-variable the application reads *inside one VM*: `DB_PASSWORD` is the fetcher's
-password on `fetcher` and the history service's password on `history`, and one
-shell cannot hold both under one name. If dropping the prefix would make two
-containers collide, every container keeps the fully qualified name
-(`OILSCOPE_DEV_DB_PASSWORD_FETCHER`) instead.
-
-The role prints the mapping before it uploads anything — including which clouds
-each container is held on — so there is nothing to guess:
-
-```
-EXAMPLE_DB_PASSWORD -> example-db-password on aws, gcp (read by fetcher, history, infra, ui)
-EXAMPLE_API_KEY     -> example-api-key on gcp (read by fetcher)
+K3S_TOKEN -> k3s-token on aws, gcp (read by server-1, server-2)
 ```
 
 One variable feeds every copy of a container. A value is never typed twice
@@ -122,47 +127,46 @@ exercised end to end against stub commands, so nothing reaches a real API:
 
 ```bash
 printf '#!/bin/sh\ncat >/dev/null\necho stub-version-1\n' > /tmp/stub-cli && chmod +x /tmp/stub-cli
-EXAMPLE_DB_PASSWORD=a EXAMPLE_GHCR_TOKEN=b EXAMPLE_API_KEY=c \
-  ansible-playbook oilscope.platform.upload_secret_versions \
-    -e secret_versions_config_file=$PWD/project-config.example.json \
+K3S_TOKEN=a TAILSCALE_AUTHKEY=b GHCR_TOKEN=c OILPRICEAPI_KEY=d \
+  ansible-playbook oilscope.cluster.upload_secret_versions -c local -i localhost, \
+    -e project_config_path=$PWD/cluster-config.example.json \
     -e secret_versions_gcloud=/tmp/stub-cli \
-    -e secret_versions_aws_cli=/tmp/stub-cli
+    -e secret_versions_aws_cli=/tmp/stub-cli \
+    -e secret_versions_az_cli=/tmp/stub-cli
 ```
 
-Moving a workload to the other cloud in a copy of the configuration shows the
-catalog split and both upload files run.
+Placing a server on another cloud in a copy of the configuration shows the
+catalog spread to it and that cloud's upload file run.
 
 ## Example
 
 ```bash
- export DB_PASSWORD_ADMIN="$(openssl rand -hex 32)"
- export DB_PASSWORD_FETCHER="$(openssl rand -hex 32)"
- export DB_PASSWORD_HISTORY="$(openssl rand -hex 32)"
- export DB_PASSWORD_UI="$(openssl rand -hex 32)"
+ export K3S_TOKEN="$(openssl rand -hex 32)"
+ export TAILSCALE_AUTHKEY="tskey-auth-..."
+ export GHCR_TOKEN="..."
  export OILPRICEAPI_KEY="..."
 
-ansible-playbook oilscope.platform.upload_secret_versions \
-  -e secret_versions_config_file=~/configs/oilscope/dev.json --check
-
-ansible-playbook oilscope.platform.upload_secret_versions \
-  -e secret_versions_config_file=~/configs/oilscope/dev.json
+ansible-playbook oilscope.cluster.upload_secret_versions --check
+ansible-playbook oilscope.cluster.upload_secret_versions
 ```
 
 The leading space keeps the export out of the shell history, in a shell
-configured to honour it.
+configured to honour it. The configuration comes from
+`OILSCOPE_PROJECT_CONFIG`.
 
 Rotating one credential:
 
 ```bash
- export DB_PASSWORD_UI="$(openssl rand -hex 32)"
+ export TAILSCALE_AUTHKEY="tskey-auth-..."
 
-ansible-playbook oilscope.platform.upload_secret_versions \
-  -e secret_versions_config_file=~/configs/oilscope/dev.json \
-  -e '{"secret_versions_only": ["DB_PASSWORD_UI"]}'
+ansible-playbook oilscope.cluster.upload_secret_versions \
+  -e '{"secret_versions_only": ["TAILSCALE_AUTHKEY"]}'
 ```
 
 Older versions stay until they are destroyed, so an upload is reversible until
-then.
+then. `K3S_TOKEN` is the exception worth knowing: a server reads it only when
+it first initialises the cluster, so a new value in the store does not rotate
+the token of a running cluster.
 
 ## License
 

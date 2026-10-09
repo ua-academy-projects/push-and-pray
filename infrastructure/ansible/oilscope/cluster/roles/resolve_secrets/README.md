@@ -1,27 +1,30 @@
 # Resolve secrets role
 
-Resolves the secret values permitted for the current host from its cloud's
-secret store, using the workload VM's own attached identity — not the
-operator's credentials. It runs on the workload host itself, as part of a
-deployment play, not on `localhost`.
+Resolves the cluster's secrets from the secret store of the host's cloud,
+using the node's own attached identity — not the operator's credentials. It
+runs on the node itself, as part of a deployment play, not on `localhost`.
+
+Only a `k3s_server` node reads anything: Terraform grants the secrets to the
+servers and to nothing else. The play then hands what it needs onward in
+memory - the join token to the agents, the Tailscale auth key to the bastions,
+the rest into Kubernetes Secrets - so no other host needs a grant of its own.
 
 Which cloud a host is on comes from `oilscope_cloud`, which the dynamic
 inventory stamps on every host. That name selects a task file — `tasks/fetch-
 gcp.yml`, `tasks/fetch-aws.yml` or `tasks/fetch-azure.yml` — so supporting
 another provider means adding a file, not a conditional.
 
-Terraform creates the containers and grants each workload access only to its
-own secrets; `secret_versions` writes values into them from an operator's
-environment — see [docs/secrets.md](../../../../../../docs/secrets.md). This
-role is the read side used at deploy time: it turns `secret_mappings` into an
-in-memory mapping the workload's own role can use to configure the running
-containers.
+Terraform creates the containers on every cloud that runs a server and grants
+the servers read access; `secret_versions` writes values into them from an
+operator's environment — see [docs/secrets.md](../../../../../../docs/secrets.md).
+This role is the read side used at deploy time: it turns the configuration's
+`secrets` block into an in-memory mapping.
 
 ## What it guarantees
 
-- Only the secrets listed in the current host's own `secret_mappings` are
-  ever requested — never another workload's, and never a sibling VM that
-  happens to share the same `role`.
+- Only a host that is a `k3s_server` entry of `nodes` ever requests anything,
+  and only what the `secrets` block lists. A bastion or an agent gets an empty
+  result without a single request.
 - Authentication is the instance's own attached identity: a service account
   on GCP, an instance role on AWS, a user-assigned managed identity on Azure. No credential is supplied by the operator
   or stored on the host.
@@ -34,9 +37,8 @@ containers.
 
 ## Requirements
 
-The host must carry an identity granted read access to the secrets in its own
-`secret_mappings`. `infrastructure/terraform/modules/<cloud>/secrets.tf` grants
-it automatically: `roles/secretmanager.secretAccessor` per secret on GCP, an
+The server must carry an identity granted read access to the secrets.
+`infrastructure/terraform/modules/<cloud>/secrets.tf` grants it automatically: `roles/secretmanager.secretAccessor` per secret on GCP, an
 inline role policy listing the secret ARNs on AWS, `Key Vault Secrets User` per
 secret on Azure.
 
@@ -54,24 +56,22 @@ from `uri`, so the CLI does the signing — and obtains the instance role throug
 IMDS on its own, including the IMDSv2 token exchange these instances require.
 `host_baseline` installs it on AWS hosts.
 
-The role identifies which `vms` entry is "this host" from `inventory_hostname`
-itself, not from a role or group name. Terraform names every instance
-`<name_prefix>-<environment>-<vms key>` (`main.tf`), and the dynamic
-inventory's `hostnames: - name` setting makes `inventory_hostname` exactly
-that instance name — so stripping the known `<name_prefix>-<environment>-`
-prefix recovers the literal `vms` dict key, the same key Terraform itself
-uses for `for_each`. This matters because a VM's `role` is not always its
-`vms` key (the database VM's key is `infra`, its role is `database`), and the
-schema does not require `role` to be unique across `vms` — two VMs could
-share one. Matching by the exact key, rather than by role, means a host can
-never resolve to a sibling's secrets even in that case.
+The role identifies which `nodes` entry is "this host" from
+`inventory_hostname` itself, not from a group name. Terraform names every
+instance `<name_prefix>-<environment>-<nodes key>`, and the dynamic
+inventory's `hostnames: - name` setting makes `inventory_hostname` exactly that
+instance name — so stripping the known `<name_prefix>-<environment>-` prefix
+recovers the literal `nodes` key, the same key Terraform uses for `for_each`.
+The role read from that entry, not from the inventory group, decides: a host
+placed in the `k3s_server` group by hand, or a bastion named like a node, is
+still refused unless the configuration says it is a server.
 
 ## Required variables
 
-- `resolve_secrets_config_path`: path to the project configuration JSON —
-  the same file `project_config_path` points at in Terraform. It must
-  include `name_prefix` and `environment` at the top level, and a `vms`
-  entry whose key matches this host's derived key.
+- `resolve_secrets_config_path`: path to the cluster configuration JSON —
+  the same file `project_config_path` points at in Terraform. Defaults to
+  `project_config_path`, which `group_vars/all.yml` takes from
+  `OILSCOPE_PROJECT_CONFIG`.
 
 ## Optional variables
 
@@ -107,10 +107,17 @@ Azure only:
 
 ## Output
 
-`resolve_secrets_result`: a dict keyed by application variable name — the
-key side of `secret_mappings` — mapping to the resolved secret value. A host
-with no `secret_mappings` gets an empty result rather than a failure, and needs
-neither a cloud nor a credential — the check and the fetch are skipped together.
+`resolve_secrets_result`: a dict keyed by the variable names of the `secrets`
+block (`K3S_TOKEN`, `TAILSCALE_AUTHKEY`, …), mapping to the resolved value. A
+host that is not a server gets an empty result rather than a failure, and
+needs neither a cloud nor a credential — the check and the fetch are skipped
+together.
+
+A play that runs elsewhere reads the values from the server's facts:
+
+```yaml
+tailscale_auth_key: "{{ hostvars[groups['k3s_server'][0]].resolve_secrets_result.TAILSCALE_AUTHKEY }}"
+```
 
 ## License
 

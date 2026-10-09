@@ -1,78 +1,56 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-- name: Read the project configuration
+- name: Read the cluster configuration
   ansible.builtin.set_fact:
     secret_versions_config: >-
       {{ lookup('ansible.builtin.file', secret_versions_config_file) | from_json }}
 
-# The unit of upload is the container. One container is usually read by several
-# workloads, and those workloads may sit on different clouds - in which case the
-# container exists on each of them and the same value goes to every copy. So the
-# first pass records, per workload, what it reads and where it runs.
-- name: Note what each workload reads and which cloud it runs on
+# The unit of upload is the container. Only k3s_server nodes read secrets, so a
+# container exists on every cloud that runs a server - Terraform creates it
+# there and nowhere else - and the same value goes to every copy.
+- name: Find the servers that read the secrets
   ansible.builtin.set_fact:
-    secret_versions_readers: >-
-      {{ secret_versions_readers | default([]) + [{
-           'vm': secret_versions_vm.key,
-           'cloud': secret_versions_vm.value.cloud
-                    | default(secret_versions_config.default_cloud),
-           'ids': secret_versions_vm.value.secret_mappings | default({})
-                  | dict2items | map(attribute='value') | unique | list
-         }] }}
-  loop: "{{ secret_versions_config.vms | dict2items }}"
-  loop_control:
-    loop_var: secret_versions_vm
-    label: "{{ secret_versions_vm.key }}"
+    secret_versions_servers: >-
+      {{ secret_versions_config.nodes | dict2items
+         | selectattr('value.role', 'equalto', 'k3s_server') | list }}
 
-# The variable name comes from the container ID, not from the key side of
-# secret_mappings: that key is scoped to one VM, so DB_PASSWORD means a
-# different secret on every workload and one shell cannot hold them all.
-- name: Derive a variable name for every container
+- name: Note where the containers are held
   ansible.builtin.set_fact:
-    secret_versions_ids: >-
-      {{ secret_versions_readers | map(attribute='ids') | flatten | unique | sort | list }}
-    secret_versions_prefix: >-
-      {{ secret_versions_config.name_prefix }}-{{ secret_versions_config.environment }}-
+    secret_versions_server_names: >-
+      {{ secret_versions_servers | map(attribute='key') | sort | list }}
+    secret_versions_server_clouds: >-
+      {{ secret_versions_servers | map(attribute='value')
+         | map(attribute='cloud', default=secret_versions_config.default_cloud)
+         | unique | sort | list }}
+    secret_versions_catalog: []
 
-- name: Prepare the short and the fully qualified variable names
-  ansible.builtin.set_fact:
-    secret_versions_short_names: >-
-      {{ secret_versions_ids
-         | map('regex_replace', '^' ~ (secret_versions_prefix | regex_escape), '')
-         | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
-    secret_versions_full_names: >-
-      {{ secret_versions_ids
-         | map('upper') | map('regex_replace', '[^A-Z0-9]', '_') | list }}
+# Two variables naming one container would write two values into it in one
+# run, and whichever went last would win.
+- name: Refuse a container named twice
+  ansible.builtin.assert:
+    that: >-
+      secret_versions_config.secrets | default({}) | dict2items
+      | map(attribute='value') | unique | length
+      == secret_versions_config.secrets | default({}) | length
+    fail_msg: two variables in the secrets block name the same container
+    quiet: true
 
-# Dropping the project prefix only stays safe while it keeps every name
-# distinct. If two containers would collapse onto one variable, all of them
-# keep the full name: a shorter prompt is not worth writing a value into the
-# wrong container.
-- name: Choose the variable names
-  ansible.builtin.set_fact:
-    secret_versions_variables: >-
-      {{ secret_versions_short_names
-         if (secret_versions_short_names | unique | length)
-            == (secret_versions_short_names | length)
-         else secret_versions_full_names }}
-
+# The variable is the key of the secrets block itself. The block is the same
+# for the whole cluster, so one name means one value everywhere - nothing has
+# to be derived from the container ID.
 - name: Build the upload catalog
   ansible.builtin.set_fact:
     secret_versions_catalog: >-
-      {{ secret_versions_catalog | default([]) + [{
-           'secret_id': secret_versions_entry.0,
-           'variable': secret_versions_entry.1,
-           'read_by': secret_versions_readers
-                      | selectattr('ids', 'contains', secret_versions_entry.0)
-                      | map(attribute='vm') | sort | list,
-           'clouds': secret_versions_readers
-                     | selectattr('ids', 'contains', secret_versions_entry.0)
-                     | map(attribute='cloud') | unique | sort | list
+      {{ secret_versions_catalog + [{
+           'secret_id': secret_versions_entry.value,
+           'variable': secret_versions_entry.key,
+           'read_by': secret_versions_server_names,
+           'clouds': secret_versions_server_clouds
          }] }}
-  loop: "{{ secret_versions_ids | zip(secret_versions_variables) | list }}"
+  loop: "{{ secret_versions_config.secrets | default({}) | dict2items | sort(attribute='key') }}"
   loop_control:
     loop_var: secret_versions_entry
-    label: "{{ secret_versions_entry.0 }}"
+    label: "{{ secret_versions_entry.key }}"
 
 - name: Keep only the requested containers
   ansible.builtin.set_fact:
@@ -112,8 +90,8 @@
     quiet: true
 
 # Everything is checked before anything is written. A value that turns out to
-# be missing halfway through leaves some workloads on the new credential and
-# some on the old one, which is worse than not having started.
+# be missing halfway through leaves some hosts on the new credential and some
+# on the old one, which is worse than not having started.
 - name: Find values that are not in the environment
   ansible.builtin.set_fact:
     secret_versions_absent: >-

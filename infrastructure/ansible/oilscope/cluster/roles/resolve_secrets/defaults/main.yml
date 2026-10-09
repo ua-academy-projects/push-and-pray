@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-resolve_secrets_config_path: ""
+resolve_secrets_config_path: "{{ project_config_path | default('') }}"
 
 # Which cloud this host runs on. The dynamic inventory stamps oilscope_cloud on
 # every host from the resource's own cloud label or tag, so normally nothing has

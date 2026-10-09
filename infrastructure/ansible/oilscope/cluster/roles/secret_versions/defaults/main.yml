@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
-# Project configuration JSON - the same file the Terraform configuration reads.
-secret_versions_config_file: ""
+# Cluster configuration JSON - the same file the Terraform configuration reads.
+# Defaults to project_config_path, which group_vars/all.yml takes from
+# OILSCOPE_PROJECT_CONFIG.
+secret_versions_config_file: "{{ project_config_path | default('') }}"
 
 # Upload a subset. Entries match a container ID or a variable name.
 secret_versions_only: []
 
 # One task file per cloud, selected by name rather than by a conditional, so
 # adding a provider adds a file and not a branch. A container is uploaded to
-# every cloud that holds it - the clouds its readers are placed on.
+# every cloud that holds it - the clouds a k3s_server node runs on.
 secret_versions_supported_clouds:
   - gcp
   - aws
