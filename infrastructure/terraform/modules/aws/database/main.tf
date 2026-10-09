@@ -39,6 +39,28 @@ resource "aws_vpc_security_group_ingress_rule" "postgres" {
   ip_protocol                  = "tcp"
 }
 
+resource "aws_vpc_security_group_ingress_rule" "kubernetes_postgres" {
+  count = local.enabled && try(var.config.kubernetes.mode, "self_managed") == "managed" ? 1 : 0
+
+  region            = local.region
+  security_group_id = aws_security_group.postgres[0].id
+  cidr_ipv4         = try(var.config.network.cloud_cidrs.aws.workload_subnet_cidr, var.config.network.workload_subnet_cidr)
+  from_port         = var.config.database.port
+  to_port           = var.config.database.port
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "bastion_postgres" {
+  count = local.enabled && try(var.config.kubernetes.mode, "self_managed") == "managed" ? 1 : 0
+
+  region            = local.region
+  security_group_id = aws_security_group.postgres[0].id
+  cidr_ipv4         = try(var.config.network.cloud_cidrs.aws.management_subnet_cidr, var.config.network.management_subnet_cidr)
+  from_port         = var.config.database.port
+  to_port           = var.config.database.port
+  ip_protocol       = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "postgres" {
   count = local.enabled ? 1 : 0
 

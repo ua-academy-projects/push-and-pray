@@ -2,6 +2,11 @@ locals {
   project_config = jsondecode(file(var.project_config_path))
 
   config = merge(local.project_config, {
+    # The root state owns the existing self-managed K3s environment. Managed
+    # Kubernetes is isolated in infrastructure/terraform/managed-kubernetes.
+    kubernetes = merge(try(local.project_config.kubernetes, {}), {
+      mode = "self_managed"
+    })
     vms = merge(local.project_config.vms, {
       bastion = merge(
         local.project_config.vm_defaults,

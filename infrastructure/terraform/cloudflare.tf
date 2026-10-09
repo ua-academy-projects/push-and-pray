@@ -13,7 +13,7 @@ locals {
 }
 
 resource "cloudflare_dns_record" "ui" {
-  count = local.cloudflare.enabled ? 1 : 0
+  count = local.cloudflare.enabled && try(local.config.kubernetes.mode, "self_managed") == "self_managed" ? 1 : 0
 
   zone_id = local.cloudflare.zone_id
   name    = local.cloudflare.hostname

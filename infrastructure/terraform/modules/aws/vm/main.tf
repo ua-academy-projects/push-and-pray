@@ -171,6 +171,8 @@ resource "aws_instance" "workload" {
 
     ignore_changes = [
       associate_public_ip_address,
+      # The SSM "current" AMI moves over time; keep established VMs and their disks.
+      ami,
     ]
 
     precondition {

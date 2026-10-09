@@ -28,6 +28,7 @@ infrastructure/docker/deployment
 *.tfvars.json
 *.tfplan
 **/tfplan
+**/tfplan-*
 crash.log
 crash.*.log
 *.json

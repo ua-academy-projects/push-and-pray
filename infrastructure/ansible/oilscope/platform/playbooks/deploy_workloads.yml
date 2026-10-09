@@ -14,6 +14,14 @@
           - groups.get('k3s_server', []) | length >= 3
           - groups.get('k3s_server', []) | length % 2 == 1
         fail_msg: Discover one K3s primary and at least three odd-numbered K3s servers before deployment.
+      when: kubernetes_mode == 'self_managed'
+
+    - name: Require the selected managed cluster and migration host
+      ansible.builtin.assert:
+        that:
+          - managed_kubernetes.name | length > 0
+          - database_mode != 'managed' or groups.get('database_migration', []) | length == 1
+      when: kubernetes_mode == 'managed'
 
 - name: Prepare the managed cloud database
   ansible.builtin.import_playbook: database.yml
@@ -21,6 +29,12 @@
 
 - name: Install K3s cluster
   ansible.builtin.import_playbook: deploy_k3s.yml
+  when: kubernetes_mode == 'self_managed'
 
 - name: Deploy K3s workloads
   ansible.builtin.import_playbook: deploy_k3s_workloads.yml
+  when: kubernetes_mode == 'self_managed'
+
+- name: Deploy managed Kubernetes workloads
+  ansible.builtin.import_playbook: deploy_managed_kubernetes_workloads.yml
+  when: kubernetes_mode == 'managed'

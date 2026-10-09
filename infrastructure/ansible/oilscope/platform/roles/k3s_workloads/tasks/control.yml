@@ -46,7 +46,7 @@
           '-o', 'HostKeyAlias=' ~ oilscope_ssh_host_key_alias,
           '-L', '127.0.0.1:' ~ k3s_workloads_port_command.stdout ~ ':127.0.0.1:6443']
          + (['-o', 'ProxyCommand=' ~ oilscope_ssh_proxy_command]
-            if oilscope_ssh_proxy_command is defined else [])
+            if oilscope_ssh_proxy_command is defined and (oilscope_ssh_proxy_command | length > 0) else [])
          + (['-i', ansible_ssh_private_key_file]
             if ansible_ssh_private_key_file is defined else [])
          + ['-p', ansible_port | string, ansible_user ~ '@' ~ ansible_host] }}

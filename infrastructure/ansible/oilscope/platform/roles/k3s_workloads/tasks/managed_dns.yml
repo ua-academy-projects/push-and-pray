@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Store the Cloudflare token in the ingress namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: oilscope-cloudflare-dns
+        namespace: kube-system
+      type: Opaque
+      stringData:
+        token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_API_TOKEN') }}"
+  no_log: true
+
+- name: Reconcile the managed ingress hostname in Cloudflare
+  kubernetes.core.helm:
+    release_name: oilscope-external-dns
+    release_namespace: kube-system
+    chart_ref: external-dns
+    chart_repo_url: https://kubernetes-sigs.github.io/external-dns/
+    chart_version: 1.22.0
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      provider:
+        name: cloudflare
+      sources: [service]
+      policy: upsert-only
+      registry: txt
+      txtOwnerId: "{{ managed_kubernetes.name }}"
+      domainFilters: ["{{ k3s_workloads_config.cloudflare.hostname }}"]
+      extraArgs: "{{ ['--zone-id-filter=' ~ k3s_workloads_config.cloudflare.zone_id] + (['--cloudflare-proxied'] if k3s_workloads_config.cloudflare.proxied | default(true) | bool else []) }}"
+      env:
+        - name: CF_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: oilscope-cloudflare-dns
+              key: token

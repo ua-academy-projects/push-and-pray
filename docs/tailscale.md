@@ -10,12 +10,17 @@ The Ansible controller also does not need to join the tailnet.
 
 The K3s workload playbook also installs a small DNS resolver on the primary
 server. It listens only on `tailscale0` and answers the three management names
-under `oilscope.internal` with that server's Tailscale IPv4. Configure one
+under `oilscope.internal`. By default, they resolve to the primary's Tailscale
+IPv4; with `kubernetes.private_access_gateway` set to `bastion`, they resolve
+to the existing bastion's Tailscale IPv4 for private AKS access. Configure one
 restricted (split-DNS) nameserver in the Tailscale Admin Console: domain
 `oilscope.internal`, nameserver the primary server's Tailscale IPv4. The
 resolver records are managed by the `k3s_workloads` Ansible role; the split-DNS
 forwarding rule is managed in Tailscale. MagicDNS alone cannot add custom
 `oilscope.internal` records. Do not add client `/etc/hosts` entries.
+
+See [private AKS dashboard access](aks-private-access.md) for the three AKS
+URLs and the preserved K3s dashboard ports.
 
 The shared configuration's `network.cloud_cidrs` gives AWS, GCP, and Azure
 distinct private ranges. The inventory rejects overlapping ranges before

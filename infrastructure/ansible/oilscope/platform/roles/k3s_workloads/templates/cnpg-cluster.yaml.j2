@@ -49,10 +49,10 @@ spec:
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   storage:
-    storageClass: local-path
+    storageClass: {{ 'oilscope-managed' if kubernetes_mode == 'managed' else 'local-path' }}
     size: 2Gi
   walStorage:
-    storageClass: local-path
+    storageClass: {{ 'oilscope-managed' if kubernetes_mode == 'managed' else 'local-path' }}
     size: 2Gi
   resources:
     requests:

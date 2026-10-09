@@ -161,6 +161,9 @@ After the one-time tailnet split-DNS entry for `oilscope.internal` points to
 that address, open `http://headlamp.oilscope.internal:30081`,
 `http://homepage.oilscope.internal:30082`, or
 `http://grafana.oilscope.internal:30083` while connected to the tailnet.
+When the private AKS gateway is enabled, the same K3s URLs pass through the
+Tailscale-only bastion proxy; the [AKS dashboards](aks-private-access.md) use
+the same names without port numbers.
 No client hosts-file entry, SSH tunnel, or port-forward is needed. Grafana
 uses a separate private NodePort; none of these services has a public Ingress.
 Homepage has a separate NodePort and read-only access to node/pod metrics;

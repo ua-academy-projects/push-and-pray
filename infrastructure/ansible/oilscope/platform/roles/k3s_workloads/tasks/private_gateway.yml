@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the bastion Tailscale IPv4
+  ansible.builtin.command:
+    argv: [tailscale, ip, -4]
+  register: private_gateway_tailscale_address
+  changed_when: false
+
+- name: Select the Tailscale listener address
+  ansible.builtin.set_fact:
+    private_gateway_tailscale_ip: "{{ private_gateway_tailscale_address.stdout | trim }}"
+
+- name: Require private gateway addresses
+  ansible.builtin.assert:
+    that:
+      - private_gateway_tailscale_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+      - private_gateway_aks_ip is match('^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)')
+      - private_gateway_k3s_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+
+- name: Install the private HTTP proxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+
+- name: Configure the Tailscale-only HTTP proxy
+  ansible.builtin.template:
+    src: private-gateway.cfg.j2
+    dest: /etc/oilscope-private-access.cfg
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/haproxy -c -f %s
+  register: private_gateway_config
+
+- name: Install the dedicated private proxy service
+  ansible.builtin.copy:
+    src: oilscope-private-access.service
+    dest: /etc/systemd/system/oilscope-private-access.service
+    owner: root
+    group: root
+    mode: '0644'
+  register: private_gateway_unit
+
+- name: Keep the private dashboard gateway running
+  ansible.builtin.systemd_service:
+    name: oilscope-private-access
+    enabled: true
+    daemon_reload: "{{ private_gateway_unit.changed }}"
+    state: "{{ 'restarted' if private_gateway_config.changed or private_gateway_unit.changed else 'started' }}"

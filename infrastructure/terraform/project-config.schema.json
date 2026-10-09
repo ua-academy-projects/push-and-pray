@@ -36,6 +36,17 @@
       "enum": ["postgres_extensions", "managed"],
       "description": "Selects self-managed PostgreSQL extensions or one managed PostgreSQL service in default_cloud."
     },
+    "kubernetes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["self_managed", "managed"], "default": "self_managed" },
+        "node_size": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$", "description": "Abstract provider_mappings.instance_types key for managed worker nodes; defaults to medium." },
+        "node_count": { "type": "integer", "minimum": 2, "description": "Managed worker node count; defaults to three." },
+        "private_access_gateway": { "type": "string", "enum": ["primary", "bastion"], "description": "Tailscale DNS target for private management names in the self-managed K3s deployment; defaults to the K3s primary." }
+      }
+    },
     "database": {
       "$ref": "#/$defs/database"
     },
@@ -222,7 +233,7 @@
     },
     "vms": {
       "type": "object",
-      "minProperties": 2,
+      "minProperties": 1,
       "required": ["bastion"],
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
@@ -246,6 +257,15 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["kubernetes"],
+        "properties": {"kubernetes": {"required": ["mode"], "properties": {"mode": {"const": "managed"}}}}
+      },
+      "else": {"properties": {"vms": {"minProperties": 2}}}
+    }
+  ],
   "$defs": {
     "cloud_network_cidrs": {
       "type": "object",

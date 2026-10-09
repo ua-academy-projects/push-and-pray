@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the AKS private ingress address from the K3s controller inventory
+  hosts: k3s_primary
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Require the existing Azure K3s inventory
+      ansible.builtin.assert:
+        that:
+          - kubernetes_mode in ['self_managed', 'managed']
+          - oilscope_cloud == 'azure'
+          - oilscope_bastion_host | length > 0
+
+    - name: Read the separately managed AKS identity
+      ansible.builtin.command:
+        argv: [terraform, "-chdir={{ k3s_workloads_terraform_directory }}/managed-kubernetes", output, -json, managed_kubernetes]
+      delegate_to: localhost
+      become: false
+      register: k3s_workloads_managed_metadata
+      changed_when: false
+
+    - name: Select the managed cluster
+      ansible.builtin.set_fact:
+        managed_kubernetes: "{{ k3s_workloads_managed_metadata.stdout | from_json }}"
+
+    - name: Require the expected AKS cluster
+      ansible.builtin.assert:
+        that:
+          - managed_kubernetes.cloud == 'azure'
+          - managed_kubernetes.name | length > 0
+          - managed_kubernetes.resource_group_name | length > 0
+
+    - name: Read the managed private load balancer
+      block:
+        - name: Retrieve AKS credentials on the controller
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: managed_control
+          delegate_to: localhost
+          become: false
+
+        - name: Wait for the AKS internal load balancer address
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+            api_version: v1
+            kind: Service
+            name: traefik-private
+            namespace: kube-system
+          delegate_to: localhost
+          become: false
+          register: k3s_workloads_private_service
+          retries: 36
+          delay: 10
+          until: >-
+            k3s_workloads_private_service.resources | length == 1 and
+            k3s_workloads_private_service.resources[0].status.loadBalancer.ingress | default([]) | length > 0
+
+        - name: Record the private ingress address
+          ansible.builtin.set_fact:
+            k3s_workloads_managed_private_ip: "{{ k3s_workloads_private_service.resources[0].status.loadBalancer.ingress[0].ip }}"
+      always:
+        - name: Remove temporary AKS credentials
+          ansible.builtin.file:
+            path: "{{ k3s_workloads_control_dir.path }}"
+            state: absent
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          when: k3s_workloads_control_dir is defined and k3s_workloads_control_dir.path is defined
+
+    - name: Read the K3s primary Tailscale address for existing dashboard ports
+      ansible.builtin.command:
+        argv: [tailscale, ip, -4]
+      register: k3s_workloads_primary_tailnet_ip
+      changed_when: false
+
+- name: Install the Tailscale-only dashboard gateway on the existing bastion
+  hosts: all
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    private_gateway_aks_ip: "{{ hostvars[groups['k3s_primary'][0]].k3s_workloads_managed_private_ip }}"
+    private_gateway_k3s_ip: "{{ hostvars[groups['k3s_primary'][0]].k3s_workloads_primary_tailnet_ip.stdout | trim }}"
+  tasks:
+    - name: Configure the permanent private dashboard proxy
+      ansible.builtin.import_role:
+        name: oilscope.platform.k3s_workloads
+        tasks_from: private_gateway
+      when: inventory_hostname == hostvars[groups['k3s_primary'][0]].oilscope_bastion_host
+
+- name: Point the existing split DNS records at the private dashboard gateway
+  hosts: k3s_primary
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Reconcile the existing Tailscale DNS resolver
+      ansible.builtin.import_role:
+        name: oilscope.platform.k3s_workloads
+        tasks_from: private_dns

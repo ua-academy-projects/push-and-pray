@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy OilScope to the selected managed cluster
+  hosts: managed_kubernetes_controller
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Install and configure workloads
+      block:
+        - name: Retrieve managed cluster credentials on the control host
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: managed_control
+
+        - name: Prepare Kubernetes resources and Helm releases
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: prepare
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+
+        - name: Deploy application resources
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: deploy
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+      always:
+        - name: Remove temporary managed cluster credentials
+          ansible.builtin.file:
+            path: "{{ k3s_workloads_control_dir.path }}"
+            state: absent
+          changed_when: false
+          when: k3s_workloads_control_dir is defined and k3s_workloads_control_dir.path is defined

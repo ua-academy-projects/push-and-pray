@@ -12,10 +12,7 @@
     wait: true
     release_values:
       fullnameOverride: headlamp
-      service:
-        type: NodePort
-        port: 80
-        nodePort: 30081
+      service: "{{ {'type': 'NodePort', 'port': 80, 'nodePort': 30081} if kubernetes_mode == 'self_managed' else {'type': 'ClusterIP', 'port': 80} }}"
       ingress:
         enabled: false
       clusterRoleBinding:

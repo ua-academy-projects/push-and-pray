@@ -10,6 +10,7 @@
   "default_cloud": "gcp",
   "default_location": "europe",
   "database_mode": "postgres_extensions",
+  "kubernetes": {"mode": "self_managed", "node_size": "medium", "node_count": 3},
   "database": {
     "name": "oil_tracker",
     "admin_user": "oil_tracker",

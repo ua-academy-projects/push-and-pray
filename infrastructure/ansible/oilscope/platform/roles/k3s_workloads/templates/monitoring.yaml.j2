@@ -27,6 +27,30 @@ subjects:
   - kind: ServiceAccount
     name: prometheus
     namespace: monitoring
+{% if kubernetes_mode == 'managed' %}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: oilscope-prometheus-nodes
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/proxy, services, endpoints, pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oilscope-prometheus-nodes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: oilscope-prometheus-nodes
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring
+{% endif %}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -56,6 +80,52 @@ data:
             target_label: app
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+{% if kubernetes_mode == 'managed' %}
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets: [kube-state-metrics.monitoring.svc.cluster.local:8080]
+      - job_name: node-exporter
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names: [monitoring]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: oilscope-node-exporter
+          - source_labels: [__meta_kubernetes_endpoint_node_name]
+            target_label: node
+      - job_name: kubelet
+        scheme: https
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/$1/proxy/metrics
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+      - job_name: cadvisor
+        scheme: https
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+{% endif %}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -64,7 +134,7 @@ metadata:
   namespace: monitoring
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: local-path
+  storageClassName: {{ 'oilscope-managed' if kubernetes_mode == 'managed' else 'local-path' }}
   resources:
     requests: {storage: 2Gi}
 ---
@@ -124,3 +194,48 @@ spec:
   selector: {app: prometheus}
   ports:
     - {name: http, port: 9090, targetPort: http}
+{% if kubernetes_mode == 'managed' %}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: oilscope-node-exporter
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels: {app: oilscope-node-exporter}
+  template:
+    metadata:
+      labels: {app: oilscope-node-exporter}
+    spec:
+      containers:
+        - name: node-exporter
+          image: quay.io/prometheus/node-exporter:v1.9.1
+          args:
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+          ports:
+            - {name: metrics, containerPort: 9100}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          volumeMounts:
+            - {name: proc, mountPath: /host/proc, readOnly: true}
+            - {name: sys, mountPath: /host/sys, readOnly: true}
+      volumes:
+        - name: proc
+          hostPath: {path: /proc}
+        - name: sys
+          hostPath: {path: /sys}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oilscope-node-exporter
+  namespace: monitoring
+spec:
+  clusterIP: None
+  selector: {app: oilscope-node-exporter}
+  ports:
+    - {name: metrics, port: 9100, targetPort: metrics}
+{% endif %}

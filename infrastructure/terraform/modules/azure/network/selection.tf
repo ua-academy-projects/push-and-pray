@@ -1,8 +1,9 @@
 locals {
-  cloud_network            = merge(var.config.network, try(var.config.network.cloud_cidrs.azure, {}))
-  managed_database_enabled = var.config.database_mode == "managed" && var.config.default_cloud == "azure"
-  resource_prefix          = "${var.config.name_prefix}-${var.config.environment}"
-  labels                   = merge(var.config.common_labels, { environment = var.config.environment })
+  cloud_network              = merge(var.config.network, try(var.config.network.cloud_cidrs.azure, {}))
+  managed_database_enabled   = var.config.database_mode == "managed" && var.config.default_cloud == "azure"
+  managed_kubernetes_enabled = try(var.config.kubernetes.mode, "self_managed") == "managed" && var.config.default_cloud == "azure"
+  resource_prefix            = "${var.config.name_prefix}-${var.config.environment}"
+  labels                     = merge(var.config.common_labels, { environment = var.config.environment })
 
   azure_vms = {
     for name, vm in var.config.vms : name => merge(
@@ -13,7 +14,7 @@ locals {
   }
   workload_locations = setunion(toset([
     for vm in values(local.azure_vms) : vm.location if vm.role != "bastion"
-  ]), local.managed_database_enabled ? toset([var.config.default_location]) : toset([]))
+  ]), local.managed_database_enabled || local.managed_kubernetes_enabled ? toset([var.config.default_location]) : toset([]))
   vms = {
     for name, vm in local.azure_vms : name => vm if contains(local.workload_locations, vm.location)
   }

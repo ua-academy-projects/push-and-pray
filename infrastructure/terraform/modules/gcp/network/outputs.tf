@@ -6,6 +6,7 @@ output "management_subnet_ids" {
 output "workload_subnet_ids" {
   description = "GCP workload subnet IDs keyed by abstract location."
   value       = { for location, subnet in google_compute_subnetwork.workload : location => subnet.id }
+  depends_on  = [google_compute_router_nat.main]
 }
 
 output "network_tags" {

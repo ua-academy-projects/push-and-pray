@@ -8,6 +8,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 
 from ansible.errors import AnsibleError, AnsibleParserError
@@ -135,10 +136,16 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         self.inventory.set_variable("all", "project_config_path", project_config_path)
         database_mode = self._require_string(config.get("database_mode"), "database_mode")
         self.inventory.set_variable("all", "database_mode", database_mode)
+        kubernetes_mode = config.get("kubernetes", {}).get("mode", "self_managed")
+        if kubernetes_mode not in ("self_managed", "managed"):
+            raise AnsibleParserError("kubernetes.mode must be self_managed or managed")
+        self.inventory.set_variable("all", "kubernetes_mode", kubernetes_mode)
         if database_mode == "managed":
             self.inventory.set_variable(
                 "all", "managed_database", self._load_managed_database(path)
             )
+        if kubernetes_mode == "managed":
+            self.inventory.set_variable("all", "managed_kubernetes", self._load_managed_kubernetes(path, config))
         settings_by_cloud = self._build_settings(config)
 
         for cloud, settings in settings_by_cloud.items():
@@ -152,20 +159,50 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     display.vvv(f"could not remove {generated}: {cleanup_error}")
 
         self._set_host_context(config)
+        if kubernetes_mode == "managed":
+            self.inventory.add_group("managed_kubernetes_controller")
+            self.inventory.add_host("localhost", group="managed_kubernetes_controller")
+            self.inventory.set_variable("localhost", "ansible_connection", "local")
+            self.inventory.set_variable("localhost", "ansible_python_interpreter", sys.executable)
+            self.inventory.set_variable("localhost", "oilscope_cloud", config["default_cloud"])
+            location = config["locations"][config["default_location"]][config["default_cloud"]]
+            self.inventory.set_variable("localhost", "oilscope_region", location["region"])
+            self.inventory.set_variable("localhost", "oilscope_project_id", config.get("clouds", {}).get("gcp", {}).get("project_id", ""))
+            self.inventory.set_variable("localhost", "oilscope_key_vault_name", config.get("clouds", {}).get("azure", {}).get("key_vault_name", ""))
 
     def _load_managed_database(self, inventory_path):
+        metadata = self._load_terraform_output(inventory_path, "managed_database")
+        if not isinstance(metadata, dict) or not metadata.get("host"):
+            raise AnsibleParserError("Terraform managed_database output is missing its host")
+        return metadata
+
+    def _load_managed_kubernetes(self, inventory_path, config):
+        # Managed clusters are owned by the isolated state. Never prefer the
+        # root K3s state when the shared configuration selects managed mode.
+        metadata = self._load_terraform_output(
+            inventory_path, "managed_kubernetes", "managed-kubernetes"
+        )
+        if not isinstance(metadata, dict) or metadata.get("cloud") != config["default_cloud"] or not metadata.get("name"):
+            raise AnsibleParserError(
+                "isolated managed_kubernetes output does not match the selected cloud"
+            )
+        return metadata
+
+    def _load_terraform_output(self, inventory_path, output_name, subdirectory=None):
         configured = plain(self.get_option("terraform_directory"))
         directory = (
             configured
             if os.path.isabs(configured)
             else os.path.join(os.path.dirname(os.path.abspath(inventory_path)), configured)
         )
+        if subdirectory:
+            directory = os.path.join(directory, subdirectory)
         command = [
             plain(self.get_option("terraform_binary")),
             f"-chdir={os.path.normpath(directory)}",
             "output",
             "-json",
-            "managed_database",
+            output_name,
         ]
         try:
             result = subprocess.run(
@@ -178,11 +215,9 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             metadata = json.loads(result.stdout)
         except (OSError, subprocess.SubprocessError, ValueError) as error:
             raise AnsibleParserError(
-                "managed mode requires the Terraform managed_database output; "
+                f"{output_name} requires a Terraform output; "
                 f"run terraform apply before inventory discovery: {error}"
             ) from error
-        if not isinstance(metadata, dict) or not metadata.get("host"):
-            raise AnsibleParserError("Terraform managed_database output is missing its host")
         return metadata
 
     def _resolve_config_path(self, path):
@@ -281,7 +316,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             workload_locations = {
                 vm["location"] for vm in vms.values() if vm.get("role") != bastion_role
             }
-            if cloud == "azure" and config.get("database_mode") == "managed" and default_cloud == cloud:
+            if (config.get("database_mode") == "managed" or config.get("kubernetes", {}).get("mode") == "managed") and default_cloud == cloud:
                 workload_locations.add(config["default_location"])
             selected[cloud] = {
                 name: vm for name, vm in vms.items()
@@ -386,6 +421,15 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 raise AnsibleParserError("k3s.bootstrap_server must name a discovered K3s server")
             self.inventory.add_group("k3s_primary")
             self.inventory.add_host(primary, group="k3s_primary")
+
+        migration_host = (
+            f"{config['name_prefix']}-{config['environment']}-bastion"
+            if config.get("kubernetes", {}).get("mode", "self_managed") == "managed"
+            else (primary if servers else None)
+        )
+        if migration_host and migration_host in self.inventory.hosts:
+            self.inventory.add_group("database_migration")
+            self.inventory.add_host(migration_host, group="database_migration")
 
     def _resource_names(self, config, vms):
         prefix = self._require_string(config.get("name_prefix"), "name_prefix")

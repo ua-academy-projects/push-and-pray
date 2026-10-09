@@ -8,6 +8,14 @@ output "workload_subnet_ids" {
   value       = { for location, subnet in aws_subnet.workload : location => subnet.id }
 }
 
+output "kubernetes_subnet_ids" {
+  value = local.managed_kubernetes_enabled ? [
+    aws_subnet.workload[var.config.default_location].id,
+    aws_subnet.kubernetes_secondary[0].id,
+  ] : []
+  depends_on = [aws_route_table_association.workload, aws_route_table_association.kubernetes_secondary, aws_route.workload_internet]
+}
+
 output "security_group_ids" {
   description = "AWS security group IDs keyed by abstract location and VM role."
   value = {

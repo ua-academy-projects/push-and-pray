@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
 - name: Deploy Database
-  hosts: k3s_primary
+  hosts: database_migration
   become: true
   gather_facts: true
   force_handlers: true

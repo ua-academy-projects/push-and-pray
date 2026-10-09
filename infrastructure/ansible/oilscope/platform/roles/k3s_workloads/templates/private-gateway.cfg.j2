@@ -1,0 +1,40 @@
+global
+    maxconn 200
+    user haproxy
+    group haproxy
+
+defaults
+    mode http
+    timeout connect 5s
+    timeout client 60s
+    timeout server 60s
+
+frontend managed_dashboards
+    bind {{ private_gateway_tailscale_ip }}:80
+    acl management_host hdr(host) -i homepage.{{ k3s_workloads_private_dns_domain }} grafana.{{ k3s_workloads_private_dns_domain }} headlamp.{{ k3s_workloads_private_dns_domain }}
+    http-request deny unless management_host
+    default_backend aks_management
+
+backend aks_management
+    server aks {{ private_gateway_aks_ip }}:80 check
+
+frontend k3s_headlamp
+    bind {{ private_gateway_tailscale_ip }}:30081
+    default_backend k3s_headlamp
+
+backend k3s_headlamp
+    server k3s {{ private_gateway_k3s_ip }}:30081 check
+
+frontend k3s_homepage
+    bind {{ private_gateway_tailscale_ip }}:30082
+    default_backend k3s_homepage
+
+backend k3s_homepage
+    server k3s {{ private_gateway_k3s_ip }}:30082 check
+
+frontend k3s_grafana
+    bind {{ private_gateway_tailscale_ip }}:30083
+    default_backend k3s_grafana
+
+backend k3s_grafana
+    server k3s {{ private_gateway_k3s_ip }}:30083 check

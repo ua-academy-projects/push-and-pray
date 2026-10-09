@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Reconcile only AKS private management ingress
+  hosts: managed_kubernetes_controller
+  connection: local
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Configure private access
+      block:
+        - name: Retrieve AKS credentials on the control host
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: managed_control
+
+        - name: Read the active project configuration
+          ansible.builtin.set_fact:
+            k3s_workloads_config: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
+
+        - name: Require the existing Azure managed cluster
+          ansible.builtin.assert:
+            that:
+              - kubernetes_mode == 'managed'
+              - oilscope_cloud == 'azure'
+              - managed_kubernetes.name | length > 0
+
+        - name: Reconcile the existing Traefik release and public address
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: ingress
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+
+        - name: Reconcile Homepage with the private access hostname
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: homepage
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+
+        - name: Add the internal load balancer and private service routes
+          ansible.builtin.import_role:
+            name: oilscope.platform.k3s_workloads
+            tasks_from: managed_private_ingress
+          environment:
+            KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+      always:
+        - name: Remove temporary managed cluster credentials
+          ansible.builtin.file:
+            path: "{{ k3s_workloads_control_dir.path }}"
+            state: absent
+          changed_when: false
+          when: k3s_workloads_control_dir is defined and k3s_workloads_control_dir.path is defined

@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Select the private dashboard gateway from project configuration
+  ansible.builtin.set_fact:
+    k3s_workloads_private_gateway: "{{ (lookup('ansible.builtin.file', project_config_path) | from_json).kubernetes.private_access_gateway | default('primary') }}"
+
+- name: Require a supported private dashboard gateway
+  ansible.builtin.assert:
+    that: k3s_workloads_private_gateway in ['primary', 'bastion']
+
 - name: Read the primary node's Tailscale IPv4
   ansible.builtin.command:
     argv: [tailscale, ip, -4]
@@ -10,6 +18,36 @@
   ansible.builtin.assert:
     that:
       - k3s_workloads_private_dns_ip.stdout | trim is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
+
+- name: Check whether the private dashboard proxy is ready on the bastion
+  ansible.builtin.command:
+    argv: [systemctl, is-active, --quiet, oilscope-private-access]
+  delegate_to: "{{ oilscope_bastion_host }}"
+  register: k3s_workloads_private_gateway_service
+  changed_when: false
+  failed_when: false
+  when: k3s_workloads_private_gateway == 'bastion'
+
+- name: Keep the primary DNS answer until the private dashboard proxy is running
+  ansible.builtin.set_fact:
+    k3s_workloads_private_gateway_ready: "{{ k3s_workloads_private_gateway == 'bastion' and k3s_workloads_private_gateway_service.rc | default(1) == 0 }}"
+
+- name: Read the bastion Tailscale IPv4
+  ansible.builtin.command:
+    argv: [tailscale, ip, -4]
+  delegate_to: "{{ oilscope_bastion_host }}"
+  become: false
+  register: k3s_workloads_private_gateway_ip
+  changed_when: false
+  when: k3s_workloads_private_gateway_ready
+
+- name: Select the private DNS answer
+  ansible.builtin.set_fact:
+    k3s_workloads_private_dns_target_ip: "{{ k3s_workloads_private_gateway_ip.stdout | trim if k3s_workloads_private_gateway_ready else k3s_workloads_private_dns_ip.stdout | trim }}"
+
+- name: Require a connected private dashboard gateway
+  ansible.builtin.assert:
+    that: k3s_workloads_private_dns_target_ip is match('^[0-9]{1,3}(\\.[0-9]{1,3}){3}$')
 
 - name: Install the small DNS resolver without a default system service
   ansible.builtin.apt:

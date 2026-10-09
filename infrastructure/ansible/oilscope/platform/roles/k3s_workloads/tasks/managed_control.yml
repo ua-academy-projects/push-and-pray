@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Create a private temporary control directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: oilscope-managed-kubernetes-
+  register: k3s_workloads_control_dir
+  changed_when: false
+
+- name: Retrieve EKS kubeconfig through the local AWS identity
+  ansible.builtin.command:
+    argv:
+      - aws
+      - eks
+      - update-kubeconfig
+      - "--name={{ managed_kubernetes.name }}"
+      - "--region={{ managed_kubernetes.region }}"
+      - "--kubeconfig={{ k3s_workloads_control_dir.path }}/kubeconfig"
+      - "--alias={{ managed_kubernetes.name }}"
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'aws'
+
+- name: Retrieve GKE kubeconfig through the local Google identity
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - container
+      - clusters
+      - get-credentials
+      - "{{ managed_kubernetes.name }}"
+      - "--zone={{ managed_kubernetes.region }}"
+      - "--project={{ managed_kubernetes.project_id }}"
+  environment:
+    KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'gcp'
+
+- name: Retrieve AKS kubeconfig through the local Azure identity
+  ansible.builtin.command:
+    argv:
+      - az
+      - aks
+      - get-credentials
+      - "--resource-group={{ managed_kubernetes.resource_group_name }}"
+      - "--name={{ managed_kubernetes.name }}"
+      - "--file={{ k3s_workloads_control_dir.path }}/kubeconfig"
+      - --overwrite-existing
+  changed_when: false
+  no_log: true
+  when: oilscope_cloud == 'azure'
+
+- name: Restrict the managed kubeconfig to the controller user
+  ansible.builtin.file:
+    path: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    mode: '0600'
+  changed_when: false
+
+- name: Wait for the managed Kubernetes API schema
+  ansible.builtin.command:
+    argv: [kubectl, --request-timeout=10s, get, --raw=/openapi/v3]
+  environment:
+    KUBECONFIG: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+  register: k3s_workloads_api_schema
+  retries: 36
+  delay: 5
+  until: k3s_workloads_api_schema.rc == 0
+  changed_when: false

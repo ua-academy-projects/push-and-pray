@@ -16,6 +16,19 @@
     state: present
     definition: "{{ lookup('ansible.builtin.template', 'monitoring.yaml.j2') | from_yaml_all | list }}"
 
+- name: Install cluster-state metrics for managed Kubernetes
+  kubernetes.core.helm:
+    release_name: kube-state-metrics
+    release_namespace: monitoring
+    chart_ref: kube-state-metrics
+    chart_repo_url: https://prometheus-community.github.io/helm-charts
+    chart_version: 8.4.1
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      fullnameOverride: kube-state-metrics
+  when: kubernetes_mode == 'managed'
+
 - name: Provision the OilScope Grafana dashboard
   kubernetes.core.k8s:
     kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
@@ -85,3 +98,4 @@
     kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
     state: present
     definition: "{{ lookup('ansible.builtin.template', 'grafana-tailnet.yaml.j2') | from_yaml }}"
+  when: kubernetes_mode == 'self_managed'

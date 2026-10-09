@@ -1,0 +1,13 @@
+[Unit]
+Description=OilScope private AKS and K3s dashboard gateway
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/haproxy -W -db -f /etc/oilscope-private-access.cfg
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

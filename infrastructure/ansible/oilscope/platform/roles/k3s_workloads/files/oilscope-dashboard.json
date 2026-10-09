@@ -89,6 +89,72 @@
       "targets": [{"expr": "sum by (result) (increase(fetcher_collection_runs_total{job=\"oilscope\"}[1h]))", "legendFormat": "{{result}}", "refId": "A"}],
       "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+    },
+    {
+      "id": 10,
+      "title": "Managed cluster ready nodes",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none"},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 40}
+    },
+    {
+      "id": 11,
+      "title": "Managed cluster running pods",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(kube_pod_status_phase{phase=\"Running\"})", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none"},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 40}
+    },
+    {
+      "id": 12,
+      "title": "Managed cluster unavailable deployments",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(clamp_min(kube_deployment_spec_replicas - on(namespace,deployment) kube_deployment_status_replicas_available, 0))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none"},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 40}
+    },
+    {
+      "id": 13,
+      "title": "Managed node CPU usage",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (node) (rate(node_cpu_seconds_total{job=\"node-exporter\",mode!=\"idle\"}[5m]))", "legendFormat": "{{node}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "cores", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 46}
+    },
+    {
+      "id": 14,
+      "title": "Managed node memory usage",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (node) (node_memory_MemTotal_bytes{job=\"node-exporter\"} - node_memory_MemAvailable_bytes{job=\"node-exporter\"})", "legendFormat": "{{node}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 46}
+    },
+    {
+      "id": 15,
+      "title": "Managed container CPU usage",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{job=\"cadvisor\",container!=\"\",namespace=\"oilscope\"}[5m]))", "legendFormat": "{{namespace}}/{{pod}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "cores", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 54}
+    },
+    {
+      "id": 16,
+      "title": "Managed container memory usage",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (namespace, pod) (container_memory_working_set_bytes{job=\"cadvisor\",container!=\"\",namespace=\"oilscope\"})", "legendFormat": "{{namespace}}/{{pod}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "min": 0}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 54}
     }
   ]
 }

@@ -81,7 +81,7 @@ resource "azurerm_network_security_group" "database" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = tostring(var.config.database.port)
-    source_address_prefixes    = concat(local.database_client_ips, [local.cloud_network.database_subnet_cidrs[0]], [for vm in values(local.vms) : vm.internal_ip if vm.location == var.config.default_location && vm.role == "bastion"])
+    source_address_prefixes    = concat(local.database_client_ips, [local.cloud_network.database_subnet_cidrs[0]], local.managed_kubernetes_enabled ? [local.cloud_network.workload_subnet_cidr] : [], [for vm in values(local.vms) : vm.internal_ip if vm.location == var.config.default_location && vm.role == "bastion"])
     destination_address_prefix = "*"
   }
 

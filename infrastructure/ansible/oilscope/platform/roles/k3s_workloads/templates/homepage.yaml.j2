@@ -42,23 +42,27 @@ data:
   services.yaml: |
     - OilScope:
         - Application:
-            href: {{ ('https://' ~ k3s_workloads_config.cloudflare.hostname if k3s_workloads_config.cloudflare.enabled | default(false) | bool else 'http://' ~ hostvars[groups['k3s_primary'][0]].internal_ip) | to_json }}
+            href: {{ ('https://' ~ k3s_workloads_config.cloudflare.hostname if k3s_workloads_config.cloudflare.enabled | default(false) | bool else 'http://' ~ (k3s_workloads_ingress_address if kubernetes_mode == 'managed' else hostvars[groups['k3s_primary'][0]].internal_ip)) | to_json }}
             description: OilScope web application
             namespace: oilscope
             app: ui
             podSelector: app=ui
             siteMonitor: http://ui.oilscope.svc.cluster.local:8080/health
         - Headlamp:
-            href: http://headlamp.{{ k3s_workloads_private_dns_domain }}:30081
+            href: {{ ('http://headlamp.' ~ k3s_workloads_private_dns_domain if kubernetes_mode == 'managed' else 'http://headlamp.' ~ k3s_workloads_private_dns_domain ~ ':30081') | to_json }}
             description: Kubernetes cluster management
             siteMonitor: http://headlamp.headlamp.svc.cluster.local/
+        - Grafana:
+            href: {{ ('http://grafana.' ~ k3s_workloads_private_dns_domain if kubernetes_mode == 'managed' else 'http://grafana.' ~ k3s_workloads_private_dns_domain ~ ':30083') | to_json }}
+            description: Cluster monitoring dashboards
+            siteMonitor: http://grafana.monitoring.svc.cluster.local/
   bookmarks.yaml: |
     - Project:
         - Source code:
             - abbr: GH
               href: https://github.com/ua-academy-projects/push-and-pray
               description: OilScope repository
-        - K3s guide:
+        - Kubernetes guide:
             - abbr: K3
               href: https://github.com/ua-academy-projects/push-and-pray/blob/main/docs/k3s-platform.md
               description: Deployment and dashboard access
@@ -89,7 +93,7 @@ spec:
     metadata:
       labels: {app: homepage}
       annotations:
-        checksum/config: {{ (lookup('ansible.builtin.file', role_path ~ '/templates/homepage.yaml.j2') ~ (k3s_workloads_config.cloudflare.hostname | default('')) ~ hostvars[groups['k3s_primary'][0]].internal_ip) | hash('sha256') }}
+        checksum/config: {{ (lookup('ansible.builtin.file', role_path ~ '/templates/homepage.yaml.j2') ~ (k3s_workloads_config.cloudflare.hostname | default('')) ~ (k3s_workloads_ingress_address if kubernetes_mode == 'managed' else hostvars[groups['k3s_primary'][0]].internal_ip)) | hash('sha256') }}
     spec:
       serviceAccountName: homepage
       containers:
@@ -100,7 +104,7 @@ spec:
               valueFrom:
                 fieldRef: {fieldPath: status.podIP}
             - name: HOMEPAGE_ALLOWED_HOSTS
-              value: "$(MY_POD_IP):3000,homepage.{{ k3s_workloads_private_dns_domain }}:30082"
+              value: "$(MY_POD_IP):3000,localhost:3000{% if kubernetes_mode == 'self_managed' %},homepage.{{ k3s_workloads_private_dns_domain }}:30082{% else %},homepage.{{ k3s_workloads_private_dns_domain }}{% endif %}"
           ports:
             - {name: http, containerPort: 3000}
           readinessProbe:
@@ -129,7 +133,11 @@ metadata:
   name: homepage
   namespace: homepage
 spec:
-  type: NodePort
+  type: {{ 'ClusterIP' if kubernetes_mode == 'managed' else 'NodePort' }}
   selector: {app: homepage}
   ports:
+{% if kubernetes_mode == 'managed' %}
+    - {name: http, port: 3000, targetPort: http}
+{% else %}
     - {name: http, port: 3000, targetPort: http, nodePort: 30082}
+{% endif %}

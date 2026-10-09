@@ -5,6 +5,9 @@ metadata:
   namespace: oilscope
 spec:
   accessModes: [ReadWriteOnce]
+{% if kubernetes_mode == 'managed' %}
+  storageClassName: oilscope-managed
+{% endif %}
   resources:
     requests:
       storage: 1Gi

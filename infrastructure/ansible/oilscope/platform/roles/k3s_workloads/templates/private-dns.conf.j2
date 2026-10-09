@@ -6,6 +6,6 @@ bind-dynamic
 no-resolv
 no-hosts
 local=/{{ k3s_workloads_private_dns_domain }}/
-host-record=headlamp.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_ip.stdout | trim }}
-host-record=homepage.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_ip.stdout | trim }}
-host-record=grafana.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_ip.stdout | trim }}
+host-record=headlamp.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_target_ip }}
+host-record=homepage.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_target_ip }}
+host-record=grafana.{{ k3s_workloads_private_dns_domain }},{{ k3s_workloads_private_dns_target_ip }}

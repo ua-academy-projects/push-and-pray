@@ -8,6 +8,19 @@ output "database_mode" {
   value       = local.config.database_mode
 }
 
+output "kubernetes_mode" {
+  value = try(local.config.kubernetes.mode, "self_managed")
+}
+
+output "managed_kubernetes" {
+  description = "Non-secret managed cluster identity for control-host credential retrieval."
+  value = try(local.config.kubernetes.mode, "self_managed") == "managed" ? one(concat(
+    module.azure_kubernetes[*].cluster,
+    module.aws_kubernetes[*].cluster,
+    module.gcp_kubernetes[*].cluster,
+  )) : null
+}
+
 output "container_registry" {
   description = "Active cloud's private application image registry and image paths."
   value = one(concat(

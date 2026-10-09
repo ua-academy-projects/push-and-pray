@@ -1,7 +1,10 @@
 terraform {
   required_version = "~> 1.15.1"
 
-  backend "gcs" {}
+  backend "gcs" {
+    # This state owns the existing self-managed K3s environment.
+    prefix = "terraform/state"
+  }
 
   required_providers {
     azapi = {

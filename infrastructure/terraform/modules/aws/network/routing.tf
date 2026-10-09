@@ -75,6 +75,14 @@ resource "aws_route_table_association" "workload" {
   route_table_id = aws_route_table.workload[each.key].id
 }
 
+resource "aws_route_table_association" "kubernetes_secondary" {
+  count = local.managed_kubernetes_enabled ? 1 : 0
+
+  region         = local.locations[var.config.default_location].region
+  subnet_id      = aws_subnet.kubernetes_secondary[0].id
+  route_table_id = aws_route_table.workload[var.config.default_location].id
+}
+
 resource "aws_route_table" "database" {
   count = local.managed_database_enabled ? 1 : 0
 

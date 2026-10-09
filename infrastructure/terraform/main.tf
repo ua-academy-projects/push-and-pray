@@ -1,3 +1,14 @@
+resource "terraform_data" "root_state_mode_guard" {
+  input = try(local.project_config.kubernetes.mode, "self_managed")
+
+  lifecycle {
+    precondition {
+      condition     = try(local.project_config.kubernetes.mode, "self_managed") == "self_managed"
+      error_message = "The root Terraform state owns the self-managed K3s environment only. Use infrastructure/terraform/managed-kubernetes for managed AKS; refusing a cross-mode apply that could remove K3s resources."
+    }
+  }
+}
+
 module "gcp_network" {
   source = "./modules/gcp/network"
 
@@ -33,6 +44,15 @@ module "gcp_monitoring" {
 
   config = local.config
   vms    = module.gcp_vm.vms
+}
+
+module "gcp_kubernetes" {
+  count  = try(local.config.kubernetes.mode, "self_managed") == "managed" && local.config.default_cloud == "gcp" ? 1 : 0
+  source = "./modules/gcp/kubernetes"
+
+  config     = local.config
+  subnet_id  = module.gcp_network.workload_subnet_ids[local.config.default_location]
+  network_id = module.gcp_network.default_network_id
 }
 
 module "aws_network" {
@@ -71,6 +91,14 @@ module "aws_monitoring" {
 
   config = local.config
   vms    = module.aws_vm.vms
+}
+
+module "aws_kubernetes" {
+  count  = try(local.config.kubernetes.mode, "self_managed") == "managed" && local.config.default_cloud == "aws" ? 1 : 0
+  source = "./modules/aws/kubernetes"
+
+  config     = local.config
+  subnet_ids = module.aws_network.kubernetes_subnet_ids
 }
 
 moved {
@@ -119,4 +147,13 @@ module "azure_monitoring" {
   config               = local.config
   vms                  = module.azure_vm.vms
   resource_group_names = module.azure_network.resource_group_names
+}
+
+module "azure_kubernetes" {
+  count  = try(local.config.kubernetes.mode, "self_managed") == "managed" && local.config.default_cloud == "azure" ? 1 : 0
+  source = "./modules/azure/kubernetes"
+
+  config              = local.config
+  resource_group_name = module.azure_network.default_resource_group_name
+  subnet_id           = module.azure_network.workload_subnet_ids[local.config.default_location]
 }

@@ -34,6 +34,20 @@
       - k3s_workloads_registry.images.fetcher is defined
       - k3s_workloads_registry.images.ui is defined
 
+- name: Create the managed cluster storage class
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: oilscope-managed
+      provisioner: "{{ {'aws': 'ebs.csi.aws.com', 'gcp': 'pd.csi.storage.gke.io', 'azure': 'disk.csi.azure.com'}[oilscope_cloud] }}"
+      volumeBindingMode: WaitForFirstConsumer
+      allowVolumeExpansion: true
+  when: kubernetes_mode == 'managed'
+
 - name: Select the existing cloud secret IDs
   ansible.builtin.set_fact:
     k3s_workloads_secret_mappings: >-
@@ -170,59 +184,30 @@
 
 - name: Install the private Homepage dashboard
   ansible.builtin.import_tasks: homepage.yml
+  when: kubernetes_mode == 'self_managed'
 
 - name: Install lightweight application monitoring
   ansible.builtin.import_tasks: monitoring.yml
 
-- name: Remove the old K3s-managed Traefik resources
-  ansible.builtin.command:
-    argv: [kubectl, -n, kube-system, delete, helmchartconfig/traefik, helmchart/traefik, --ignore-not-found, --wait=true]
-  register: k3s_workloads_old_traefik_delete
-  changed_when: "'deleted' in k3s_workloads_old_traefik_delete.stdout"
+- name: Configure the workload ingress controller
+  ansible.builtin.import_tasks: ingress.yml
 
-- name: Wait for the old Traefik release to stop
-  ansible.builtin.command:
-    argv: [helm, -n, kube-system, list, --filter, '^traefik$', -q]
-  register: k3s_workloads_old_traefik_release
-  retries: 18
-  delay: 5
-  until: k3s_workloads_old_traefik_release.stdout | trim | length == 0
-  changed_when: false
-  when: "'deleted' in k3s_workloads_old_traefik_delete.stdout"
+- name: Install Homepage for the managed cluster
+  ansible.builtin.import_tasks: homepage.yml
+  when: kubernetes_mode == 'managed'
 
-- name: Install the Traefik ingress controller from the control host
-  kubernetes.core.helm:
-    release_name: traefik
-    release_namespace: kube-system
-    chart_ref: oci://ghcr.io/traefik/helm/traefik
-    chart_version: 41.6.0
-    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
-    wait: true
-    release_values:
-      deployment:
-        kind: DaemonSet
-      gateway:
-        enabled: false
-      service:
-        enabled: false
-      providers:
-        kubernetesIngress:
-          publishedService:
-            enabled: false
-      ports:
-        web:
-          hostPort: 80
-          http:
-            redirections:
-              entryPoint: "{{ {'to': 'websecure', 'scheme': 'https', 'permanent': true} if k3s_workloads_config.cloudflare.enabled | default(false) | bool else {} }}"
-        websecure:
-          hostPort: 443
+- name: Configure the AKS private management ingress
+  ansible.builtin.import_tasks: managed_private_ingress.yml
+  when:
+    - kubernetes_mode == 'managed'
+    - oilscope_cloud == 'azure'
 
 - name: Remove the old K3s Helm controller cert-manager resource
   ansible.builtin.command:
     argv: [kubectl, -n, kube-system, delete, helmchart/cert-manager, --ignore-not-found, --wait=true]
   register: k3s_workloads_old_cert_manager_delete
   changed_when: "'deleted' in k3s_workloads_old_cert_manager_delete.stdout"
+  when: kubernetes_mode == 'self_managed'
 
 - name: Wait for the old Helm controller release to stop
   ansible.builtin.command:
@@ -232,7 +217,9 @@
   delay: 5
   until: k3s_workloads_old_cert_manager_release.stdout | trim | length == 0
   changed_when: false
-  when: "'deleted' in k3s_workloads_old_cert_manager_delete.stdout"
+  when:
+    - kubernetes_mode == 'self_managed'
+    - "'deleted' in k3s_workloads_old_cert_manager_delete.stdout"
 
 - name: Install cert-manager from its official chart
   kubernetes.core.helm:

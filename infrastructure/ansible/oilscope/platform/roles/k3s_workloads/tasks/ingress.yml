@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Remove the old K3s-managed Traefik resources
+  ansible.builtin.command:
+    argv: [kubectl, -n, kube-system, delete, helmchartconfig/traefik, helmchart/traefik, --ignore-not-found, --wait=true]
+  register: k3s_workloads_old_traefik_delete
+  changed_when: "'deleted' in k3s_workloads_old_traefik_delete.stdout"
+  when: kubernetes_mode == 'self_managed'
+
+- name: Wait for the old Traefik release to stop
+  ansible.builtin.command:
+    argv: [helm, -n, kube-system, list, --filter, '^traefik$', -q]
+  register: k3s_workloads_old_traefik_release
+  retries: 18
+  delay: 5
+  until: k3s_workloads_old_traefik_release.stdout | trim | length == 0
+  changed_when: false
+  when:
+    - kubernetes_mode == 'self_managed'
+    - "'deleted' in k3s_workloads_old_traefik_delete.stdout"
+
+- name: Install the Traefik ingress controller from the control host
+  kubernetes.core.helm:
+    release_name: traefik
+    release_namespace: kube-system
+    chart_ref: oci://ghcr.io/traefik/helm/traefik
+    chart_version: 41.6.0
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    wait: true
+    release_values:
+      deployment:
+        kind: "{{ 'Deployment' if kubernetes_mode == 'managed' else 'DaemonSet' }}"
+      gateway:
+        enabled: false
+      service:
+        enabled: "{{ kubernetes_mode == 'managed' }}"
+        type: LoadBalancer
+        annotations: "{{ ({'external-dns.alpha.kubernetes.io/hostname': k3s_workloads_config.cloudflare.hostname} if k3s_workloads_config.cloudflare.enabled | default(false) | bool else {}) | combine({'service.beta.kubernetes.io/aws-load-balancer-type': 'nlb'} if kubernetes_mode == 'managed' and oilscope_cloud == 'aws' else {}) if kubernetes_mode == 'managed' else {} }}"
+      providers:
+        kubernetesIngress:
+          publishedService:
+            enabled: false
+      ports: >-
+        {{ {
+          'web': ({'hostPort': 80} if kubernetes_mode == 'self_managed' else {'asDefault': true})
+                 | combine({'http': {'redirections': {'entryPoint':
+                   ({'to': 'websecure', 'scheme': 'https', 'permanent': true}
+                    if k3s_workloads_config.cloudflare.enabled | default(false) | bool else {})}}}),
+          'websecure': ({'hostPort': 443} if kubernetes_mode == 'self_managed' else {'asDefault': true})
+        } | combine({'private': {'port': 8081, 'asDefault': false, 'expose': {'default': false}}}
+                    if kubernetes_mode == 'managed' and oilscope_cloud == 'azure' else {}) }}
+
+- name: Configure Cloudflare DNS for the managed ingress
+  ansible.builtin.import_tasks: managed_dns.yml
+  when:
+    - kubernetes_mode == 'managed'
+    - k3s_workloads_config.cloudflare.enabled | default(false) | bool
+
+- name: Wait for the managed ingress load balancer address
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_workloads_control_dir.path }}/kubeconfig"
+    api_version: v1
+    kind: Service
+    name: traefik
+    namespace: kube-system
+  register: k3s_workloads_ingress_service
+  retries: 36
+  delay: 10
+  until: >-
+    k3s_workloads_ingress_service.resources | length == 1 and
+    k3s_workloads_ingress_service.resources[0].status.loadBalancer.ingress | default([]) | length > 0
+  when: kubernetes_mode == 'managed'
+- name: Record the managed ingress address for Homepage
+  ansible.builtin.set_fact:
+    k3s_workloads_ingress_address: >-
+      {{ k3s_workloads_ingress_service.resources[0].status.loadBalancer.ingress[0].ip
+         | default(k3s_workloads_ingress_service.resources[0].status.loadBalancer.ingress[0].hostname, true) }}
+  when: kubernetes_mode == 'managed'
