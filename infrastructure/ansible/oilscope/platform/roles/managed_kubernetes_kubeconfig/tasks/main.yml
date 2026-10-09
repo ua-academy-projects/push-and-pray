@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration
+  ansible.builtin.set_fact:
+    managed_kubernetes_kubeconfig_config: >-
+      {{ lookup('ansible.builtin.file',
+                managed_kubernetes_kubeconfig_config_file) | from_json }}
+
+- name: Refuse a non-managed Kubernetes configuration
+  ansible.builtin.fail:
+    msg: >-
+      This playbook requires deployment_mode=k3s and
+      kubernetes.mode=managed in the project configuration.
+  when: >-
+    managed_kubernetes_kubeconfig_config.deployment_mode != 'k3s'
+    or managed_kubernetes_kubeconfig_config.kubernetes.mode != 'managed'
+
+- name: Create the local kubeconfig directory
+  ansible.builtin.file:
+    path: "{{ managed_kubernetes_kubeconfig_directory }}"
+    state: directory
+    mode: "0700"
+
+- name: Retrieve the GKE kubeconfig
+  ansible.builtin.command:
+    argv:
+      - gcloud
+      - container
+      - clusters
+      - get-credentials
+      - "{{ managed_kubernetes_kubeconfig_cluster_name }}"
+      - "--region={{ managed_kubernetes_kubeconfig_config.locations[managed_kubernetes_kubeconfig_config.default_location].gcp.region }}"
+      - "--project={{ managed_kubernetes_kubeconfig_config.cloud_settings.gcp.project_id }}"
+  environment:
+    KUBECONFIG: "{{ managed_kubernetes_kubeconfig_path }}"
+  when: managed_kubernetes_kubeconfig_config.default_cloud == 'gcp'
+  changed_when: true
+
+- name: Retrieve the EKS kubeconfig
+  ansible.builtin.command:
+    argv:
+      - aws
+      - eks
+      - update-kubeconfig
+      - --name
+      - "{{ managed_kubernetes_kubeconfig_cluster_name }}"
+      - --region
+      - "{{ managed_kubernetes_kubeconfig_config.locations[managed_kubernetes_kubeconfig_config.default_location].aws.region }}"
+      - --kubeconfig
+      - "{{ managed_kubernetes_kubeconfig_path }}"
+  when: managed_kubernetes_kubeconfig_config.default_cloud == 'aws'
+  changed_when: true
+
+- name: Retrieve the AKS kubeconfig
+  ansible.builtin.command:
+    argv:
+      - az
+      - aks
+      - get-credentials
+      - --name
+      - "{{ managed_kubernetes_kubeconfig_cluster_name }}"
+      - --resource-group
+      - "{{ managed_kubernetes_kubeconfig_config.name_prefix }}-{{ managed_kubernetes_kubeconfig_config.environment }}-rg"
+      - --file
+      - "{{ managed_kubernetes_kubeconfig_path }}"
+      - --overwrite-existing
+  when: managed_kubernetes_kubeconfig_config.default_cloud == 'azure'
+  changed_when: true
+
+- name: Restrict access to the managed kubeconfig
+  ansible.builtin.file:
+    path: "{{ managed_kubernetes_kubeconfig_path }}"
+    mode: "0600"
+
+- name: Verify managed Kubernetes API access
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ managed_kubernetes_kubeconfig_path }}"
+      - get
+      - nodes
+      - --request-timeout=30s
+  register: managed_kubernetes_kubeconfig_nodes
+  changed_when: false
+
+- name: Display the managed Kubernetes nodes
+  ansible.builtin.debug:
+    var: managed_kubernetes_kubeconfig_nodes.stdout_lines

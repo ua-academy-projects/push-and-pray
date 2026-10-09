@@ -7,6 +7,14 @@ k3s_secrets_kubeconfig: >-
      ~ k3s_secrets_config.environment
      ~ '.yaml' }}
 k3s_secrets_gcloud: gcloud
+k3s_secrets_aws: aws
+k3s_secrets_az: az
+k3s_secrets_azure_key_vault_name: >-
+  {{ ((k3s_secrets_config.name_prefix
+       ~ '-' ~ k3s_secrets_config.environment
+       ~ '-' ~ (k3s_secrets_config.cloud_settings.azure.subscription_id
+                 | replace('-', ''))[0:8])[0:24])
+     | trim('-') | lower }}
 k3s_secrets_application_secret_name: "{{ k3s_secrets_config.name_prefix }}-application"
 k3s_secrets_registry_secret_name: "{{ k3s_secrets_config.name_prefix }}-registry"
 k3s_secrets_postgresql_owner_secret_name: >-

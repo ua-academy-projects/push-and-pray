@@ -11,13 +11,16 @@
       {{ k3s_traefik_config.vms | dict2items
          | selectattr('value.tags', 'contains', 'k3s-agent')
          | list | length }}
+  when: k3s_traefik_config.kubernetes.mode == 'self_managed'
 
 - name: Refuse fewer than two ingress agents
   ansible.builtin.fail:
     msg: >-
       Source-preserving Traefik requires at least two k3s-agent nodes, but the
       project configuration contains {{ k3s_traefik_agent_replicas }}.
-  when: k3s_traefik_agent_replicas | int < 2
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'self_managed'
+    - k3s_traefik_agent_replicas | int < 2
 
 - name: Configure source-preserving Traefik placement
   kubernetes.core.k8s:
@@ -26,6 +29,338 @@
     definition: >-
       {{ lookup('ansible.builtin.template', 'helm-chart-config.yaml.j2')
          | from_yaml }}
+  when: k3s_traefik_config.kubernetes.mode == 'self_managed'
+
+- name: Discover the AWS managed Kubernetes network
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_traefik_aws }}"
+      - eks
+      - describe-cluster
+      - --name
+      - >-
+        {{ k3s_traefik_config.name_prefix
+           ~ '-' ~ k3s_traefik_config.environment
+           ~ '-kubernetes' }}
+      - --region
+      - >-
+        {{ k3s_traefik_config.locations[
+             k3s_traefik_config.default_location].aws.region }}
+      - --query
+      - cluster.resourcesVpcConfig.vpcId
+      - --output
+      - text
+  register: k3s_traefik_aws_vpc
+  changed_when: false
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Discover the AWS public ingress subnet
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_traefik_aws }}"
+      - ec2
+      - describe-subnets
+      - --region
+      - >-
+        {{ k3s_traefik_config.locations[
+             k3s_traefik_config.default_location].aws.region }}
+      - --filters
+      - >-
+        Name=tag:Name,Values={{ k3s_traefik_config.name_prefix
+        }}-{{ k3s_traefik_config.environment
+        }}-{{ k3s_traefik_config.default_location }}-public
+      - --query
+      - Subnets[0].SubnetId
+      - --output
+      - text
+  register: k3s_traefik_aws_public_subnet
+  changed_when: false
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Discover the AWS private ingress subnet
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_traefik_aws }}"
+      - ec2
+      - describe-subnets
+      - --region
+      - >-
+        {{ k3s_traefik_config.locations[
+             k3s_traefik_config.default_location].aws.region }}
+      - --filters
+      - >-
+        Name=tag:Name,Values={{ k3s_traefik_config.name_prefix
+        }}-{{ k3s_traefik_config.environment
+        }}-{{ k3s_traefik_config.default_location }}-private
+      - --query
+      - Subnets[0].SubnetId
+      - --output
+      - text
+  register: k3s_traefik_aws_private_subnet
+  changed_when: false
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Discover the reserved AWS public ingress address
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_traefik_aws }}"
+      - ec2
+      - describe-addresses
+      - --region
+      - >-
+        {{ k3s_traefik_config.locations[
+             k3s_traefik_config.default_location].aws.region }}
+      - --filters
+      - >-
+        Name=tag:Name,Values={{ k3s_traefik_config.name_prefix
+        }}-{{ k3s_traefik_config.environment }}-kubernetes-ingress
+      - --query
+      - Addresses[0].AllocationId
+      - --output
+      - text
+  register: k3s_traefik_aws_ingress_allocation
+  changed_when: false
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Verify the discovered AWS ingress resources
+  ansible.builtin.assert:
+    that:
+      - item | trim | length > 0
+      - item | trim != 'None'
+    fail_msg: >-
+      Terraform-managed AWS ingress resources could not be discovered. Apply
+      the infrastructure before running the Kubernetes add-on playbook.
+  loop:
+    - "{{ k3s_traefik_aws_vpc.stdout | default('') }}"
+    - "{{ k3s_traefik_aws_public_subnet.stdout | default('') }}"
+    - "{{ k3s_traefik_aws_private_subnet.stdout | default('') }}"
+    - "{{ k3s_traefik_aws_ingress_allocation.stdout | default('') }}"
+  no_log: true
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Install the AWS Load Balancer Controller
+  kubernetes.core.helm:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    name: "{{ k3s_traefik_aws_load_balancer_controller_release_name }}"
+    chart_ref: "{{ k3s_traefik_aws_load_balancer_controller_chart }}"
+    chart_repo_url: >-
+      {{ k3s_traefik_aws_load_balancer_controller_repository }}
+    chart_version: >-
+      {{ k3s_traefik_aws_load_balancer_controller_chart_version }}
+    release_namespace: kube-system
+    create_namespace: false
+    release_state: present
+    wait: true
+    timeout: "{{ k3s_traefik_managed_timeout }}"
+    values:
+      clusterName: >-
+        {{ k3s_traefik_config.name_prefix
+           ~ '-' ~ k3s_traefik_config.environment
+           ~ '-kubernetes' }}
+      region: >-
+        {{ k3s_traefik_config.locations[
+             k3s_traefik_config.default_location].aws.region }}
+      vpcId: "{{ k3s_traefik_aws_vpc.stdout | trim }}"
+      replicaCount: 2
+      serviceAccount:
+        create: true
+        name: >-
+          {{ k3s_traefik_aws_load_balancer_controller_service_account }}
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Install Traefik on managed GCP Kubernetes
+  kubernetes.core.helm:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    name: "{{ k3s_traefik_managed_release_name }}"
+    chart_ref: "{{ k3s_traefik_managed_chart_reference }}"
+    chart_repo_url: "{{ k3s_traefik_managed_chart_repository }}"
+    chart_version: "{{ k3s_traefik_managed_chart_version }}"
+    release_namespace: "{{ k3s_traefik_namespace }}"
+    create_namespace: false
+    release_state: present
+    wait: true
+    timeout: "{{ k3s_traefik_managed_timeout }}"
+    values:
+      deployment:
+        replicas: "{{ k3s_traefik_config.kubernetes.managed.node_count }}"
+      nodeSelector:
+        oilscope.io/role: agent
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+                topologyKey: kubernetes.io/hostname
+      service:
+        annotations:
+          networking.gke.io/load-balancer-ip-addresses: >-
+            {{ k3s_traefik_config.name_prefix
+               ~ '-' ~ k3s_traefik_config.environment
+               ~ '-kubernetes-ingress' }}
+        spec:
+          externalTrafficPolicy: Local
+          loadBalancerClass: networking.gke.io/l4-regional-external
+        additionalServices:
+          private:
+            annotations:
+              networking.gke.io/load-balancer-type: Internal
+            spec:
+              type: LoadBalancer
+              externalTrafficPolicy: Local
+              loadBalancerIP: >-
+                {{ k3s_traefik_config.kubernetes.managed.private_ingress_ip }}
+      ports:
+        web:
+          expose:
+            private: true
+        websecure:
+          expose:
+            private: true
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'gcp'
+
+- name: Install Traefik on managed AWS Kubernetes
+  kubernetes.core.helm:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    name: "{{ k3s_traefik_managed_release_name }}"
+    chart_ref: "{{ k3s_traefik_managed_chart_reference }}"
+    chart_repo_url: "{{ k3s_traefik_managed_chart_repository }}"
+    chart_version: "{{ k3s_traefik_managed_chart_version }}"
+    release_namespace: "{{ k3s_traefik_namespace }}"
+    create_namespace: false
+    release_state: present
+    wait: true
+    timeout: "{{ k3s_traefik_managed_timeout }}"
+    values:
+      deployment:
+        replicas: "{{ k3s_traefik_config.kubernetes.managed.node_count }}"
+      nodeSelector:
+        oilscope.io/role: agent
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+                topologyKey: kubernetes.io/hostname
+      service:
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: external
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: instance
+          service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+          service.beta.kubernetes.io/aws-load-balancer-subnets: >-
+            {{ k3s_traefik_aws_public_subnet.stdout | trim }}
+          service.beta.kubernetes.io/aws-load-balancer-eip-allocations: >-
+            {{ k3s_traefik_aws_ingress_allocation.stdout | trim }}
+          service.beta.kubernetes.io/aws-load-balancer-attributes: >-
+            load_balancing.cross_zone.enabled=true
+        spec:
+          externalTrafficPolicy: Local
+          loadBalancerClass: service.k8s.aws/nlb
+        additionalServices:
+          private:
+            annotations:
+              service.beta.kubernetes.io/aws-load-balancer-type: external
+              service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: >-
+                instance
+              service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+              service.beta.kubernetes.io/aws-load-balancer-subnets: >-
+                {{ k3s_traefik_aws_private_subnet.stdout | trim }}
+              service.beta.kubernetes.io/aws-load-balancer-private-ipv4-addresses: >-
+                {{ k3s_traefik_config.kubernetes.managed.private_ingress_ip }}
+              service.beta.kubernetes.io/aws-load-balancer-attributes: >-
+                load_balancing.cross_zone.enabled=true
+            spec:
+              type: LoadBalancer
+              externalTrafficPolicy: Local
+              loadBalancerClass: service.k8s.aws/nlb
+      ports:
+        web:
+          expose:
+            private: true
+        websecure:
+          expose:
+            private: true
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Install Traefik on managed Azure Kubernetes
+  kubernetes.core.helm:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    name: "{{ k3s_traefik_managed_release_name }}"
+    chart_ref: "{{ k3s_traefik_managed_chart_reference }}"
+    chart_repo_url: "{{ k3s_traefik_managed_chart_repository }}"
+    chart_version: "{{ k3s_traefik_managed_chart_version }}"
+    release_namespace: "{{ k3s_traefik_namespace }}"
+    create_namespace: false
+    release_state: present
+    wait: true
+    timeout: "{{ k3s_traefik_managed_timeout }}"
+    values:
+      deployment:
+        replicas: "{{ k3s_traefik_config.kubernetes.managed.node_count }}"
+      nodeSelector:
+        oilscope.io/role: agent
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+                topologyKey: kubernetes.io/hostname
+      service:
+        annotations:
+          service.beta.kubernetes.io/azure-pip-name: >-
+            {{ k3s_traefik_config.name_prefix
+               ~ '-' ~ k3s_traefik_config.environment
+               ~ '-kubernetes-ingress' }}
+          service.beta.kubernetes.io/azure-load-balancer-resource-group: >-
+            {{ k3s_traefik_config.name_prefix
+               ~ '-' ~ k3s_traefik_config.environment ~ '-rg' }}
+        spec:
+          externalTrafficPolicy: Local
+        additionalServices:
+          private:
+            annotations:
+              service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+              service.beta.kubernetes.io/azure-load-balancer-ipv4: >-
+                {{ k3s_traefik_config.kubernetes.managed.private_ingress_ip }}
+            spec:
+              type: LoadBalancer
+              externalTrafficPolicy: Local
+              loadBalancerIP: >-
+                {{ k3s_traefik_config.kubernetes.managed.private_ingress_ip }}
+      ports:
+        web:
+          expose:
+            private: true
+        websecure:
+          expose:
+            private: true
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'azure'
 
 - name: Wait for the Traefik Service to preserve source addresses
   kubernetes.core.k8s_info:
@@ -41,6 +376,77 @@
   until: >-
     k3s_traefik_service.resources | length == 1
     and k3s_traefik_service.resources[0].spec.externalTrafficPolicy == 'Local'
+    and
+    (k3s_traefik_service.resources[0]
+     .get('status', {}).get('loadBalancer', {}).get('ingress', [])
+     | length) > 0
+
+- name: Wait for the private managed-GCP Traefik Service
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: "{{ k3s_traefik_private_service_name }}"
+    namespace: "{{ k3s_traefik_namespace }}"
+  register: k3s_traefik_private_service
+  changed_when: false
+  retries: "{{ k3s_traefik_wait_retries }}"
+  delay: "{{ k3s_traefik_wait_delay }}"
+  until: >-
+    k3s_traefik_private_service.resources | length > 0
+    and
+    (k3s_traefik_private_service.resources[0]
+     .get('status', {}).get('loadBalancer', {}).get('ingress', [])
+     | selectattr('ip', 'equalto',
+                  k3s_traefik_config.kubernetes.managed.private_ingress_ip)
+     | list | length) > 0
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'gcp'
+
+- name: Wait for the private managed-AWS Traefik Service
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: "{{ k3s_traefik_private_service_name }}"
+    namespace: "{{ k3s_traefik_namespace }}"
+  register: k3s_traefik_private_service_aws
+  changed_when: false
+  retries: "{{ k3s_traefik_wait_retries }}"
+  delay: "{{ k3s_traefik_wait_delay }}"
+  until: >-
+    k3s_traefik_private_service_aws.resources | length > 0
+    and
+    (k3s_traefik_private_service_aws.resources[0]
+     .get('status', {}).get('loadBalancer', {}).get('ingress', [])
+     | length) > 0
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'aws'
+
+- name: Wait for the private managed-Azure Traefik Service
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k3s_traefik_kubeconfig }}"
+    api_version: v1
+    kind: Service
+    name: "{{ k3s_traefik_private_service_name }}"
+    namespace: "{{ k3s_traefik_namespace }}"
+  register: k3s_traefik_private_service_azure
+  changed_when: false
+  retries: "{{ k3s_traefik_wait_retries }}"
+  delay: "{{ k3s_traefik_wait_delay }}"
+  until: >-
+    k3s_traefik_private_service_azure.resources | length > 0
+    and
+    (k3s_traefik_private_service_azure.resources[0]
+     .get('status', {}).get('loadBalancer', {}).get('ingress', [])
+     | selectattr('ip', 'equalto',
+                  k3s_traefik_config.kubernetes.managed.private_ingress_ip)
+     | list | length) > 0
+  when:
+    - k3s_traefik_config.kubernetes.mode == 'managed'
+    - k3s_traefik_config.default_cloud == 'azure'
 
 - name: Wait for every agent-local Traefik replica
   kubernetes.core.k8s_info:
@@ -61,3 +467,4 @@
     and
     (k3s_traefik_deployment.resources[0].status.updatedReplicas | default(0)
      | int) == (k3s_traefik_agent_replicas | int)
+  when: k3s_traefik_config.kubernetes.mode == 'self_managed'

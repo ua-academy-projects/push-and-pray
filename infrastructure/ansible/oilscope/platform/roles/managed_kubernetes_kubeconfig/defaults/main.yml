@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+managed_kubernetes_kubeconfig_config_file: >-
+  {{ project_config_path | default('project-config.json') }}
+managed_kubernetes_kubeconfig_directory: >-
+  {{ lookup('ansible.builtin.env', 'HOME') ~ '/.kube' }}
+managed_kubernetes_kubeconfig_path: >-
+  {{ managed_kubernetes_kubeconfig_directory
+     ~ '/oilscope-'
+     ~ managed_kubernetes_kubeconfig_config.environment
+     ~ '.yaml' }}
+managed_kubernetes_kubeconfig_cluster_name: >-
+  {{ managed_kubernetes_kubeconfig_config.name_prefix
+     ~ '-'
+     ~ managed_kubernetes_kubeconfig_config.environment
+     ~ '-kubernetes' }}

@@ -5,6 +5,15 @@
     technitium_dns_config: >-
       {{ lookup('ansible.builtin.file', technitium_dns_config_file) | from_json }}
 
+- name: Select the private Kubernetes ingress addresses
+  ansible.builtin.set_fact:
+    technitium_dns_ingress_addresses: >-
+      {{ [technitium_dns_config.kubernetes.managed.private_ingress_ip]
+         if technitium_dns_config.kubernetes.mode == 'managed'
+         else (technitium_dns_config.vms | dict2items
+               | selectattr('value.tags', 'contains', 'k3s-agent')
+               | map(attribute='value.internal_ip') | sort | list) }}
+
 - name: Build the private DNS configuration
   ansible.builtin.set_fact:
     technitium_dns_bind_address: "{{ technitium_dns_config.bastion.internal_ip }}"
@@ -15,20 +24,11 @@
          ~ ':' ~ technitium_dns_api_port }}
     technitium_dns_zones:
       - name: "{{ technitium_dns_config.k3s.private_services.headlamp.hostname }}"
-        addresses: >-
-          {{ technitium_dns_config.vms | dict2items
-             | selectattr('value.tags', 'contains', 'k3s-agent')
-             | map(attribute='value.internal_ip') | sort | list }}
+        addresses: "{{ technitium_dns_ingress_addresses }}"
       - name: "{{ technitium_dns_config.k3s.private_services.homepage.hostname }}"
-        addresses: >-
-          {{ technitium_dns_config.vms | dict2items
-             | selectattr('value.tags', 'contains', 'k3s-agent')
-             | map(attribute='value.internal_ip') | sort | list }}
+        addresses: "{{ technitium_dns_ingress_addresses }}"
       - name: "{{ technitium_dns_config.k3s.private_services.technitium.hostname }}"
-        addresses: >-
-          {{ technitium_dns_config.vms | dict2items
-             | selectattr('value.tags', 'contains', 'k3s-agent')
-             | map(attribute='value.internal_ip') | sort | list }}
+        addresses: "{{ technitium_dns_ingress_addresses }}"
 
 - name: Refuse an empty Technitium administrator password
   ansible.builtin.fail:
@@ -53,13 +53,19 @@
     - path: "{{ technitium_dns_secret_dir }}"
       mode: "0700"
 
-- name: Install the Technitium administrator password file
+- name: Inspect the Technitium administrator password file
+  ansible.builtin.stat:
+    path: "{{ technitium_dns_admin_password_file }}"
+  register: technitium_dns_admin_password_file_status
+
+- name: Install the initial Technitium administrator password file
   ansible.builtin.copy:
     content: "{{ technitium_dns_admin_password }}"
     dest: "{{ technitium_dns_admin_password_file }}"
     owner: root
     group: root
     mode: "0600"
+  when: not technitium_dns_admin_password_file_status.stat.exists
   no_log: true
 
 - name: Install the Technitium Compose definition
@@ -111,6 +117,25 @@
     return_content: true
     status_code: 200
   register: technitium_dns_login
+  no_log: true
+
+- name: Refuse unsuccessful Technitium authentication
+  ansible.builtin.fail:
+    msg: >-
+      Technitium authentication failed. Supply the existing administrator
+      password that initialized the persistent installation; changing
+      TECHNITIUM_ADMIN_PASSWORD does not rotate an existing account password.
+  when: >-
+    technitium_dns_login.json.status | default('error') != 'ok'
+    or (technitium_dns_login.json.token | default('') | length == 0)
+
+- name: Synchronize the Technitium administrator password file
+  ansible.builtin.copy:
+    content: "{{ technitium_dns_admin_password }}"
+    dest: "{{ technitium_dns_admin_password_file }}"
+    owner: root
+    group: root
+    mode: "0600"
   no_log: true
 
 - name: Record the Technitium session token

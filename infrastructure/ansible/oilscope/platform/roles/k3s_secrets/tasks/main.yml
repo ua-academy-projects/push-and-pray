@@ -33,10 +33,84 @@
   loop_control:
     loop_var: k3s_secret_mapping
     label: "{{ k3s_secret_mapping.value }}"
-  register: k3s_secrets_read
+  register: k3s_secrets_read_gcp
   changed_when: false
   check_mode: false
   no_log: true
+  when: k3s_secrets_config.default_cloud == 'gcp'
+
+- name: Read Kubernetes application values from AWS Secrets Manager
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_secrets_aws }}"
+      - secretsmanager
+      - get-secret-value
+      - --secret-id
+      - "{{ k3s_secret_mapping.value }}"
+      - --region
+      - >-
+        {{ k3s_secrets_config.locations[
+             k3s_secrets_config.default_location].aws.region }}
+      - --query
+      - SecretString
+      - --output
+      - text
+    # AWS CLI appends a line terminator to text output. Do not persist that
+    # formatting byte as part of passwords or registry tokens.
+    strip_empty_ends: true
+  loop: "{{ k3s_secrets_config.k3s.secret_mappings | dict2items }}"
+  loop_control:
+    loop_var: k3s_secret_mapping
+    label: "{{ k3s_secret_mapping.value }}"
+  register: k3s_secrets_read_aws
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: k3s_secrets_config.default_cloud == 'aws'
+
+- name: Read Kubernetes application values from Azure Key Vault
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_secrets_az }}"
+      - keyvault
+      - secret
+      - show
+      - --vault-name
+      - "{{ k3s_secrets_azure_key_vault_name }}"
+      - --name
+      - "{{ k3s_secret_mapping.value }}"
+      - --query
+      - value
+      - --output
+      - tsv
+    strip_empty_ends: true
+  loop: "{{ k3s_secrets_config.k3s.secret_mappings | dict2items }}"
+  loop_control:
+    loop_var: k3s_secret_mapping
+    label: "{{ k3s_secret_mapping.value }}"
+  register: k3s_secrets_read_azure
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: k3s_secrets_config.default_cloud == 'azure'
+
+- name: Select the active cloud secret results
+  ansible.builtin.set_fact:
+    k3s_secrets_read: >-
+      {{ k3s_secrets_read_gcp
+         if k3s_secrets_config.default_cloud == 'gcp'
+         else (k3s_secrets_read_aws
+               if k3s_secrets_config.default_cloud == 'aws'
+               else k3s_secrets_read_azure) }}
+  no_log: true
+  when: k3s_secrets_config.default_cloud in ['gcp', 'aws', 'azure']
+
+- name: Refuse an unsupported Kubernetes secret backend
+  ansible.builtin.fail:
+    msg: >-
+      Kubernetes secret retrieval is not implemented for
+      {{ k3s_secrets_config.default_cloud }}.
+  when: k3s_secrets_config.default_cloud not in ['gcp', 'aws', 'azure']
 
 - name: Index K3s application values by variable name
   ansible.builtin.set_fact:
