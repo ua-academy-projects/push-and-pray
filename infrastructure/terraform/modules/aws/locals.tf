@@ -8,6 +8,8 @@ locals {
 
   managed_db_enabled = try(var.config.managed_db.enabled, false)
 
+  managed_kubernetes_enabled = local.has_selected_vms && try(var.config.kubernetes.managed, false)
+
   db_password_secret_id = try(
     [
       for vm in var.config.vms : vm.secret_mappings.POSTGRES_PASSWORD
@@ -28,6 +30,14 @@ locals {
     [
       for vm in var.config.vms : vm.secret_mappings.REDIS_PASSWORD
       if try(vm.secret_mappings.REDIS_PASSWORD, null) != null
+    ][0],
+    null
+  )
+
+  grafana_password_secret_id = try(
+    [
+      for vm in var.config.vms : vm.secret_mappings.GRAFANA_ADMIN_PASSWORD
+      if try(vm.secret_mappings.GRAFANA_ADMIN_PASSWORD, null) != null
     ][0],
     null
   )

@@ -19,6 +19,7 @@ secret_versions_terraform_owned_keys:
   - POSTGRES_PASSWORD
   - RABBITMQ_PASSWORD
   - REDIS_PASSWORD
+  - GRAFANA_ADMIN_PASSWORD
 
 secret_versions_gcloud: gcloud
 secret_versions_aws_cli: aws

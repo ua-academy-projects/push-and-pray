@@ -11,5 +11,20 @@ locals {
     ui         = "${local.resource_prefix}-ui"
     k3s_server = "${local.resource_prefix}-k3s-server"
     k3s_agent  = "${local.resource_prefix}-k3s-agent"
+    gke_node   = "${local.resource_prefix}-gke-node"
   }
+
+  gke_pods_range_name     = "${local.resource_prefix}-gke-pods"
+  gke_services_range_name = "${local.resource_prefix}-gke-services"
+
+  gke_secondary_ranges = var.managed_kubernetes_enabled ? [
+    {
+      range_name    = local.gke_pods_range_name
+      ip_cidr_range = "10.64.0.0/16"
+    },
+    {
+      range_name    = local.gke_services_range_name
+      ip_cidr_range = "10.65.0.0/20"
+    },
+  ] : []
 }

@@ -1,0 +1,9 @@
+---
+- name: Read the cluster nodes
+  kubernetes.core.k8s_info:
+    kind: Node
+  register: k8s_app_nodes
+
+- name: Collect the node internal IPs for the internal DNS zone
+  ansible.builtin.set_fact:
+    k8s_app_node_ips: "{{ k8s_app_nodes.resources | map(attribute='status.addresses') | flatten | selectattr('type', 'equalto', 'InternalIP') | map(attribute='address') | list }}"

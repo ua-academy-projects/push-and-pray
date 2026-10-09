@@ -13,6 +13,7 @@ resource "google_compute_instance" "workload" {
     "${local.resource_prefix}-${replace(tag, "_", "-")}"
   ]
 
+  labels = merge(local.merged_common_labels, try(each.value.labels, {}), { cloud = "gcp" })
 
   boot_disk {
     auto_delete = true

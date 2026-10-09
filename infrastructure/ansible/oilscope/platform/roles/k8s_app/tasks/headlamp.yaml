@@ -11,7 +11,19 @@
       service:
         type: ClusterIP
       ingress:
-        enabled: false
+        enabled: "{{ k8s_app_internal_ingress }}"
+        ingressClassName: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: "{{ k8s_app_internal_issuer }}"
+        hosts:
+          - host: "{{ k8s_app_headlamp_host }}"
+            paths:
+              - path: /
+                type: Prefix
+        tls:
+          - secretName: headlamp-tls
+            hosts:
+              - "{{ k8s_app_headlamp_host }}"
       resources:
         requests:
           cpu: 10m

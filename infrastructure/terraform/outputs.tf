@@ -76,3 +76,10 @@ output "cloudflare_tunnel_token" {
   value     = module.cloudflare.tunnel_token
   sensitive = true
 }
+output "managed_kubernetes" {
+  value = try(coalesce(
+    module.aws_vm.managed_kubernetes,
+    module.gcp_vm.managed_kubernetes,
+    module.azure_vm.managed_kubernetes,
+  ), null)
+}

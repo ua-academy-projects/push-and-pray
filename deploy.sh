@@ -3,7 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 ROOT="$PWD"
-CONFIG="$ROOT/dev.json"
+CONFIG="$(realpath "${OILSCOPE_CONFIG:-$ROOT/dev.json}")"
+NAME="$(basename "$CONFIG" .json)"
+WORKSPACE="default"
+KUBECONFIG_PATH="$HOME/.kube/oilscope-k3s.yaml"
+if [ "$NAME" != "dev" ]; then
+  WORKSPACE="$NAME"
+  KUBECONFIG_PATH="$HOME/.kube/oilscope-$NAME.yaml"
+fi
 
 cf_token=""
 [ -f ~/.oilscope_cf_token ] && cf_token="$(cat ~/.oilscope_cf_token)"
@@ -11,6 +18,10 @@ cf_token=""
 
 cd infrastructure/terraform
 terraform init -input=false >/dev/null
+if [ "$WORKSPACE" != "default" ]; then
+  terraform workspace new "$WORKSPACE" >/dev/null 2>&1 || true
+fi
+export TF_WORKSPACE="$WORKSPACE"
 
 if [ "${1:-}" = "destroy" ]; then
   terraform destroy -auto-approve -var "project_config_path=$CONFIG"
@@ -20,6 +31,7 @@ fi
 terraform apply -auto-approve -var "project_config_path=$CONFIG"
 
 tunnel_token="$(terraform output -raw cloudflare_tunnel_token 2>/dev/null || true)"
+managed_k8s="$(terraform output -json managed_kubernetes 2>/dev/null || echo null)"
 
 cd ../ansible
 export OILSCOPE_PROJECT_CONFIG="$CONFIG"
@@ -41,5 +53,7 @@ ansible-playbook oilscope.platform.bootstrap_bastion -i inventory/oilscope.yml \
 ansible-playbook oilscope.platform.upload_secret_versions -i inventory/oilscope.yml -e secret_versions_config_file="$CONFIG"
 ansible-playbook oilscope.platform.k3s -i inventory/oilscope.yml \
   -e project_config_path="$CONFIG" \
+  -e k8s_local_kubeconfig="$KUBECONFIG_PATH" \
+  -e "{\"k8s_managed_cluster\": $managed_k8s}" \
   -e cloudflare_api_token="$cf_token" \
   -e cloudflared_tunnel_token="$tunnel_token"

@@ -64,3 +64,19 @@
           - "{{ bastion_project_config.network.management_subnet_cidr }}"
           - "{{ bastion_project_config.network.workload_subnet_cidr }}"
       when: bastion_tailscale.enabled | bool
+
+- name: Serve the internal DNS zone from the bastion
+  hosts: bastion
+  become: true
+  gather_facts: false
+  vars:
+    bastion_project_config: "{{ lookup('ansible.builtin.file', project_config_path) | from_json }}"
+    bastion_internal_dns: "{{ bastion_project_config.internal_dns | default({'enabled': false}) }}"
+  tasks:
+    - name: Configure CoreDNS
+      ansible.builtin.include_role:
+        name: oilscope.platform.internal_dns
+      vars:
+        internal_dns_domain: "{{ bastion_internal_dns.domain }}"
+        internal_dns_targets: "{{ (groups.get('k3s_server', []) + groups.get('k3s_agent', [])) | map('extract', hostvars, 'internal_ip') | list }}"
+      when: bastion_internal_dns.enabled | bool and (groups.get('k3s_server', []) + groups.get('k3s_agent', [])) | length > 0

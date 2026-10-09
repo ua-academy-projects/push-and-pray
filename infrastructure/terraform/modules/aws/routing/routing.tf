@@ -74,3 +74,10 @@ resource "aws_route_table_association" "workload" {
   subnet_id      = var.workload_subnet_id
   route_table_id = aws_route_table.private[0].id
 }
+
+resource "aws_route_table_association" "kubernetes" {
+  count = var.managed_kubernetes_enabled ? 1 : 0
+
+  subnet_id      = var.kubernetes_subnet_id
+  route_table_id = aws_route_table.private[0].id
+}

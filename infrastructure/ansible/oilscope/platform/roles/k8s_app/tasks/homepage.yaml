@@ -50,7 +50,7 @@
               columns: 3
             Platform:
               style: row
-              columns: 2
+              columns: 4
         widgets:
           - kubernetes:
               cluster:
@@ -72,34 +72,34 @@
               - Web UI:
                   href: "https://{{ k8s_app_public_endpoint.hostname }}"
                   description: Public application
-                  icon: mdi-oil
+                  icon: "mdi-oil-#F59E0B"
                   siteMonitor: http://ui.oilscope.svc/health
               - History API:
                   description: Price history service
-                  icon: mdi-chart-line
+                  icon: "mdi-chart-line-#22C55E"
                   siteMonitor: http://history.oilscope.svc:8001/health
               - Fetcher:
                   description: Price fetcher worker
-                  icon: mdi-download
+                  icon: "mdi-download-#38BDF8"
                   namespace: oilscope
                   app: fetcher
                   podSelector: app=fetcher
           - Data:
               - PostgreSQL:
                   description: CloudNativePG cluster
-                  icon: si-postgresql
+                  icon: "si-postgresql-#4169E1"
                   namespace: oilscope
                   app: "{{ k8s_app_db_cluster_name }}"
                   podSelector: "cnpg.io/cluster={{ k8s_app_db_cluster_name }}"
               - RabbitMQ:
                   description: Price event queue
-                  icon: si-rabbitmq
+                  icon: "si-rabbitmq-#FF6600"
                   namespace: oilscope
                   app: rabbitmq
                   podSelector: app.kubernetes.io/name=rabbitmq
               - Redis:
                   description: UI sessions
-                  icon: si-redis
+                  icon: "si-redis-#FF4438"
                   namespace: oilscope
                   app: redis
                   podSelector: app.kubernetes.io/name=redis
@@ -107,25 +107,35 @@
               - Headlamp:
                   href: "https://{{ k8s_app_headlamp_host }}"
                   description: Kubernetes UI
-                  icon: si-kubernetes
+                  icon: "si-kubernetes-#326CE5"
                   siteMonitor: http://headlamp.headlamp.svc
+              - Grafana:
+                  href: "https://{{ k8s_app_grafana_host }}"
+                  description: Dashboards
+                  icon: "si-grafana-#F46800"
+                  siteMonitor: http://monitoring-grafana.monitoring.svc/api/health
+              - Prometheus:
+                  href: "https://{{ k8s_app_prometheus_host }}"
+                  description: Metrics
+                  icon: "si-prometheus-#E6522C"
+                  siteMonitor: http://monitoring-prometheus.monitoring.svc:9090/-/healthy
               - Homepage:
                   href: "https://{{ k8s_app_homepage_host }}"
                   description: This dashboard
-                  icon: mdi-view-dashboard
+                  icon: "mdi-view-dashboard-#A855F7"
         bookmarks:
           - Project:
               - GitHub:
-                  - icon: si-github
+                  - icon: "si-github-#F0F6FC"
                     href: https://github.com/ua-academy-projects/push-and-pray
           - Consoles:
               - Tailscale:
-                  - icon: si-tailscale
+                  - icon: "si-tailscale-#FFFFFF"
                     href: https://login.tailscale.com/admin/machines
               - AWS:
-                  - icon: si-amazonwebservices
+                  - icon: "si-amazonwebservices-#FF9900"
                     href: https://console.aws.amazon.com/
               - Cloudflare:
-                  - icon: si-cloudflare
+                  - icon: "si-cloudflare-#F38020"
                     href: https://dash.cloudflare.com/
     wait: true

@@ -12,6 +12,7 @@
         instances: "{{ k8s_app_db_instances }}"
         storage:
           size: "{{ k8s_app_db_storage_size }}"
+          storageClass: "{{ k8s_app_storage_class }}"
         resources:
           requests:
             cpu: 100m
@@ -33,3 +34,20 @@
   until: k8s_app_db_cluster is succeeded
   retries: 5
   delay: 15
+
+- name: Scrape PostgreSQL metrics
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: PodMonitor
+      metadata:
+        name: "{{ k8s_app_db_cluster_name }}"
+        namespace: oilscope
+      spec:
+        selector:
+          matchLabels:
+            cnpg.io/cluster: "{{ k8s_app_db_cluster_name }}"
+        podMetricsEndpoints:
+          - port: metrics
+  when: k8s_app_monitoring_enabled | bool

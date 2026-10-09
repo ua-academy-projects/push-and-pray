@@ -17,5 +17,11 @@
         password: "{{ resolve_secrets_result.RABBITMQ_PASSWORD }}"
       persistence:
         enabled: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
     wait: true
   no_log: true

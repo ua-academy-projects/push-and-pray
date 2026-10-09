@@ -50,3 +50,15 @@ resource "aws_subnet" "database" {
     Name = "${local.resource_prefix}-database-${count.index}"
   }
 }
+
+resource "aws_subnet" "kubernetes" {
+  count = var.managed_kubernetes_enabled ? 1 : 0
+
+  vpc_id            = aws_vpc.main[0].id
+  cidr_block        = cidrsubnet(var.vpc_cidr_block, 8, 20)
+  availability_zone = local.kubernetes_secondary_az
+
+  tags = {
+    Name = "${local.resource_prefix}-kubernetes"
+  }
+}

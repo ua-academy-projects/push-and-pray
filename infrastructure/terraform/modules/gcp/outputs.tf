@@ -25,3 +25,7 @@ output "secret_resource_names" {
 output "managed_db_private_ip" {
   value = module.cloud_sql.private_ip
 }
+
+output "managed_kubernetes" {
+  value = module.gke.managed_kubernetes
+}

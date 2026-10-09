@@ -20,4 +20,13 @@ resource "google_compute_subnetwork" "workload" {
   ip_cidr_range = var.config.network.workload_subnet_cidr
 
   private_ip_google_access = true
+
+  dynamic "secondary_ip_range" {
+    for_each = local.gke_secondary_ranges
+
+    content {
+      range_name    = secondary_ip_range.value.range_name
+      ip_cidr_range = secondary_ip_range.value.ip_cidr_range
+    }
+  }
 }

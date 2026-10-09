@@ -2,6 +2,9 @@ provider "google" {
   project = try(local.config.project_id, null)
   region  = local.config.regions[local.config.region].gcp.region
   zone    = local.config.regions[local.config.region].gcp.zone
+
+  billing_project       = try(local.config.project_id, null)
+  user_project_override = true
 }
 provider "aws" {
   region = local.config.regions[local.config.region].aws.region

@@ -12,3 +12,35 @@ k8s_app_db_owner_secret: oilscope-db-app
 k8s_app_db_host: "{{ k8s_app_db_cluster_name }}-rw.oilscope.svc"
 
 k8s_app_api_via_tailscale: "{{ (k8s_app_config.tailscale | default({})).enabled | default(false) }}"
+
+homepage_chart_version: "2.1.0"
+
+k8s_app_internal_dns: "{{ k8s_app_config.internal_dns | default({'enabled': false}) }}"
+k8s_app_internal_ingress: "{{ k8s_app_internal_dns.enabled | default(false) | bool }}"
+k8s_app_internal_domain: "{{ k8s_app_internal_dns.domain | default('') }}"
+k8s_app_internal_issuer: letsencrypt-prod
+k8s_app_headlamp_host: "headlamp.{{ k8s_app_internal_domain }}"
+k8s_app_homepage_host: "home.{{ k8s_app_internal_domain }}"
+
+kube_prometheus_stack_version: "91.9.0"
+k8s_app_monitoring_enabled: true
+k8s_app_grafana_host: "grafana.{{ k8s_app_internal_domain }}"
+k8s_app_prometheus_host: "prometheus.{{ k8s_app_internal_domain }}"
+k8s_app_monitoring_affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+
+traefik_chart_version: "41.6.1"
+k8s_managed_cluster: null
+k8s_app_managed: "{{ k8s_managed_cluster is not none }}"
+k8s_app_cluster_kind: "{{ k8s_managed_cluster.cloud if k8s_app_managed | bool else 'k3s' }}"
+k8s_app_storage_classes:
+  k3s: local-path
+  aws: gp3
+  gcp: standard-rwo
+  azure: managed-csi
+k8s_app_storage_class: "{{ k8s_app_storage_classes[k8s_app_cluster_kind] }}"

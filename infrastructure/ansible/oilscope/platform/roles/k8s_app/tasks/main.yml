@@ -15,11 +15,19 @@
 - name: Check Helm and install the helm-diff plugin
   ansible.builtin.import_tasks: helm.yaml
 
+- name: Prepare the managed cluster
+  ansible.builtin.import_tasks: managed.yaml
+  when: k8s_app_managed | bool
+
 - name: Deploy cert-manager
   ansible.builtin.import_tasks: cert_manager.yaml
 
 - name: Deploy the CloudNativePG operator
   ansible.builtin.import_tasks: cnpg.yaml
+
+- name: Deploy the monitoring stack
+  ansible.builtin.import_tasks: monitoring.yaml
+  when: k8s_app_monitoring_enabled | bool
 
 - name: Deploy RabbitMQ
   ansible.builtin.import_tasks: rabbitmq.yaml
@@ -32,3 +40,10 @@
 
 - name: Deploy Headlamp
   ansible.builtin.import_tasks: headlamp.yaml
+
+- name: Deploy Homepage
+  ansible.builtin.import_tasks: homepage.yaml
+
+- name: Collect node addresses for the internal DNS zone
+  ansible.builtin.import_tasks: node_ips.yaml
+  when: k8s_app_managed | bool

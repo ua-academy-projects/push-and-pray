@@ -17,3 +17,13 @@ variable "management_subnet_id" {
 variable "workload_subnet_id" {
   type = string
 }
+
+variable "managed_kubernetes_enabled" {
+  type    = bool
+  default = false
+}
+
+variable "kubernetes_subnet_id" {
+  type    = string
+  default = null
+}

@@ -46,6 +46,23 @@ module "vm" {
   identity_ids         = module.iam.identity_ids
 }
 
+module "aks" {
+  source = "./aks"
+
+  config              = var.config
+  has_selected_vms    = local.has_selected_vms
+  selected_vms        = local.selected_vms
+  resource_group_name = module.resource_group.name
+  location            = module.resource_group.location
+  subnet_id           = module.network.workload_subnet_id
+  bastion_public_ip = try([
+    for name, vm in local.selected_vms : module.vm.public_ips[name]
+    if contains(vm.roles, "bastion")
+  ][0], null)
+
+  depends_on = [module.security]
+}
+
 module "secrets" {
   source = "./secrets"
 
@@ -123,5 +140,18 @@ resource "azurerm_key_vault_secret" "redis" {
 
   name         = local.redis_password_secret_id
   value        = random_password.redis[0].result
+  key_vault_id = module.secrets.key_vault_id
+}
+resource "random_password" "grafana" {
+  count   = local.has_selected_vms && local.grafana_password_secret_id != null ? 1 : 0
+  length  = 32
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "grafana" {
+  count = local.has_selected_vms && local.grafana_password_secret_id != null ? 1 : 0
+
+  name         = local.grafana_password_secret_id
+  value        = random_password.grafana[0].result
   key_vault_id = module.secrets.key_vault_id
 }

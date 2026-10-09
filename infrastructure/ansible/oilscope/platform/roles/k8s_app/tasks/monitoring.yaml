@@ -1,0 +1,148 @@
+---
+- name: Create the monitoring namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: monitoring
+
+- name: Create the Grafana admin secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: grafana-admin
+        namespace: monitoring
+      type: Opaque
+      data:
+        admin-user: "{{ 'admin' | b64encode }}"
+        admin-password: "{{ resolve_secrets_result.GRAFANA_ADMIN_PASSWORD | b64encode }}"
+  no_log: true
+
+- name: Install kube-prometheus-stack
+  kubernetes.core.helm:
+    name: monitoring
+    chart_ref: kube-prometheus-stack
+    chart_repo_url: https://prometheus-community.github.io/helm-charts
+    chart_version: "{{ kube_prometheus_stack_version }}"
+    release_namespace: monitoring
+    create_namespace: false
+    values:
+      fullnameOverride: monitoring
+      alertmanager:
+        enabled: false
+      kubeControllerManager:
+        enabled: false
+      kubeScheduler:
+        enabled: false
+      kubeProxy:
+        enabled: false
+      kubeEtcd:
+        enabled: false
+      coreDns:
+        enabled: "{{ k8s_app_cluster_kind != 'gcp' }}"
+      kubeDns:
+        enabled: "{{ k8s_app_cluster_kind == 'gcp' }}"
+      defaultRules:
+        rules:
+          etcd: false
+          kubeControllerManager: false
+          kubeSchedulerAlerting: false
+          kubeSchedulerRecording: false
+          kubeProxy: false
+          windows: false
+      prometheusOperator:
+        affinity: "{{ k8s_app_monitoring_affinity }}"
+        admissionWebhooks:
+          patch:
+            affinity: "{{ k8s_app_monitoring_affinity }}"
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            memory: 192Mi
+      prometheus:
+        ingress:
+          enabled: "{{ k8s_app_internal_ingress }}"
+          ingressClassName: traefik
+          annotations:
+            cert-manager.io/cluster-issuer: "{{ k8s_app_internal_issuer }}"
+          hosts:
+            - "{{ k8s_app_prometheus_host }}"
+          paths:
+            - /
+          tls:
+            - secretName: prometheus-tls
+              hosts:
+                - "{{ k8s_app_prometheus_host }}"
+        prometheusSpec:
+          affinity: "{{ k8s_app_monitoring_affinity }}"
+          scrapeInterval: 30s
+          retention: 2d
+          retentionSize: 2GB
+          podMonitorSelectorNilUsesHelmValues: false
+          serviceMonitorSelectorNilUsesHelmValues: false
+          ruleSelectorNilUsesHelmValues: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          storageSpec:
+            volumeClaimTemplate:
+              spec:
+                storageClassName: "{{ k8s_app_storage_class }}"
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 3Gi
+      grafana:
+        affinity: "{{ k8s_app_monitoring_affinity }}"
+        admin:
+          existingSecret: grafana-admin
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            memory: 640Mi
+        ingress:
+          enabled: "{{ k8s_app_internal_ingress }}"
+          ingressClassName: traefik
+          annotations:
+            cert-manager.io/cluster-issuer: "{{ k8s_app_internal_issuer }}"
+          hosts:
+            - "{{ k8s_app_grafana_host }}"
+          tls:
+            - secretName: grafana-tls
+              hosts:
+                - "{{ k8s_app_grafana_host }}"
+      kube-state-metrics:
+        affinity: "{{ k8s_app_monitoring_affinity }}"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+      prometheus-node-exporter:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+    wait: true
+    wait_timeout: 10m0s
+
+- name: Load the OilScope Grafana dashboard
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ role_path }}/files/grafana/oilscope-dashboard.yaml"

@@ -3,7 +3,7 @@ locals {
 
   aws_workload_vms = {
     for name, vm in var.selected_vms : name => vm
-    if !contains(vm.roles, "bastion")
+    if length(try(vm.secret_mappings, {})) > 0
   }
 
   all_aws_secret_ids = distinct(flatten([

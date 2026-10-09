@@ -79,7 +79,9 @@
     },
     "machine_types": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": {
+        "$ref": "#/$defs/cloud_values"
+      },
       "required": [
         "micro",
         "small"
@@ -326,6 +328,44 @@
         }
       }
     },
+    "internal_dns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "domain"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "domain": {
+          "type": "string",
+          "pattern": "^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$"
+        }
+      }
+    },
+    "kubernetes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "managed"
+      ],
+      "properties": {
+        "managed": {
+          "type": "boolean"
+        },
+        "node_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "node_machine_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "vms": {
       "type": "object",
       "propertyNames": {
@@ -514,7 +554,8 @@
           "minLength": 1
         },
         "machine_type": {
-          "$ref": "#/$defs/machine_type"
+          "type": "string",
+          "minLength": 1
         },
         "image": {
           "description": "Image label for this VM, resolved through the images dictionary. Defaults to the root-level image when omitted.",
@@ -632,9 +673,6 @@
                 "contains": {
                   "const": "bastion"
                 }
-              },
-              "secret_mappings": {
-                "maxProperties": 0
               }
             }
           },

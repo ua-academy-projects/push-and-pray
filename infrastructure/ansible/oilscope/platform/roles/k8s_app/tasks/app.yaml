@@ -30,3 +30,5 @@
           host: "{{ k8s_app_public_endpoint.hostname }}"
       migrate:
         pgHost: "{{ k8s_app_db_host }}"
+      metrics:
+        enabled: "{{ k8s_app_monitoring_enabled | bool }}"

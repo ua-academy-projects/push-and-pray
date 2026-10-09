@@ -350,7 +350,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         # sanitized to hyphens (k3s_server -> ...-k3s-server). Normalize them back
         # to plain role names so groups match playbook `hosts:` and bastion checks.
         roles_expr = (
-            "(gcp_tags['items'] | default([]) "
+            "((tags | default(gcp_tags | default({}))).get('items', []) "
             f"| map('regex_replace', '^{name_prefix}-{environment}-', '') "
             "| map('replace', '-', '_') | list)"
         )

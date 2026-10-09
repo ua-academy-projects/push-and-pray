@@ -23,4 +23,9 @@ locals {
     for vm in var.config.vms : vm.secret_mappings.POSTGRES_PASSWORD
     if try(vm.secret_mappings.POSTGRES_PASSWORD, null) != null
   ][0], null)
+
+  grafana_password_secret_id = try([
+    for vm in var.config.vms : vm.secret_mappings.GRAFANA_ADMIN_PASSWORD
+    if try(vm.secret_mappings.GRAFANA_ADMIN_PASSWORD, null) != null
+  ][0], null)
 }

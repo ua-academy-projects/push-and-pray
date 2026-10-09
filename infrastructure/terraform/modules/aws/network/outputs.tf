@@ -13,3 +13,7 @@ output "workload_subnet_id" {
 output "database_subnet_ids" {
   value = aws_subnet.database[*].id
 }
+
+output "kubernetes_subnet_id" {
+  value = try(aws_subnet.kubernetes[0].id, null)
+}

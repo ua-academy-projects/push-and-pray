@@ -1,0 +1,48 @@
+---
+- name: Create the default gp3 StorageClass on EKS
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: gp3
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: ebs.csi.aws.com
+      volumeBindingMode: WaitForFirstConsumer
+      allowVolumeExpansion: true
+      reclaimPolicy: Delete
+      parameters:
+        type: gp3
+  when: k8s_app_cluster_kind == 'aws'
+
+- name: Install Traefik as a hostPort DaemonSet
+  kubernetes.core.helm:
+    name: traefik
+    chart_ref: traefik
+    chart_repo_url: https://traefik.github.io/charts
+    chart_version: "{{ traefik_chart_version }}"
+    release_namespace: kube-system
+    create_namespace: false
+    values:
+      deployment:
+        kind: DaemonSet
+      ingressClass:
+        enabled: true
+        isDefaultClass: true
+        name: traefik
+      ports:
+        web: "{{ {} if k8s_app_cluster_kind == 'aws' else {'hostPort': 80} }}"
+        websecure:
+          hostPort: 443
+      service:
+        spec:
+          type: ClusterIP
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+    wait: true
