@@ -10,12 +10,14 @@ only when the desired value differs.
 The target catalog is derived from every VM and, in K3s mode, from the
 cluster-level `k3s.secret_mappings` object:
 
-- AWS secrets are scoped by the VM's effective region.
+- AWS secrets are scoped by the VM's effective region, or by the default
+  location's region for Kubernetes application secrets.
 - Azure secrets are scoped by the deployment's Key Vault.
 - GCP secrets are scoped by the configured project.
 - Repeated references to the same container in the same scope are uploaded once.
-- K3s application secrets are scoped to the GCP project and are marked as read
-  by the application namespace rather than granting every node direct access.
+- Kubernetes application secrets are scoped to the selected provider's
+  project, vault, or region and are marked as read by the application namespace
+  rather than granting every node direct access.
 
 Values come only from the controller process environment. A source variable is
 the upper-case secret ID with non-alphanumeric characters replaced by

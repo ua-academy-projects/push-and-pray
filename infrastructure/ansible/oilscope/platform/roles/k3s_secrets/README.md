@@ -1,8 +1,9 @@
 # K3s secrets role
 
-Runs on the local Ansible controller, reads the configured K3s application
-values from Google Secret Manager, and reconciles three Kubernetes Secrets in the
-application namespace:
+Runs on the local Ansible controller, reads the configured Kubernetes
+application values from Google Secret Manager, AWS Secrets Manager, or Azure
+Key Vault, and
+reconciles three Kubernetes Secrets in the application namespace:
 
 - `<name-prefix>-application` contains the PostgreSQL and external API
   credentials consumed by the application and migration Job.
@@ -12,12 +13,15 @@ application namespace:
 - `<name-prefix>-registry` is a `kubernetes.io/dockerconfigjson` pull Secret for
   GHCR.
 
-The role requires an authenticated `gcloud`, the `kubernetes.core` collection,
-its Python dependencies, the local K3s kubeconfig, and private API reachability
-through the approved Tailscale subnet route. Secret-bearing tasks use `no_log`,
+The role requires an authenticated provider CLI (`gcloud`, `aws`, or `az`), the
+`kubernetes.core` collection, its Python dependencies, the local kubeconfig,
+and cluster API reachability. Secret-bearing tasks use `no_log`,
 and values are held only in Ansible memory and Kubernetes Secret objects.
 Secret Manager values are read from the command's standard output; they are
 never written to controller files.
+CLI text renderers can append a trailing line terminator, which the role removes
+before creating Kubernetes Secrets. This prevents the formatting byte from
+becoming part of database passwords and registry tokens.
 
 The playbook runs localhost modules with `ansible_playbook_python`, ensuring
 that dependencies installed with `pipx runpip ansible-core` are imported from

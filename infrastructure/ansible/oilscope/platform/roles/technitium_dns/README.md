@@ -30,6 +30,8 @@ container also has a continuous health check against Technitium's DNS-client
 health endpoint.
 
 The Headlamp, Homepage, and Technitium console records resolve to the private
-K3s ingress agents. The console itself continues running on the bastion; the
-`k3s_technitium_proxy` role forwards its private HTTPS Ingress to the bastion
-administration port. The direct bastion URL remains a recovery fallback.
+K3s ingress agents in self-managed mode, or to the managed cluster's reserved
+internal ingress address in managed mode. The console itself continues running
+on the bastion; the `k3s_technitium_proxy` role forwards its private HTTPS
+Ingress to the bastion administration port. The direct bastion URL remains a
+recovery fallback.

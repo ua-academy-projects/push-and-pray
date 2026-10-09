@@ -21,8 +21,12 @@ have already been persisted in PostgreSQL.
 - Four-machine Vagrant deployment using QEMU and static bridged LAN addresses.
 - Terraform infrastructure, Ansible-managed Compose workloads, and
   cloud-provider observability on AWS, GCP, and Azure.
-- Highly available K3s control plane on GCP with controller-driven Helm add-ons,
-  Traefik ingress, cert-manager, and Let's Encrypt TLS.
+- Selectable self-managed K3s or provider-managed Kubernetes control plane,
+  with controller-driven Helm add-ons, Traefik ingress, cert-manager, and
+  Let's Encrypt TLS. GKE, EKS, and AKS use provider-managed control planes and
+  private worker pools distributed across multiple zones.
+- Native managed-Kubernetes dashboards and alerts through GKE Cloud Monitoring
+  or EKS Container Insights and CloudWatch, without Prometheus or Grafana.
 - Private K3s network access through a Tailscale subnet router on the bastion,
   with split DNS from Technitium for internal web tools.
 - Private Homepage service catalog with K3s node resource tiles and health
@@ -87,11 +91,12 @@ runs RabbitMQ and Redis on the infrastructure VM, and uses no PostgreSQL
 extensions. GCP clients reach Cloud SQL through the Auth Proxy with private IP;
 AWS and Azure clients use private DNS endpoints with TLS.
 
-The GCP K3s deployment uses CloudNativePG with at least two PostgreSQL instances;
-the current configuration runs one primary and one streaming replica. Its
-`database.mode` remains
-`self_managed`; PGMQ provides durable delivery and the PostgreSQL session
-extensions replace separate RabbitMQ and Redis services.
+The Kubernetes deployment uses CloudNativePG with at least two PostgreSQL
+instances; the current configuration runs one primary and one streaming
+replica. `kubernetes.mode` selects self-managed K3s or a provider-managed
+control plane, while `database.mode` remains `self_managed`; PGMQ provides
+durable delivery and the PostgreSQL session extensions replace separate
+RabbitMQ and Redis services.
 
 | Component        | Responsibility                                                                                    | Owns                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------ |

@@ -13,10 +13,12 @@ PostgreSQL run as the account that exists in the image.
 The instance count comes from `k3s.data_services.postgresql.instances`, whose
 schema-enforced minimum is two. With two instances, CloudNativePG runs one
 writable primary and one streaming replica. Every
-instance receives its own `local-path` persistent volume, and required pod
-anti-affinity spreads the database instances across different Kubernetes
-nodes. Applications connect to the operator-managed `postgresql-rw` Service,
-which always targets the current primary.
+instance receives its own persistent volume, and required pod anti-affinity
+spreads the database instances across different Kubernetes nodes. K3s selects
+its `local-path` class explicitly. EKS creates and selects the encrypted
+`oilscope-ebs-gp3` EBS CSI class; other managed clusters use their provider
+default StorageClass. Applications connect to the operator-managed `postgresql-rw`
+Service, which always targets the current primary.
 
 The application owner credentials come from the
 `<name-prefix>-postgresql-owner` basic-auth Secret created by the K3s secrets

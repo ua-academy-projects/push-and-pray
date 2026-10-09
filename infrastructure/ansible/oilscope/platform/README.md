@@ -34,6 +34,117 @@ The playbook:
 The inventory groups select the monitoring agent automatically. The deployment
 stops if a stage fails, preventing dependent workloads from being deployed.
 
+## Select the Kubernetes control plane
+
+Kubernetes deployments keep `deployment_mode` set to `k3s` while the
+top-level `kubernetes.mode` selects who owns the control plane:
+
+- `self_managed` creates the three K3s servers and two K3s agents described in
+  `vms` and bootstraps them with `oilscope.platform.k3s`.
+- `managed` requires an empty `vms` object and creates GKE, EKS, or AKS from
+  `kubernetes.managed`, according to `default_cloud`.
+
+For example, the first GCP managed-cluster test uses:
+
+```json
+"kubernetes": {
+  "mode": "managed",
+  "managed": {
+    "version": "1.37",
+    "node_count": 2,
+    "machine_type": "medium",
+    "disk_size_gb": 32,
+    "private_ingress_ip": "10.10.1.6"
+  }
+},
+"vms": {}
+```
+
+The provider-managed modules use an application node pool with at least two
+nodes. Terraform reserves a public ingress address and reports both the
+address and cluster connection metadata in the `public_ips` and
+`managed_kubernetes` outputs.
+
+GKE creates a regional control plane replicated across three zones and spreads
+the configured private workers across available zones. The disposable default
+pool and permanent application pool use the configured worker machine type.
+Equal autoscaling bounds keep the worker count fixed. GKE also uses Workload
+Identity, Shielded VMs, VPC-native Pod and Service ranges, Cloud NAT, and a
+public API endpoint restricted to `bastion.allowed_cidrs`.
+
+EKS uses the AWS-managed highly available control plane and spreads its fixed
+size managed node group across two private subnets in different availability
+zones. Terraform installs the EKS Pod Identity Agent, Metrics Server, EBS CSI,
+and Amazon CloudWatch Observability add-ons, then associates IAM roles for
+encrypted EBS volumes, the AWS Load Balancer Controller, and Container Insights.
+It also creates the native `OilScope-EKS` CloudWatch dashboard and its alert
+policies; no monitoring Ansible role is needed for EKS. A security-group rule
+allows only the EKS cluster to reach the Technitium administration port on the
+bastion. For an AWS managed cluster, add both provider-specific
+addresses to `kubernetes.managed`:
+
+```json
+"private_ingress_ip": "10.10.1.6",
+"aws_control_plane_subnet_cidr": "10.10.2.0/24"
+```
+
+The second CIDR must be unused inside `network.vpc_cidr` and must not overlap
+the public, private, or managed-database subnets.
+
+AKS uses the Standard control-plane tier and distributes its fixed application
+node pool across `kubernetes.managed.azure_zones`. Terraform grants the
+cluster's user-assigned identity access to the private subnet and the reserved
+public ingress address. It also enables Azure Monitor Container Insights and
+associates a full-stream data collection rule with the cluster. Terraform
+creates the native `OilScope AKS` workbook, AKS workload and availability
+alerts, and email actions when `monitoring.azure.notification_email` is set;
+no monitoring Ansible role is needed for AKS. Traefik creates separate Azure
+public and internal load balancers; the latter uses `private_ingress_ip` for
+the Tailscale-only tools. For an Azure managed cluster, add:
+
+```json
+"private_ingress_ip": "10.10.1.250",
+"azure_zones": ["1", "2", "3"],
+"azure_sku_tier": "Standard"
+```
+
+The selected zones must be offered by the configured worker VM size in the AKS
+region. Use an available address near the end of the private subnet for the
+internal load balancer so it does not collide with the low addresses Azure
+dynamically assigns to worker interfaces. Once created, the load-balancer
+frontend reserves that address. Azure abstracts control-plane instance count;
+the Standard tier supplies the managed control-plane uptime SLA rather than
+exposing three user-managed control-plane nodes.
+
+After Terraform creates a managed cluster, authenticate the matching provider
+CLI on the Ansible controller and retrieve its kubeconfig:
+
+```bash
+ansible-playbook oilscope.platform.configure_managed_kubernetes \
+  -i localhost, \
+  -e project_config_path="$PWD/project-config.json"
+```
+
+The playbook uses `gcloud container clusters get-credentials`, `aws eks
+update-kubeconfig`, or `az aks get-credentials` and writes
+`~/.kube/oilscope-<environment>.yaml` with mode `0600`. It then verifies access
+by listing the nodes. Because this is the same filename produced by the K3s
+bootstrap, the existing secret, add-on, migration, and application playbooks
+can be reused unchanged. On managed GCP, AWS, and Azure, the add-on playbook installs
+the pinned upstream Traefik chart and binds its public Service to Terraform's
+reserved address. AWS first installs the pinned AWS Load Balancer Controller
+chart; its public NLB consumes the reserved Elastic IP. All three providers also
+create an internal Traefik Service on
+`kubernetes.managed.private_ingress_ip`; Technitium points Headlamp, Homepage,
+and its own console hostname at that address so the existing Tailscale subnet
+route remains the private access path. EKS uses a single-zone NLB frontend for
+each fixed address while cross-zone balancing sends traffic to application
+nodes in both worker zones.
+
+The AWS bastion has EC2 source/destination checking disabled so it can operate
+as the Tailscale subnet router. Host-level forwarding and Tailscale route
+advertisement remain managed by the existing subnet-router playbook.
+
 ## Bootstrap a K3s cluster
 
 K3s uses a separate playbook from the Compose application deployment. After
@@ -209,9 +320,12 @@ After certificate management is ready, the playbook installs the official,
 pinned CloudNativePG operator Helm chart. Ansible then declares the configured
 private `database` image as PostgreSQL 18 and creates the configured number of
 database instances, with a minimum of two. The current configuration runs one
-writable primary and one streaming replica, each with a `local-path` persistent
-volume on a different Kubernetes node. Applications use the operator-managed
-`postgresql-rw` Service so failover does not change their connection address.
+writable primary and one streaming replica, each with a persistent volume on a
+different Kubernetes node. Self-managed K3s uses `local-path`; EKS uses the
+role-managed encrypted `oilscope-ebs-gp3` EBS CSI class; other managed clusters
+use their provider default. Applications use the operator-managed
+`postgresql-rw` Service so
+failover does not change their connection address.
 
 CloudNativePG bootstraps the `oil_tracker` database with the dedicated
 basic-auth Secret created by the secrets playbook. A declarative `DatabaseRole`
