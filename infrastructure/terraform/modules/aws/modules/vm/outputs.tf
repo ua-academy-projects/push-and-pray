@@ -23,6 +23,11 @@ output "instance_id" {
   value       = aws_instance.workload.id
 }
 
+output "primary_network_interface_id" {
+  description = "ID of the instance's primary network interface - the next hop when the instance routes for others."
+  value       = aws_instance.workload.primary_network_interface_id
+}
+
 output "instance_arn" {
   description = "ARN of the instance."
   value       = aws_instance.workload.arn

@@ -18,20 +18,12 @@ output "workload_subnet_id" {
   value       = azurerm_subnet.workload.id
 }
 
-output "database_subnet_id" {
-  description = "ID of the subnet holding the database's private endpoint, or null when there is none."
-  value       = one(azurerm_subnet.database[*].id)
-}
-
 output "subnet_ids" {
   description = "Every subnet by purpose, for the firewall module to attach the security group to. The keys are known before apply, so they can drive for_each."
-  value = merge(
-    {
-      management = azurerm_subnet.management.id
-      workload   = azurerm_subnet.workload.id
-    },
-    var.enable_database_subnet ? { database = azurerm_subnet.database[0].id } : {},
-  )
+  value = {
+    management = azurerm_subnet.management.id
+    workload   = azurerm_subnet.workload.id
+  }
 }
 
 output "nat_gateway_id" {

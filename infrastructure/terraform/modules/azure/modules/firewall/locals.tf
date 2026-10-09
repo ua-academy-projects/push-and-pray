@@ -1,29 +1,30 @@
 locals {
-  # Rules and for_each keys take strings; the configuration holds numbers.
-  ui_public_ports = [for port in var.config.network.ui_public_ports : tostring(port)]
-
-  # Same five scopes GCP expresses as network tags and AWS as security groups.
+  # Same four scopes GCP expresses as network tags and AWS as security groups.
   # On Azure a scope is an application security group a network interface
   # joins, and every rule lives in one security group on the subnets.
-  scopes = ["bastion", "infra", "history", "fetcher", "ui"]
+  scopes = ["bastion", "k3s_server", "k3s_agent", "ingress"]
 
-  workload_scopes = ["infra", "history", "fetcher", "ui"]
+  node_scopes = ["k3s_server", "k3s_agent"]
 
-  # The workloads that talk to whatever the infra VM serves.
-  infra_client_scopes = ["fetcher", "history", "ui"]
-
-  # Rules are evaluated by priority, lowest first. The allow rules sit in one
-  # band, the database module adds its own at the end of it, and the deny that
-  # makes the network default-closed comes last, below all of them.
+  # Rules are evaluated by priority, lowest first. The fixed allow rules sit in
+  # one band, the rules cluster.ports asks for in the next, ten apart in the
+  # order they are written, and the deny that makes the network default-closed
+  # comes last, below all of them.
   priorities = {
     bastion_ssh           = 100
     bastion_ssh_bootstrap = 110
-    workload_ssh          = 120
-    ui_web                = 130
-    history_api           = 140
-    postgresql            = 150
-    amqp                  = 160
-    redis                 = 170
+    bastion_tailscale     = 120
+    bastion_forwarding    = 130
+    node_ssh_bastion      = 140
+    node_ssh_tailnet      = 150
+    cluster_icmp          = 160
+    ingress_web           = 170
     deny_vnet_inbound     = 4000
+  }
+
+  cluster_ports = {
+    for index, entry in var.cluster.ports : entry.name => merge(entry, {
+      priority = 200 + index * 10
+    })
   }
 }

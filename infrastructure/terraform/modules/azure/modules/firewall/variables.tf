@@ -8,38 +8,62 @@ variable "resource_prefix" {
   }
 }
 
-variable "config" {
-  description = "The parts of the project configuration this module reads. A wider object converts down to this type, so the caller passes the whole configuration."
+variable "cluster" {
+  description = "The cluster block of the configuration. Only the ports the nodes open to each other and the ports the ingress answers on are read."
   type = object({
-    network = object({
-      ui_public_ports = list(number)
-    })
-    service_ports = object({
-      history_api = number
-      postgresql  = number
-      amqp        = number
-      redis       = number
+    ports = list(object({
+      name     = string
+      protocol = string
+      ports    = list(number)
+      roles    = list(string)
+    }))
+    ingress = object({
+      public_ports = list(number)
     })
   })
 
   validation {
-    condition     = toset(var.config.network.ui_public_ports) == toset([443])
-    error_message = "ui_public_ports must contain exactly port 443: Traefik terminates TLS there and solves the ACME challenge with TLS-ALPN-01, so nothing ever listens on 80."
+    condition = alltrue(flatten([
+      for entry in var.cluster.ports : [
+        for role in entry.roles : contains(["k3s_server", "k3s_agent"], role)
+      ]
+    ]))
+    error_message = "cluster.ports may only open ports on k3s_server and k3s_agent nodes."
   }
 
   validation {
-    condition = alltrue([
-      for port in values(var.config.service_ports) :
-      port >= 1 && port <= 65535
-    ])
-    error_message = "Every service port must be between 1 and 65535."
+    condition     = length(var.cluster.ports) <= 380
+    error_message = "cluster.ports takes priorities 200 onwards, ten apart, and the deny rule sits at 4000: at most 380 entries fit."
   }
 }
 
-variable "bastion" {
-  description = "The bastion this cloud runs, from the project configuration. Only its externally reachable SSH settings are read."
+variable "tailscale" {
+  description = "The tailscale block of the configuration: the port the bastion listens on for direct connections, and the range tailnet devices come from."
   type = object({
-    ssh_port      = number
+    port          = number
+    address_range = string
+  })
+}
+
+variable "network_cidr" {
+  description = "This cloud's own range. Packets from it reach the bastion to be forwarded to the other clouds and to the tailnet."
+  type        = string
+}
+
+variable "cluster_cidrs" {
+  description = "Sources the cluster ports admit: every cloud that hosts a node, and the tailnet."
+  type        = list(string)
+}
+
+variable "remote_cidrs" {
+  description = "Ranges this cloud reaches through its bastion: the other clouds that host a node, and the tailnet. Packets for them are what the bastion forwards."
+  type        = list(string)
+}
+
+variable "bastion" {
+  description = "The bastion this cloud runs, from the configuration. Only its externally reachable SSH settings are read."
+  type = object({
+    ssh_port      = optional(number, 22)
     allowed_cidrs = list(string)
   })
 
@@ -62,12 +86,6 @@ variable "bastion" {
 
 variable "enable_bastion_ssh_bootstrap" {
   description = "Whether to temporarily allow direct bastion SSH on port 22 when the final SSH port differs."
-  type        = bool
-  default     = false
-}
-
-variable "database_managed" {
-  description = "Whether PostgreSQL is a managed service. Decides what the infra scope admits from the workloads: the PostgreSQL port when the VM runs the database itself, the broker and cache ports when the database lives elsewhere."
   type        = bool
   default     = false
 }

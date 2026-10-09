@@ -23,11 +23,6 @@ variable "metrics" {
   }))
 }
 
-variable "log_name" {
-  description = "Log the agents write the journal to; the container and HTTP alerts match entries in it."
-  type        = string
-}
-
 variable "budget_usd" {
   description = "Monthly spend above which the billing alert fires. Null creates no budget."
   type        = number

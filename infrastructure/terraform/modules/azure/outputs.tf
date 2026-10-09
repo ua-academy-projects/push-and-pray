@@ -5,58 +5,58 @@ output "bastion_public_ips" {
   }
 }
 
-output "workload_vm_names" {
-  description = "VM names by workload."
+output "bastion_internal_ips" {
+  description = "Internal IP of this cloud's bastion, keyed by cloud name. Empty when the cloud is inactive."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].name
+    for instance in module.bastion : local.this_cloud => instance.internal_ip
   }
 }
 
-output "workload_roles" {
-  description = "Roles by workload."
+output "node_vm_names" {
+  description = "VM names by node."
   value = {
-    for name, workload in local.workload_vms : name => workload.role
+    for name, node in local.nodes : name => module.vm[name].name
   }
 }
 
-output "workload_clouds" {
-  description = "Cloud hosting each workload. Matches the cloud tag the Ansible inventory selects on."
+output "node_roles" {
+  description = "k3s role by node."
   value = {
-    for name, workload in local.workload_vms : name => local.this_cloud
+    for name, node in local.nodes : name => node.role
   }
 }
 
-output "workload_internal_ips" {
-  description = "Internal IPs by workload."
+output "node_clouds" {
+  description = "Cloud hosting each node. Matches the cloud tag the Ansible inventory selects on."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].internal_ip
+    for name, node in local.nodes : name => local.this_cloud
   }
 }
 
-output "workload_external_ips" {
-  description = "External IPs by workload."
+output "node_internal_ips" {
+  description = "Internal IPs by node, as Azure assigned them."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].public_ip
+    for name, node in local.nodes : name => module.vm[name].internal_ip
   }
 }
 
-output "workload_network_scopes" {
-  description = "Application security groups each workload's network interface belongs to."
+output "node_external_ips" {
+  description = "External IPs by node."
   value = {
-    for name, workload in local.workload_vms : name => module.vm[name].application_security_group_ids
+    for name, node in local.nodes : name => module.vm[name].public_ip
   }
 }
 
-output "workload_identities" {
-  description = "Resource ID of each workload's user-assigned managed identity."
+output "node_identities" {
+  description = "Resource ID of each node's user-assigned managed identity."
   value = {
-    for name, workload in local.workload_vms : name => module.identity[name].identity
+    for name, node in local.nodes : name => module.identity[name].identity
   }
 }
 
 output "secret_ids" {
-  description = "Key Vault secret names created from the project configuration."
-  value       = local.is_active ? sort(local.all_secret_ids) : []
+  description = "Key Vault secret names this cloud holds."
+  value       = local.secret_ids
 }
 
 output "secret_resource_names" {
@@ -66,24 +66,9 @@ output "secret_resource_names" {
   }
 }
 
-output "workload_secret_access" {
-  description = "Secret IDs each workload identity may read. Names only - never values."
+output "node_secret_access" {
+  description = "Secret IDs each k3s_server node may read. Names only - never values."
   value = {
-    for name, workload in local.workload_vms :
-    name => sort(distinct(values(workload.secret_mappings)))
+    for name in local.server_nodes : name => local.secret_ids
   }
-}
-
-output "database" {
-  description = "The managed database on this cloud - the private endpoint address the workloads connect to, the port, the names and the server - or null when this cloud does not build one. Never a password."
-  value = local.builds_database ? {
-    mode                = "managed"
-    cloud               = local.this_cloud
-    host                = module.database[0].host
-    port                = module.database[0].port
-    name                = module.database[0].name
-    username            = var.config.database.username
-    instance            = module.database[0].server_name
-    password_secret_arn = null
-  } : null
 }

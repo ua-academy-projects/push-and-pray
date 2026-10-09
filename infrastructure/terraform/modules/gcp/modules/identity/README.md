@@ -49,7 +49,7 @@ hand; `identity` is named to match the AWS module, which returns an ARN there.
 ```hcl
 module "identity" {
   source   = "./modules/identity"
-  for_each = local.my_vms
+  for_each = local.nodes
 
   name        = "${local.resource_prefix}-${each.key}"
   description = "Runtime identity for the ${each.value.role} workload"

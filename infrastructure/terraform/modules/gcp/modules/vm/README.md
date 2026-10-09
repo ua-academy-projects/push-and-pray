@@ -29,15 +29,15 @@ boot_disk_type = var.profile.disk_types[var.vm.boot_disk.type]
 ## Hardening
 
 Secure Boot, vTPM and integrity monitoring are on. OS Login is off, and SSH
-keys come from `ssh_users` through instance metadata. A `precondition` refuses
-a public address for any role other than `ui` or `bastion`.
+keys come from `ssh_users` through instance metadata. Which VMs get a public
+address is the configuration's decision (`assign_public_ip`), not this module's.
 
 ## Inputs
 
 | Name | Description |
 | --- | --- |
 | `name` | Name for the instance |
-| `vm` | This VM's configuration entry: `role`, `size`, `image`, `internal_ip`, `assign_public_ip`, `boot_disk` |
+| `vm` | A node from `nodes`, or the bastion's derived specification: `role`, `size`, `image`, `assign_public_ip`, `boot_disk`, and optionally `internal_ip` (left to the cloud when absent) and `ip_forwarding` (`true` only on the bastion) |
 | `profile` | Cloud profile; only `machine_sizes`, `images` and `disk_types` are read |
 | `service_account_email` | Identity to run as, from the identity module |
 | `subnetwork_id` | Subnet to place the instance in |
@@ -66,7 +66,7 @@ in `modules/shared/selection`, not here.
 ```hcl
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.my_vms
+  for_each = local.nodes
 
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value

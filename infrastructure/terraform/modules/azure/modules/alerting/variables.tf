@@ -46,7 +46,7 @@ variable "memory_threshold_mb" {
 }
 
 variable "instances" {
-  description = "Every VM to watch, keyed by name, with the role that says which services run on it."
+  description = "Every VM to watch, keyed by name."
   type = map(object({
     id   = string
     name = string

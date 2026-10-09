@@ -1,60 +1,66 @@
 # Azure firewall module
 
-Creates the traffic contract between the bastion, the workloads and the
-internet: one application security group per scope, and one network security
-group attached to every subnet that holds all the rules.
+Says who may talk to whom inside one Azure deployment. A scope is an
+application security group a network interface joins; every rule lives in one
+network security group attached to every subnet. The
+[network module](../network/README.md) knows nothing about ports.
 
 ## Scopes
 
-`bastion`, `infra`, `history`, `fetcher`, `ui` - the same five GCP expresses as
-network tags and AWS as security groups. On Azure a scope is an application
-security group, and a VM joins it through its network interface; the
-[VM module](../vm/README.md) makes the association.
+| Scope | Application security group | Joined by |
+| --- | --- | --- |
+| `bastion` | `<prefix>-bastion` | The bastion, the cloud's Tailscale subnet router |
+| `k3s_server` | `<prefix>-k3s-server` | Nodes with that role |
+| `k3s_agent` | `<prefix>-k3s-agent` | Nodes with that role |
+| `ingress` | `<prefix>-ingress` | Nodes with `assign_public_ip`, which answer for the application |
 
-Azure sits between the other two. The rules live in one place for the whole
-network, as GCP firewall rules do; the target is decided by membership, as with
-AWS security groups, not by a string anyone may write on a VM.
+Azure allows everything inside a virtual network by default; `deny-vnet-inbound`
+at priority 4000 closes it, so the rules below are the whole contract.
 
 ## Rules
 
-| Priority | Rule | From | To | Port |
-| --- | --- | --- | --- | --- |
-| 100 | `allow-bastion-ssh` | `bastion.allowed_cidrs` | bastion | `bastion.ssh_port` |
-| 110 | `allow-bastion-ssh-bootstrap` | `bastion.allowed_cidrs` | bastion | 22, only with `enable_bastion_ssh_bootstrap` |
-| 120 | `allow-workload-ssh` | bastion | infra, history, fetcher, ui | 22 |
-| 130 | `allow-ui-web` | Internet | ui | `network.ui_public_ports` |
-| 140 | `allow-history-api` | ui | history | `service_ports.history_api` |
-| 150 | `allow-postgresql` | fetcher, history, ui | infra | `service_ports.postgresql`, self-hosted mode |
-| 160, 170 | `allow-amqp`, `allow-redis` | fetcher, history, ui | infra | `service_ports.amqp`, `.redis`, managed mode |
-| 180 | `allow-database` | fetcher, history, ui, infra | database subnet | 5432, added by the database module |
-| 4000 | `deny-vnet-inbound` | VirtualNetwork | VirtualNetwork | everything, **deny** |
+| Rule | From | To | Allows |
+| --- | --- | --- | --- |
+| `allow-bastion-ssh` | `bastion.allowed_cidrs` | bastion | `bastion.ssh_port`/tcp |
+| `allow-bastion-ssh-bootstrap` | `bastion.allowed_cidrs` | bastion | 22/tcp, only while `enable_bastion_ssh_bootstrap` |
+| `allow-bastion-tailscale` | anywhere | bastion | `tailscale.port`/udp - direct WireGuard instead of DERP relays |
+| `allow-bastion-forwarding` | this cloud's `network_cidr` | `remote_cidrs` | everything the bastion forwards - matched by destination range, because a forwarded packet is not addressed to the bastion's own interface |
+| `allow-node-ssh-bastion`, `allow-node-ssh-tailnet` | bastion group, `tailscale.address_range` | nodes | 22/tcp - a rule takes groups or prefixes as its source, never both |
+| `allow-<name>` | `cluster_cidrs` | the roles the entry names | one rule per `cluster.ports` entry, priority 200 onwards, ten apart |
+| `allow-cluster-icmp` | `cluster_cidrs` | nodes, bastion | ICMP - path MTU discovery through the tunnel, and ping |
+| `allow-ingress-web` | anywhere | ingress | `cluster.ingress.public_ports`/tcp |
 
-The last rule is the one the other clouds do not need. GCP and AWS refuse
-traffic between instances unless a rule allows it; an Azure security group
-starts with `AllowVnetInBound`, which admits everything inside the network.
-`deny-vnet-inbound` restores the default-closed contract. The load balancer
-probe rule Azure adds stays in force, and outbound traffic is not touched.
+`cluster_cidrs` is every cloud that hosts a node plus the tailnet. The subnet
+routers never translate addresses, so traffic from another cloud or from a
+laptop on the tailnet keeps its own source and is matched by range.
+
+Nothing opens an application port such as PostgreSQL: inside the cluster,
+traffic between pods on different nodes travels inside Flannel's VXLAN, which
+the firewall sees only as `flannel-vxlan` between nodes. Separating services
+from each other is a NetworkPolicy's job.
 
 ## Inputs
 
 | Name | Description |
 | --- | --- |
-| `resource_prefix` | Prefix for every resource name |
-| `resource_group_name`, `location` | Where the groups are created |
-| `subnet_ids` | Every subnet the security group is attached to |
-| `config` | Project configuration; `network` and `service_ports` are read |
-| `bastion` | `ssh_port` and `allowed_cidrs` |
-| `enable_bastion_ssh_bootstrap` | Adds the temporary port-22 rule |
-| `database_managed` | Chooses what the infra scope admits |
-| `tags` | Tags for the groups |
+| `resource_prefix` | Prefix for group names |
+| `resource_group_name`, `location` | Where the groups live |
+| `subnet_ids` | Subnets the security group is attached to |
+| `cluster` | `cluster.ports` and `cluster.ingress.public_ports` from the configuration |
+| `tailscale` | `tailscale.port` and `tailscale.address_range` |
+| `network_cidr` | This cloud's range |
+| `cluster_cidrs`, `remote_cidrs` | From `modules/shared/selection` |
+| `bastion` | `allowed_cidrs` and `ssh_port` |
+| `enable_bastion_ssh_bootstrap` | Opens 22 on the bastion while Ansible moves SSH |
+| `tags` | Tags for every group |
 
 ## Outputs
 
 | Name | Description |
 | --- | --- |
-| `application_security_group_ids` | Group ID by scope |
-| `network_security_group_id`, `network_security_group_name` | The security group, for modules that add rules to it |
-| `scopes` | The scope names |
+| `application_security_group_ids` | By scope |
+| `network_security_group_id`, `network_security_group_name` | The one security group |
+| `scopes` | The four scopes |
 
 ## License
 

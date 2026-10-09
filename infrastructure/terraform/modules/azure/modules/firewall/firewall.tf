@@ -1,7 +1,7 @@
 resource "azurerm_application_security_group" "scope" {
   for_each = toset(local.scopes)
 
-  name                = "${var.resource_prefix}-${each.value}"
+  name                = "${var.resource_prefix}-${replace(each.value, "_", "-")}"
   resource_group_name = var.resource_group_name
   location            = var.location
 
@@ -59,11 +59,50 @@ resource "azurerm_network_security_rule" "bastion_ssh_bootstrap" {
   destination_port_range                     = "22"
 }
 
-resource "azurerm_network_security_rule" "workload_ssh" {
-  name                        = "allow-workload-ssh"
+# Direct WireGuard connections between tailnet devices. Without it Tailscale
+# still works, relayed through DERP and noticeably slower.
+resource "azurerm_network_security_rule" "bastion_tailscale" {
+  name                        = "allow-bastion-tailscale"
   resource_group_name         = var.resource_group_name
   network_security_group_name = azurerm_network_security_group.main.name
-  priority                    = local.priorities.workload_ssh
+  priority                    = local.priorities.bastion_tailscale
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+
+  source_address_prefix                      = "Internet"
+  source_port_range                          = "*"
+  destination_application_security_group_ids = [azurerm_application_security_group.scope["bastion"].id]
+  destination_port_range                     = tostring(var.tailscale.port)
+}
+
+# A packet a node sends to another cloud or to the tailnet is routed to the
+# bastion still addressed to its real destination, so an application security
+# group - which matches the interface's own address - cannot describe it. The
+# rule names the destinations instead.
+resource "azurerm_network_security_rule" "bastion_forwarding" {
+  name                        = "allow-bastion-forwarding"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.main.name
+  priority                    = local.priorities.bastion_forwarding
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "*"
+
+  source_address_prefix        = var.network_cidr
+  source_port_range            = "*"
+  destination_address_prefixes = var.remote_cidrs
+  destination_port_range       = "*"
+}
+
+# Ansible reaches the nodes over the tailnet, which arrives with a tailnet
+# source address; from the bastion itself it is the fallback. A rule takes
+# either groups or prefixes as its source, never both, hence two.
+resource "azurerm_network_security_rule" "node_ssh_bastion" {
+  name                        = "allow-node-ssh-bastion"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.main.name
+  priority                    = local.priorities.node_ssh_bastion
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
@@ -71,108 +110,85 @@ resource "azurerm_network_security_rule" "workload_ssh" {
   source_application_security_group_ids = [azurerm_application_security_group.scope["bastion"].id]
   source_port_range                     = "*"
   destination_application_security_group_ids = [
-    for scope in local.workload_scopes : azurerm_application_security_group.scope[scope].id
+    for scope in local.node_scopes : azurerm_application_security_group.scope[scope].id
   ]
   destination_port_range = "22"
 }
 
-# The UI is public by design; Traefik terminates TLS here.
-resource "azurerm_network_security_rule" "ui_web" {
-  name                        = "allow-ui-web"
+resource "azurerm_network_security_rule" "node_ssh_tailnet" {
+  name                        = "allow-node-ssh-tailnet"
   resource_group_name         = var.resource_group_name
   network_security_group_name = azurerm_network_security_group.main.name
-  priority                    = local.priorities.ui_web
+  priority                    = local.priorities.node_ssh_tailnet
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+
+  source_address_prefix = var.tailscale.address_range
+  source_port_range     = "*"
+  destination_application_security_group_ids = [
+    for scope in local.node_scopes : azurerm_application_security_group.scope[scope].id
+  ]
+  destination_port_range = "22"
+}
+
+resource "azurerm_network_security_rule" "cluster" {
+  for_each = local.cluster_ports
+
+  name                        = "allow-${each.key}"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.main.name
+  priority                    = each.value.priority
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = title(each.value.protocol)
+
+  source_address_prefixes = var.cluster_cidrs
+  source_port_range       = "*"
+  destination_application_security_group_ids = [
+    for role in each.value.roles : azurerm_application_security_group.scope[role].id
+  ]
+  destination_port_ranges = [for port in each.value.ports : tostring(port)]
+}
+
+# Path MTU discovery needs ICMP: the tunnel between the clouds carries smaller
+# packets than the networks on either side, and without "fragmentation
+# needed" coming back large packets vanish silently. It also makes ping work.
+resource "azurerm_network_security_rule" "cluster_icmp" {
+  name                        = "allow-cluster-icmp"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.main.name
+  priority                    = local.priorities.cluster_icmp
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Icmp"
+
+  source_address_prefixes = var.cluster_cidrs
+  source_port_range       = "*"
+  destination_application_security_group_ids = [
+    for scope in concat(local.node_scopes, ["bastion"]) : azurerm_application_security_group.scope[scope].id
+  ]
+  destination_port_range = "*"
+}
+
+resource "azurerm_network_security_rule" "ingress_web" {
+  name                        = "allow-ingress-web"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.main.name
+  priority                    = local.priorities.ingress_web
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
 
   source_address_prefix                      = "Internet"
   source_port_range                          = "*"
-  destination_application_security_group_ids = [azurerm_application_security_group.scope["ui"].id]
-  destination_port_ranges                    = local.ui_public_ports
-}
-
-resource "azurerm_network_security_rule" "history_api" {
-  name                        = "allow-history-api"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.main.name
-  priority                    = local.priorities.history_api
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-
-  source_application_security_group_ids      = [azurerm_application_security_group.scope["ui"].id]
-  source_port_range                          = "*"
-  destination_application_security_group_ids = [azurerm_application_security_group.scope["history"].id]
-  destination_port_range                     = tostring(var.config.service_ports.history_api)
-}
-
-# What the infra VM serves depends on where the database runs. Self-hosted:
-# PostgreSQL. Managed: the RabbitMQ broker and the Redis cache that take over
-# the queue and the sessions. The clients are the same three workloads either
-# way; the rule for the managed database itself comes from the database
-# module.
-resource "azurerm_network_security_rule" "postgresql" {
-  count = var.database_managed ? 0 : 1
-
-  name                        = "allow-postgresql"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.main.name
-  priority                    = local.priorities.postgresql
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-
-  source_application_security_group_ids = [
-    for scope in local.infra_client_scopes : azurerm_application_security_group.scope[scope].id
-  ]
-  source_port_range                          = "*"
-  destination_application_security_group_ids = [azurerm_application_security_group.scope["infra"].id]
-  destination_port_range                     = tostring(var.config.service_ports.postgresql)
-}
-
-resource "azurerm_network_security_rule" "amqp" {
-  count = var.database_managed ? 1 : 0
-
-  name                        = "allow-amqp"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.main.name
-  priority                    = local.priorities.amqp
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-
-  source_application_security_group_ids = [
-    for scope in local.infra_client_scopes : azurerm_application_security_group.scope[scope].id
-  ]
-  source_port_range                          = "*"
-  destination_application_security_group_ids = [azurerm_application_security_group.scope["infra"].id]
-  destination_port_range                     = tostring(var.config.service_ports.amqp)
-}
-
-resource "azurerm_network_security_rule" "redis" {
-  count = var.database_managed ? 1 : 0
-
-  name                        = "allow-redis"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.main.name
-  priority                    = local.priorities.redis
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-
-  source_application_security_group_ids = [
-    for scope in local.infra_client_scopes : azurerm_application_security_group.scope[scope].id
-  ]
-  source_port_range                          = "*"
-  destination_application_security_group_ids = [azurerm_application_security_group.scope["infra"].id]
-  destination_port_range                     = tostring(var.config.service_ports.redis)
+  destination_application_security_group_ids = [azurerm_application_security_group.scope["ingress"].id]
+  destination_port_ranges                    = [for port in var.cluster.ingress.public_ports : tostring(port)]
 }
 
 # GCP and AWS deny traffic between instances unless a rule allows it; Azure
 # allows everything inside the virtual network by default. This restores the
-# same contract. The load balancer probe rule Azure adds sits above it and
-# stays in force.
+# same contract; the allow rules above open what the cluster needs.
 resource "azurerm_network_security_rule" "deny_vnet_inbound" {
   name                        = "deny-vnet-inbound"
   resource_group_name         = var.resource_group_name

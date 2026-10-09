@@ -4,8 +4,6 @@ module "network" {
 
   resource_prefix = local.resource_prefix
   profile         = local.profile
-
-  enable_database_subnet = local.builds_database
 }
 
 module "firewall" {
@@ -14,26 +12,19 @@ module "firewall" {
 
   resource_prefix = local.resource_prefix
   network_id      = module.network[0].network_id
-  config          = var.config
+  cluster         = var.config.cluster
+  tailscale       = var.config.tailscale
+  network_cidr    = local.profile.network_cidr
+  cluster_cidrs   = module.selection.cluster_cidrs
   bastion         = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-  database_managed             = local.database_managed
 }
 
-module "database" {
-  source = "./modules/database"
-  count  = local.builds_database ? 1 : 0
-
-  resource_prefix = local.resource_prefix
-  project_id      = local.profile.project_id
-  region          = local.profile.region
-  network_id      = module.network[0].network_id
-  subnet_id       = module.network[0].database_subnet_id
-  settings        = var.config.database
-  tier            = module.selection.database_size
-  labels          = local.common_labels
-}
+# --------------------------------------------------------------------- bastion
+# Core infrastructure, not a node: the cloud's Tailscale subnet router. Its
+# specification is derived from the cloud profile rather than written into
+# nodes, so it costs nothing to add a provider and cannot drift between them.
 
 module "bastion_spec" {
   source = "../shared/bastion"
@@ -71,18 +62,34 @@ module "bastion" {
   labels = merge(local.common_labels, { role = "bastion" })
 }
 
+module "routing" {
+  source = "./modules/routing"
+  count  = local.is_active ? 1 : 0
+
+  resource_prefix   = local.resource_prefix
+  network_id        = module.network[0].network_id
+  destinations      = module.selection.remote_cidrs
+  bastion_self_link = module.bastion[0].self_link
+  node_tags = [
+    module.firewall[0].network_tags["k3s_server"],
+    module.firewall[0].network_tags["k3s_agent"],
+  ]
+}
+
+# ----------------------------------------------------------------------- nodes
+
 module "identity" {
   source   = "./modules/identity"
-  for_each = local.workload_vms
+  for_each = local.nodes
 
   name        = "${local.resource_prefix}-${each.key}"
-  description = "Runtime identity for the ${each.value.role} workload ${local.resource_prefix}-${each.key}"
+  description = "Runtime identity for the ${each.value.role} node ${local.resource_prefix}-${each.key}"
 }
 
 #trivy:ignore:AVD-GCP-0031[assign_public_ip=true]
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.workload_vms
+  for_each = local.nodes
 
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value
@@ -90,21 +97,17 @@ module "vm" {
 
   service_account_email = module.identity[each.key].email
   subnetwork_id         = module.network[0].workload_subnet_id
-  network_tags = [
-    for scope in each.value.network_tags :
-    module.firewall[0].network_tags[scope]
-  ]
+  network_tags = concat(
+    [module.firewall[0].network_tags[each.value.role]],
+    each.value.assign_public_ip ? [module.firewall[0].network_tags["ingress"]] : [],
+  )
 
   ssh_users = var.config.ssh_users
 
-  labels = merge(
-    local.common_labels,
-    try(each.value.labels, {}),
-    {
-      role = each.value.role
-    },
-  )
+  labels = merge(local.common_labels, { role = each.value.role })
 }
+
+# ---------------------------------------------------------- observability
 
 module "logging" {
   source = "./modules/logging"
@@ -134,7 +137,6 @@ module "alerting" {
   resource_prefix = local.resource_prefix
   email           = var.config.observability.alert_email
   metrics         = module.monitoring[0].metrics
-  log_name        = module.logging[0].log_name
   budget_usd      = try(local.profile.budget_usd, null)
   billing_account = try(local.profile.billing_account, null)
 }

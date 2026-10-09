@@ -128,110 +128,6 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "memory" {
   tags = var.tags
 }
 
-# The docker-events unit on every host writes one JSON line per container
-# exit; an exit code other than zero is a crash, a planned stop is zero. The
-# container's name is lifted out of the line into a dimension, so one rule
-# covers every container and the notification still names it - which
-# CloudWatch cannot do, hence one alarm per container there.
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "container_died" {
-  name                  = "${var.resource_prefix}-container-died"
-  resource_group_name   = var.resource_group_name
-  location              = var.location
-  description           = "A container exited with a non-zero code"
-  scopes                = [var.workspace_id]
-  evaluation_frequency  = "PT5M"
-  window_duration       = "PT5M"
-  severity              = 1
-  skip_query_validation = true
-
-  identity {
-    type = "SystemAssigned"
-  }
-
-  criteria {
-    query                   = <<-KQL
-      Syslog
-      | where ProcessName == "docker-events"
-      | extend event = parse_json(SyslogMessage)
-      | extend container = tostring(event.Actor.Attributes.name), exit_code = tostring(event.Actor.Attributes.exitCode)
-      | where exit_code != "0"
-    KQL
-    time_aggregation_method = "Count"
-    operator                = "GreaterThanOrEqual"
-    threshold               = 1
-
-    dimension {
-      name     = "Computer"
-      operator = "Include"
-      values   = ["*"]
-    }
-
-    dimension {
-      name     = "container"
-      operator = "Include"
-      values   = ["*"]
-    }
-
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 1
-    }
-  }
-
-  action {
-    action_groups = [azurerm_monitor_action_group.alerts.id]
-  }
-
-  tags = var.tags
-}
-
-# Docker tags a container's lines with its ID, not its name, so the service is
-# told apart by host: ui, history and fetcher each run on their own VM.
-resource "azurerm_monitor_scheduled_query_rules_alert_v2" "http_5xx" {
-  name                  = "${var.resource_prefix}-http-5xx"
-  resource_group_name   = var.resource_group_name
-  location              = var.location
-  description           = "A service answered with a 5xx status"
-  scopes                = [var.workspace_id]
-  evaluation_frequency  = "PT5M"
-  window_duration       = "PT5M"
-  severity              = 2
-  skip_query_validation = true
-
-  identity {
-    type = "SystemAssigned"
-  }
-
-  criteria {
-    query                   = <<-KQL
-      Syslog
-      | where Computer in (${join(", ", [for instance in values(var.instances) : "\"${instance.name}\"" if contains(["ui", "history", "fetcher"], instance.role)])})
-      | extend line = parse_json(SyslogMessage)
-      | where toint(line.status) >= 500
-    KQL
-    time_aggregation_method = "Count"
-    operator                = "GreaterThanOrEqual"
-    threshold               = 1
-
-    dimension {
-      name     = "Computer"
-      operator = "Include"
-      values   = ["*"]
-    }
-
-    failing_periods {
-      minimum_failing_periods_to_trigger_alert = 1
-      number_of_evaluation_periods             = 1
-    }
-  }
-
-  action {
-    action_groups = [azurerm_monitor_action_group.alerts.id]
-  }
-
-  tags = var.tags
-}
-
 # Scoped to the environment's resource group, which holds everything it
 # spends on. Budgets mail the address directly; no action group in between.
 resource "azurerm_consumption_budget_resource_group" "monthly" {
@@ -263,9 +159,7 @@ resource "azurerm_consumption_budget_resource_group" "monthly" {
 
 resource "azurerm_role_assignment" "log_rule_reader" {
   for_each = {
-    memory         = azurerm_monitor_scheduled_query_rules_alert_v2.memory.identity[0].principal_id
-    container_died = azurerm_monitor_scheduled_query_rules_alert_v2.container_died.identity[0].principal_id
-    http_5xx       = azurerm_monitor_scheduled_query_rules_alert_v2.http_5xx.identity[0].principal_id
+    memory = azurerm_monitor_scheduled_query_rules_alert_v2.memory.identity[0].principal_id
   }
 
   scope                = var.workspace_id

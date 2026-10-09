@@ -1,7 +1,7 @@
-# Azure routes between subnets and to the internet on its own; there is no
-# route table to write, unlike AWS. Only outbound NAT needs resources: an
-# address and a gateway attached to the subnet - no route pointing at it, and
-# no public subnet for it to live in.
+# Azure routes between subnets and to the internet on its own; the routes to
+# the other clouds through the bastion live in the routing module. Outbound NAT
+# needs an address and a gateway attached to the subnet - no route pointing at
+# it, and no public subnet for it to live in.
 resource "azurerm_public_ip" "nat" {
   count = var.enable_nat_gateway ? 1 : 0
 
@@ -35,7 +35,7 @@ resource "azurerm_nat_gateway_public_ip_association" "main" {
 }
 
 # The bastion answers through its own public address, so the management
-# subnet stays without NAT. The database subnet reaches nothing outside.
+# subnet stays without NAT.
 resource "azurerm_subnet_nat_gateway_association" "workload" {
   count = var.enable_nat_gateway ? 1 : 0
 

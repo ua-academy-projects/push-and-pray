@@ -26,17 +26,45 @@ resource "google_compute_firewall" "bastion_ssh_bootstrap" {
   }
 }
 
-resource "google_compute_firewall" "workload_ssh" {
-  name    = "${var.resource_prefix}-allow-workload-ssh"
+# Direct WireGuard connections between tailnet devices. Without it Tailscale
+# still works, relayed through DERP and noticeably slower.
+resource "google_compute_firewall" "bastion_tailscale" {
+  name    = "${var.resource_prefix}-allow-bastion-tailscale"
   network = var.network_id
 
-  source_tags = [local.network_tags.bastion]
-  target_tags = [
-    local.network_tags.infra,
-    local.network_tags.history,
-    local.network_tags.fetcher,
-    local.network_tags.ui,
-  ]
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = [local.network_tags.bastion]
+
+  allow {
+    protocol = "udp"
+    ports    = [tostring(var.tailscale.port)]
+  }
+}
+
+# A packet a node sends to another cloud or to the tailnet is routed to the
+# bastion, and the firewall checks it on the way in - addressed to someone
+# else, but arriving at the bastion all the same.
+resource "google_compute_firewall" "bastion_forwarding" {
+  name    = "${var.resource_prefix}-allow-bastion-forwarding"
+  network = var.network_id
+
+  source_ranges = [var.network_cidr]
+  target_tags   = [local.network_tags.bastion]
+
+  allow {
+    protocol = "all"
+  }
+}
+
+# Ansible reaches the nodes over the tailnet, which arrives with a tailnet
+# source address; from the bastion itself it is the fallback.
+resource "google_compute_firewall" "node_ssh" {
+  name    = "${var.resource_prefix}-allow-node-ssh"
+  network = var.network_id
+
+  source_tags   = [local.network_tags.bastion]
+  source_ranges = [var.tailscale.address_range]
+  target_tags   = local.node_tags
 
   allow {
     protocol = "tcp"
@@ -44,73 +72,45 @@ resource "google_compute_firewall" "workload_ssh" {
   }
 }
 
-resource "google_compute_firewall" "ui_web" {
-  name    = "${var.resource_prefix}-allow-ui-web"
+resource "google_compute_firewall" "cluster" {
+  for_each = local.cluster_ports
+
+  name    = "${var.resource_prefix}-allow-${each.key}"
+  network = var.network_id
+
+  source_ranges = var.cluster_cidrs
+  target_tags   = [for role in each.value.roles : local.network_tags[role]]
+
+  allow {
+    protocol = each.value.protocol
+    ports    = [for port in each.value.ports : tostring(port)]
+  }
+}
+
+# Path MTU discovery needs ICMP: the tunnel between the clouds carries smaller
+# packets than the networks on either side, and without "fragmentation
+# needed" coming back large packets vanish silently. It also makes ping work.
+resource "google_compute_firewall" "cluster_icmp" {
+  name    = "${var.resource_prefix}-allow-cluster-icmp"
+  network = var.network_id
+
+  source_ranges = var.cluster_cidrs
+  target_tags   = concat(local.node_tags, [local.network_tags.bastion])
+
+  allow {
+    protocol = "icmp"
+  }
+}
+
+resource "google_compute_firewall" "ingress_web" {
+  name    = "${var.resource_prefix}-allow-ingress-web"
   network = var.network_id
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = [local.network_tags.ui]
+  target_tags   = [local.network_tags.ingress]
 
   allow {
     protocol = "tcp"
-    ports    = local.ui_public_ports
-  }
-}
-
-resource "google_compute_firewall" "history_api" {
-  name    = "${var.resource_prefix}-allow-history-api"
-  network = var.network_id
-
-  source_tags = [local.network_tags.ui]
-  target_tags = [local.network_tags.history]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(var.config.service_ports.history_api)]
-  }
-}
-
-resource "google_compute_firewall" "postgresql" {
-  count = var.database_managed ? 0 : 1
-
-  name    = "${var.resource_prefix}-allow-postgresql"
-  network = var.network_id
-
-  source_tags = local.infra_client_tags
-  target_tags = [local.network_tags.infra]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(var.config.service_ports.postgresql)]
-  }
-}
-
-resource "google_compute_firewall" "amqp" {
-  count = var.database_managed ? 1 : 0
-
-  name    = "${var.resource_prefix}-allow-amqp"
-  network = var.network_id
-
-  source_tags = local.infra_client_tags
-  target_tags = [local.network_tags.infra]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(var.config.service_ports.amqp)]
-  }
-}
-
-resource "google_compute_firewall" "redis" {
-  count = var.database_managed ? 1 : 0
-
-  name    = "${var.resource_prefix}-allow-redis"
-  network = var.network_id
-
-  source_tags = local.infra_client_tags
-  target_tags = [local.network_tags.infra]
-
-  allow {
-    protocol = "tcp"
-    ports    = [tostring(var.config.service_ports.redis)]
+    ports    = [for port in var.cluster.ingress.public_ports : tostring(port)]
   }
 }

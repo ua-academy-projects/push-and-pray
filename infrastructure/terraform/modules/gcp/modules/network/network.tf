@@ -18,13 +18,3 @@ resource "google_compute_subnetwork" "workload" {
 
   private_ip_google_access = true
 }
-
-resource "google_compute_subnetwork" "database" {
-  count = var.enable_database_subnet ? 1 : 0
-
-  name          = "${var.resource_prefix}-database"
-  network       = google_compute_network.main.id
-  ip_cidr_range = var.profile.subnets.database[0]
-
-  private_ip_google_access = false
-}

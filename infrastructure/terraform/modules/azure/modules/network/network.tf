@@ -28,18 +28,3 @@ resource "azurerm_subnet" "workload" {
 
   default_outbound_access_enabled = false
 }
-
-# Holds the private endpoint in front of the managed database and nothing
-# else. A private endpoint ignores the NSG unless the subnet says otherwise,
-# which would leave the database open to the whole network.
-resource "azurerm_subnet" "database" {
-  count = var.enable_database_subnet ? 1 : 0
-
-  name                 = "${var.resource_prefix}-database"
-  resource_group_name  = var.resource_group_name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = [var.profile.subnets.database[0]]
-
-  default_outbound_access_enabled   = false
-  private_endpoint_network_policies = "NetworkSecurityGroupEnabled"
-}

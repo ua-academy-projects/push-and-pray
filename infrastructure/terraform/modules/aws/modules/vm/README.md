@@ -42,7 +42,7 @@ The instance takes its availability zone from its subnet, not from an input.
 | Name | Description |
 | --- | --- |
 | `name` | Name for the instance |
-| `vm` | This VM's configuration entry: `role`, `size`, `image`, `internal_ip`, `assign_public_ip`, `boot_disk` |
+| `vm` | A node from `nodes`, or the bastion's derived specification: `role`, `size`, `image`, `assign_public_ip`, `boot_disk`, and optionally `internal_ip` (left to the cloud when absent) and `ip_forwarding` (`true` only on the bastion) |
 | `profile` | Cloud profile; only `machine_sizes`, `images` and `disk_types` are read |
 | `instance_profile_name` | Identity to run as, from the identity module |
 | `subnet_id` | Subnet to place the instance in |
@@ -68,7 +68,7 @@ The instance takes its availability zone from its subnet, not from an input.
 ```hcl
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.my_vms
+  for_each = local.nodes
 
   name    = "${local.resource_prefix}-${each.key}"
   vm      = each.value

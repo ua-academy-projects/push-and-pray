@@ -2,7 +2,7 @@
 
 Derives the bastion's specification for one cloud. It creates no resources: it
 turns the project-wide `bastion` block plus that cloud's profile into an object
-shaped exactly like an entry of `vms`, which the cloud's VM module accepts
+shaped exactly like an entry of `nodes`, which the cloud's VM module accepts
 unchanged.
 
 The point is that a bastion never varies. It is always the smallest machine the
@@ -21,6 +21,7 @@ call.
 | `boot_disk` | `config.bastion.boot_disk`, defaults `10` GiB and `balanced` |
 | `internal_ip` | `cidrhost(profile.subnets.management, host_index)` |
 | `assign_public_ip` | constant `true` |
+| `ip_forwarding` | constant `true` - the bastion is the cloud's Tailscale subnet router |
 
 Every label stays abstract here. The cloud's VM module resolves them through
 the same `machine_sizes`, `images` and `disk_types` maps it uses for workloads.
@@ -35,6 +36,9 @@ caller supplies the first index its own provider leaves free:
 | GCP | network address and gateway | `2` | `10.0.0.0/29` → `10.0.0.2` |
 | AWS | the first four addresses | `4` | `10.1.0.0/28` → `10.1.0.4` |
 
+The address is fixed rather than left to the cloud, unlike a node's: on Azure
+the routes to the other clouds name the bastion by IP as their next hop.
+
 A number rather than a condition on the cloud name, so adding a provider adds
 an argument and not a branch - the same shape as `required_profile_fields` and
 `profile_value_patterns` in [selection](../selection/README.md).
@@ -42,7 +46,7 @@ an argument and not a branch - the same shape as `required_profile_fields` and
 ## Validation
 
 The three abstract labels are checked against the profile's maps here, because
-`modules/shared/selection` only sees `vms` and the bastion is no longer in it.
+`modules/shared/selection` only sees `nodes` and the bastion is not in it.
 
 ## Inputs
 

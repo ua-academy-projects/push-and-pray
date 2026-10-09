@@ -26,7 +26,6 @@ variable "profile" {
     subnets = object({
       management = string
       workload   = string
-      database   = optional(list(string), [])
     })
   })
 
@@ -34,10 +33,7 @@ variable "profile" {
     condition = alltrue(concat(
       [can(cidrhost(var.profile.network_cidr, 0))],
       [
-        for cidr in concat(
-          [var.profile.subnets.management, var.profile.subnets.workload],
-          var.profile.subnets.database,
-        ) :
+        for cidr in [var.profile.subnets.management, var.profile.subnets.workload] :
         can(cidrhost(cidr, 0))
       ],
     ))
@@ -51,24 +47,10 @@ variable "profile" {
 
   validation {
     condition = alltrue([
-      for cidr in concat(
-        [var.profile.subnets.management, var.profile.subnets.workload],
-        var.profile.subnets.database,
-      ) :
+      for cidr in [var.profile.subnets.management, var.profile.subnets.workload] :
       tonumber(split("/", cidr)[1]) <= 29
     ])
     error_message = "Azure refuses a subnet smaller than /29."
-  }
-}
-
-variable "enable_database_subnet" {
-  description = "Whether to create the database subnet. Only the private endpoint of a managed database lives there; a self-hosted one sits on a workload VM."
-  type        = bool
-  default     = false
-
-  validation {
-    condition     = !var.enable_database_subnet || length(var.profile.subnets.database) == 1
-    error_message = "The private endpoint needs exactly one range in subnets.database."
   }
 }
 

@@ -3,24 +3,24 @@ locals {
 
   profile         = module.selection.profile
   is_active       = module.selection.is_active
-  workload_vms    = module.selection.workload_vms
+  nodes           = module.selection.nodes
   resource_prefix = module.selection.resource_prefix
   common_tags     = module.selection.common_labels
 
-  bastion_name = "${local.resource_prefix}-bastion"
+  # Every cloud that hosts a node runs a bastion, so the cloud is part of the
+  # name: the Ansible inventory and the tailnet both name a host by it, and
+  # three bastions called the same would collapse into one.
+  bastion_name = "${local.resource_prefix}-bastion-${local.this_cloud}"
 
   # Every resource of the environment sits in this one group. The name is
   # derived, never configured, so the Ansible inventory can derive it too.
   resource_group_name = "${local.resource_prefix}-rg"
 
-  database_managed = module.selection.database_managed
-  builds_database  = module.selection.builds_database
-
   # A NAT gateway bills by the hour from the moment it exists. The bastion always
-  # holds a public address, so only workloads can create the need for one.
+  # holds a public address, so only nodes without one create the need for it.
   needs_nat_gateway = length([
-    for vm in values(local.workload_vms) : vm
-    if !vm.assign_public_ip
+    for node in values(local.nodes) : node
+    if !node.assign_public_ip
   ]) > 0
 
   # Every VM on this cloud, the bastion included, in the shape the
@@ -28,10 +28,10 @@ locals {
   # the cloud is active.
   instances = merge(
     {
-      for name, vm in local.workload_vms : name => {
+      for name, node in local.nodes : name => {
         id          = module.vm[name].vm_id
         name        = module.vm[name].name
-        role        = vm.role
+        role        = node.role
         identity_id = module.identity[name].id
       }
     },

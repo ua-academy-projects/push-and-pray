@@ -2,15 +2,8 @@
 # place outside modules/<cloud> that names a provider.
 
 locals {
-  aws_in_use = length([
-    for name, vm in local.config.vms : name
-    if try(vm.cloud, local.config.default_cloud) == "aws"
-  ]) > 0
-
-  azure_in_use = length([
-    for name, vm in local.config.vms : name
-    if try(vm.cloud, local.config.default_cloud) == "azure"
-  ]) > 0
+  aws_in_use   = contains(local.active_clouds, "aws")
+  azure_in_use = contains(local.active_clouds, "azure")
 }
 
 provider "google" {
@@ -47,7 +40,6 @@ provider "azurerm" {
     "Microsoft.AlertsManagement",
     "Microsoft.Compute",
     "Microsoft.Consumption",
-    "Microsoft.DBforPostgreSQL",
     "Microsoft.Insights",
     "Microsoft.KeyVault",
     "Microsoft.ManagedIdentity",

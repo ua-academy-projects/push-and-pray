@@ -2,7 +2,7 @@ variable "config" {
   description = "The parts of the project configuration this module reads. A wider object converts down to this type, so the caller passes the whole configuration."
   type = object({
     bastion = object({
-      ssh_port      = number
+      ssh_port      = optional(number, 22)
       allowed_cidrs = list(string)
       size          = optional(string, "tiny")
       image         = optional(string, "ubuntu-lts")

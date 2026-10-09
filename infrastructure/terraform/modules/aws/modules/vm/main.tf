@@ -10,9 +10,14 @@ resource "aws_instance" "workload" {
   ami           = local.ami
   instance_type = local.instance_type
 
-  subnet_id              = var.subnet_id
+  subnet_id = var.subnet_id
+  # Null lets AWS pick a free address in the subnet.
   private_ip             = var.vm.internal_ip
   vpc_security_group_ids = var.security_group_ids
+
+  # AWS drops any packet an instance sends or receives that is not addressed
+  # from or to the instance itself. A subnet router has to switch that off.
+  source_dest_check = !var.vm.ip_forwarding
 
   iam_instance_profile = var.instance_profile_name
   user_data            = local.user_data
@@ -28,13 +33,6 @@ resource "aws_instance" "workload" {
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required"
-  }
-
-  lifecycle {
-    precondition {
-      condition     = !var.vm.assign_public_ip || contains(["ui", "bastion"], var.vm.role)
-      error_message = "Only workloads with role ui or bastion may receive a public IP."
-    }
   }
 
   tags = merge(var.tags, { Name = var.name })

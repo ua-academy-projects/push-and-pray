@@ -16,9 +16,8 @@ module "network" {
   location            = azurerm_resource_group.main[0].location
   profile             = local.profile
 
-  enable_nat_gateway     = local.needs_nat_gateway
-  enable_database_subnet = local.builds_database
-  tags                   = local.common_tags
+  enable_nat_gateway = local.needs_nat_gateway
+  tags               = local.common_tags
 }
 
 module "firewall" {
@@ -29,36 +28,21 @@ module "firewall" {
   resource_group_name = azurerm_resource_group.main[0].name
   location            = azurerm_resource_group.main[0].location
   subnet_ids          = module.network[0].subnet_ids
-  config              = var.config
+  cluster             = var.config.cluster
+  tailscale           = var.config.tailscale
+  network_cidr        = local.profile.network_cidr
+  cluster_cidrs       = module.selection.cluster_cidrs
+  remote_cidrs        = module.selection.remote_cidrs
   bastion             = var.config.bastion
 
   enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-  database_managed             = local.database_managed
   tags                         = local.common_tags
 }
 
-module "database" {
-  source = "./modules/database"
-  count  = local.builds_database ? 1 : 0
-
-  resource_prefix     = local.resource_prefix
-  resource_group_name = azurerm_resource_group.main[0].name
-  location            = azurerm_resource_group.main[0].location
-  zone                = local.profile.zone
-  subnet_id           = module.network[0].database_subnet_id
-  subnet_cidr         = local.profile.subnets.database[0]
-
-  network_security_group_name = module.firewall[0].network_security_group_name
-  client_application_security_group_ids = {
-    for scope in ["fetcher", "history", "ui", "infra"] :
-    scope => module.firewall[0].application_security_group_ids[scope]
-  }
-
-  settings = var.config.database
-  sku_name = module.selection.database_size
-  port     = var.config.service_ports.postgresql
-  tags     = local.common_tags
-}
+# --------------------------------------------------------------------- bastion
+# Core infrastructure, not a node: the cloud's Tailscale subnet router. Its
+# specification is derived from the cloud profile rather than written into
+# nodes, so it costs nothing to add a provider and cannot drift between them.
 
 module "bastion_spec" {
   source = "../shared/bastion"
@@ -103,9 +87,24 @@ module "bastion" {
 }
 
 
+module "routing" {
+  source = "./modules/routing"
+  count  = local.is_active ? 1 : 0
+
+  resource_prefix     = local.resource_prefix
+  resource_group_name = azurerm_resource_group.main[0].name
+  location            = azurerm_resource_group.main[0].location
+  destinations        = module.selection.remote_cidrs
+  bastion_internal_ip = module.bastion_spec[0].internal_ip
+  subnet_ids          = module.network[0].subnet_ids
+  tags                = local.common_tags
+}
+
+# ----------------------------------------------------------------------- nodes
+
 module "identity" {
   source   = "./modules/identity"
-  for_each = local.workload_vms
+  for_each = local.nodes
 
   name                = "${local.resource_prefix}-${each.key}"
   resource_group_name = azurerm_resource_group.main[0].name
@@ -115,7 +114,7 @@ module "identity" {
 
 module "vm" {
   source   = "./modules/vm"
-  for_each = local.workload_vms
+  for_each = local.nodes
 
   name                = "${local.resource_prefix}-${each.key}"
   vm                  = each.value
@@ -126,21 +125,17 @@ module "vm" {
   identity_id = module.identity[each.key].id
 
   subnet_id = module.network[0].workload_subnet_id
-  application_security_group_ids = {
-    for scope in each.value.network_tags :
-    scope => module.firewall[0].application_security_group_ids[scope]
-  }
+  application_security_group_ids = merge(
+    { (each.value.role) = module.firewall[0].application_security_group_ids[each.value.role] },
+    each.value.assign_public_ip ? { ingress = module.firewall[0].application_security_group_ids["ingress"] } : {},
+  )
 
   ssh_users = var.config.ssh_users
 
-  tags = merge(
-    local.common_tags,
-    try(each.value.labels, {}),
-    {
-      role = each.value.role
-    },
-  )
+  tags = merge(local.common_tags, { role = each.value.role })
 }
+
+# ---------------------------------------------------------- observability
 
 module "logging" {
   source = "./modules/logging"

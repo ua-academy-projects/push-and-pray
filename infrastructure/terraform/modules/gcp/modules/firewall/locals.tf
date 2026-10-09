@@ -1,19 +1,15 @@
 locals {
-  # Firewall rules and for_each keys take strings; the configuration holds numbers.
-  ui_public_ports = [for port in var.config.network.ui_public_ports : tostring(port)]
+  # One scope per node role, one for the bastion, and one for the nodes that
+  # hold a public address and answer for the ingress. A network tag takes
+  # neither an underscore nor an upper-case letter, so the role name is
+  # rewritten for the tag and kept as is for the key.
+  scopes = ["bastion", "k3s_server", "k3s_agent", "ingress"]
 
   network_tags = {
-    bastion = "${var.resource_prefix}-bastion"
-    infra   = "${var.resource_prefix}-infra"
-    history = "${var.resource_prefix}-history"
-    fetcher = "${var.resource_prefix}-fetcher"
-    ui      = "${var.resource_prefix}-ui"
+    for scope in local.scopes : scope => "${var.resource_prefix}-${replace(scope, "_", "-")}"
   }
 
-  # The workloads that talk to whatever the infra VM serves.
-  infra_client_tags = [
-    local.network_tags.fetcher,
-    local.network_tags.history,
-    local.network_tags.ui,
-  ]
+  node_tags = [local.network_tags.k3s_server, local.network_tags.k3s_agent]
+
+  cluster_ports = { for entry in var.cluster.ports : entry.name => entry }
 }

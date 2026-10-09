@@ -1,5 +1,5 @@
 output "security_group_ids" {
-  description = "Security group ID by scope. The AWS counterpart of the GCP network tags: an instance joins the group matching its role."
+  description = "Security group ID by scope. The AWS counterpart of the GCP network tags: an instance joins the group of its role, and a node with a public address also joins ingress."
   value       = { for scope, group in aws_security_group.scope : scope => group.id }
 }
 
@@ -14,6 +14,6 @@ output "security_group_arns" {
 }
 
 output "scopes" {
-  description = "The role scopes this contract is written in terms of."
+  description = "The scopes this contract is written in terms of."
   value       = sort(local.scopes)
 }

@@ -9,13 +9,14 @@ variable "name" {
 }
 
 variable "vm" {
-  description = "This VM's entry from the project configuration. Sizes, images and disk types are abstract labels resolved through var.profile."
+  description = "This VM's entry from the configuration - a node, or the bastion's derived specification. Sizes, images and disk types are abstract labels resolved through var.profile. Without internal_ip the cloud assigns an address from the subnet."
   type = object({
     role             = string
     size             = string
     image            = string
-    internal_ip      = string
+    internal_ip      = optional(string)
     assign_public_ip = bool
+    ip_forwarding    = optional(bool, false)
     boot_disk = object({
       size_gb = number
       type    = string
@@ -23,7 +24,7 @@ variable "vm" {
   })
 
   validation {
-    condition     = can(cidrhost("${var.vm.internal_ip}/32", 0))
+    condition     = var.vm.internal_ip == null || can(cidrhost("${var.vm.internal_ip}/32", 0))
     error_message = "internal_ip must be a valid IPv4 address."
   }
 

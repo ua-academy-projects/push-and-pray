@@ -23,29 +23,13 @@ variable "metrics" {
 }
 
 variable "instances" {
-  description = "Every instance to watch, keyed by name, with the role that says which containers run on it."
+  description = "Every instance to watch, keyed by name."
   type = map(object({
     id        = string
     volume_id = string
     role      = string
     name      = string
   }))
-}
-
-variable "containers_by_role" {
-  description = "Container names each role runs. CloudWatch cannot lift a name out of a log line into a notification, so the pairs are enumerated and each gets its own alarm, named after both."
-  type        = map(list(string))
-  default = {
-    infra   = ["petroscope-postgres-1", "petroscope-migrate-1", "petroscope-rabbitmq-1", "petroscope-redis-1"]
-    history = ["petroscope-history-1"]
-    fetcher = ["petroscope-fetcher-1"]
-    ui      = ["petroscope-ui-1", "oilscope-proxy-traefik-1"]
-  }
-}
-
-variable "log_group_name" {
-  description = "Log group the journals land in; the container and HTTP alarms filter it."
-  type        = string
 }
 
 variable "budget_usd" {

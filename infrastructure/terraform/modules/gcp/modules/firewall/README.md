@@ -1,119 +1,63 @@
 # GCP firewall module
 
-Owns the ingress contract for one GCP deployment: which role may reach which
-role, on which port. It creates the rules and defines the network tags they
-match on.
+Says who may talk to whom inside one GCP deployment. Every rule is an ingress
+rule matched by network tag; the [network module](../network/README.md) knows
+nothing about ports.
 
-Separate from the [network module](../network/README.md) on all three counts
-the Terraform module guidance names:
+## Scopes
 
-- **Encapsulation** - a VPC and its subnets are deployed once and never
-  change; these rules change whenever the application gains a port.
-- **Privileges** - editing a CIDR layout and editing "who may reach PostgreSQL"
-  are different responsibilities.
-- **Volatility** - the network is long-lived, the contract is not.
+| Scope | Network tag | Carried by |
+| --- | --- | --- |
+| `bastion` | `<prefix>-bastion` | The bastion, the cloud's Tailscale subnet router |
+| `k3s_server` | `<prefix>-k3s-server` | Nodes with that role |
+| `k3s_agent` | `<prefix>-k3s-agent` | Nodes with that role |
+| `ingress` | `<prefix>-ingress` | Nodes with `assign_public_ip`, which answer for the application |
 
-The only thing it needs from the network is `network_id`.
+A network tag takes no underscore, so the role is rewritten for the tag and
+kept as is for the key.
 
-## Network tags
+## Rules
 
-The module owns the tag namespace and exports it:
-
-```hcl
-network_tags = {
-  bastion = "<prefix>-bastion"
-  infra   = "<prefix>-infra"
-  history = "<prefix>-history"
-  fetcher = "<prefix>-fetcher"
-  ui      = "<prefix>-ui"
-}
-```
-
-The VM module attaches the tag matching each VM's role. The contract does not
-use generic `app` or `db` tags.
-
-## Ingress contract
-
-| Rule | Source | Destination | TCP ports |
+| Rule | From | To | Allows |
 | --- | --- | --- | --- |
-| `<prefix>-allow-bastion-ssh` | `bastion.allowed_cidrs` | Bastion | `bastion.ssh_port` |
-| `<prefix>-allow-bastion-ssh-bootstrap` | `bastion.allowed_cidrs` | Bastion | `22` (temporary and opt-in) |
-| `<prefix>-allow-workload-ssh` | Bastion | Infra, History, Fetcher, UI | `22` |
-| `<prefix>-allow-history-api` | UI | History | `config.service_ports.history_api` |
-| `<prefix>-allow-postgresql` | Fetcher, History, UI | Infra | `config.service_ports.postgresql` (self-hosted database only) |
-| `<prefix>-allow-amqp` | Fetcher, History, UI | Infra | `config.service_ports.amqp` (managed database only) |
-| `<prefix>-allow-redis` | Fetcher, History, UI | Infra | `config.service_ports.redis` (managed database only) |
-| `<prefix>-allow-ui-web` | `0.0.0.0/0` | UI | `config.network.ui_public_ports` (`443` only) |
+| `allow-bastion-ssh` | `bastion.allowed_cidrs` | bastion | `bastion.ssh_port`/tcp |
+| `allow-bastion-ssh-bootstrap` | `bastion.allowed_cidrs` | bastion | 22/tcp, only while `enable_bastion_ssh_bootstrap` |
+| `allow-bastion-tailscale` | anywhere | bastion | `tailscale.port`/udp - direct WireGuard instead of DERP relays |
+| `allow-bastion-forwarding` | this cloud's `network_cidr` | bastion | everything the bastion forwards to the other clouds and the tailnet |
+| `allow-node-ssh` | bastion, `tailscale.address_range` | nodes | 22/tcp |
+| `allow-<name>` | `cluster_cidrs` | the roles the entry names | one rule per `cluster.ports` entry |
+| `allow-cluster-icmp` | `cluster_cidrs` | nodes, bastion | ICMP - path MTU discovery through the tunnel, and ping |
+| `allow-ingress-web` | anywhere | ingress | `cluster.ingress.public_ports`/tcp |
 
-What the infra VM serves follows `database_managed`: with a self-hosted
-database it runs PostgreSQL, with a managed one it runs the RabbitMQ broker and
-the Redis cache instead, so the three rules swap as one. The managed database
-itself needs no rule: its Private Service Connect endpoint is not a VM, and
-egress from the VPC is allowed by default.
+`cluster_cidrs` is every cloud that hosts a node plus the tailnet. The subnet
+routers never translate addresses, so traffic from another cloud or from a
+laptop on the tailnet keeps its own source and is matched by range.
 
-Port 80 is deliberately closed. Traefik terminates TLS on 443 and solves the
-ACME challenge with TLS-ALPN-01, so nothing ever listens on 80; opening it
-would expose a port with no service behind it.
-
-There are likewise no rules for `8002`, `8080` or `15672` - Fetcher's
-`8002` serves its local container health check only, and UI's `8080` stays
-inside the UI VM's Docker network behind Traefik. Everything else is blocked by
-Google Cloud's implied deny-ingress rule.
-
-## The bootstrap rule
-
-Disabled by default. When `enable_bastion_ssh_bootstrap` is true it is created
-only if the final SSH port is not already `22`. It uses the same operator CIDRs
-and bastion target tag as the final rule. Remove it immediately after Ansible
-has configured and verified the final port.
+Nothing opens an application port such as PostgreSQL: inside the cluster,
+traffic between pods on different nodes travels inside Flannel's VXLAN, which
+the firewall sees only as `flannel-vxlan` between nodes. Separating services
+from each other is a NetworkPolicy's job.
 
 ## Inputs
 
 | Name | Description |
 | --- | --- |
-| `resource_prefix` | Prefix for every rule name and tag |
-| `network_id` | The VPC these rules apply to |
-| `config` | Project configuration; only `network.ui_public_ports` and `service_ports` are read |
-| `bastion` | The project-wide `bastion` block: its `ssh_port` and `allowed_cidrs` |
-| `enable_bastion_ssh_bootstrap` | Opt in to the temporary port 22 rule |
+| `resource_prefix` | Prefix for rule and tag names |
+| `network_id` | The VPC |
+| `cluster` | `cluster.ports` and `cluster.ingress.public_ports` from the configuration |
+| `tailscale` | `tailscale.port` and `tailscale.address_range` |
+| `network_cidr` | This cloud's range |
+| `cluster_cidrs` | From `modules/shared/selection` |
+| `bastion` | `allowed_cidrs` and `ssh_port` |
+| `enable_bastion_ssh_bootstrap` | Opens 22 on the bastion while Ansible moves SSH |
 
 ## Outputs
 
 | Name | Description |
 | --- | --- |
-| `network_tags` | Role to tag map, consumed by the VM module |
-| `firewall_rule_names` | Every rule by purpose; the bootstrap entry is absent unless enabled |
-| `scopes` | The role scopes this contract is written in terms of |
-
-## Usage
-
-```hcl
-module "firewall" {
-  source = "./modules/firewall"
-  count  = local.is_active ? 1 : 0
-
-  resource_prefix = local.resource_prefix
-  network_id      = module.network[0].network_id
-  config          = var.config
-  bastion         = var.config.bastion
-
-  enable_bastion_ssh_bootstrap = var.enable_bastion_ssh_bootstrap
-}
-```
-
-## Access procedure
-
-Add an operator's office or VPN CIDR to `bastion.allowed_cidrs` in the project
-configuration. The resulting administration path is:
-
-```text
-operator -> bastion -> private workload VM
-private workload VM -> Cloud NAT -> internet
-```
-
-Workload SSH is accepted only from instances carrying the bastion tag.
-PostgreSQL and the History API have role-tag sources and are unreachable from
-the internet.
+| `network_tags` | Tag by scope |
+| `firewall_rule_names` | Rule name by purpose; cluster rules as `cluster/<name>` |
+| `scopes` | The four scopes |
 
 ## License
 

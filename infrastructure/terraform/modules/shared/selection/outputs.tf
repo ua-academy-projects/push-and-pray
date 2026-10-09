@@ -4,13 +4,33 @@ output "profile" {
 }
 
 output "is_active" {
-  description = "Whether this cloud hosts any workload. False means the caller builds nothing at all."
+  description = "Whether this cloud hosts any node. False means the caller builds nothing at all, its bastion included."
   value       = local.is_active
 }
 
-output "workload_vms" {
-  description = "Workloads the calling module manages. Empty unless the cloud is active."
-  value       = local.workload_vms
+output "nodes" {
+  description = "Nodes this cloud hosts, complete with node_defaults. Empty when the cloud is inactive."
+  value       = local.nodes
+}
+
+output "hosts_server" {
+  description = "Whether a k3s_server node runs on this cloud - and with it, whether the cloud holds the secrets."
+  value       = local.hosts_server
+}
+
+output "remote_cidrs" {
+  description = "Ranges routed through this cloud's bastion: every other cloud that hosts a node, and the tailnet."
+  value       = local.remote_cidrs
+}
+
+output "cluster_cidrs" {
+  description = "Sources cluster traffic may come from: the range of every cloud that hosts a node, and the tailnet."
+  value       = local.cluster_cidrs
+}
+
+output "secret_ids" {
+  description = "Secret containers this cloud holds: every ID in the secrets block when a k3s_server node runs here, none otherwise."
+  value       = local.secret_ids
 }
 
 output "resource_prefix" {
@@ -26,37 +46,4 @@ output "common_labels" {
 output "cloud" {
   description = "The cloud this instance of the module answered for."
   value       = var.cloud
-}
-
-output "cloud_vms" {
-  description = "Every workload the configuration assigns to this cloud, whether or not it is built. Compare with workload_vms to see what the active check dropped."
-  value       = local.cloud_vms
-}
-
-output "skipped_vms" {
-  description = "Workloads assigned to this cloud that are deliberately not built. Empty whenever the cloud is active."
-  value = {
-    for name, vm in local.cloud_vms : name => vm
-    if !local.is_active
-  }
-}
-
-output "database_managed" {
-  description = "Whether the project runs PostgreSQL as a managed service. The same answer on every cloud; see builds_database for who acts on it."
-  value       = local.database_managed
-}
-
-output "builds_database" {
-  description = "Whether this cloud creates the managed database: it is active, the database is managed, and the infra VM is here."
-  value       = local.builds_database
-}
-
-output "database_size" {
-  description = "This provider's tier for the configured database size label, or null when the label is not in its database_sizes."
-  value       = local.database_size
-}
-
-output "database_settings" {
-  description = "The database block of the configuration, as written."
-  value       = var.config.database
 }

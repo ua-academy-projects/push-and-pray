@@ -1,21 +1,27 @@
 locals {
   secret_version_managers = try(local.profile.secret_version_managers, [])
 
-  all_secret_ids = distinct(flatten([
-    for workload in values(local.workload_vms) : values(workload.secret_mappings)
-  ]))
+  secret_ids = module.selection.secret_ids
 
-  workload_secret_pairs = flatten([
-    for name, workload in local.workload_vms : [
-      for secret_id in distinct(values(workload.secret_mappings)) : {
-        vm_name   = name
-        secret_id = secret_id
-      }
-    ]
-  ])
+  # The vault exists only where there is something to keep in it - on a cloud
+  # that runs a k3s_server node.
+  holds_secrets = length(local.secret_ids) > 0
+
+  # Only k3s_server nodcd ..es read secrets. Ansible resolves them there and hands
+  # them on in memory: the join token to the agents, the Tailscale key to the
+  # bastions, the rest into Kubernetes Secrets.
+  server_nodes = [for name, node in local.nodes : name if node.role == "k3s_server"]
+
+  server_secret_pairs = {
+    for pair in setproduct(local.server_nodes, local.secret_ids) :
+    "${pair[0]}/${pair[1]}" => {
+      node_name = pair[0]
+      secret_id = pair[1]
+    }
+  }
 
   secret_version_writers = {
-    for pair in setproduct(sort(local.all_secret_ids), local.secret_version_managers) :
+    for pair in setproduct(local.secret_ids, local.secret_version_managers) :
     "${pair[0]}/${pair[1]}" => {
       secret_id    = pair[0]
       principal_id = pair[1]
@@ -24,7 +30,7 @@ locals {
 }
 
 data "azurerm_client_config" "current" {
-  count = local.is_active ? 1 : 0
+  count = local.holds_secrets ? 1 : 0
 }
 
 # The container for every secret of the environment. GCP and AWS have no such
@@ -39,7 +45,7 @@ data "azurerm_client_config" "current" {
 # allow-listed.
 #trivy:ignore:AVD-AZU-0013
 resource "azurerm_key_vault" "main" {
-  count = local.is_active ? 1 : 0
+  count = local.holds_secrets ? 1 : 0
 
   name                = local.profile.key_vault_name
   resource_group_name = azurerm_resource_group.main[0].name
@@ -58,7 +64,7 @@ resource "azurerm_key_vault" "main" {
 }
 
 resource "azurerm_role_assignment" "operator" {
-  count = local.is_active ? 1 : 0
+  count = local.holds_secrets ? 1 : 0
 
   scope                = azurerm_key_vault.main[0].id
   role_definition_name = "Key Vault Secrets Officer"
@@ -66,7 +72,7 @@ resource "azurerm_role_assignment" "operator" {
 }
 
 resource "time_sleep" "operator_propagation" {
-  count = local.is_active ? 1 : 0
+  count = local.holds_secrets ? 1 : 0
 
   create_duration = "60s"
 
@@ -76,7 +82,7 @@ resource "time_sleep" "operator_propagation" {
 }
 
 resource "azurerm_key_vault_secret" "this" {
-  for_each = local.is_active ? toset(local.all_secret_ids) : toset([])
+  for_each = toset(local.secret_ids)
 
   name         = each.value
   key_vault_id = azurerm_key_vault.main[0].id
@@ -97,12 +103,12 @@ resource "azurerm_key_vault_secret" "this" {
   depends_on = [time_sleep.operator_propagation]
 }
 
-resource "azurerm_role_assignment" "secret_access" {
-  for_each = { for pair in local.workload_secret_pairs : "${pair.vm_name}/${pair.secret_id}" => pair }
+resource "azurerm_role_assignment" "server_access" {
+  for_each = local.server_secret_pairs
 
   scope                = azurerm_key_vault_secret.this[each.value.secret_id].resource_versionless_id
   role_definition_name = "Key Vault Secrets User"
-  principal_id         = module.identity[each.value.vm_name].principal_id
+  principal_id         = module.identity[each.value.node_name].principal_id
   principal_type       = "ServicePrincipal"
 }
 
@@ -110,7 +116,7 @@ resource "azurerm_role_assignment" "secret_access" {
 # getSecret, so a version can be written but never read back. Azure has no
 # built-in role that narrow.
 resource "azurerm_role_definition" "version_adder" {
-  count = local.is_active && length(local.secret_version_managers) > 0 ? 1 : 0
+  count = local.holds_secrets && length(local.secret_version_managers) > 0 ? 1 : 0
 
   name        = "${local.resource_prefix}-secret-version-adder"
   scope       = azurerm_key_vault.main[0].id
@@ -124,7 +130,7 @@ resource "azurerm_role_definition" "version_adder" {
 }
 
 resource "azurerm_role_assignment" "version_adder" {
-  for_each = local.is_active ? local.secret_version_writers : {}
+  for_each = local.secret_version_writers
 
   scope              = azurerm_key_vault_secret.this[each.value.secret_id].resource_versionless_id
   role_definition_id = azurerm_role_definition.version_adder[0].role_definition_resource_id

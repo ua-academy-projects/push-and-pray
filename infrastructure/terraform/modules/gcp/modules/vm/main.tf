@@ -10,6 +10,10 @@ resource "google_compute_instance" "workload" {
   machine_type              = local.machine_type
   allow_stopping_for_update = true
 
+  # Lets the instance send and receive packets addressed to someone else -
+  # what a subnet router does. Changing it replaces the instance.
+  can_ip_forward = var.vm.ip_forwarding
+
   tags   = var.network_tags
   labels = var.labels
 
@@ -26,6 +30,7 @@ resource "google_compute_instance" "workload" {
 
   network_interface {
     subnetwork = var.subnetwork_id
+    # Null lets GCP pick a free address in the subnet.
     network_ip = var.vm.internal_ip
 
     dynamic "access_config" {
@@ -46,13 +51,6 @@ resource "google_compute_instance" "workload" {
     enable_secure_boot          = true
     enable_vtpm                 = true
     enable_integrity_monitoring = true
-  }
-
-  lifecycle {
-    precondition {
-      condition     = !var.vm.assign_public_ip || contains(["ui", "bastion"], var.vm.role)
-      error_message = "Only workloads with role ui or bastion may receive a public IP."
-    }
   }
 
   metadata = {

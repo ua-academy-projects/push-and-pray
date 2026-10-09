@@ -1,8 +1,8 @@
 # Azure VM module
 
 Creates one Linux VM from an entry shaped like the project configuration's
-`vms`, with its network interface, its membership in the firewall scopes and,
-for the UI and the bastion, a static public address.
+`nodes`, with its network interface, its membership in the firewall scopes and,
+when `assign_public_ip` is set, a static public address.
 
 ## Resources
 
@@ -42,7 +42,7 @@ the VM over a key. Taint the VM to rebuild it with a changed user list.
 | Name | Description |
 | --- | --- |
 | `name` | Name of the VM, prefix of its interface, disk and address |
-| `vm` | The `vms` entry; labels are resolved through `profile` |
+| `vm` | A node from `nodes`, or the bastion's derived specification; labels are resolved through `profile`. Without `internal_ip` the address is dynamic; `ip_forwarding` is `true` only on the bastion |
 | `profile` | `zone` and the three lookup maps |
 | `resource_group_name`, `location` | Where the VM is created |
 | `identity_id` | The user-assigned identity from the identity module |

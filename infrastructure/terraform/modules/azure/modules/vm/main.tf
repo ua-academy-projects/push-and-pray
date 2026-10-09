@@ -18,10 +18,16 @@ resource "azurerm_network_interface" "main" {
   resource_group_name = var.resource_group_name
   location            = var.location
 
+  # Azure drops packets a network interface receives for someone else. A
+  # subnet router has to accept them.
+  ip_forwarding_enabled = var.vm.ip_forwarding
+
   ip_configuration {
-    name                          = "primary"
-    subnet_id                     = var.subnet_id
-    private_ip_address_allocation = "Static"
+    name      = "primary"
+    subnet_id = var.subnet_id
+    # A dynamic address stays with the interface until it is deleted, so a
+    # node keeps it across restarts without one being written down.
+    private_ip_address_allocation = var.vm.internal_ip == null ? "Dynamic" : "Static"
     private_ip_address            = var.vm.internal_ip
     public_ip_address_id          = one(azurerm_public_ip.public[*].id)
   }
@@ -88,11 +94,6 @@ resource "azurerm_linux_virtual_machine" "workload" {
   tags = var.tags
 
   lifecycle {
-    precondition {
-      condition     = !var.vm.assign_public_ip || contains(["ui", "bastion"], var.vm.role)
-      error_message = "Only workloads with role ui or bastion may receive a public IP."
-    }
-
     # Both force a new VM on Azure. cloud-init applies the users once, at
     # first boot - as on AWS, where a changed user_data never re-runs it - so
     # replacing a VM over a key would destroy it for nothing. Taint the VM to

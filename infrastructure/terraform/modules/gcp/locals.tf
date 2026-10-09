@@ -3,17 +3,17 @@ locals {
 
   profile         = module.selection.profile
   is_active       = module.selection.is_active
-  workload_vms    = module.selection.workload_vms
+  nodes           = module.selection.nodes
   resource_prefix = module.selection.resource_prefix
   common_labels   = module.selection.common_labels
 
-  bastion_name = "${local.resource_prefix}-bastion"
-
-  database_managed = module.selection.database_managed
-  builds_database  = module.selection.builds_database
+  # Every cloud that hosts a node runs a bastion, so the cloud is part of the
+  # name: the Ansible inventory and the tailnet both name a host by it, and
+  # three bastions called the same would collapse into one.
+  bastion_name = "${local.resource_prefix}-bastion-${local.this_cloud}"
 
   identities = merge(
-    { for name in keys(local.workload_vms) : name => module.identity[name].member },
+    { for name in keys(local.nodes) : name => module.identity[name].member },
     local.is_active ? { bastion = module.bastion_identity[0].member } : {},
   )
 }
