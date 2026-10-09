@@ -1,0 +1,831 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cluster Configuration",
+  "description": "Contract for non-secret Terraform and Ansible configuration of the k3s cluster.",
+  "$comment": "Cloud-specific values live only in the clouds map. Everything under nodes and node_defaults refers to them by abstract label, so moving a node to another provider is a one-word change. Cross-references are outside what JSON Schema can express and are enforced by variable validation in Terraform: default_cloud and every node's cloud are keys of clouds, every label exists in that cloud's lookup maps, the network_cidr ranges of different clouds do not overlap and contain their own subnets, and there are exactly one or three k3s_server nodes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "default_cloud",
+    "environment",
+    "name_prefix",
+    "common_labels",
+    "ssh_users",
+    "registry",
+    "bastion",
+    "tailscale",
+    "observability",
+    "cluster",
+    "database",
+    "redis",
+    "app",
+    "headlamp",
+    "secrets",
+    "clouds",
+    "node_defaults",
+    "nodes"
+  ],
+  "properties": {
+    "default_cloud": {
+      "$comment": "Cloud hosting every node that does not set its own. Must be a key of clouds; Terraform checks that.",
+      "$ref": "#/$defs/cloud_name"
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "dev",
+        "stage",
+        "prod"
+      ]
+    },
+    "name_prefix": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+    },
+    "common_labels": {
+      "$comment": "Applied to every resource. Terraform adds application, environment, managed_by, role and cloud on its own - do not repeat them here.",
+      "$ref": "#/$defs/labels"
+    },
+    "ssh_users": {
+      "$ref": "#/$defs/ssh_users"
+    },
+    "registry": {
+      "$comment": "Where the cluster pulls the application images from. The token is a secret and lives in secrets, not here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "username",
+        "image_sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "username": {
+          "type": "string",
+          "pattern": "^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$"
+        },
+        "image_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "bastion": {
+      "$comment": "One block for the whole project: a bastion is created on every cloud that hosts at least one node, and works there as the Tailscale subnet router for that cloud's network_cidr. Its size, image, disk and address are derived from that cloud's profile.",
+      "$ref": "#/$defs/bastion"
+    },
+    "tailscale": {
+      "$comment": "The tailnet the bastions join as subnet routers. The auth key is a secret and lives in secrets as TAILSCALE_AUTHKEY. Whether the routers translate source addresses is not configurable: they never do, because cross-cloud traffic has to keep its source address, and the firewall rules and routes are written for that.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "address_range",
+        "port",
+        "router_tags"
+      ],
+      "properties": {
+        "address_range": {
+          "$comment": "Addresses tailnet devices are given - 100.64.0.0/10 unless the tailnet policy narrows it with ipPool. Every cloud routes it to its own bastion and admits it to the cluster ports, so the laptop reaches the nodes without SNAT.",
+          "$ref": "#/$defs/cidr"
+        },
+        "port": {
+          "$comment": "UDP port tailscaled listens on for direct WireGuard connections. Opened to the internet on the bastions and passed to tailscaled as --port; without it traffic still flows, but through Tailscale's DERP relays.",
+          "$ref": "#/$defs/port"
+        },
+        "router_tags": {
+          "$comment": "Advertised by every bastion. The tailnet policy must own them and list them in autoApprovers for the routes to be approved without a click in the admin console.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^tag:[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    "observability": {
+      "$comment": "Provider-independent alerting settings. Thresholds and log retention have defaults in the Terraform modules; only the recipient has to be written down.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alert_email"
+      ],
+      "properties": {
+        "alert_email": {
+          "$comment": "Where every alert and budget notification goes. AWS sends a subscription confirmation to this address first.",
+          "type": "string",
+          "format": "email",
+          "minLength": 3
+        },
+        "thresholds": {
+          "$comment": "Overrides for the alert thresholds. Every key is optional and falls back to the module default.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpu_utilization": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "memory_used_gb": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "disk_write_ops_per_second": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "network_received_mbit_per_second": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "log_retention_days": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "k3s_version",
+        "ingress",
+        "charts",
+        "ports"
+      ],
+      "properties": {
+        "k3s_version": {
+          "$comment": "Passed to the official installer as INSTALL_K3S_VERSION. The role compares it with the installed binary and reinstalls only when they differ.",
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+$"
+        },
+        "ingress": {
+          "$comment": "The public entry to the application. Traefik answers on every node that has a public address.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hostname",
+            "acme_email",
+            "public_ports"
+          ],
+          "properties": {
+            "hostname": {
+              "type": "string",
+              "pattern": "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,63}$"
+            },
+            "acme_email": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
+            },
+            "public_ports": {
+              "$comment": "Opened to the internet on nodes with a public address, and nowhere else. cert-manager solves the Let's Encrypt challenge with HTTP-01, which always arrives on 80, so both ports are needed.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "enum": [
+                  80,
+                  443
+                ]
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "uniqueItems": true
+            }
+          }
+        },
+        "charts": {
+          "$comment": "Versions of the third-party Helm charts the cluster runs. Changing one upgrades that release on the next deployment.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cert_manager",
+            "cloudnative_pg",
+            "redis",
+            "headlamp"
+          ],
+          "properties": {
+            "cert_manager": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+                }
+              }
+            },
+            "cloudnative_pg": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+                }
+              },
+              "$comment": "The CloudNativePG operator chart (cnpg/cloudnative-pg). Its version is the chart's, not the operator's."
+            },
+            "redis": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+                }
+              },
+              "$comment": "The groundhog2k/redis chart, which runs the official Redis image."
+            },
+            "headlamp": {
+              "$comment": "The headlamp chart from kubernetes-sigs.github.io/headlamp.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+                }
+              }
+            }
+          }
+        },
+        "ports": {
+          "$comment": "Ports the nodes open to each other. Terraform admits them from the network_cidr of every cloud that hosts a node and from tailscale.address_range: the subnet routers run without SNAT, so traffic keeps its original source address across clouds and from the tailnet.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/cluster_port"
+          }
+        }
+      }
+    },
+    "database": {
+      "$comment": "The PostgreSQL cluster CloudNativePG runs inside k3s. Its image is <registry.repository>/postgres:<registry.image_sha>, built from infrastructure/docker/Dockerfile.postgres.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cloud",
+        "instances",
+        "storage_gb"
+      ],
+      "properties": {
+        "cloud": {
+          "$comment": "Instances run only on nodes of this cloud: replication between them stays inside one network instead of crossing the bastions.",
+          "$ref": "#/$defs/cloud_name"
+        },
+        "instances": {
+          "$comment": "One primary and the rest streaming replicas. Each needs a node of its own in that cloud, because the volumes are local to a node.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "storage_gb": {
+          "$comment": "Volume of each instance, on k3s's local-path storage.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "redis": {
+      "$comment": "Redis for the UI sessions. Its password is the REDIS_PASSWORD secret.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cloud",
+        "storage_gb"
+      ],
+      "properties": {
+        "cloud": {
+          "$comment": "Redis runs only on nodes of this cloud - the one the UI will run in.",
+          "$ref": "#/$defs/cloud_name"
+        },
+        "storage_gb": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "app": {
+      "$comment": "The application: ui, history and fetcher. Their images are <registry.repository>/<service>:<registry.image_sha>.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cloud"
+      ],
+      "properties": {
+        "cloud": {
+          "$comment": "The services run only on nodes of this cloud - put it where the database and Redis are, so requests between them stay off the bastions.",
+          "$ref": "#/$defs/cloud_name"
+        }
+      }
+    },
+    "headlamp": {
+      "$comment": "The Kubernetes web UI, reachable only over the tailnet. Its name is not in public DNS: point it at a node's internal address in the hosts file of the machine running the browser.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostname"
+      ],
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+        }
+      }
+    },
+    "secrets": {
+      "$comment": "Maps the variable name Ansible uses to a non-secret secret-store ID. Terraform creates each container on every cloud that hosts a k3s_server node and lets only those nodes read it; Ansible resolves the values on a server node and hands them on in memory - K3S_TOKEN to the agents, TAILSCALE_AUTHKEY to the bastions, the rest into Kubernetes Secrets. Azure Key Vault refuses an underscore in a secret name, so IDs use hyphens.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+      }
+    },
+    "clouds": {
+      "$comment": "One profile per supported provider. A profile translates the abstract labels used under nodes into that provider's own identifiers. Only clouds that host a node are built.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "gcp": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/cloud_profile"
+            },
+            {
+              "required": [
+                "project_id"
+              ]
+            },
+            {
+              "$ref": "#/$defs/not_azure_fields"
+            },
+            {
+              "$comment": "GCP names a principal as type:identifier.",
+              "properties": {
+                "secret_version_managers": {
+                  "items": {
+                    "pattern": "^(user|group|serviceAccount|principal|principalSet):.+$"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "aws": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/cloud_profile"
+            },
+            {
+              "$comment": "AWS resources are addressed by region and credentials, never by a project identifier.",
+              "not": {
+                "required": [
+                  "project_id"
+                ]
+              }
+            },
+            {
+              "$ref": "#/$defs/not_azure_fields"
+            },
+            {
+              "$comment": "An AWS budget is scoped to the account behind the credentials, so there is nothing to name.",
+              "not": {
+                "required": [
+                  "billing_account"
+                ]
+              }
+            },
+            {
+              "$comment": "AWS names a principal by ARN.",
+              "properties": {
+                "secret_version_managers": {
+                  "items": {
+                    "pattern": "^arn:aws[a-z-]*:iam::[0-9]{12}:(root|user/.+|role/.+)$"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "azure": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/cloud_profile"
+            },
+            {
+              "$comment": "Azure resources are addressed by subscription; every one of this environment sits in the resource group <name_prefix>-<environment>-rg, which is derived and not configured.",
+              "required": [
+                "subscription_id",
+                "key_vault_name"
+              ]
+            },
+            {
+              "$comment": "A budget is created on the subscription itself, so there is no billing account to name, and there is no project.",
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "project_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "billing_account"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "$comment": "An Azure zone is a number within the region.",
+              "properties": {
+                "zone": {
+                  "pattern": "^[1-3]$"
+                }
+              }
+            },
+            {
+              "$comment": "Azure names a principal by its Entra object ID.",
+              "properties": {
+                "secret_version_managers": {
+                  "items": {
+                    "$ref": "#/$defs/uuid"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "node_defaults": {
+      "$comment": "Every field a node may override. Terraform merges a node over these one level deep, so a node that sets boot_disk sets all of it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size",
+        "image",
+        "boot_disk",
+        "assign_public_ip"
+      ],
+      "properties": {
+        "size": {
+          "$comment": "k3s needs at least 2 vCPU; pick a label that maps to such a machine in every cloud.",
+          "$ref": "#/$defs/resource_label"
+        },
+        "image": {
+          "$ref": "#/$defs/resource_label"
+        },
+        "boot_disk": {
+          "$ref": "#/$defs/full_boot_disk"
+        },
+        "assign_public_ip": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nodes": {
+      "$comment": "Cluster nodes only; bastions are derived from the bastion block. The key becomes the instance name <name_prefix>-<environment>-<key> and the Kubernetes node name. Keep the cloud out of it: moving a node changes its cloud, not its name. A node recreated under the same name is refused by k3s until the old Node object is deleted.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "cidr": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
+    },
+    "cloud_name": {
+      "type": "string",
+      "enum": [
+        "gcp",
+        "aws",
+        "azure"
+      ]
+    },
+    "node_role": {
+      "$comment": "Written to the instance's role label or tag; the dynamic inventory turns it into the Ansible group of the same name, which is why it uses an underscore and not a hyphen.",
+      "type": "string",
+      "enum": [
+        "k3s_server",
+        "k3s_agent"
+      ]
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "not_azure_fields": {
+      "$comment": "Fields only an Azure profile carries.",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "subscription_id"
+            ]
+          },
+          {
+            "required": [
+              "key_vault_name"
+            ]
+          }
+        ]
+      }
+    },
+    "resource_label": {
+      "$comment": "Key into one of a cloud profile's lookup maps. Never a provider-specific identifier.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+    },
+    "label_map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/resource_label"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cloud_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "region",
+        "zone",
+        "network_cidr",
+        "subnets",
+        "machine_sizes",
+        "disk_types",
+        "images"
+      ],
+      "properties": {
+        "project_id": {
+          "$comment": "GCP only.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+        },
+        "subscription_id": {
+          "$comment": "Azure only.",
+          "$ref": "#/$defs/uuid"
+        },
+        "key_vault_name": {
+          "$comment": "Azure only. A vault name is global across all of Azure and stays reserved while a deleted vault is soft-deleted, so it cannot be derived from name_prefix and environment the way every other name is.",
+          "type": "string",
+          "pattern": "^[a-zA-Z](?!.*--)[a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone": {
+          "$comment": "GCP places instances here; AWS also binds its subnets to it, since an AWS subnet cannot span availability zones. On Azure it is the zone number within the region.",
+          "type": "string",
+          "minLength": 1
+        },
+        "network_cidr": {
+          "$comment": "The whole range of this cloud. The bastion advertises it to the tailnet, and the other clouds route it to their own bastion, so the ranges of different clouds must not overlap and every subnet must fall inside its cloud's range. On AWS and Azure it is also the VPC or virtual network range; a GCP network has no range of its own, so there it is only the summary of its subnets.",
+          "$ref": "#/$defs/cidr"
+        },
+        "subnets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "management",
+            "workload"
+          ],
+          "properties": {
+            "management": {
+              "$comment": "The bastion's subnet.",
+              "$ref": "#/$defs/cidr"
+            },
+            "workload": {
+              "$comment": "The cluster nodes' subnet. Each node gets its address from here, assigned by the cloud.",
+              "$ref": "#/$defs/cidr"
+            }
+          }
+        },
+        "machine_sizes": {
+          "$comment": "Abstract size label to this provider's machine type, for example tiny to e2-micro or t3.micro.",
+          "$ref": "#/$defs/label_map"
+        },
+        "disk_types": {
+          "$comment": "Abstract disk label to this provider's volume type, for example balanced to pd-balanced or gp3.",
+          "$ref": "#/$defs/label_map"
+        },
+        "images": {
+          "$comment": "Abstract image label to this provider's image reference. An AWS AMI ID is region-scoped, so it belongs to this profile and not to a shared list.",
+          "$ref": "#/$defs/label_map"
+        },
+        "secret_version_managers": {
+          "$comment": "Identities allowed to add a new version to every secret this cloud holds. Adding a version never grants reading one. Each cloud's branch under clouds checks its own principal format.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "budget_usd": {
+          "$comment": "Monthly spend on this cloud, in US dollars, above which the billing alert fires. Absent means no budget is created.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "billing_account": {
+          "$comment": "GCP only. A budget belongs to a billing account, not to a project, so the project alone is not enough to create one.",
+          "type": "string",
+          "pattern": "^[0-9A-F]{6}-[0-9A-F]{6}-[0-9A-F]{6}$"
+        }
+      }
+    },
+    "bastion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_cidrs"
+      ],
+      "properties": {
+        "allowed_cidrs": {
+          "$comment": "Source ranges permitted to reach the bastion over SSH, needed until it joins the tailnet. Never 0.0.0.0/0 - that defeats the point of having one.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/cidr",
+            "not": {
+              "const": "0.0.0.0/0"
+            }
+          }
+        },
+        "ssh_port": {
+          "$comment": "Port Ansible moves the SSH daemon to. Absent means it stays on 22.",
+          "$ref": "#/$defs/port"
+        },
+        "size": {
+          "$comment": "Defaults to tiny. A subnet router forwards packets and runs nothing else.",
+          "$ref": "#/$defs/resource_label"
+        },
+        "image": {
+          "$comment": "Defaults to ubuntu-lts.",
+          "$ref": "#/$defs/resource_label"
+        },
+        "boot_disk": {
+          "$ref": "#/$defs/boot_disk"
+        }
+      }
+    },
+    "boot_disk": {
+      "$comment": "Either field may be left out and falls back to its default.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size_gb": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "type": {
+          "$comment": "Label resolved through the hosting cloud's disk_types map.",
+          "$ref": "#/$defs/resource_label"
+        }
+      }
+    },
+    "full_boot_disk": {
+      "$comment": "Both fields, because node_defaults and nodes are merged one level deep and a partial disk would lose the other field.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/boot_disk"
+        },
+        {
+          "required": [
+            "size_gb",
+            "type"
+          ]
+        }
+      ]
+    },
+    "cluster_port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "protocol",
+        "ports",
+        "roles"
+      ],
+      "properties": {
+        "name": {
+          "$comment": "Names the firewall rule.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+        },
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp"
+          ]
+        },
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/port"
+          }
+        },
+        "roles": {
+          "$comment": "Nodes that open the ports. etcd and the API server listen only on servers; kubelet and flannel on every node.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/node_role"
+          }
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "ssh_users": {
+      "$comment": "Maps Linux usernames to public SSH keys. Private keys and local key-file paths are not accepted.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( .+)?$"
+      }
+    },
+    "node": {
+      "$comment": "role is the node's own; cloud falls back to default_cloud and everything else to node_defaults. There is no address: the cloud assigns one from the workload subnet of the cloud the node lands on, and Ansible reads it back through the dynamic inventory.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/node_role"
+        },
+        "cloud": {
+          "$comment": "Overrides default_cloud for this node only.",
+          "$ref": "#/$defs/cloud_name"
+        },
+        "size": {
+          "$ref": "#/$defs/resource_label"
+        },
+        "image": {
+          "$ref": "#/$defs/resource_label"
+        },
+        "boot_disk": {
+          "$ref": "#/$defs/full_boot_disk"
+        },
+        "assign_public_ip": {
+          "$comment": "Only nodes that should answer for cluster.ingress need one.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

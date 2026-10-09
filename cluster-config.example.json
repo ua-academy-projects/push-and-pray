@@ -19,6 +19,13 @@
       "192.0.2.10/32"
     ]
   },
+  "tailscale": {
+    "address_range": "100.64.0.0/10",
+    "port": 41641,
+    "router_tags": [
+      "tag:oilscope-router"
+    ]
+  },
   "observability": {
     "alert_email": "ops@example.com"
   },
@@ -32,18 +39,87 @@
         443
       ]
     },
+    "charts": {
+      "cert_manager": {
+        "version": "v1.21.1"
+      },
+      "cloudnative_pg": {
+        "version": "0.29.1"
+      },
+      "redis": {
+        "version": "2.4.8"
+      },
+      "headlamp": {
+        "version": "0.45.0"
+      }
+    },
     "ports": [
-      { "name": "kube-apiserver", "protocol": "tcp", "ports": [6443], "roles": ["k3s_server"] },
-      { "name": "etcd", "protocol": "tcp", "ports": [2379, 2380], "roles": ["k3s_server"] },
-      { "name": "kubelet", "protocol": "tcp", "ports": [10250], "roles": ["k3s_server", "k3s_agent"] },
-      { "name": "flannel-vxlan", "protocol": "udp", "ports": [8472], "roles": ["k3s_server", "k3s_agent"] }
+      {
+        "name": "kube-apiserver",
+        "protocol": "tcp",
+        "ports": [
+          6443
+        ],
+        "roles": [
+          "k3s_server"
+        ]
+      },
+      {
+        "name": "etcd",
+        "protocol": "tcp",
+        "ports": [
+          2379,
+          2380
+        ],
+        "roles": [
+          "k3s_server"
+        ]
+      },
+      {
+        "name": "kubelet",
+        "protocol": "tcp",
+        "ports": [
+          10250
+        ],
+        "roles": [
+          "k3s_server",
+          "k3s_agent"
+        ]
+      },
+      {
+        "name": "flannel-vxlan",
+        "protocol": "udp",
+        "ports": [
+          8472
+        ],
+        "roles": [
+          "k3s_server",
+          "k3s_agent"
+        ]
+      }
     ]
+  },
+  "database": {
+    "cloud": "gcp",
+    "instances": 2,
+    "storage_gb": 5
+  },
+  "redis": {
+    "cloud": "gcp",
+    "storage_gb": 1
+  },
+  "app": {
+    "cloud": "gcp"
+  },
+  "headlamp": {
+    "hostname": "headlamp.oilscope.internal"
   },
   "secrets": {
     "K3S_TOKEN": "k3s-token",
     "TAILSCALE_AUTHKEY": "tailscale-authkey",
     "GHCR_TOKEN": "ghcr-token",
-    "OILPRICEAPI_KEY": "oilpriceapi-key"
+    "OILPRICEAPI_KEY": "oilpriceapi-key",
+    "REDIS_PASSWORD": "redis-password"
   },
   "clouds": {
     "gcp": {

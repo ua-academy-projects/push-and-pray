@@ -33,7 +33,6 @@ crash.*.log
 # Credentials and private keys
 *.pem
 *.key
-!project-config.example.json
 
 # Built Ansible collection artifacts
 infrastructure/ansible/**/*.tar.gz
