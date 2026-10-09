@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install the private Headlamp dashboard
+  when: headlamp_enabled | bool
+  block:
+    - name: Validate Headlamp settings
+      ansible.builtin.assert:
+        that:
+          - headlamp_release_name | length > 0
+          - headlamp_chart_version | length > 0
+          - headlamp_chart_repository | length > 0
+          - headlamp_namespace | length > 0
+          - headlamp_service_account_name | length > 0
+          - headlamp_cluster_role_name in ['view', 'edit', 'cluster-admin']
+        fail_msg: Headlamp requires valid Helm, namespace and RBAC settings.
+
+    - name: Create the Headlamp manifest directory
+      ansible.builtin.file:
+        path: "{{ headlamp_manifest_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Render the Headlamp Helm definition
+      ansible.builtin.template:
+        src: helm.yaml.j2
+        dest: "{{ headlamp_manifest_directory }}/helm.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Check whether the Headlamp Helm definition needs changes
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - diff
+          - -f
+          - "{{ headlamp_manifest_directory }}/helm.yaml"
+      register: headlamp_helm_diff
+      changed_when: false
+      failed_when: headlamp_helm_diff.rc not in [0, 1]
+
+    - name: Install or update Headlamp through the K3s Helm controller
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "{{ headlamp_manifest_directory }}/helm.yaml"
+      register: headlamp_helm_apply
+      changed_when: >-
+        'created' in headlamp_helm_apply.stdout or
+        'configured' in headlamp_helm_apply.stdout
+      when: headlamp_helm_diff.rc == 1
+
+    - name: Wait for Headlamp to become available
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - wait
+          - --for=condition=Available
+          - deployment
+          - --all
+          - --namespace
+          - "{{ headlamp_namespace }}"
+          - "--timeout={{ headlamp_wait_timeout }}"
+      register: headlamp_deployment_wait
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: headlamp_deployment_wait.rc == 0
+
+    - name: Read the Headlamp Service type
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - service
+          - "{{ headlamp_release_name }}"
+          - --namespace
+          - "{{ headlamp_namespace }}"
+          - --output=jsonpath={.spec.type}
+      register: headlamp_service_type
+      changed_when: false
+      failed_when: headlamp_service_type.stdout | trim != 'ClusterIP'

@@ -1,0 +1,31 @@
+# Managed by Ansible.
+node-name: "{{ inventory_hostname }}"
+node-ip: "{{ k3s_node_ip }}"
+{% if k3s_node_overlay_ip | length > 0 %}
+node-external-ip: "{{ k3s_node_overlay_ip }}"
+flannel-iface: "{{ k3s_node_overlay_interface }}"
+{% endif %}
+node-label:
+  - "oilscope.io/role={{ k3s_node_mode }}"
+  - "oilscope.io/cloud={{ oilscope_cloud | default('unknown') }}"
+  - "oilscope.io/region={{ oilscope_region | default('unknown') }}"
+{% if k3s_node_mode == 'server' %}
+advertise-address: "{{ k3s_node_ip }}"
+write-kubeconfig-mode: "0600"
+secrets-encryption: true
+{% if k3s_node_overlay_ip | length > 0 %}
+flannel-external-ip: true
+{% endif %}
+disable:
+  - traefik
+{% if k3s_registration_ip | length > 0 %}
+tls-san:
+  - "{{ k3s_registration_ip }}"
+{% endif %}
+{% endif %}
+{% if k3s_cluster_init %}
+cluster-init: true
+{% else %}
+server: "{{ k3s_server_url }}"
+token: "{{ k3s_token }}"
+{% endif %}

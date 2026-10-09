@@ -32,18 +32,20 @@ load_project_config() {
   : "${DB_PASSWORD:?DB_PASSWORD is required in infrastructure/vagrant/config/vagrant.env}"
   : "${RABBITMQ_USER:?RABBITMQ_USER is required in infrastructure/vagrant/config/vagrant.env}"
   : "${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required in infrastructure/vagrant/config/vagrant.env}"
+  : "${REDIS_PASSWORD:?REDIS_PASSWORD is required in infrastructure/vagrant/config/vagrant.env}"
   : "${DB_LAN_IP:?DB_LAN_IP is required in infrastructure/vagrant/config/vagrant.env}"
   : "${HISTORY_LAN_IP:?HISTORY_LAN_IP is required in infrastructure/vagrant/config/vagrant.env}"
   : "${FETCHER_LAN_IP:?FETCHER_LAN_IP is required in infrastructure/vagrant/config/vagrant.env}"
   : "${UI_LAN_IP:?UI_LAN_IP is required in infrastructure/vagrant/config/vagrant.env}"
 
-  if [[ "${DB_PASSWORD}" == "change-me" || "${RABBITMQ_PASSWORD}" == "change-me" ]]; then
+  if [[ "${DB_PASSWORD}" == "change-me" || "${RABBITMQ_PASSWORD}" == "change-me" ||
+        "${REDIS_PASSWORD}" == "change-me" ]]; then
     log "Replace all default passwords in infrastructure/vagrant/config/vagrant.env"
     exit 1
   fi
 
   local credential
-  for credential in "${DB_PASSWORD}" "${RABBITMQ_PASSWORD}" "${RABBITMQ_USER}"; do
+  for credential in "${DB_PASSWORD}" "${RABBITMQ_PASSWORD}" "${RABBITMQ_USER}" "${REDIS_PASSWORD}"; do
     if [[ ! "${credential}" =~ ^[A-Za-z0-9._~-]+$ ]]; then
       log "Credentials must contain only URL-safe characters: A-Z a-z 0-9 . _ ~ -"
       exit 1
@@ -97,8 +99,10 @@ write_compose_env() {
     printf 'DB_PASSWORD=%s\n' "${DB_PASSWORD}"
     printf 'RABBITMQ_USER=%s\n' "${RABBITMQ_USER}"
     printf 'RABBITMQ_PASSWORD=%s\n' "${RABBITMQ_PASSWORD}"
+    printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD}"
     printf 'POSTGRES_IMAGE=%s\n' "${POSTGRES_IMAGE:-postgres:18.4-bookworm}"
     printf 'RABBITMQ_IMAGE=%s\n' "${RABBITMQ_IMAGE:-rabbitmq:4.3.4-management}"
+    printf 'REDIS_IMAGE=%s\n' "${REDIS_IMAGE:-redis:8.2.8-bookworm}"
     printf 'PYTHON_IMAGE=%s\n' "${PYTHON_IMAGE:-python:3.12.13-slim-bookworm}"
     printf 'UV_IMAGE=%s\n' "${UV_IMAGE:-ghcr.io/astral-sh/uv:0.11.32}"
     printf 'GO_IMAGE=%s\n' "${GO_IMAGE:-golang:1.24.13-bookworm}"

@@ -4,7 +4,11 @@ resource "azurerm_network_security_group" "vm" {
   name                = "${local.resource_prefix}-${each.key}-nsg"
   location            = var.location
   resource_group_name = var.resource_group_name
-  tags                = merge(local.common_tags, { role = each.value.role })
+  tags = merge(
+    local.common_tags,
+    { role = each.value.role },
+    each.value.role == "k3s" ? { k3s_role = each.value.k3s_role } : {},
+  )
 }
 
 resource "azurerm_network_security_rule" "bastion_ssh" {
@@ -52,7 +56,7 @@ resource "azurerm_network_security_rule" "workload_ssh" {
   protocol                    = "Tcp"
   source_port_range           = "*"
   destination_port_range      = "22"
-  source_address_prefixes     = var.management_source_cidrs
+  source_address_prefixes     = var.trusted_vnet_cidrs
   destination_address_prefix  = "*"
   resource_group_name         = var.resource_group_name
   network_security_group_name = azurerm_network_security_group.vm[each.key].name
@@ -61,7 +65,7 @@ resource "azurerm_network_security_rule" "workload_ssh" {
 resource "azurerm_network_security_rule" "ui_web" {
   for_each = {
     for rule in flatten([
-      for name, vm in local.ui_targets : [
+      for name, vm in local.public_endpoint_targets : [
         for port in var.config.network.ui_public_ports : {
           key     = "${name}-${port}"
           vm_name = name
@@ -110,6 +114,70 @@ resource "azurerm_network_security_rule" "database_service" {
   protocol                    = "Tcp"
   source_port_range           = "*"
   destination_port_range      = tostring(var.database_mode == "managed" ? var.config.service_ports.rabbitmq : var.config.service_ports.postgresql)
+  source_address_prefixes     = var.trusted_vnet_cidrs
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm[each.key].name
+}
+
+resource "azurerm_network_security_rule" "k3s_api" {
+  for_each = local.k3s_server_targets
+
+  name                        = "k3s-api"
+  priority                    = 800
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "6443"
+  source_address_prefixes     = var.trusted_vnet_cidrs
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm[each.key].name
+}
+
+resource "azurerm_network_security_rule" "k3s_etcd" {
+  for_each = local.k3s_server_targets
+
+  name                        = "k3s-etcd"
+  priority                    = 810
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_ranges     = ["2379", "2380"]
+  source_address_prefixes     = var.trusted_vnet_cidrs
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm[each.key].name
+}
+
+resource "azurerm_network_security_rule" "k3s_flannel_vxlan" {
+  for_each = local.k3s_targets
+
+  name                        = "k3s-flannel-vxlan"
+  priority                    = 820
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Udp"
+  source_port_range           = "*"
+  destination_port_range      = "8472"
+  source_address_prefixes     = var.trusted_vnet_cidrs
+  destination_address_prefix  = "*"
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.vm[each.key].name
+}
+
+resource "azurerm_network_security_rule" "k3s_kubelet" {
+  for_each = local.k3s_targets
+
+  name                        = "k3s-kubelet"
+  priority                    = 830
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "10250"
   source_address_prefixes     = var.trusted_vnet_cidrs
   destination_address_prefix  = "*"
   resource_group_name         = var.resource_group_name

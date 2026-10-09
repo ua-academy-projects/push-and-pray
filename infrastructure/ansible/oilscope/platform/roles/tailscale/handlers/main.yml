@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Apply Tailscale forwarding settings
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -p
+      - "{{ tailscale_forwarding_sysctl_path }}"
+  changed_when: true

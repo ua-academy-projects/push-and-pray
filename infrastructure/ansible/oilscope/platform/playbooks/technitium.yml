@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy private Technitium DNS and update Homepage
+  hosts: k3s_bootstrap
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    technitium_deployment_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+  tasks:
+    - name: Deploy Technitium DNS
+      ansible.builtin.include_role:
+        name: oilscope.platform.technitium
+      vars:
+        technitium_enabled: >-
+          {{ technitium_deployment_config.technitium.enabled | default(false) }}
+        technitium_configure_coredns: >-
+          {{ technitium_deployment_config.technitium.configure_coredns
+             | default(true) }}
+      when: technitium_deployment_config.technitium.enabled | default(false) | bool
+
+    - name: Update Homepage with the Technitium widget
+      ansible.builtin.include_role:
+        name: oilscope.platform.homepage
+      vars:
+        homepage_enabled: >-
+          {{ technitium_deployment_config.homepage.enabled | default(false) }}
+      when: technitium_deployment_config.homepage.enabled | default(false) | bool

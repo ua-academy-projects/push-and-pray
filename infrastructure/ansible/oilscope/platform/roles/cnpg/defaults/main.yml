@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+cnpg_operator_chart: cloudnative-pg
+cnpg_operator_chart_version: "0.29.0"
+cnpg_operator_repository: https://cloudnative-pg.github.io/charts
+cnpg_operator_namespace: cnpg-system
+cnpg_operator_release_name: cnpg
+
+cnpg_namespace: oilscope
+cnpg_cluster_name: oilscope-postgres
+cnpg_instances: 2
+cnpg_database_name: oil_tracker
+cnpg_database_owner: oil_tracker
+cnpg_app_secret_name: oilscope-postgres-app
+cnpg_postgres_password: ""
+
+cnpg_storage_size: 5Gi
+cnpg_storage_class: local-path
+cnpg_cpu_request: 250m
+cnpg_memory_request: 512Mi
+cnpg_cpu_limit: "1"
+cnpg_memory_limit: 1Gi
+
+cnpg_enable_pod_anti_affinity: true
+cnpg_pod_anti_affinity_type: required
+cnpg_topology_key: kubernetes.io/hostname
+cnpg_node_selector: {}
+
+cnpg_manifest_directory: /var/lib/rancher/k3s/oilscope-cnpg
+cnpg_wait_timeout: 600s

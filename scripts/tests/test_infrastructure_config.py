@@ -94,6 +94,87 @@ class ConfigurationTests(unittest.TestCase):
                     self.assertGreaterEqual(int(address) - int(subnet.network_address), 4)
                 self.assertNotEqual(address, subnet.broadcast_address)
 
+    def test_cloud_networks_do_not_overlap(self):
+        paths = [ROOT / "project-config.example.json"]
+        local = TF / "config/dev.json"
+        if local.exists():
+            paths.append(local)
+
+        for path in paths:
+            config = read_json(path)
+            networks = []
+            for cloud in ("aws", "gcp"):
+                network = dict(config["network"])
+                network.update(config["clouds"][cloud]["network"])
+                networks.append((cloud, ipaddress.ip_network(network["vpc_cidr"])))
+
+            azure = config["clouds"]["azure"]
+            networks.append(
+                ("azure-default", ipaddress.ip_network(azure["network"]["vnet_cidr"]))
+            )
+            for region, network in azure.get("regional_networks", {}).items():
+                networks.append(
+                    (f"azure-{region}", ipaddress.ip_network(network["vnet_cidr"]))
+                )
+
+            for index, (left_name, left_network) in enumerate(networks):
+                for right_name, right_network in networks[index + 1 :]:
+                    with self.subTest(
+                        file=path.name, left=left_name, right=right_name
+                    ):
+                        self.assertFalse(left_network.overlaps(right_network))
+
+    def test_k3s_topology(self):
+        nodes = {
+            name: vm
+            for name, vm in self.example["vms"].items()
+            if vm["role"] == "k3s"
+        }
+        servers = {
+            name: vm for name, vm in nodes.items() if vm["k3s_role"] == "server"
+        }
+        agents = {
+            name: vm for name, vm in nodes.items() if vm["k3s_role"] == "agent"
+        }
+        bootstrap = [
+            name for name, vm in servers.items() if vm.get("k3s_bootstrap", False)
+        ]
+
+        self.assertEqual(len(servers), 3)
+        self.assertEqual(len(agents), 1)
+        self.assertEqual(len(bootstrap), 1)
+        self.assertTrue(agents["k3s-agent-1"]["assign_public_ip"])
+        self.assertIn("public_endpoint", agents["k3s-agent-1"])
+
+    def test_tailscale_has_one_bastion_and_a_router_per_active_cloud(self):
+        paths = [ROOT / "project-config.example.json"]
+        local = TF / "config/dev.json"
+        if local.exists():
+            paths.append(local)
+
+        for path in paths:
+            config = read_json(path)
+            if not config.get("tailscale", {}).get("enabled", False):
+                continue
+            vms = config["vms"]
+            bastions = [vm for vm in vms.values() if vm["role"] == "bastion"]
+            self.assertEqual(len(bastions), 1, path)
+            active_clouds = {
+                vm.get("cloud", config["default_cloud"])
+                for vm in vms.values()
+                if vm["role"] != "bastion"
+            }
+            for cloud in active_clouds:
+                with self.subTest(file=path.name, cloud=cloud):
+                    self.assertTrue(
+                        any(
+                            vm.get("cloud", config["default_cloud"]) == cloud
+                            and vm["role"] == "k3s"
+                            and vm.get("k3s_role") == "server"
+                            for vm in vms.values()
+                        )
+                    )
+
     def test_optional_disks_and_rejection_of_incomplete_disk(self):
         config = copy.deepcopy(self.example)
         vm = next(iter(config["vms"].values()))
@@ -139,6 +220,7 @@ class ModuleStructureTests(unittest.TestCase):
             "azure_identity",
             "azure_postgresql",
             "azure_vm",
+            "azure-monitoring",
             "aws-monitoring",
             "gcp-monitoring",
         }
@@ -156,15 +238,36 @@ class ModuleStructureTests(unittest.TestCase):
             text = "\n".join(p.read_text() for p in (TF / modules[module]).glob("*.tf"))
             self.assertRegex(text, rf'output\s+"{output}"')
 
-    def test_templates_retained_but_not_attached(self):
+    def test_legacy_templates_retained_and_tailscale_cloud_init_attached(self):
         template_dir = TF / "modules/gcp/gcp-vm/templates"
         for name in ("run.sh", "cloud-config.yaml.tftpl", "bastion-startup.sh.tftpl"):
             self.assertTrue((template_dir / name).exists())
-        for module in ("aws/aws-vm", "gcp/gcp-vm"):
-            text = "\n".join(p.read_text() for p in (TF / "modules" / module).glob("*.tf"))
-            self.assertNotIn("templatefile(", text)
-            self.assertNotRegex(text, r"\buser_data\s*=")
-            self.assertNotIn('"startup-script"', text)
+
+        module_text = {
+            cloud: "\n".join(
+                path.read_text()
+                for path in (TF / "modules" / cloud / f"{cloud}-vm").glob("*.tf")
+            )
+            for cloud in ("aws", "gcp", "azure")
+        }
+        for cloud in ("aws", "gcp"):
+            self.assertNotIn("templatefile(", module_text[cloud])
+            self.assertNotIn('"startup-script"', module_text[cloud])
+
+        self.assertRegex(module_text["aws"], r"\buser_data\s*=.*tailscale_cloud_init")
+        self.assertIn('"user-data"', module_text["gcp"])
+        self.assertRegex(module_text["azure"], r"\bcustom_data\s*=.*tailscale_cloud_init")
+
+        root_tailscale = (TF / "tailscale.tf").read_text()
+        self.assertIn('source = "./modules/tailscale"', root_tailscale)
+
+        tailscale_module = "\n".join(
+            path.read_text() for path in (TF / "modules/tailscale").glob("*.tf")
+        )
+        self.assertIn('source  = "tailscale/tailscale/cloudinit"', tailscale_module)
+        self.assertIn(
+            'resource "tailscale_tailnet_key" "bootstrap"', tailscale_module
+        )
 
 
 class InventorySettingsTests(unittest.TestCase):
@@ -206,6 +309,10 @@ class InventorySettingsTests(unittest.TestCase):
             self.assertEqual(
                 plugin._gcp_settings(config)["zones"], [config["clouds"]["gcp"]["zones"][location]]
             )
+            self.assertEqual(
+                plugin._gcp_settings(config)["compose"]["ansible_user"],
+                f"'{sorted(config['ssh_users'])[0]}'",
+            )
             azure = plugin._azure_settings(config)
             self.assertEqual(
                 azure["include_vm_resource_groups"],
@@ -214,6 +321,21 @@ class InventorySettingsTests(unittest.TestCase):
             self.assertEqual(
                 azure["hostvar_expressions"]["oilscope_region"], "location"
             )
+            for settings, group_key in (
+                (plugin._aws_settings(config), "groups"),
+                (plugin._gcp_settings(config), "groups"),
+                (azure, "conditional_groups"),
+            ):
+                groups = settings[group_key]
+                self.assertIn("k3s_servers", groups)
+                self.assertIn("k3s_agents", groups)
+                self.assertIn("k3s_bootstrap", groups)
+
+    def test_workload_proxy_uses_the_bastion_user(self):
+        path = ROOT / "infrastructure/ansible/inventory/group_vars/workloads.yml"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("hostvars[oilscope_bastion_host].ansible_user", text)
+        self.assertIn("oilscope_bastion_user }}@{{ oilscope_bastion_address", text)
 
 
 if __name__ == "__main__":

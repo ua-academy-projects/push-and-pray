@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+homepage_enabled: true
+homepage_release_name: homepage
+homepage_chart: homepage
+homepage_chart_version: "2.1.0"
+homepage_chart_repository: https://jameswynn.github.io/helm-charts
+homepage_image_repository: ghcr.io/gethomepage/homepage
+homepage_image_tag: v2.4.0
+homepage_namespace: homepage
+homepage_service_account_name: homepage
+homepage_manifest_directory: /var/lib/rancher/k3s/oilscope-homepage
+homepage_wait_timeout: 600s

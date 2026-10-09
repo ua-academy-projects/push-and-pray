@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oilscope-config
+  namespace: {{ k3s_application_namespace }}
+data:
+  DATABASE_HOST: "{{ database_host }}"
+  DATABASE_PORT: "{{ database_port }}"
+  DATABASE_NAME: "{{ database_name }}"
+  DATABASE_USER: "{{ database_user }}"
+  DATABASE_SSLMODE: "{{ database_sslmode }}"
+  DATABASE_MODE: "{{ database_mode }}"
+  QUEUE_BACKEND: "rabbitmq"
+  QUEUE_NAME: "price_observations"
+  FETCH_CRON_HOURS: "0,6,12,18"
+  FETCH_TIMEZONE: "UTC"
+  FETCH_ON_STARTUP: "true"
+  REQUEST_TIMEOUT_SECONDS: "15"
+  LISTEN_ADDRESS: "0.0.0.0:8002"
+  HISTORY_SERVICE_URL: "http://history:8001"
+  SESSION_TTL_SECONDS: "2592000"
+  SESSION_COOKIE_SECURE: "true"
+  LOG_LEVEL: "INFO"
+  TZ: "UTC"

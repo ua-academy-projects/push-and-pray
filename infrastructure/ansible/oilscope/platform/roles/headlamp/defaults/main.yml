@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+headlamp_enabled: true
+headlamp_release_name: headlamp
+headlamp_chart: headlamp
+headlamp_chart_version: "0.45.0"
+headlamp_chart_repository: https://kubernetes-sigs.github.io/headlamp/
+headlamp_namespace: headlamp
+headlamp_service_account_name: headlamp
+headlamp_cluster_role_name: view
+headlamp_manifest_directory: /var/lib/rancher/k3s/oilscope-headlamp
+headlamp_wait_timeout: 600s

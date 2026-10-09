@@ -37,6 +37,8 @@ resource "aws_cloudwatch_metric_alarm" "instance_status" {
 data "aws_region" "current" {}
 
 resource "aws_cloudwatch_dashboard" "infrastructure" {
+  count = length(var.instances) > 0 ? 1 : 0
+
   dashboard_name = "${var.name_prefix}-dashboard"
   dashboard_body = jsonencode({
     widgets = flatten([

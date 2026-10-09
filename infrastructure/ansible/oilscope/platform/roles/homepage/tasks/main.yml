@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install the private Homepage dashboard
+  when: homepage_enabled | bool
+  block:
+    - name: Read the project configuration for Homepage
+      ansible.builtin.set_fact:
+        homepage_project_config: >-
+          {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+      no_log: true
+
+    - name: Resolve the Technitium integration switch
+      ansible.builtin.set_fact:
+        homepage_technitium_enabled: >-
+          {{ homepage_project_config.technitium.enabled | default(false) }}
+
+    - name: Find the public OilScope endpoint for Homepage
+      ansible.builtin.set_fact:
+        homepage_public_endpoint_items: >-
+          {{ homepage_project_config.vms
+             | dict2items
+             | selectattr('value.public_endpoint', 'defined')
+             | list }}
+
+    - name: Resolve the OilScope application URL
+      ansible.builtin.set_fact:
+        homepage_application_hostname: >-
+          {{ homepage_public_endpoint_items[0].value.public_endpoint.hostname
+             if homepage_public_endpoint_items | length == 1 else '' }}
+
+    - name: Validate Homepage settings
+      ansible.builtin.assert:
+        that:
+          - homepage_release_name | length > 0
+          - homepage_chart_version | length > 0
+          - homepage_chart_repository | length > 0
+          - homepage_image_repository | length > 0
+          - homepage_image_tag | length > 0
+          - homepage_namespace | length > 0
+          - homepage_service_account_name | length > 0
+          - homepage_public_endpoint_items | length == 1
+          - homepage_application_hostname | length > 0
+        fail_msg: >-
+          Homepage requires valid Helm, image and namespace settings plus one
+          configured public OilScope endpoint.
+
+    - name: Create the Homepage manifest directory
+      ansible.builtin.file:
+        path: "{{ homepage_manifest_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Check the Technitium API token for Homepage
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - secret
+          - technitium-api
+          - --namespace
+          - "{{ homepage_namespace }}"
+      changed_when: false
+      when: homepage_technitium_enabled | bool
+      no_log: true
+
+    - name: Render the Homepage Helm definition
+      ansible.builtin.template:
+        src: helm.yaml.j2
+        dest: "{{ homepage_manifest_directory }}/helm.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Check whether the Homepage Helm definition needs changes
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - diff
+          - -f
+          - "{{ homepage_manifest_directory }}/helm.yaml"
+      register: homepage_helm_diff
+      changed_when: false
+      failed_when: homepage_helm_diff.rc not in [0, 1]
+
+    - name: Install or update Homepage through the K3s Helm controller
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "{{ homepage_manifest_directory }}/helm.yaml"
+      register: homepage_helm_apply
+      changed_when: >-
+        'created' in homepage_helm_apply.stdout or
+        'configured' in homepage_helm_apply.stdout
+      when: homepage_helm_diff.rc == 1
+
+    - name: Wait for Homepage to become available
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - wait
+          - --for=condition=Available
+          - deployment
+          - --all
+          - --namespace
+          - "{{ homepage_namespace }}"
+          - "--timeout={{ homepage_wait_timeout }}"
+      register: homepage_deployment_wait
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: homepage_deployment_wait.rc == 0
+
+    - name: Read the Homepage Service type
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - service
+          - "{{ homepage_release_name }}"
+          - --namespace
+          - "{{ homepage_namespace }}"
+          - --output=jsonpath={.spec.type}
+      register: homepage_service_type
+      changed_when: false
+      failed_when: homepage_service_type.stdout | trim != 'ClusterIP'

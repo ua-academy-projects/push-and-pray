@@ -29,6 +29,7 @@ crash.*.log
 # Credentials and private keys
 *.pem
 *.key
+*.orig
 !project-config.example.json
 
 # Built Ansible collection artifacts

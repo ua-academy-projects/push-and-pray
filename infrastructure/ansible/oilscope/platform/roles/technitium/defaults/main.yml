@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+technitium_enabled: true
+technitium_namespace: technitium
+technitium_name: technitium
+technitium_image: technitium/dns-server:15.5.1
+technitium_domain: dns.oilscope.internal
+technitium_storage_class: local-path
+technitium_storage_size: 2Gi
+technitium_admin_secret_name: technitium-admin
+technitium_api_secret_name: technitium-homepage-api
+technitium_homepage_namespace: homepage
+technitium_homepage_secret_name: technitium-api
+technitium_api_username: homepage
+technitium_api_token_name: homepage
+technitium_manifest_directory: /var/lib/rancher/k3s/oilscope-technitium
+technitium_wait_timeout: 600s
+technitium_configure_coredns: true
+technitium_coredns_namespace: kube-system
+technitium_coredns_configmap_name: coredns-custom
+technitium_coredns_deployment_name: coredns
+technitium_cpu_request: 100m
+technitium_memory_request: 256Mi
+technitium_cpu_limit: 500m
+technitium_memory_limit: 512Mi
+technitium_recursion_network_acl: >-
+  10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16

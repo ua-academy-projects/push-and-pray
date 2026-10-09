@@ -19,6 +19,7 @@ the supported GHCR deployment configuration.
 | `APP_IMAGE_TAG` | Immutable Git commit SHA installed from the external JSON by the Ansible role. Do not use `latest`. |
 | `POSTGRES_IMAGE` | Complete prebuilt PostgreSQL 18 image reference, preferably pinned by digest, for example `ghcr.io/ua-academy-projects/push-and-pray/database@sha256:...`. It must include PGMQ, `pgcrypto`, `pg_cron`, the SQL migrations and `petroscope-migrate`. |
 | `POSTGRES_PASSWORD` | PostgreSQL password injected by the host secret mechanism. It is never stored in Compose. Use a URL-safe value because the application database URLs contain it. |
+| `REDIS_PASSWORD` | Redis password used by the UI session store. It is injected at deployment time and is never stored in Compose. |
 | `OILPRICEAPI_KEY` | Provider credential required when `DATA_PROVIDER=oilpriceapi`. It may be omitted when the mock provider is explicitly selected for a smoke test. |
 
 Authenticate to the private registry before deployment. Supply a GitHub token
@@ -53,7 +54,7 @@ the token in Compose, this repository, or a shell argument.
 | `FETCH_TIMEZONE` | `UTC` | Fetch schedule timezone |
 | `FETCH_ON_STARTUP` | `true` | Fetch immediately after startup |
 | `REQUEST_TIMEOUT_SECONDS` | `15` | Fetcher provider timeout |
-| `SESSION_TTL_SECONDS` | `2592000` | PostgreSQL UI-session lifetime |
+| `SESSION_TTL_SECONDS` | `2592000` | Redis UI-session lifetime |
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` when HTTPS terminates at the application host |
 | `LOG_LEVEL` | `INFO` | History and UI log level |
 | `APPLICATION_PLATFORM` | `linux/amd64` | Application image platform |
@@ -72,7 +73,7 @@ docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/
 
 Compose starts PostgreSQL, waits for it to become healthy, applies every
 migration through the one-shot `migrate` service, starts Fetcher and History,
-then starts UI after History is healthy. UI is published on host port 80 by
+then starts Redis and UI after History is healthy. UI is published on host port 80 by
 default.
 
 Run the application smoke test:
@@ -99,7 +100,7 @@ docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/
 docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml run --rm --no-deps migrate
 docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps history
 docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps fetcher
-docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d --no-deps ui
+docker compose --env-file /opt/oilscope/app/deployment.env -f /opt/oilscope/app/compose.yaml up -d redis ui
 ```
 
 Run `docker compose ... pull SERVICE` before each role command. On application

@@ -27,9 +27,9 @@ do
 done
 
 for migration in /opt/petroscope/migrations/*.sql; do
-    if [ "${DATABASE_MODE}" = "managed" ] &&
+    if [ "${DATABASE_MODE}" != "self_hosted" ] &&
         [ "$(basename "${migration}")" = "004_create_pgmq_queue.sql" ]; then
-        echo "Skipping $(basename "${migration}") for managed database mode"
+        echo "Skipping $(basename "${migration}") for ${DATABASE_MODE} database mode"
         continue
     fi
 

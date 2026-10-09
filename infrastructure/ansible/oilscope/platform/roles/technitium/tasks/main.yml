@@ -1,0 +1,499 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install the private Technitium DNS Server
+  when: technitium_enabled | bool
+  block:
+    - name: Validate Technitium settings
+      ansible.builtin.assert:
+        that:
+          - technitium_namespace | length > 0
+          - technitium_name | length > 0
+          - technitium_image | length > 0
+          - technitium_domain | length > 0
+          - technitium_storage_size | length > 0
+          - technitium_api_username | length > 0
+          - technitium_homepage_namespace | length > 0
+        fail_msg: Technitium requires valid image, namespace, storage and API settings.
+
+    - name: Create the Technitium manifest directory
+      ansible.builtin.file:
+        path: "{{ technitium_manifest_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Apply the Technitium namespace
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "-"
+        stdin: >-
+          {{ {'apiVersion': 'v1', 'kind': 'Namespace',
+              'metadata': {'name': technitium_namespace}} | to_json }}
+      register: technitium_namespace_apply
+      changed_when: >-
+        'created' in technitium_namespace_apply.stdout or
+        'configured' in technitium_namespace_apply.stdout
+
+    - name: Check for existing Technitium administrator credentials
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - secret
+          - "{{ technitium_admin_secret_name }}"
+          - --namespace
+          - "{{ technitium_namespace }}"
+      register: technitium_admin_secret_check
+      changed_when: false
+      failed_when: technitium_admin_secret_check.rc not in [0, 1]
+      no_log: true
+
+    - name: Generate initial Technitium credentials
+      ansible.builtin.set_fact:
+        technitium_generated_admin_password: >-
+          {{ lookup('ansible.builtin.password', '/dev/null',
+                    length=40, chars=['ascii_letters', 'digits']) }}
+        technitium_generated_api_password: >-
+          {{ lookup('ansible.builtin.password', '/dev/null',
+                    length=40, chars=['ascii_letters', 'digits']) }}
+      when: technitium_admin_secret_check.rc == 1
+      no_log: true
+
+    - name: Store initial Technitium credentials in Kubernetes
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "-"
+        stdin: >-
+          {{
+            {
+              'apiVersion': 'v1',
+              'kind': 'Secret',
+              'metadata': {
+                'name': technitium_admin_secret_name,
+                'namespace': technitium_namespace
+              },
+              'type': 'Opaque',
+              'stringData': {
+                'admin-password': technitium_generated_admin_password,
+                'homepage-password': technitium_generated_api_password
+              }
+            } | to_json
+          }}
+      register: technitium_admin_secret_apply
+      changed_when: >-
+        'created' in technitium_admin_secret_apply.stdout or
+        'configured' in technitium_admin_secret_apply.stdout
+      when: technitium_admin_secret_check.rc == 1
+      no_log: true
+
+    - name: Render the Technitium Kubernetes manifests
+      ansible.builtin.template:
+        src: manifests.yaml.j2
+        dest: "{{ technitium_manifest_directory }}/manifests.yaml"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Check whether the Technitium manifests need changes
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - diff
+          - -f
+          - "{{ technitium_manifest_directory }}/manifests.yaml"
+      register: technitium_manifest_diff
+      changed_when: false
+      failed_when: technitium_manifest_diff.rc not in [0, 1]
+
+    - name: Install or update Technitium
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "{{ technitium_manifest_directory }}/manifests.yaml"
+      register: technitium_manifest_apply
+      changed_when: >-
+        'created' in technitium_manifest_apply.stdout or
+        'configured' in technitium_manifest_apply.stdout
+      when: technitium_manifest_diff.rc == 1
+
+    - name: Wait for Technitium to become ready
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - rollout
+          - status
+          - "statefulset/{{ technitium_name }}"
+          - --namespace
+          - "{{ technitium_namespace }}"
+          - "--timeout={{ technitium_wait_timeout }}"
+      register: technitium_rollout_wait
+      changed_when: false
+      retries: 3
+      delay: 10
+      until: technitium_rollout_wait.rc == 0
+
+    - name: Read the Technitium Service address
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - service
+          - "{{ technitium_name }}"
+          - --namespace
+          - "{{ technitium_namespace }}"
+          - --output=jsonpath={.spec.clusterIP}
+      register: technitium_service_address
+      changed_when: false
+
+    - name: Route K3s external DNS through Technitium
+      when: technitium_configure_coredns | bool
+      block:
+        - name: Read the live CoreDNS configuration
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - get
+              - configmap
+              - coredns
+              - --namespace
+              - "{{ technitium_coredns_namespace }}"
+              - --output=jsonpath={.data.Corefile}
+          register: technitium_coredns_corefile
+          changed_when: false
+
+        - name: Require the supported K3s CoreDNS override order
+          ansible.builtin.assert:
+            that:
+              - >-
+                'import /etc/coredns/custom/*.override' in
+                technitium_coredns_corefile.stdout
+              - >-
+                technitium_coredns_corefile.stdout.find(
+                  'import /etc/coredns/custom/*.override') <
+                technitium_coredns_corefile.stdout.find(
+                  'forward . /etc/resolv.conf')
+            fail_msg: >-
+              This K3s CoreDNS configuration cannot safely override the
+              default forwarder. Upgrade K3s before enabling Technitium DNS
+              forwarding.
+
+        - name: Render the CoreDNS Technitium override
+          ansible.builtin.template:
+            src: coredns-custom.yaml.j2
+            dest: "{{ technitium_manifest_directory }}/coredns-custom.yaml"
+            owner: root
+            group: root
+            mode: "0600"
+
+        - name: Check whether the CoreDNS Technitium override needs changes
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - diff
+              - -f
+              - "{{ technitium_manifest_directory }}/coredns-custom.yaml"
+          register: technitium_coredns_diff
+          changed_when: false
+          failed_when: technitium_coredns_diff.rc not in [0, 1]
+
+        - name: Apply the CoreDNS Technitium override
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - apply
+              - -f
+              - "{{ technitium_manifest_directory }}/coredns-custom.yaml"
+          register: technitium_coredns_apply
+          changed_when: >-
+            'created' in technitium_coredns_apply.stdout or
+            'configured' in technitium_coredns_apply.stdout
+          when: technitium_coredns_diff.rc == 1
+
+        - name: Restart CoreDNS after changing its upstream
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - rollout
+              - restart
+              - "deployment/{{ technitium_coredns_deployment_name }}"
+              - --namespace
+              - "{{ technitium_coredns_namespace }}"
+          when: technitium_coredns_diff.rc == 1
+          changed_when: true
+
+        - name: Wait for CoreDNS after changing its upstream
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - rollout
+              - status
+              - "deployment/{{ technitium_coredns_deployment_name }}"
+              - --namespace
+              - "{{ technitium_coredns_namespace }}"
+              - "--timeout={{ technitium_wait_timeout }}"
+          register: technitium_coredns_rollout
+          changed_when: false
+          retries: 3
+          delay: 10
+          until: technitium_coredns_rollout.rc == 0
+
+    - name: Wait for the Technitium API
+      ansible.builtin.uri:
+        url: >-
+          http://{{ technitium_service_address.stdout | trim }}:5380/api/status
+        method: GET
+        return_content: true
+        status_code: 200
+      register: technitium_api_status
+      changed_when: false
+      retries: 30
+      delay: 10
+      until:
+        - technitium_api_status.json is defined
+        - technitium_api_status.json.status == 'ok'
+
+    - name: Check for an existing Homepage API token
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - secret
+          - "{{ technitium_api_secret_name }}"
+          - --namespace
+          - "{{ technitium_namespace }}"
+      register: technitium_api_secret_check
+      changed_when: false
+      failed_when: technitium_api_secret_check.rc not in [0, 1]
+      no_log: true
+
+    - name: Create the restricted Homepage API identity
+      when: technitium_api_secret_check.rc == 1
+      no_log: true
+      block:
+        - name: Read the stored Technitium credentials
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - get
+              - secret
+              - "{{ technitium_admin_secret_name }}"
+              - --namespace
+              - "{{ technitium_namespace }}"
+              - --output=json
+          register: technitium_credentials_secret
+          changed_when: false
+
+        - name: Decode the Technitium credentials in memory
+          ansible.builtin.set_fact:
+            technitium_admin_password: >-
+              {{ ((technitium_credentials_secret.stdout | from_json).data['admin-password'])
+                 | b64decode }}
+            technitium_api_password: >-
+              {{ ((technitium_credentials_secret.stdout | from_json).data['homepage-password'])
+                 | b64decode }}
+
+        - name: Authenticate to the Technitium administration API
+          ansible.builtin.uri:
+            url: >-
+              http://{{ technitium_service_address.stdout | trim }}:5380/api/user/login
+            method: POST
+            body_format: form-urlencoded
+            body:
+              user: admin
+              pass: "{{ technitium_admin_password }}"
+              includeInfo: "true"
+            return_content: true
+            status_code: 200
+          register: technitium_admin_login
+          failed_when: >-
+            technitium_admin_login.json is not defined or
+            technitium_admin_login.json.status != 'ok'
+
+        - name: List Technitium users
+          ansible.builtin.uri:
+            url: >-
+              http://{{ technitium_service_address.stdout | trim }}:5380/api/admin/users/list
+            method: GET
+            headers:
+              Authorization: "Bearer {{ technitium_admin_login.json.token }}"
+            return_content: true
+            status_code: 200
+          register: technitium_users
+          failed_when: >-
+            technitium_users.json is not defined or
+            technitium_users.json.status != 'ok'
+
+        - name: Create the Homepage-only Technitium user
+          ansible.builtin.uri:
+            url: >-
+              http://{{ technitium_service_address.stdout | trim }}:5380/api/admin/users/create
+            method: POST
+            headers:
+              Authorization: "Bearer {{ technitium_admin_login.json.token }}"
+            body_format: form-urlencoded
+            body:
+              user: "{{ technitium_api_username }}"
+              pass: "{{ technitium_api_password }}"
+              displayName: Homepage dashboard
+            return_content: true
+            status_code: 200
+          register: technitium_api_user_create
+          changed_when: technitium_api_user_create.json.status == 'ok'
+          failed_when: >-
+            technitium_api_user_create.json is not defined or
+            technitium_api_user_create.json.status != 'ok'
+          when: >-
+            technitium_api_username not in
+            (technitium_users.json.response.users
+             | map(attribute='username') | list)
+
+        - name: Create the Homepage Technitium API token
+          ansible.builtin.uri:
+            url: >-
+              http://{{ technitium_service_address.stdout | trim }}:5380/api/user/createToken
+            method: POST
+            body_format: form-urlencoded
+            body:
+              user: "{{ technitium_api_username }}"
+              pass: "{{ technitium_api_password }}"
+              tokenName: "{{ technitium_api_token_name }}"
+            return_content: true
+            status_code: 200
+          register: technitium_api_token_create
+          failed_when: >-
+            technitium_api_token_create.json is not defined or
+            technitium_api_token_create.json.status != 'ok'
+
+        - name: Store the Homepage Technitium API token
+          ansible.builtin.command:
+            argv:
+              - k3s
+              - kubectl
+              - apply
+              - -f
+              - "-"
+            stdin: >-
+              {{
+                {
+                  'apiVersion': 'v1',
+                  'kind': 'Secret',
+                  'metadata': {
+                    'name': technitium_api_secret_name,
+                    'namespace': technitium_namespace
+                  },
+                  'type': 'Opaque',
+                  'stringData': {
+                    'api-token': technitium_api_token_create.json.token
+                  }
+                } | to_json
+              }}
+          register: technitium_api_secret_apply
+          changed_when: >-
+            'created' in technitium_api_secret_apply.stdout or
+            'configured' in technitium_api_secret_apply.stdout
+
+    - name: Read the Homepage Technitium API token
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - secret
+          - "{{ technitium_api_secret_name }}"
+          - --namespace
+          - "{{ technitium_namespace }}"
+          - --output=json
+      register: technitium_api_secret
+      changed_when: false
+      no_log: true
+
+    - name: Decode the Homepage Technitium API token in memory
+      ansible.builtin.set_fact:
+        technitium_homepage_api_token: >-
+          {{ ((technitium_api_secret.stdout | from_json).data['api-token'])
+             | b64decode }}
+      no_log: true
+
+    - name: Verify the Homepage token can read DNS statistics
+      ansible.builtin.uri:
+        url: >-
+          http://{{ technitium_service_address.stdout | trim }}:5380/api/dashboard/stats/get?type=LastDay&utc=true
+        method: GET
+        headers:
+          Authorization: "Bearer {{ technitium_homepage_api_token }}"
+        return_content: true
+        status_code: 200
+      register: technitium_api_token_verify
+      changed_when: false
+      failed_when: >-
+        technitium_api_token_verify.json is not defined or
+        technitium_api_token_verify.json.status != 'ok'
+      no_log: true
+
+    - name: Apply the Homepage namespace
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "-"
+        stdin: >-
+          {{ {'apiVersion': 'v1', 'kind': 'Namespace',
+              'metadata': {'name': technitium_homepage_namespace}} | to_json }}
+      register: technitium_homepage_namespace_apply
+      changed_when: >-
+        'created' in technitium_homepage_namespace_apply.stdout or
+        'configured' in technitium_homepage_namespace_apply.stdout
+
+    - name: Copy the Technitium API token into the Homepage namespace
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - apply
+          - -f
+          - "-"
+        stdin: >-
+          {{
+            {
+              'apiVersion': 'v1',
+              'kind': 'Secret',
+              'metadata': {
+                'name': technitium_homepage_secret_name,
+                'namespace': technitium_homepage_namespace
+              },
+              'type': 'Opaque',
+              'stringData': {
+                'HOMEPAGE_VAR_TECHNITIUM_KEY': technitium_homepage_api_token
+              }
+            } | to_json
+          }}
+      register: technitium_homepage_secret_apply
+      changed_when: >-
+        'created' in technitium_homepage_secret_apply.stdout or
+        'configured' in technitium_homepage_secret_apply.stdout
+      no_log: true

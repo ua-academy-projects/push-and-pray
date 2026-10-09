@@ -1,0 +1,14 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+spec:
+  repo: {{ k3s_application_cert_manager_repository }}
+  chart: {{ k3s_application_cert_manager_chart }}
+  version: {{ k3s_application_cert_manager_version }}
+  targetNamespace: cert-manager
+  createNamespace: true
+  valuesContent: |-
+    crds:
+      enabled: true

@@ -37,16 +37,36 @@ modules/
 | azure/azure-identity | Per-VM managed identities and the application Key Vault |
 | azure/azure-vm | Azure Linux VMs, NICs, public IPs and optional disks |
 | azure/azure-postgresql | Private PostgreSQL Flexible Server and credential Key Vault secret |
+| azure/azure-monitoring | Log Analytics, Data Collection Rules, CPU alerts, dashboard and HTTPS availability test |
+| tailscale | Tailnet policy, bootstrap key and per-VM cloud-init payloads |
+
+## Azure K3s and monitoring
+
+VMs with `role: "k3s"` are tagged as `server` or `agent`; exactly one server is
+the bootstrap node. Terraform creates private Kubernetes communication rules,
+Azure cross-region peering when needed, and Tailscale routing across providers.
+Ansible turns those VMs into the cluster and deploys the application with NGINX
+and cert-manager/Let's Encrypt. See the [K3s deployment guide](../../docs/k3s.md).
+
+The Azure monitoring module creates a Log Analytics workspace, regional Data
+Collection Rules, per-VM CPU alerts, an email action group, a Portal dashboard,
+and an HTTPS availability test. Azure Monitor Agent is installed later through
+Ansible and begins using the Terraform-created DCR association when available.
+The synthetic test expects HTTP 200, so an HTTP 500 response is reported as a
+failure.
 
 ## Database modes
 
-`database_mode` defaults to `self_hosted`.
+`database_mode` selects where PostgreSQL runs.
 
 - `self_hosted` keeps PostgreSQL 18 and PGMQ on the existing database VM.
 - `managed` creates RDS when the database VM selects AWS, Cloud SQL when it
   selects GCP, or PostgreSQL Flexible Server when it selects Azure. The former
   database VM keeps its disk, stops its PostgreSQL container, runs RabbitMQ,
   and acts as the private migration runner.
+- `kubernetes` skips the cloud-managed database modules and exposes the
+  CloudNativePG writable Service to the K3s deployment. PostgreSQL and the
+  application queue run inside Kubernetes, so no database VM is permitted.
 
 The database VM and all database clients must select the same cloud because no
 cross-cloud private routing is created. See
@@ -80,11 +100,22 @@ adding dictionary entries does not create resources in every region.
 Changing location on an existing state can replace resources: inspect the plan.
 Independent regional deployments need separate configs and backend prefixes.
 
-`default_cloud` and optional `vms.<name>.cloud` still select the provider.
-No VPN or cross-cloud routes are created. A module with no matching VMs has
-no managed resources. Provider/backend authentication is a separate requirement.
-If Azure workloads are selected without an Azure bastion, root configuration
-adds a separate `azure-bastion` from the existing bastion template.
+`default_cloud` and optional `vms.<name>.cloud` select the provider. A module
+with no matching VMs has no managed resources. When Tailscale is enabled,
+Terraform cloud-init joins every VM to one tailnet and one K3s server per active
+cloud advertises that cloud's non-overlapping private CIDR. Exactly one global
+bastion is required; Terraform does not add provider-specific bastions.
+
+
+## Tailscale bootstrap
+
+Terraform uses the official Tailscale provider and cloud-init module. Export
+`TAILSCALE_API_KEY` (or the OAuth client variables) and `TAILSCALE_TAILNET`
+before planning. Terraform manages the development policy, route auto-approval,
+a short-lived bootstrap key and first-boot installation on AWS, GCP and Azure.
+No Tailscale credential belongs in project JSON. The rendered auth key is stored
+as sensitive Terraform state, so protect the backend. See the
+[Tailscale guide](../../docs/tailscale.md).
 
 ## Images and addresses
 

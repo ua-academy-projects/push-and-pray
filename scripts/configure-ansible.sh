@@ -192,15 +192,17 @@ with open(sys.argv[1], encoding="utf-8") as inventory_file:
 hostvars = inventory.get("_meta", {}).get("hostvars", {})
 bastion = inventory.get("bastion", {}).get("hosts", [])
 workloads = inventory.get("workloads", {}).get("hosts", [])
-print(len(hostvars), len(bastion), len(workloads))
+k3s_nodes = sorted(set(
+    inventory.get("k3s_servers", {}).get("hosts", [])
+    + inventory.get("k3s_agents", {}).get("hosts", [])
+))
+print(len(hostvars), len(bastion), len(workloads), len(k3s_nodes))
 PY
 })"
-read -r inventory_hosts bastion_hosts workload_hosts <<<"${inventory_counts}"
-selected_cloud_count="$(wc -l <<<"${selected_clouds}" | tr -d ' ')"
-
+read -r inventory_hosts bastion_hosts workload_hosts k3s_hosts <<<"${inventory_counts}"
 [[ "${inventory_hosts}" -gt 0 ]] || fail "Dynamic inventory returned no hosts."
-[[ "${bastion_hosts}" -eq "${selected_cloud_count}" ]] || \
-  fail "Dynamic inventory must contain one bastion for every selected cloud."
+[[ "${bastion_hosts}" -eq 1 ]] || \
+  fail "Dynamic inventory must contain exactly one administrative bastion."
 [[ "${workload_hosts}" -gt 0 ]] || fail "Dynamic inventory returned no workload hosts."
 
 ansible-inventory "${ansible_args[@]}" --graph
@@ -247,10 +249,22 @@ fi
 step "Deploying monitoring agents and application workloads"
 ansible-playbook oilscope.platform.deploy_workloads "${ansible_args[@]}"
 
-step "Checking running containers on every workload"
-ansible workloads "${ansible_args[@]}" \
-  --become \
-  -m ansible.builtin.command \
-  -a 'docker ps'
+if [[ "${k3s_hosts}" -gt 0 ]]; then
+  step "Checking K3s nodes and OilScope pods"
+  ansible k3s_bootstrap "${ansible_args[@]}" \
+    --become \
+    -m ansible.builtin.command \
+    -a 'k3s kubectl get nodes -o wide'
+  ansible k3s_bootstrap "${ansible_args[@]}" \
+    --become \
+    -m ansible.builtin.command \
+    -a 'k3s kubectl get pods -n oilscope -o wide'
+else
+  step "Checking running containers on every workload"
+  ansible workloads "${ansible_args[@]}" \
+    --become \
+    -m ansible.builtin.command \
+    -a 'docker ps'
+fi
 
 printf '\nAnsible configuration completed successfully.\n'

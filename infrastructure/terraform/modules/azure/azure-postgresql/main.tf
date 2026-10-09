@@ -75,6 +75,32 @@ resource "azurerm_postgresql_flexible_server" "this" {
   depends_on = [azurerm_private_dns_zone_virtual_network_link.postgresql]
 }
 
+resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
+  count = var.enabled ? 1 : 0
+
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.this[0].id
+  value     = "PGCRYPTO,PG_CRON,HSTORE"
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "shared_preload_libraries" {
+  count = var.enabled ? 1 : 0
+
+  name      = "shared_preload_libraries"
+  server_id = azurerm_postgresql_flexible_server.this[0].id
+  value     = "pg_cron,pg_stat_statements"
+}
+
+resource "azurerm_postgresql_flexible_server_configuration" "cron_database_name" {
+  count = var.enabled ? 1 : 0
+
+  name      = "cron.database_name"
+  server_id = azurerm_postgresql_flexible_server.this[0].id
+  value     = var.database_name
+
+  depends_on = [azurerm_postgresql_flexible_server_configuration.shared_preload_libraries]
+}
+
 resource "azurerm_postgresql_flexible_server_database" "this" {
   count = var.enabled ? 1 : 0
 

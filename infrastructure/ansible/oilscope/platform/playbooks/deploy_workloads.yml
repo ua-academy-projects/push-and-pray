@@ -1,7 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 ---
+- name: Configure and verify cross-cloud private networking
+  ansible.builtin.import_playbook: tailscale.yml
+
 - name: Configure cloud monitoring agents
   ansible.builtin.import_playbook: monitoring_agents.yml
+
+- name: Configure the K3s cluster and deploy Kubernetes workloads
+  ansible.builtin.import_playbook: k3s_cluster.yml
 
 - name: Deploy Database workload
   ansible.builtin.import_playbook: database.yml

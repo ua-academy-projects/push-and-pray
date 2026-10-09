@@ -24,11 +24,6 @@ variable "network" {
   type        = any
 }
 
-variable "management_source_cidrs" {
-  description = "CIDRs allowed to SSH to workload VMs, normally the primary management subnet."
-  type        = list(string)
-}
-
 variable "trusted_vnet_cidrs" {
   description = "Regional VNet CIDRs allowed to reach internal application ports."
   type        = list(string)

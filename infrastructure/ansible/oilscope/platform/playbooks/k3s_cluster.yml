@@ -1,0 +1,183 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the K3s inventory topology
+  hosts: localhost
+  gather_facts: false
+  vars:
+    k3s_inventory_servers: "{{ groups.get('k3s_servers', []) }}"
+    k3s_inventory_agents: "{{ groups.get('k3s_agents', []) }}"
+    k3s_inventory_bootstrap: "{{ groups.get('k3s_bootstrap', []) }}"
+  tasks:
+    - name: Require an odd server count, one bootstrap server and at least one agent
+      ansible.builtin.assert:
+        that:
+          - k3s_inventory_servers | length >= 1
+          - k3s_inventory_servers | length % 2 == 1
+          - k3s_inventory_bootstrap | length == 1
+          - k3s_inventory_bootstrap[0] in k3s_inventory_servers
+          - k3s_inventory_agents | length >= 1
+        fail_msg: >-
+          K3s requires an odd number of servers, exactly one bootstrap server,
+          and at least one agent in the dynamic inventory.
+      when: >-
+        (k3s_inventory_servers | length) +
+        (k3s_inventory_agents | length) +
+        (k3s_inventory_bootstrap | length) > 0
+
+- name: Initialize the first K3s server
+  hosts: k3s_bootstrap
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: oilscope.platform.k3s_node
+      vars:
+        k3s_node_mode: server
+        k3s_cluster_init: true
+        k3s_registration_ip: "{{ internal_ip }}"
+
+  tasks:
+    - name: Read the K3s cluster join token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_node_token_file
+      no_log: true
+
+    - name: Keep the join token for the remaining plays
+      ansible.builtin.set_fact:
+        k3s_cluster_token: "{{ k3s_node_token_file.content | b64decode | trim }}"
+      no_log: true
+
+- name: Join the additional K3s control-plane servers
+  hosts: k3s_servers:!k3s_bootstrap
+  serial: 1
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    k3s_primary_host: "{{ groups['k3s_bootstrap'][0] }}"
+  roles:
+    - role: oilscope.platform.k3s_node
+      vars:
+        k3s_node_mode: server
+        k3s_cluster_init: false
+        k3s_server_url: "https://{{ hostvars[k3s_primary_host].internal_ip }}:6443"
+        k3s_registration_ip: "{{ hostvars[k3s_primary_host].internal_ip }}"
+        k3s_token: "{{ hostvars[k3s_primary_host].k3s_cluster_token }}"
+
+- name: Join the K3s worker agents
+  hosts: k3s_agents
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  vars:
+    k3s_primary_host: "{{ groups['k3s_bootstrap'][0] }}"
+  roles:
+    - role: oilscope.platform.k3s_node
+      vars:
+        k3s_node_mode: agent
+        k3s_cluster_init: false
+        k3s_server_url: "https://{{ hostvars[k3s_primary_host].internal_ip }}:6443"
+        k3s_token: "{{ hostvars[k3s_primary_host].k3s_cluster_token }}"
+
+- name: Verify the K3s cluster and deploy OilScope
+  hosts: k3s_bootstrap
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    k3s_expected_node_count: >-
+      {{ (groups.get('k3s_servers', []) + groups.get('k3s_agents', [])) | unique | length }}
+    k3s_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+  tasks:
+    - name: Wait until every K3s node reports Ready
+      ansible.builtin.shell: |
+        set -o pipefail
+        ready_nodes="$(k3s kubectl get nodes --no-headers | awk '$2 == "Ready" { count++ } END { print count + 0 }')"
+        test "${ready_nodes}" -eq "{{ k3s_expected_node_count }}"
+      args:
+        executable: /bin/bash
+      register: k3s_nodes_ready
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: k3s_nodes_ready.rc == 0
+
+    - name: Apply cloud and region labels to every K3s node
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - label
+          - node
+          - "{{ item }}"
+          - "oilscope.io/cloud={{ hostvars[item].oilscope_cloud }}"
+          - "oilscope.io/region={{ hostvars[item].oilscope_region }}"
+          - --overwrite
+      loop: >-
+        {{ (groups.get('k3s_servers', []) + groups.get('k3s_agents', []))
+           | unique }}
+      register: k3s_topology_labels
+      changed_when: "'not labeled' not in k3s_topology_labels.stdout"
+
+    - name: Deploy the private Headlamp dashboard
+      ansible.builtin.include_role:
+        name: oilscope.platform.headlamp
+      vars:
+        headlamp_enabled: "{{ k3s_project_config.headlamp.enabled | default(false) }}"
+      when: k3s_project_config.headlamp.enabled | default(false) | bool
+
+    - name: Deploy the private Technitium DNS Server
+      ansible.builtin.include_role:
+        name: oilscope.platform.technitium
+      vars:
+        technitium_enabled: >-
+          {{ k3s_project_config.technitium.enabled | default(false) }}
+        technitium_configure_coredns: >-
+          {{ k3s_project_config.technitium.configure_coredns
+             | default(true) }}
+      when: k3s_project_config.technitium.enabled | default(false) | bool
+
+    - name: Deploy the private Homepage operations dashboard
+      ansible.builtin.include_role:
+        name: oilscope.platform.homepage
+      vars:
+        homepage_enabled: "{{ k3s_project_config.homepage.enabled | default(false) }}"
+      when: k3s_project_config.homepage.enabled | default(false) | bool
+
+    - name: Resolve application secrets from the selected cloud
+      ansible.builtin.include_role:
+        name: oilscope.platform.resolve_secrets
+      vars:
+        resolve_secrets_config_path: "{{ project_config_path }}"
+
+    - name: Resolve the CNPG provider region
+      ansible.builtin.set_fact:
+        cnpg_database_region: >-
+          {{
+            resolve_secrets_config.clouds[database_cloud].regions[
+              resolve_secrets_config.database.kubernetes_region
+              | default(resolve_secrets_config.location.region)
+            ]
+          }}
+      when: database_mode == 'kubernetes'
+
+    - name: Deploy PostgreSQL through CloudNativePG
+      ansible.builtin.include_role:
+        name: oilscope.platform.cnpg
+      vars:
+        cnpg_namespace: oilscope
+        cnpg_cluster_name: oilscope-postgres
+        cnpg_database_name: "{{ database_name }}"
+        cnpg_database_owner: "{{ database_user }}"
+        cnpg_postgres_password: >-
+          {{ resolve_secrets_result.POSTGRES_PASSWORD }}
+        cnpg_node_selector:
+          oilscope.io/cloud: "{{ database_cloud }}"
+          oilscope.io/region: "{{ cnpg_database_region }}"
+      when: database_mode == 'kubernetes'
+
+    - name: Deploy OilScope into K3s
+      ansible.builtin.include_role:
+        name: oilscope.platform.k3s_application

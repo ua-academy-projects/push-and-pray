@@ -29,6 +29,14 @@ locals {
     for name, vm in local.vms : name
     if vm.role == "database"
   ])
+  k3s_node_names = sort([
+    for name, vm in local.vms : name
+    if vm.role == "k3s"
+  ])
+  k3s_server_names = sort([
+    for name, vm in local.vms : name
+    if vm.role == "k3s" && vm.k3s_role == "server"
+  ])
 
   bastion_ssh_rules = {
     for rule in flatten([
@@ -51,13 +59,24 @@ locals {
           vm_name = name
           port    = port
         }
-      ] if vm.role == "ui"
+      ] if try(vm.public_endpoint.hostname, null) != null
     ]) : rule.key => rule
   }
 
-  workload_ssh_targets = {
-    for name, vm in local.vms : name => vm
-    if local.bastion_name != null && vm.role != "bastion"
+  workload_ssh_sources = sort(distinct(concat(
+    local.bastion_names,
+    local.k3s_node_names,
+  )))
+  workload_ssh_targets = sort([
+    for name, vm in local.vms : name
+    if vm.role != "bastion"
+  ])
+  workload_ssh_rules = {
+    for pair in setproduct(local.workload_ssh_sources, local.workload_ssh_targets) :
+    "${pair[0]}-${pair[1]}" => {
+      source = pair[0]
+      target = pair[1]
+    } if pair[0] != pair[1]
   }
 
   history_api_rules = {
@@ -72,7 +91,6 @@ locals {
     for name, vm in local.vms : name
     if contains(["history", "fetcher", "ui"], vm.role)
   ])
-
   postgresql_rules = {
     for pair in setproduct(local.postgresql_sources, local.database_names) :
     "${pair[0]}-${pair[1]}" => {
@@ -85,12 +103,42 @@ locals {
     for name, vm in local.vms : name
     if contains(["history", "fetcher"], vm.role)
   ])
-
   rabbitmq_rules = {
     for pair in setproduct(local.rabbitmq_sources, local.database_names) :
     "${pair[0]}-${pair[1]}" => {
       source = pair[0]
       target = pair[1]
     } if var.database_mode == "managed"
+  }
+
+  k3s_forwarded_node_sources = sort(distinct(concat(
+    local.k3s_node_names,
+    compact([local.bastion_name]),
+  )))
+  k3s_forwarded_server_sources = sort(distinct(concat(
+    local.k3s_server_names,
+    compact([local.bastion_name]),
+  )))
+
+  k3s_api_rules = {
+    for pair in setproduct(local.k3s_forwarded_node_sources, local.k3s_server_names) :
+    "${pair[0]}-${pair[1]}" => {
+      source = pair[0]
+      target = pair[1]
+    }
+  }
+  k3s_etcd_rules = {
+    for pair in setproduct(local.k3s_forwarded_server_sources, local.k3s_server_names) :
+    "${pair[0]}-${pair[1]}" => {
+      source = pair[0]
+      target = pair[1]
+    }
+  }
+  k3s_node_rules = {
+    for pair in setproduct(local.k3s_forwarded_node_sources, local.k3s_node_names) :
+    "${pair[0]}-${pair[1]}" => {
+      source = pair[0]
+      target = pair[1]
+    }
   }
 }

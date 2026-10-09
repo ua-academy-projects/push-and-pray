@@ -54,6 +54,7 @@ resource "azurerm_linux_virtual_machine" "this" {
     azurerm_network_interface.vm[each.key].id,
   ]
   disable_password_authentication = true
+  custom_data                     = try(base64encode(var.tailscale_cloud_init[each.key]), null)
 
   admin_ssh_key {
     username   = local.primary_ssh_user
@@ -102,17 +103,29 @@ resource "azurerm_linux_virtual_machine" "this" {
       identity_resource = var.identity_ids[each.key]
       secret_vault_uri  = var.application_key_vault_uri
     },
+    each.value.role == "k3s" ? {
+      k3s_role      = each.value.k3s_role
+      k3s_bootstrap = tostring(each.value.k3s_bootstrap)
+    } : {},
   )
 
   lifecycle {
+    # The short-lived bootstrap key is only needed when a VM is created.
+    # Its later rotation must not replace an existing instance.
+    ignore_changes = [custom_data]
+
     precondition {
       condition     = length(split(":", each.value.image)) == 4
       error_message = "Azure VM images must use publisher:offer:sku:version format."
     }
 
     precondition {
-      condition     = !each.value.assign_public_ip || contains(["ui", "bastion"], each.value.role)
-      error_message = "Only Azure workloads with role ui or bastion may receive a public IP."
+      condition = (
+        !each.value.assign_public_ip ||
+        each.value.role == "bastion" ||
+        try(each.value.public_endpoint.hostname, null) != null
+      )
+      error_message = "Only the bastion or a workload with public_endpoint may receive a public IP."
     }
   }
 

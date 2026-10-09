@@ -7,6 +7,7 @@
   "required": [
     "config_version",
     "default_cloud",
+    "database",
     "clouds",
     "environment",
     "name_prefix",
@@ -16,12 +17,13 @@
     "network",
     "service_ports",
     "vms",
-    "location"
+    "location",
+    "tailscale"
   ],
   "properties": {
     "config_version": {
       "type": "integer",
-      "const": 3
+      "const": 4
     },
     "cloudflare": {
       "type": "object",
@@ -104,6 +106,26 @@
         "aws",
         "azure"
       ]
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cloud"
+      ],
+      "properties": {
+        "cloud": {
+          "type": "string",
+          "enum": [
+            "gcp",
+            "aws",
+            "azure"
+          ]
+        },
+        "kubernetes_region": {
+          "$ref": "#/$defs/lookup_key"
+        }
+      }
     },
     "clouds": {
       "type": "object",
@@ -215,6 +237,73 @@
       "additionalProperties": {
         "$ref": "#/$defs/vm"
       }
+    },
+    "tailscale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "manage_policy",
+        "tag",
+        "auth_key_expiry_seconds"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "manage_policy": {
+          "type": "boolean"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^tag:[a-zA-Z0-9-]+$"
+        },
+        "auth_key_expiry_seconds": {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 7776000
+        }
+      }
+    },
+    "headlamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "technitium": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "configure_coredns": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "homepage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "allOf": [
@@ -307,7 +396,8 @@
         "zones",
         "machine_types",
         "disk_types",
-        "images"
+        "images",
+        "network"
       ],
       "properties": {
         "project_id": {
@@ -328,6 +418,9 @@
         },
         "images": {
           "$ref": "#/$defs/regional_images"
+        },
+        "network": {
+          "$ref": "#/$defs/cloud_network"
         }
       }
     },
@@ -339,7 +432,8 @@
         "zones",
         "machine_types",
         "disk_types",
-        "images"
+        "images",
+        "network"
       ],
       "properties": {
         "regions": {
@@ -498,7 +592,11 @@
           "infra",
           "history",
           "fetcher",
-          "ui"
+          "ui",
+          "k3s",
+          "k3s-server",
+          "k3s-agent",
+          "k3s-ingress"
         ]
       }
     },
@@ -545,8 +643,19 @@
             "database",
             "history",
             "fetcher",
-            "ui"
+            "ui",
+            "k3s"
           ]
+        },
+        "k3s_role": {
+          "type": "string",
+          "enum": [
+            "server",
+            "agent"
+          ]
+        },
+        "k3s_bootstrap": {
+          "type": "boolean"
         },
         "machine_type": {
           "$ref": "#/$defs/machine_type"
@@ -683,7 +792,8 @@
               "role": {
                 "enum": [
                   "bastion",
-                  "ui"
+                  "ui",
+                  "k3s"
                 ]
               }
             }
@@ -733,6 +843,66 @@
                   ]
                 }
               ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "k3s"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "required": [
+              "k3s_role",
+              "k3s_bootstrap"
+            ],
+            "properties": {
+              "network_tags": {
+                "contains": {
+                  "const": "k3s"
+                }
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "k3s_role"
+                  ]
+                },
+                {
+                  "required": [
+                    "k3s_bootstrap"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "k3s_bootstrap": {
+                "const": true
+              }
+            },
+            "required": [
+              "k3s_bootstrap"
+            ]
+          },
+          "then": {
+            "properties": {
+              "k3s_role": {
+                "const": "server"
+              }
             }
           }
         },
@@ -796,6 +966,29 @@
       },
       "additionalProperties": {
         "$ref": "#/$defs/lookup_dictionary"
+      }
+    },
+    "cloud_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "management_subnet_cidr",
+        "workload_subnet_cidr",
+        "vpc_cidr"
+      ],
+      "properties": {
+        "management_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_subnet_cidr": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vpc_cidr": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
   }

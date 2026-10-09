@@ -1,0 +1,137 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: {{ k3s_application_namespace }}
+data:
+  default.conf: |-
+    server {
+      listen 80;
+      server_name {{ k3s_application_hostname }};
+      return 301 https://$host$request_uri;
+    }
+
+    server {
+      listen 443 ssl;
+      server_name {{ k3s_application_hostname }};
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+
+      access_log /dev/stdout;
+      error_log /dev/stderr warn;
+
+      location / {
+        proxy_pass http://ui:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: {{ k3s_application_namespace }}
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/part-of: oilscope
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx
+        app.kubernetes.io/part-of: oilscope
+    spec:
+      nodeSelector:
+        oilscope.io/role: agent
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      shareProcessNamespace: true
+      containers:
+        - name: nginx
+          image: {{ k3s_application_nginx_image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          readinessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "NET_BIND_SERVICE", "SETGID", "SETUID"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+        - name: certificate-reloader
+          image: {{ k3s_application_certificate_reloader_image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |-
+              previous=""
+              while true; do
+                current="$(sha256sum /etc/nginx/tls/tls.crt | awk '{print $1}')"
+                if [ -n "$previous" ] && [ "$current" != "$previous" ]; then
+                  kill -HUP $(pidof nginx)
+                fi
+                previous="$current"
+                sleep 300
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 25m
+              memory: 32Mi
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: nginx-config
+        - name: tls
+          secret:
+            secretName: oilscope-tls
+            defaultMode: 0440

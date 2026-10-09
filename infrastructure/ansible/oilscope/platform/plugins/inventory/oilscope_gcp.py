@@ -111,6 +111,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         cloud = "gcp"
         cloud_config = config["clouds"][cloud]
         bastion_port = self._bastion_port(config)
+        ssh_user = sorted(config["ssh_users"])[0]
         is_bastion = "labels.role | default('') == 'bastion'"
         private_ip = "networkInterfaces[0].networkIP"
         public_ip = "networkInterfaces[0].accessConfigs[0].natIP"
@@ -132,15 +133,23 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "hostnames": ["name"],
             "vars_prefix": "gcp_",
             "keyed_groups": self._groups("labels"),
-            "groups": {"workloads": "labels.role is defined and labels.role != 'bastion'"},
+            "groups": {
+                "workloads": "labels.role is defined and labels.role != 'bastion'",
+                "k3s_servers": "labels.k3s_role | default('') == 'server'",
+                "k3s_agents": "labels.k3s_role | default('') == 'agent'",
+                "k3s_bootstrap": "labels.k3s_bootstrap | default('false') == 'true'",
+            },
             "compose": {
                 "internal_ip": private_ip,
                 "public_ip": f"{public_ip} if {has_public_ip} else ''",
                 "ansible_host": f"{public_ip} if {is_bastion} else {private_ip}",
+                "ansible_user": f"'{ssh_user}'",
                 "bastion_ssh_port": str(bastion_port),
                 "oilscope_role": "labels.role | default('')",
                 "oilscope_cloud": "labels.cloud | default('gcp')",
                 "oilscope_region": f"'{self._location(config, cloud, 'region')}'",
+                "k3s_role": "labels.k3s_role | default('')",
+                "k3s_bootstrap": "labels.k3s_bootstrap | default('false') == 'true'",
                 "database_mode": f"({metadata}).get('oilscope-database-mode', 'self_hosted')",
                 "database_cloud": f"({metadata}).get('oilscope-database-cloud', 'gcp')",
                 "database_host": f"({metadata}).get('oilscope-database-host', '')",
@@ -176,7 +185,12 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             "hostnames": ["tag:Name"],
             "strict": False,
             "keyed_groups": self._groups("tags"),
-            "groups": {"workloads": "tags.role is defined and tags.role != 'bastion'"},
+            "groups": {
+                "workloads": "tags.role is defined and tags.role != 'bastion'",
+                "k3s_servers": "tags.k3s_role | default('') == 'server'",
+                "k3s_agents": "tags.k3s_role | default('') == 'agent'",
+                "k3s_bootstrap": "tags.k3s_bootstrap | default('false') == 'true'",
+            },
             "compose": {
                 "internal_ip": "private_ip_address",
                 "public_ip": "public_ip_address | default('')",
@@ -186,6 +200,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "tags.cloud | default('aws')",
                 "oilscope_region": "placement.region | default(placement.availability_zone[:-1])",
+                "k3s_role": "tags.k3s_role | default('')",
+                "k3s_bootstrap": "tags.k3s_bootstrap | default('false') == 'true'",
                 "database_mode": "tags.database_mode | default('self_hosted')",
                 "database_cloud": "tags.database_cloud | default('aws')",
                 "database_host": "tags.database_host | default('')",
@@ -243,7 +259,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             ],
             "keyed_groups": self._groups("tags"),
             "conditional_groups": {
-                "workloads": "tags.role is defined and tags.role != 'bastion'"
+                "workloads": "tags.role is defined and tags.role != 'bastion'",
+                "k3s_servers": "tags.k3s_role | default('') == 'server'",
+                "k3s_agents": "tags.k3s_role | default('') == 'agent'",
+                "k3s_bootstrap": "tags.k3s_bootstrap | default('false') == 'true'",
             },
             "hostvar_expressions": {
                 "internal_ip": private_ip,
@@ -254,6 +273,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                 "oilscope_role": "tags.role | default('')",
                 "oilscope_cloud": "tags.cloud | default('azure')",
                 "oilscope_region": "location",
+                "k3s_role": "tags.k3s_role | default('')",
+                "k3s_bootstrap": "tags.k3s_bootstrap | default('false') == 'true'",
                 "azure_resource_group": "resource_group",
                 "azure_vm_id": "id",
                 "azure_identity_client_id": "tags.identity_client | default('')",

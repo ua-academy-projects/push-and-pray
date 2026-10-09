@@ -34,12 +34,13 @@ resource "google_compute_firewall" "workload_ssh" {
   name    = "${local.resource_prefix}-allow-workload-ssh"
   network = var.network_id
 
-  source_tags = [local.network_tags.bastion]
+  source_tags = [local.network_tags.bastion, local.network_tags.k3s]
   target_tags = [
     local.network_tags.infra,
     local.network_tags.history,
     local.network_tags.fetcher,
     local.network_tags.ui,
+    local.network_tags.k3s,
   ]
 
   allow {
@@ -54,7 +55,10 @@ resource "google_compute_firewall" "ui_web" {
   network = var.network_id
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = [local.network_tags.ui]
+  target_tags = [
+    local.network_tags.ui,
+    local.network_tags["k3s-ingress"],
+  ]
 
   allow {
     protocol = "tcp"
@@ -111,5 +115,62 @@ resource "google_compute_firewall" "rabbitmq" {
   allow {
     protocol = "tcp"
     ports    = [tostring(try(var.config.service_ports.rabbitmq, 5672))]
+  }
+}
+
+
+resource "google_compute_firewall" "k3s_api" {
+  count   = length(local.k3s_servers) > 0 ? 1 : 0
+  name    = "${local.resource_prefix}-allow-k3s-api"
+  network = var.network_id
+
+  source_tags = [local.network_tags.k3s, local.network_tags.bastion]
+  target_tags = [local.network_tags["k3s-server"]]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["6443"]
+  }
+}
+
+resource "google_compute_firewall" "k3s_etcd" {
+  count   = length(local.k3s_servers) > 0 ? 1 : 0
+  name    = "${local.resource_prefix}-allow-k3s-etcd"
+  network = var.network_id
+
+  source_tags = [local.network_tags["k3s-server"], local.network_tags.bastion]
+  target_tags = [local.network_tags["k3s-server"]]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["2379-2380"]
+  }
+}
+
+resource "google_compute_firewall" "k3s_flannel_vxlan" {
+  count   = length(local.k3s_nodes) > 0 ? 1 : 0
+  name    = "${local.resource_prefix}-allow-k3s-flannel-vxlan"
+  network = var.network_id
+
+  source_tags = [local.network_tags.k3s, local.network_tags.bastion]
+  target_tags = [local.network_tags.k3s]
+
+  allow {
+    protocol = "udp"
+    ports    = ["8472"]
+  }
+}
+
+resource "google_compute_firewall" "k3s_kubelet" {
+  count   = length(local.k3s_nodes) > 0 ? 1 : 0
+  name    = "${local.resource_prefix}-allow-k3s-kubelet"
+  network = var.network_id
+
+  source_tags = [local.network_tags.k3s, local.network_tags.bastion]
+  target_tags = [local.network_tags.k3s]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["10250"]
   }
 }

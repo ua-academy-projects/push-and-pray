@@ -31,19 +31,19 @@ variable "secret_version_managers" {
 }
 
 variable "alert_email" {
-  description = "Email address for AWS and GCP infrastructure alerts."
+  description = "Email address for AWS, GCP and Azure infrastructure alerts."
   type        = string
   nullable    = false
 }
 
 variable "database_mode" {
-  description = "Database deployment mode. self_hosted runs PostgreSQL on the database VM; managed uses the selected cloud's managed PostgreSQL service."
+  description = "Database deployment mode: self_hosted VM, cloud-managed service, or CloudNativePG in Kubernetes."
   type        = string
   default     = "managed"
 
   validation {
-    condition     = contains(["self_hosted", "managed"], var.database_mode)
-    error_message = "database_mode must be self_hosted or managed."
+    condition     = contains(["self_hosted", "managed", "kubernetes"], var.database_mode)
+    error_message = "database_mode must be self_hosted, managed, or kubernetes."
   }
 }
 
@@ -182,6 +182,34 @@ variable "azure_postgresql_backup_retention_days" {
     condition     = var.azure_postgresql_backup_retention_days >= 7 && var.azure_postgresql_backup_retention_days <= 35
     error_message = "azure_postgresql_backup_retention_days must be between 7 and 35."
   }
+}
+
+variable "azure_monitoring_cpu_threshold" {
+  description = "Average Azure VM CPU percentage that triggers an alert over a five-minute window."
+  type        = number
+  default     = 70
+
+  validation {
+    condition     = var.azure_monitoring_cpu_threshold > 0 && var.azure_monitoring_cpu_threshold <= 100
+    error_message = "azure_monitoring_cpu_threshold must be greater than 0 and no more than 100."
+  }
+}
+
+variable "azure_monitoring_log_retention_days" {
+  description = "Number of days Azure Log Analytics keeps collected VM metrics and syslog."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.azure_monitoring_log_retention_days >= 30 && var.azure_monitoring_log_retention_days <= 730
+    error_message = "azure_monitoring_log_retention_days must be between 30 and 730."
+  }
+}
+
+variable "azure_synthetic_monitoring_enabled" {
+  description = "Create an Application Insights HTTPS availability test and alert for non-200 responses."
+  type        = bool
+  default     = true
 }
 
 variable "cloudflare_zone_id" {

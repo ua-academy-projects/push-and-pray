@@ -7,8 +7,8 @@ resource "google_compute_network" "main" {
 
 resource "google_compute_subnetwork" "this" {
   for_each = length(local.vms) > 0 ? {
-    management = var.config.network.management_subnet_cidr
-    workload   = var.config.network.workload_subnet_cidr
+    management = local.network.management_subnet_cidr
+    workload   = local.network.workload_subnet_cidr
   } : {}
 
   name                     = "${local.resource_prefix}-${each.key}"

@@ -8,21 +8,28 @@
     fail_msg: >-
       The Amazon CloudWatch Agent role supports Ubuntu on x86_64 or aarch64.
 
-- name: Download the Amazon CloudWatch Agent package
-  become: true
-  ansible.builtin.get_url:
-    url: "{{ aws_cloudwatch_agent_package_url }}"
-    dest: "{{ aws_cloudwatch_agent_package_path }}"
-    owner: root
-    group: root
-    mode: "0644"
+- name: Read installed packages before installing the CloudWatch Agent
+  ansible.builtin.package_facts:
+    manager: auto
 
-- name: Install the Amazon CloudWatch Agent package
-  become: true
-  ansible.builtin.apt:
-    deb: "{{ aws_cloudwatch_agent_package_path }}"
-    state: present
-  notify: Apply the Amazon CloudWatch Agent configuration
+- name: Install the Amazon CloudWatch Agent when it is absent
+  when: aws_cloudwatch_agent_package_name not in ansible_facts['packages']
+  block:
+    - name: Download the Amazon CloudWatch Agent package
+      become: true
+      ansible.builtin.get_url:
+        url: "{{ aws_cloudwatch_agent_package_url }}"
+        dest: "{{ aws_cloudwatch_agent_package_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install the Amazon CloudWatch Agent package
+      become: true
+      ansible.builtin.apt:
+        deb: "{{ aws_cloudwatch_agent_package_path }}"
+        state: present
+      notify: Apply the Amazon CloudWatch Agent configuration
 
 - name: Install the Amazon CloudWatch Agent configuration
   become: true

@@ -6,12 +6,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from psycopg import Error as PostgreSQLError
+from pydantic import ValidationError
+from redis.exceptions import RedisError
 
-from .session_store import PostgreSQLSessionStore
 from .sessions import SessionPreferences, resolve_session_id
 
 logging.basicConfig(
@@ -21,10 +22,7 @@ logging.basicConfig(
 
 STATIC_DIR = Path(__file__).parent / "static"
 HISTORY_SERVICE_URL = os.getenv("HISTORY_SERVICE_URL", "http://localhost:8001").rstrip("/")
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://oil_tracker:change-me@localhost:5432/oil_tracker",
-)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "petroscope_session")
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "2592000"))
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
@@ -33,10 +31,18 @@ SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(base_url=HISTORY_SERVICE_URL, timeout=10.0)
+    app.state.redis = redis.Redis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        health_check_interval=30,
+    )
     try:
         yield
     finally:
         await app.state.client.aclose()
+        await app.state.redis.aclose()
 
 
 app = FastAPI(
@@ -44,7 +50,6 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
-app.state.session_store = PostgreSQLSessionStore(DATABASE_URL, SESSION_TTL_SECONDS)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -74,15 +79,10 @@ async def health(request: Request) -> dict[str, str]:
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="History Service is unavailable") from exc
     try:
-        sessions_ready = await request.app.state.session_store.is_ready()
-    except PostgreSQLError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
-        ) from exc
-    if not sessions_ready:
-        raise HTTPException(status_code=503, detail="PostgreSQL session persistence is not ready")
-    return {"status": "ok", "history": "connected", "sessions": "postgresql"}
+        await request.app.state.redis.ping()
+    except RedisError as exc:
+        raise HTTPException(status_code=503, detail="Redis is unavailable") from exc
+    return {"status": "ok", "history": "connected", "redis": "connected"}
 
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
@@ -97,6 +97,10 @@ def _set_session_cookie(response: Response, session_id: str) -> None:
     )
 
 
+def _session_key(session_id: str) -> str:
+    return f"ui:session:{session_id}"
+
+
 @app.get(
     "/api/session/preferences",
     response_model=SessionPreferences,
@@ -104,13 +108,30 @@ def _set_session_cookie(response: Response, session_id: str) -> None:
 )
 async def get_session_preferences(request: Request, response: Response) -> SessionPreferences:
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
+    key = _session_key(session_id)
     try:
-        preferences = await request.app.state.session_store.get(session_id)
-    except PostgreSQLError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
-        ) from exc
+        stored = await request.app.state.redis.get(key)
+        if stored is None:
+            preferences = SessionPreferences()
+            await request.app.state.redis.set(
+                key,
+                preferences.model_dump_json(),
+                ex=SESSION_TTL_SECONDS,
+            )
+        else:
+            try:
+                preferences = SessionPreferences.model_validate_json(stored)
+            except ValidationError:
+                preferences = SessionPreferences()
+                await request.app.state.redis.set(
+                    key,
+                    preferences.model_dump_json(),
+                    ex=SESSION_TTL_SECONDS,
+                )
+            else:
+                await request.app.state.redis.expire(key, SESSION_TTL_SECONDS)
+    except RedisError as exc:
+        raise HTTPException(status_code=503, detail="Redis is unavailable") from exc
     _set_session_cookie(response, session_id)
     return preferences
 
@@ -127,12 +148,13 @@ async def update_session_preferences(
 ) -> SessionPreferences:
     session_id, _ = resolve_session_id(request.cookies.get(SESSION_COOKIE_NAME))
     try:
-        await request.app.state.session_store.update(session_id, payload)
-    except PostgreSQLError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="PostgreSQL session persistence is unavailable",
-        ) from exc
+        await request.app.state.redis.set(
+            _session_key(session_id),
+            payload.model_dump_json(),
+            ex=SESSION_TTL_SECONDS,
+        )
+    except RedisError as exc:
+        raise HTTPException(status_code=503, detail="Redis is unavailable") from exc
     _set_session_cookie(response, session_id)
     return payload
 

@@ -1,0 +1,239 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate CloudNativePG role inputs
+  ansible.builtin.assert:
+    that:
+      - cnpg_operator_chart_version | length > 0
+      - cnpg_namespace | length > 0
+      - cnpg_cluster_name | length > 0
+      - cnpg_instances | int >= 2
+      - cnpg_database_name | length > 0
+      - cnpg_database_owner | length > 0
+      - cnpg_postgres_password | length > 0
+      - cnpg_storage_size | length > 0
+      - cnpg_pod_anti_affinity_type in ['preferred', 'required']
+    fail_msg: >-
+      CNPG requires a chart version, namespace, cluster name, at least two
+      instances, database credentials, storage size, and a valid pod
+      anti-affinity type.
+
+- name: Start the CNPG node selector expression
+  ansible.builtin.set_fact:
+    cnpg_node_selector_terms: []
+
+- name: Add every CNPG node selector term
+  ansible.builtin.set_fact:
+    cnpg_node_selector_terms: >-
+      {{ cnpg_node_selector_terms + [item.key ~ '=' ~ item.value] }}
+  loop: "{{ cnpg_node_selector | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Find Kubernetes nodes eligible for PostgreSQL
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - nodes
+      - "--selector={{ cnpg_node_selector_terms | join(',') }}"
+      - --output=name
+  register: cnpg_eligible_nodes
+  changed_when: false
+  when: cnpg_node_selector_terms | length > 0
+
+- name: Require one eligible node per PostgreSQL instance
+  ansible.builtin.assert:
+    that:
+      - cnpg_eligible_nodes.stdout_lines | length >= cnpg_instances | int
+    fail_msg: >-
+      CNPG needs at least {{ cnpg_instances }} nodes matching
+      {{ cnpg_node_selector_terms | join(',') }}, but found
+      {{ cnpg_eligible_nodes.stdout_lines | length }}.
+  when: cnpg_node_selector_terms | length > 0
+
+- name: Create the CloudNativePG manifest directory
+  ansible.builtin.file:
+    path: "{{ cnpg_manifest_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Render CloudNativePG manifests
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ cnpg_manifest_directory }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - operator-helm.yaml
+    - cluster.yaml
+
+- name: Create the PostgreSQL application namespace
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - create
+      - namespace
+      - "{{ cnpg_namespace }}"
+      - --dry-run=client
+      - -o
+      - yaml
+  register: cnpg_namespace_definition
+  changed_when: false
+
+- name: Apply the PostgreSQL application namespace
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "-"
+    stdin: "{{ cnpg_namespace_definition.stdout }}"
+  register: cnpg_namespace_apply
+  changed_when: >-
+    'created' in cnpg_namespace_apply.stdout or
+    'configured' in cnpg_namespace_apply.stdout
+
+- name: Build the CNPG application Secret definition
+  ansible.builtin.set_fact:
+    cnpg_app_secret:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ cnpg_app_secret_name }}"
+        namespace: "{{ cnpg_namespace }}"
+      type: kubernetes.io/basic-auth
+      data:
+        username: "{{ cnpg_database_owner | b64encode }}"
+        password: "{{ cnpg_postgres_password | b64encode }}"
+  no_log: true
+
+- name: Apply the CNPG application Secret without writing plaintext to disk
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "-"
+    stdin: "{{ cnpg_app_secret | to_json }}"
+  register: cnpg_app_secret_apply
+  changed_when: >-
+    'created' in cnpg_app_secret_apply.stdout or
+    'configured' in cnpg_app_secret_apply.stdout
+  no_log: true
+
+- name: Check whether the CloudNativePG Helm definition needs changes
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - diff
+      - -f
+      - "{{ cnpg_manifest_directory }}/operator-helm.yaml"
+  register: cnpg_operator_diff
+  changed_when: false
+  failed_when: cnpg_operator_diff.rc not in [0, 1]
+
+- name: Install or update CloudNativePG through the K3s Helm controller
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ cnpg_manifest_directory }}/operator-helm.yaml"
+  register: cnpg_operator_apply
+  changed_when: >-
+    'created' in cnpg_operator_apply.stdout or
+    'configured' in cnpg_operator_apply.stdout
+  when: cnpg_operator_diff.rc == 1
+
+- name: Wait for the CloudNativePG Cluster CRD
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - wait
+      - --for=condition=Established
+      - customresourcedefinition/clusters.postgresql.cnpg.io
+      - "--timeout={{ cnpg_wait_timeout }}"
+  register: cnpg_crd_wait
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: cnpg_crd_wait.rc == 0
+
+- name: Wait for the CloudNativePG operator
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - wait
+      - --for=condition=Available
+      - deployment
+      - --all
+      - --namespace
+      - "{{ cnpg_operator_namespace }}"
+      - "--timeout={{ cnpg_wait_timeout }}"
+  register: cnpg_operator_wait
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: cnpg_operator_wait.rc == 0
+
+- name: Check whether the PostgreSQL cluster definition needs changes
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - diff
+      - -f
+      - "{{ cnpg_manifest_directory }}/cluster.yaml"
+  register: cnpg_cluster_diff
+  changed_when: false
+  failed_when: cnpg_cluster_diff.rc not in [0, 1]
+
+- name: Create or update the PostgreSQL cluster
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ cnpg_manifest_directory }}/cluster.yaml"
+  register: cnpg_cluster_apply
+  changed_when: >-
+    'created' in cnpg_cluster_apply.stdout or
+    'configured' in cnpg_cluster_apply.stdout
+  when: cnpg_cluster_diff.rc == 1
+
+- name: Wait for the PostgreSQL cluster to become ready
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - wait
+      - --for=condition=Ready
+      - "cluster.postgresql.cnpg.io/{{ cnpg_cluster_name }}"
+      - --namespace
+      - "{{ cnpg_namespace }}"
+      - "--timeout={{ cnpg_wait_timeout }}"
+  changed_when: false
+
+- name: Verify the writable PostgreSQL Service
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - service
+      - "{{ cnpg_cluster_name }}-rw"
+      - --namespace
+      - "{{ cnpg_namespace }}"
+  changed_when: false

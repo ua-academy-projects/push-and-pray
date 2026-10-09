@@ -26,13 +26,20 @@ locals {
   workload_ssh_targets = {
     for name, vm in var.vms : name => vm if vm.role != "bastion"
   }
-  ui_targets = {
-    for name, vm in var.vms : name => vm if vm.role == "ui"
+  public_endpoint_targets = {
+    for name, vm in var.vms : name => vm
+    if try(vm.public_endpoint.hostname, null) != null
   }
   history_targets = {
     for name, vm in var.vms : name => vm if vm.role == "history"
   }
   database_targets = {
     for name, vm in var.vms : name => vm if vm.role == "database"
+  }
+  k3s_targets = {
+    for name, vm in var.vms : name => vm if vm.role == "k3s"
+  }
+  k3s_server_targets = {
+    for name, vm in local.k3s_targets : name => vm if vm.k3s_role == "server"
   }
 }

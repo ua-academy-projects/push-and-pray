@@ -42,6 +42,9 @@ to each VM's user-assigned identity.
 
 In managed mode the role replaces `POSTGRES_PASSWORD` with the RDS-managed or
 Cloud SQL credential secret and resolves the generated RabbitMQ password.
+In Kubernetes mode both `POSTGRES_PASSWORD` and `RABBITMQ_PASSWORD` are read
+from the bootstrap K3s host's application secret mappings. The PostgreSQL value
+is passed to CloudNativePG and to the application runtime Secret.
 
 The role identifies which `vms` entry is "this host" from `inventory_hostname`
 itself, not from a role or group name. Terraform names every instance

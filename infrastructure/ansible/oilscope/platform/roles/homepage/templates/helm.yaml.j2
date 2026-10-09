@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: {{ homepage_release_name }}
+  namespace: kube-system
+spec:
+  repo: {{ homepage_chart_repository }}
+  chart: {{ homepage_chart }}
+  version: {{ homepage_chart_version }}
+  targetNamespace: {{ homepage_namespace }}
+  createNamespace: true
+  valuesContent: |-
+    image:
+      repository: {{ homepage_image_repository }}
+      tag: {{ homepage_image_tag }}
+      pullPolicy: IfNotPresent
+    enableRbac: true
+    serviceAccount:
+      create: true
+      name: {{ homepage_service_account_name }}
+    service:
+      main:
+        type: ClusterIP
+        ports:
+          http:
+            port: 3000
+    ingress:
+      main:
+        enabled: false
+    env:
+      - name: MY_POD_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: HOMEPAGE_ALLOWED_HOSTS
+        value: "$(MY_POD_IP):3000,localhost:4468,127.0.0.1:4468,localhost:4471,127.0.0.1:4471,homepage,homepage.{{ homepage_namespace }}.svc.cluster.local,127.0.0.1:6443"
+      - name: LOG_TARGETS
+        value: stdout
+{% if homepage_technitium_enabled | bool %}
+      - name: HOMEPAGE_VAR_TECHNITIUM_KEY
+        valueFrom:
+          secretKeyRef:
+            name: technitium-api
+            key: HOMEPAGE_VAR_TECHNITIUM_KEY
+{% endif %}
+    persistence:
+      logs:
+        enabled: true
+        type: emptyDir
+        mountPath: /app/config/logs
+    config:
+      kubernetes:
+        mode: cluster
+        ingress: false
+      settingsString: |
+        title: OilScope Operations
+        description: Multi-cloud K3s application and infrastructure dashboard
+        theme: dark
+        color: slate
+        headerStyle: boxedWidgets
+        hideVersion: true
+        disableUpdateCheck: true
+        statusStyle: dot
+        layout:
+          OilScope:
+            style: row
+            columns: 3
+          Data Layer:
+            style: row
+            columns: 3
+          Cluster Management:
+            style: row
+            columns: 3
+      services:
+        - OilScope:
+            - Application:
+                icon: mdi-chart-line
+                href: https://{{ homepage_application_hostname }}
+                description: Public oil-price dashboard
+                siteMonitor: https://{{ homepage_application_hostname }}/health
+                namespace: oilscope
+                app: ui
+            - History API:
+                icon: mdi-database-clock
+                description: Historical oil-price service
+                namespace: oilscope
+                app: history
+            - Fetcher:
+                icon: mdi-download-network
+                description: External price ingestion service
+                namespace: oilscope
+                app: fetcher
+        - Data Layer:
+            - PostgreSQL:
+                icon: postgresql
+                description: CloudNativePG replicated database
+                namespace: oilscope
+                podSelector: cnpg.io/cluster=oilscope-postgres
+            - RabbitMQ:
+                icon: rabbitmq
+                description: Application message queue
+                namespace: oilscope
+                app: rabbitmq
+            - Redis:
+                icon: redis
+                description: Application cache and session store
+                namespace: oilscope
+                app: redis
+        - Cluster Management:
+            - Headlamp:
+                icon: mdi-kubernetes
+                href: http://localhost:4467
+                description: Private Kubernetes dashboard
+                namespace: headlamp
+                app: headlamp
+            - Homepage:
+                icon: homepage
+                href: http://localhost:4468
+                description: Private operations start page
+                namespace: {{ homepage_namespace }}
+                app: homepage
+{% if homepage_technitium_enabled | bool %}
+            - Technitium DNS:
+                icon: mdi-dns
+                href: http://localhost:4469
+                description: Private recursive DNS and statistics
+                namespace: technitium
+                app: technitium
+                widget:
+                  type: technitium
+                  url: http://technitium.technitium.svc.cluster.local:5380
+                  key: "{% raw %}{{HOMEPAGE_VAR_TECHNITIUM_KEY}}{% endraw %}"
+                  range: LastDay
+                  fields:
+                    - totalQueries
+                    - totalRecursive
+                    - totalCached
+                    - totalServerFailure
+{% endif %}
+      widgets:
+        - kubernetes:
+            cluster:
+              show: true
+              cpu: true
+              memory: true
+              showLabel: true
+              label: OilScope K3s
+            nodes:
+              show: true
+              cpu: true
+              memory: true
+              showLabel: true
+        - datetime:
+            text_size: xl
+            format:
+              dateStyle: long
+              timeStyle: short

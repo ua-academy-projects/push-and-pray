@@ -29,8 +29,7 @@
           - bash
           - "{{ gcp_ops_agent_installer_path }}"
           - --also-install
-          - --version
-          - "{{ gcp_ops_agent_version }}"
+          - "--version={{ gcp_ops_agent_version }}"
       changed_when: true
 
 - name: Enable and start the Google Cloud Ops Agent

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+tailscale_auth_key: >-
+  {{ lookup('ansible.builtin.env', 'OILSCOPE_TAILSCALE_AUTH_KEY') }}
+tailscale_hostname: "{{ inventory_hostname }}"
+tailscale_accept_routes: true
+tailscale_subnet_router: false
+tailscale_advertise_routes: []
+tailscale_auth_key_path: /run/oilscope-tailscale-authkey
+tailscale_apt_key_path: /usr/share/keyrings/tailscale-archive-keyring.gpg
+tailscale_apt_source_path: /etc/apt/sources.list.d/tailscale.list
+tailscale_apt_key_url: >-
+  https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg
+tailscale_apt_source_url: >-
+  https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.tailscale-keyring.list
+tailscale_forwarding_sysctl_path: /etc/sysctl.d/99-oilscope-tailscale.conf
+tailscale_connect_timeout: 60

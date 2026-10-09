@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_application_namespace: oilscope
+k3s_application_manifest_directory: /var/lib/rancher/k3s/oilscope
+k3s_application_cert_manager_version: v1.21.2
+k3s_application_cert_manager_chart: cert-manager
+k3s_application_cert_manager_repository: https://charts.jetstack.io
+k3s_application_nginx_image: nginx:stable-alpine
+k3s_application_certificate_reloader_image: busybox:1.37
+k3s_application_rabbitmq_image: rabbitmq:4.1-management
+k3s_application_rabbitmq_storage: 2Gi
+k3s_application_redis_image: redis:8.2.8-bookworm
+k3s_application_redis_storage: 2Gi
+k3s_application_wait_timeout: 600s
+k3s_application_wait_for_https: true

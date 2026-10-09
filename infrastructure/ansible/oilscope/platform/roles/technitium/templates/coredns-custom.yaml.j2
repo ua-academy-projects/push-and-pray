@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ technitium_coredns_configmap_name }}
+  namespace: {{ technitium_coredns_namespace }}
+  labels:
+    app.kubernetes.io/name: {{ technitium_name }}
+    app.kubernetes.io/component: dns-forwarder
+    app.kubernetes.io/managed-by: ansible
+data:
+  technitium.override: |
+    forward . {{ technitium_service_address.stdout | trim }} {
+      health_check 5s
+      max_fails 2
+    }

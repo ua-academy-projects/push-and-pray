@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate K3s node settings
+  ansible.builtin.assert:
+    that:
+      - k3s_node_mode in ['server', 'agent']
+      - k3s_node_ip | length > 0
+      - k3s_node_overlay_ip | length == 0 or k3s_node_overlay_interface | length > 0
+      - k3s_cluster_init or k3s_server_url | length > 0
+      - k3s_cluster_init or k3s_token | length > 0
+      - not k3s_cluster_init or k3s_node_mode == 'server'
+    fail_msg: K3s requires a valid node mode, private node IP, server URL and join token.
+
+- name: Create the K3s configuration directory
+  ansible.builtin.file:
+    path: "{{ k3s_config_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Read the installed K3s version
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/k3s
+      - --version
+  register: k3s_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Install K3s when the pinned version is absent
+  when: k3s_version not in (k3s_installed_version.stdout | default(''))
+  block:
+    - name: Download the official K3s installer
+      ansible.builtin.get_url:
+        url: "{{ k3s_install_script_url }}"
+        dest: "{{ k3s_install_script_path }}"
+        owner: root
+        group: root
+        mode: "0700"
+        timeout: 60
+
+    - name: Install the pinned K3s version and systemd service
+      ansible.builtin.command:
+        argv:
+          - sh
+          - "{{ k3s_install_script_path }}"
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: "{{ k3s_node_mode }}"
+        INSTALL_K3S_SKIP_START: "true"
+      changed_when: true
+      notify: Restart K3s
+
+- name: Configure the K3s node
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_config_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart K3s
+
+- name: Enable and start the K3s service
+  ansible.builtin.systemd_service:
+    name: "{{ 'k3s' if k3s_node_mode == 'server' else 'k3s-agent' }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending K3s configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the local K3s API server
+  ansible.builtin.wait_for:
+    host: "{{ k3s_node_ip }}"
+    port: 6443
+    timeout: "{{ k3s_wait_timeout }}"
+  when: k3s_node_mode == 'server'

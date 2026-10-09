@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: {{ cnpg_operator_release_name }}
+  namespace: kube-system
+spec:
+  repo: {{ cnpg_operator_repository }}
+  chart: {{ cnpg_operator_chart }}
+  version: {{ cnpg_operator_chart_version }}
+  targetNamespace: {{ cnpg_operator_namespace }}
+  createNamespace: true

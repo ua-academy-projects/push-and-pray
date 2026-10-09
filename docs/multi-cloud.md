@@ -11,13 +11,16 @@ dictionaries.
 
 Ansible uses the same selection. Its inventory wrapper delegates discovery to
 `amazon.aws.aws_ec2`, `google.cloud.gcp_compute` or
-`azure.azcollection.azure_rm`, groups hosts by cloud and role, and routes each
-private workload through the bastion in that same cloud.
+`azure.azcollection.azure_rm` and groups hosts by cloud and role. Exactly one
+global bastion is used as the SSH jump host. Terraform-bootstrapped Tailscale
+subnet routers make every cloud's non-overlapping private CIDR reachable from
+that bastion and from the other K3s nodes.
 
 Both cloud dictionaries include five named locations and a preserved
 `default` alias. One location is selected for a deployment, not all five.
-Machine sizes are unchanged. Startup/cloud-init sources remain in the
-repository, but Terraform does not attach them to VMs.
+Machine sizes are unchanged. Terraform attaches the official Tailscale
+cloud-init payload to each VM on first creation; ordinary application setup
+continues through Ansible.
 
 See the [Terraform guide](../infrastructure/terraform/README.md) for layout,
 region/image selection, optional disks, SSH and known networking limitations.

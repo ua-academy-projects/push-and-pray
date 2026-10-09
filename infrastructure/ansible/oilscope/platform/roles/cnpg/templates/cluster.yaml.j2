@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ cnpg_cluster_name }}
+  namespace: {{ cnpg_namespace }}
+spec:
+  instances: {{ cnpg_instances }}
+
+  bootstrap:
+    initdb:
+      database: {{ cnpg_database_name }}
+      owner: {{ cnpg_database_owner }}
+      secret:
+        name: {{ cnpg_app_secret_name }}
+
+  storage:
+    size: {{ cnpg_storage_size }}
+{% if cnpg_storage_class | length > 0 %}
+    storageClass: {{ cnpg_storage_class }}
+{% endif %}
+
+  resources:
+    requests:
+      cpu: {{ cnpg_cpu_request }}
+      memory: {{ cnpg_memory_request }}
+    limits:
+      cpu: {{ cnpg_cpu_limit }}
+      memory: {{ cnpg_memory_limit }}
+
+  affinity:
+    enablePodAntiAffinity: {{ cnpg_enable_pod_anti_affinity | bool | lower }}
+    podAntiAffinityType: {{ cnpg_pod_anti_affinity_type }}
+    topologyKey: {{ cnpg_topology_key }}
+{% if cnpg_node_selector | length > 0 %}
+    nodeSelector:
+{{ cnpg_node_selector | to_nice_yaml(indent=2) | indent(6, true) }}
+{% endif %}

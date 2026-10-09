@@ -3,8 +3,9 @@
 Documentation for the collection.
 
 The dynamic inventory reads the same JSON as Terraform and discovers selected
-GCP, AWS and Azure VMs. Each cloud gets its own `cloud_<name>` group and its own
-bastion path. Azure authentication uses the active `az login` session.
+GCP, AWS and Azure VMs. Each cloud gets its own `cloud_<name>` group, while one
+global bastion remains the SSH jump host. Azure authentication uses the active
+`az login` session.
 
 Install the controller dependencies before deployment:
 
@@ -30,11 +31,15 @@ uvx check-jsonschema \
 
 Deploy the application workloads in dependency order:
 
-1. Cloud monitoring agents
-2. Database
-3. History
-4. Fetcher
-5. UI
+1. Verify Terraform-bootstrapped Tailscale and enforce one K3s subnet router per cloud
+2. Direct tailnet and routed cross-cloud connectivity checks
+3. Cloud monitoring agents
+4. K3s servers and agents when K3s groups are present
+5. Private Headlamp, Technitium DNS and Homepage cluster dashboards
+6. CloudNativePG in Kubernetes database mode, Kubernetes Secrets, the
+   cert-manager Helm chart, Let's Encrypt, RabbitMQ and database migrations
+7. History, Fetcher, UI and the NGINX HTTPS proxy
+8. Legacy role-based Compose workloads when their inventory groups are present
 
 Run from the repository root:
 
@@ -53,6 +58,16 @@ ansible-playbook oilscope.platform.monitoring_agents \
   -i infrastructure/ansible/inventory/oilscope.yml
 ```
 
-The Azure play installs the Azure Monitor Agent extension. Guest data starts
-flowing only after an Azure Data Collection Rule is created and associated with
-the VM.
+To install or update only Technitium and its Homepage widget, run:
+
+```bash
+ansible-playbook oilscope.platform.technitium \
+  -i infrastructure/ansible/inventory/oilscope.yml \
+  -e project_config_path=/absolute/path/project-config.json
+```
+
+The Azure play installs the Azure Monitor Agent extension. Terraform creates
+and associates the Azure Data Collection Rules. When K3s groups are present,
+the same deployment playbook builds the cluster and deploys OilScope; see the
+[K3s guide](../../../../docs/k3s.md). Cross-cloud routing is described in the
+[Tailscale guide](../../../../docs/tailscale.md).

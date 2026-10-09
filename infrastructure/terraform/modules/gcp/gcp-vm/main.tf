@@ -11,8 +11,16 @@ resource "google_compute_instance" "workload" {
   machine_type              = each.value.machine_type
   allow_stopping_for_update = true
 
-  tags   = [for tag in each.value.network_tags : "${local.resource_prefix}-${tag}"]
-  labels = merge(lookup(each.value, "labels", {}), local.common_tags, { role = each.value.role })
+  tags = [for tag in each.value.network_tags : "${local.resource_prefix}-${tag}"]
+  labels = merge(
+    lookup(each.value, "labels", {}),
+    local.common_tags,
+    { role = each.value.role },
+    each.value.role == "k3s" ? {
+      k3s_role      = each.value.k3s_role
+      k3s_bootstrap = tostring(each.value.k3s_bootstrap)
+    } : {},
+  )
 
   boot_disk {
     auto_delete = true
@@ -50,14 +58,23 @@ resource "google_compute_instance" "workload" {
   }
 
   lifecycle {
+    # The short-lived bootstrap key is only needed when a VM is created.
+    # Its later rotation must not restart an existing instance.
+    ignore_changes = [metadata["user-data"]]
+
     precondition {
-      condition     = !each.value.assign_public_ip || contains(["ui", "bastion"], each.value.role)
-      error_message = "Only workloads with role ui or bastion may receive a public IP."
+      condition = (
+        !each.value.assign_public_ip ||
+        each.value.role == "bastion" ||
+        try(each.value.public_endpoint.hostname, null) != null
+      )
+      error_message = "Only the bastion or a workload with public_endpoint may receive a public IP."
     }
   }
 
   metadata = {
     "enable-oslogin"            = "FALSE"
+    "user-data"                 = try(var.tailscale_cloud_init[each.key], null)
     "oilscope-database-mode"    = var.database_runtime.mode
     "oilscope-database-cloud"   = var.database_runtime.cloud
     "oilscope-database-host"    = var.database_runtime.host

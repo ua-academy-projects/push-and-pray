@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Deploy the private Homepage operations dashboard
+  hosts: k3s_bootstrap
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    homepage_deployment_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+  roles:
+    - role: oilscope.platform.homepage
+      homepage_enabled: >-
+        {{ homepage_deployment_config.homepage.enabled | default(false) }}

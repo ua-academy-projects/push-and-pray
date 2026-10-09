@@ -42,17 +42,23 @@
              true
            ) }}
 
+- name: Determine secrets replaced by the selected database mode
+  ansible.builtin.set_fact:
+    resolve_secrets_excluded_mapping_keys: >-
+      {{
+        ['POSTGRES_PASSWORD']
+        if resolve_secrets_database_mode == 'managed'
+        else ['RABBITMQ_PASSWORD']
+        if resolve_secrets_database_mode == 'self_hosted'
+        else []
+      }}
+
 - name: Exclude secrets replaced by the selected database mode
   ansible.builtin.set_fact:
     resolve_secrets_mappings: >-
       {{ resolve_secrets_all_mappings
          | dict2items
-         | rejectattr(
-             'key',
-             'equalto',
-             'POSTGRES_PASSWORD' if resolve_secrets_database_mode == 'managed'
-             else 'RABBITMQ_PASSWORD'
-           )
+         | rejectattr('key', 'in', resolve_secrets_excluded_mapping_keys)
          | items2dict }}
 
 - name: Fetch GCP access token from instance metadata

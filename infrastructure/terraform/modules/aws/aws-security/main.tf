@@ -11,6 +11,7 @@ resource "aws_security_group" "vm" {
       Name = "${local.resource_prefix}-${each.key}"
       role = each.value.role
     },
+    each.value.role == "k3s" ? { k3s_role = each.value.k3s_role } : {},
   )
 
   lifecycle {
@@ -37,10 +38,10 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_ssh" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "workload_ssh" {
-  for_each = local.workload_ssh_targets
+  for_each = local.workload_ssh_rules
 
-  security_group_id            = aws_security_group.vm[each.key].id
-  referenced_security_group_id = aws_security_group.vm[local.bastion_name].id
+  security_group_id            = aws_security_group.vm[each.value.target].id
+  referenced_security_group_id = aws_security_group.vm[each.value.source].id
   from_port                    = 22
   to_port                      = 22
   ip_protocol                  = "tcp"
@@ -96,4 +97,45 @@ resource "aws_vpc_security_group_ingress_rule" "bastion_bootstrap" {
   from_port         = 22
   to_port           = 22
   ip_protocol       = "tcp"
+}
+
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_api" {
+  for_each = local.k3s_api_rules
+
+  security_group_id            = aws_security_group.vm[each.value.target].id
+  referenced_security_group_id = aws_security_group.vm[each.value.source].id
+  from_port                    = 6443
+  to_port                      = 6443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_etcd" {
+  for_each = local.k3s_etcd_rules
+
+  security_group_id            = aws_security_group.vm[each.value.target].id
+  referenced_security_group_id = aws_security_group.vm[each.value.source].id
+  from_port                    = 2379
+  to_port                      = 2380
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_flannel_vxlan" {
+  for_each = local.k3s_node_rules
+
+  security_group_id            = aws_security_group.vm[each.value.target].id
+  referenced_security_group_id = aws_security_group.vm[each.value.source].id
+  from_port                    = 8472
+  to_port                      = 8472
+  ip_protocol                  = "udp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "k3s_kubelet" {
+  for_each = local.k3s_node_rules
+
+  security_group_id            = aws_security_group.vm[each.value.target].id
+  referenced_security_group_id = aws_security_group.vm[each.value.source].id
+  from_port                    = 10250
+  to_port                      = 10250
+  ip_protocol                  = "tcp"
 }

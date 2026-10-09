@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+k3s_version: v1.36.4+k3s1
+k3s_node_mode: ""
+k3s_cluster_init: false
+k3s_server_url: ""
+k3s_token: ""
+k3s_install_script_url: https://get.k3s.io
+k3s_install_script_path: /var/tmp/k3s-install.sh
+k3s_config_directory: /etc/rancher/k3s
+k3s_config_path: /etc/rancher/k3s/config.yaml
+k3s_node_ip: "{{ internal_ip | default(ansible_default_ipv4.address) }}"
+k3s_node_overlay_ip: "{{ tailscale_ipv4 | default('') }}"
+k3s_node_overlay_interface: "{{ 'tailscale0' if k3s_node_overlay_ip | length > 0 else '' }}"
+k3s_registration_ip: ""
+k3s_wait_timeout: 300

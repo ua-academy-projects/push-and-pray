@@ -28,5 +28,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
     }
+
+    tailscale = {
+      source  = "tailscale/tailscale"
+      version = "~> 0.29.2"
+    }
   }
 }

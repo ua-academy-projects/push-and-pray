@@ -10,6 +10,7 @@ output "vms" {
       network_tags          = local.vms[name].network_tags
       service_account_email = null
       cloud                 = local.cloud_name
+      k3s_role              = try(local.vms[name].k3s_role, null)
       role                  = local.vms[name].role
     }
   }

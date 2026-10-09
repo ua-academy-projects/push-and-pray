@@ -35,3 +35,5 @@ provider "azurerm" {
 
   subscription_id = try(local.config.clouds.azure.subscription_id, null)
 }
+
+provider "tailscale" {}

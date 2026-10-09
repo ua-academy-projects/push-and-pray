@@ -1,0 +1,184 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate Tailscale host settings
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'Ubuntu'
+      - tailscale_hostname | length > 0
+      - not tailscale_subnet_router or tailscale_advertise_routes | length > 0
+    fail_msg: >-
+      Tailscale requires Ubuntu, a hostname and at least one route on every
+      selected K3s subnet router.
+
+- name: Read the installed Tailscale version
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - version
+  register: tailscale_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Install Tailscale when it is absent
+  when: tailscale_installed_version.rc != 0
+  block:
+    - name: Install the official Tailscale repository key
+      ansible.builtin.get_url:
+        url: "{{ tailscale_apt_key_url }}"
+        dest: "{{ tailscale_apt_key_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        timeout: "{{ tailscale_connect_timeout }}"
+
+    - name: Install the official Tailscale apt source
+      ansible.builtin.get_url:
+        url: "{{ tailscale_apt_source_url }}"
+        dest: "{{ tailscale_apt_source_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        timeout: "{{ tailscale_connect_timeout }}"
+
+    - name: Install the Tailscale package
+      ansible.builtin.apt:
+        name: tailscale
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        install_recommends: false
+
+- name: Enable and start the Tailscale daemon
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Enable packet forwarding on the selected subnet router
+  ansible.builtin.template:
+    src: 99-oilscope-tailscale.conf.j2
+    dest: "{{ tailscale_forwarding_sysctl_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: tailscale_subnet_router
+  notify: Apply Tailscale forwarding settings
+
+- name: Apply packet forwarding before route advertisement
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the current Tailscale state
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - status
+      - --json
+  register: tailscale_status_before
+  changed_when: false
+  failed_when: false
+
+- name: Resolve the current Tailscale backend state
+  ansible.builtin.set_fact:
+    tailscale_backend_state: >-
+      {{
+        (tailscale_status_before.stdout | from_json).BackendState
+        if tailscale_status_before.rc == 0 and
+           tailscale_status_before.stdout | trim | length > 0
+        else ''
+      }}
+
+- name: Authenticate this host when it is not connected
+  when: tailscale_backend_state != 'Running'
+  block:
+    - name: Require an authentication key for first connection
+      ansible.builtin.assert:
+        that:
+          - tailscale_auth_key | length > 0
+        fail_msg: >-
+          This host is not connected to Tailscale. Export
+          OILSCOPE_TAILSCALE_AUTH_KEY and run the playbook again.
+
+    - name: Place the authentication key in temporary memory
+      ansible.builtin.copy:
+        content: "{{ tailscale_auth_key }}"
+        dest: "{{ tailscale_auth_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Connect a regular Tailscale node
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - up
+          - "--auth-key=file:{{ tailscale_auth_key_path }}"
+          - "--hostname={{ tailscale_hostname }}"
+          - "--accept-routes={{ tailscale_accept_routes | bool | ternary('true', 'false') }}"
+      when: not tailscale_subnet_router
+      no_log: true
+      changed_when: true
+
+    - name: Connect a Tailscale subnet router
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - up
+          - "--auth-key=file:{{ tailscale_auth_key_path }}"
+          - "--hostname={{ tailscale_hostname }}"
+          - "--accept-routes={{ tailscale_accept_routes | bool | ternary('true', 'false') }}"
+          - "--advertise-routes={{ tailscale_advertise_routes | join(',') }}"
+      when: tailscale_subnet_router
+      no_log: true
+      changed_when: true
+  always:
+    - name: Remove the temporary authentication key
+      ansible.builtin.file:
+        path: "{{ tailscale_auth_key_path }}"
+        state: absent
+      no_log: true
+
+- name: Enforce common Tailscale preferences
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - "--hostname={{ tailscale_hostname }}"
+      - "--accept-routes={{ tailscale_accept_routes | bool | ternary('true', 'false') }}"
+  changed_when: false
+
+- name: Advertise this cloud's private networks
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - "--advertise-routes={{ tailscale_advertise_routes | join(',') }}"
+  when: tailscale_subnet_router
+  changed_when: false
+
+- name: Ensure regular nodes do not advertise subnet routes
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - set
+      - --advertise-routes=
+  when: not tailscale_subnet_router
+  changed_when: false
+
+- name: Read the host's Tailscale IPv4 address
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - ip
+      - -4
+  register: tailscale_ipv4_command
+  changed_when: false
+  retries: 12
+  delay: 5
+  until:
+    - tailscale_ipv4_command.rc == 0
+    - tailscale_ipv4_command.stdout | trim | length > 0
+
+- name: Publish the Tailscale address to later plays
+  ansible.builtin.set_fact:
+    tailscale_ipv4: "{{ tailscale_ipv4_command.stdout | trim }}"

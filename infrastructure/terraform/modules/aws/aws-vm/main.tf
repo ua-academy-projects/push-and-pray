@@ -24,6 +24,7 @@ resource "aws_instance" "this" {
   key_name                    = aws_key_pair.operator[0].key_name
   iam_instance_profile        = var.instance_profile_name
   vpc_security_group_ids      = [var.security_group_ids[each.key]]
+  user_data                   = try(var.tailscale_cloud_init[each.key], null)
 
   root_block_device {
     delete_on_termination = true
@@ -35,6 +36,12 @@ resource "aws_instance" "this" {
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required"
+  }
+
+  lifecycle {
+    # The short-lived bootstrap key is only needed when a VM is created.
+    # Its later rotation must not replace or restart an existing instance.
+    ignore_changes = [user_data]
   }
 
   tags = merge(
@@ -58,5 +65,9 @@ resource "aws_instance" "this" {
       queue_vhost      = var.database_runtime.queue_vhost
       queue_secret     = var.database_runtime.queue_secret_reference
     },
+    each.value.role == "k3s" ? {
+      k3s_role      = each.value.k3s_role
+      k3s_bootstrap = tostring(each.value.k3s_bootstrap)
+    } : {},
   )
 }

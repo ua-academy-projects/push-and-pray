@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: {{ headlamp_release_name }}
+  namespace: kube-system
+spec:
+  repo: {{ headlamp_chart_repository }}
+  chart: {{ headlamp_chart }}
+  version: {{ headlamp_chart_version }}
+  targetNamespace: {{ headlamp_namespace }}
+  createNamespace: true
+  valuesContent: |-
+    replicaCount: 1
+    config:
+      inCluster: true
+      enableHelm: false
+      unsafeUseServiceAccountToken: false
+    service:
+      type: ClusterIP
+    ingress:
+      enabled: false
+    serviceAccount:
+      create: true
+      name: {{ headlamp_service_account_name }}
+    clusterRoleBinding:
+      create: true
+      clusterRoleName: {{ headlamp_cluster_role_name }}
+    persistentVolumeClaim:
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi

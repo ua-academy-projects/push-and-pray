@@ -1,0 +1,482 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the project configuration for the Kubernetes deployment
+  ansible.builtin.set_fact:
+    k3s_application_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+- name: Find the public application endpoint
+  ansible.builtin.set_fact:
+    k3s_application_public_endpoint_items: >-
+      {{ k3s_application_config.vms
+         | dict2items
+         | selectattr('value.public_endpoint', 'defined')
+         | list }}
+
+- name: Resolve image and endpoint settings
+  ansible.builtin.set_fact:
+    k3s_application_registry_repository: >-
+      {{ k3s_application_config.registry.repository }}
+    k3s_application_registry_server: >-
+      {{ k3s_application_config.registry.repository | regex_replace('/.*$', '') }}
+    k3s_application_registry_username: >-
+      {{ k3s_application_config.registry.username }}
+    k3s_application_image_tag: >-
+      {{ k3s_application_config.registry.image_sha }}
+    k3s_application_hostname: >-
+      {{ k3s_application_public_endpoint_items[0].value.public_endpoint.hostname
+         if k3s_application_public_endpoint_items | length == 1 else '' }}
+    k3s_application_acme_email: >-
+      {{ k3s_application_public_endpoint_items[0].value.public_endpoint.acme_email
+         if k3s_application_public_endpoint_items | length == 1 else '' }}
+
+- name: Validate Kubernetes application inputs and resolved secrets
+  ansible.builtin.assert:
+    that:
+      - k3s_application_public_endpoint_items | length == 1
+      - k3s_application_hostname | length > 0
+      - k3s_application_acme_email | length > 0
+      - k3s_application_registry_repository | length > 0
+      - k3s_application_registry_username | length > 0
+      - k3s_application_image_tag | length > 0
+      - k3s_application_config.cloudflare.api_token | default('') | length > 0
+      - database_host | default('') | length > 0
+      - database_mode | default('') in ['managed', 'kubernetes']
+      - resolve_secrets_result.POSTGRES_PASSWORD | default('') | length > 0
+      - resolve_secrets_result.RABBITMQ_PASSWORD | default('') | length > 0
+      - resolve_secrets_result.REDIS_PASSWORD | default('') | length > 0
+      - resolve_secrets_result.OILPRICEAPI_KEY | default('') | length > 0
+      - resolve_secrets_result.GHCR_TOKEN | default('') | length > 0
+    fail_msg: >-
+      K3s deployment requires one public endpoint, a Cloudflare DNS API token,
+      managed or Kubernetes PostgreSQL metadata, and POSTGRES_PASSWORD,
+      RABBITMQ_PASSWORD, REDIS_PASSWORD, OILPRICEAPI_KEY and GHCR_TOKEN.
+
+- name: Build encoded database and queue connection values
+  ansible.builtin.set_fact:
+    k3s_application_database_user_encoded: "{{ database_user | urlencode }}"
+    k3s_application_database_password_encoded: >-
+      {{ resolve_secrets_result.POSTGRES_PASSWORD | urlencode }}
+    k3s_application_database_name_encoded: "{{ database_name | urlencode }}"
+    k3s_application_rabbitmq_user_encoded: "{{ queue_username | urlencode }}"
+    k3s_application_rabbitmq_password_encoded: >-
+      {{ resolve_secrets_result.RABBITMQ_PASSWORD | urlencode }}
+    k3s_application_redis_password_encoded: >-
+      {{ resolve_secrets_result.REDIS_PASSWORD | urlencode }}
+    k3s_application_rabbitmq_vhost_encoded: "{{ queue_vhost | urlencode }}"
+  no_log: true
+
+- name: Build application connection URLs
+  ansible.builtin.set_fact:
+    k3s_application_history_database_url: >-
+      {{
+        'postgresql+psycopg://' ~
+        k3s_application_database_user_encoded ~ ':' ~
+        k3s_application_database_password_encoded ~ '@' ~
+        database_host ~ ':' ~ database_port ~ '/' ~
+        k3s_application_database_name_encoded ~
+        '?sslmode=' ~ database_sslmode
+      }}
+    k3s_application_fetcher_database_url: >-
+      {{
+        'postgres://' ~
+        k3s_application_database_user_encoded ~ ':' ~
+        k3s_application_database_password_encoded ~ '@' ~
+        database_host ~ ':' ~ database_port ~ '/' ~
+        k3s_application_database_name_encoded ~
+        '?sslmode=' ~ database_sslmode
+      }}
+    k3s_application_rabbitmq_url: >-
+      amqp://{{ k3s_application_rabbitmq_user_encoded }}:{{ k3s_application_rabbitmq_password_encoded }}@rabbitmq:5672/{{ k3s_application_rabbitmq_vhost_encoded }}
+    k3s_application_redis_url: >-
+      redis://:{{ k3s_application_redis_password_encoded }}@redis:6379/0
+  no_log: true
+
+- name: Create the manifest staging directory
+  ansible.builtin.file:
+    path: "{{ k3s_application_manifest_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Copy static Kubernetes manifests
+  ansible.builtin.copy:
+    src: manifests/
+    dest: "{{ k3s_application_manifest_directory }}/"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Render Kubernetes manifests
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ k3s_application_manifest_directory }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - configmap.yaml
+    - rabbitmq.yaml
+    - redis.yaml
+    - migration-job.yaml
+    - history.yaml
+    - fetcher.yaml
+    - ui.yaml
+    - cert-manager-helm.yaml
+    - cluster-issuer.yaml
+    - certificate.yaml
+    - nginx.yaml
+
+- name: Create the OilScope namespace
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ k3s_application_manifest_directory }}/namespace.yaml"
+  register: k3s_application_namespace_apply
+  changed_when: >-
+    'created' in k3s_application_namespace_apply.stdout or
+    'configured' in k3s_application_namespace_apply.stdout
+
+- name: Build the Kubernetes runtime Secret definition
+  ansible.builtin.set_fact:
+    k3s_application_runtime_secret:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: oilscope-runtime
+        namespace: "{{ k3s_application_namespace }}"
+      type: Opaque
+      data:
+        POSTGRES_PASSWORD: "{{ resolve_secrets_result.POSTGRES_PASSWORD | b64encode }}"
+        RABBITMQ_USERNAME: "{{ queue_username | b64encode }}"
+        RABBITMQ_PASSWORD: "{{ resolve_secrets_result.RABBITMQ_PASSWORD | b64encode }}"
+        RABBITMQ_VHOST: "{{ queue_vhost | b64encode }}"
+        RABBITMQ_URL: "{{ k3s_application_rabbitmq_url | b64encode }}"
+        REDIS_PASSWORD: "{{ resolve_secrets_result.REDIS_PASSWORD | b64encode }}"
+        REDIS_URL: "{{ k3s_application_redis_url | b64encode }}"
+        OILPRICEAPI_KEY: "{{ resolve_secrets_result.OILPRICEAPI_KEY | b64encode }}"
+        HISTORY_DATABASE_URL: "{{ k3s_application_history_database_url | b64encode }}"
+        FETCHER_DATABASE_URL: "{{ k3s_application_fetcher_database_url | b64encode }}"
+  no_log: true
+
+- name: Build the Kubernetes GHCR pull Secret definition
+  ansible.builtin.set_fact:
+    k3s_application_registry_secret:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: ghcr-credentials
+        namespace: "{{ k3s_application_namespace }}"
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: >-
+          {{ {
+               'auths': {
+                 k3s_application_registry_server: {
+                   'username': k3s_application_registry_username,
+                   'password': resolve_secrets_result.GHCR_TOKEN,
+                   'auth': (k3s_application_registry_username ~ ':' ~ resolve_secrets_result.GHCR_TOKEN) | b64encode
+                 }
+               }
+             } | to_json | b64encode }}
+  no_log: true
+
+- name: Build the cert-manager Cloudflare API token Secret
+  ansible.builtin.set_fact:
+    k3s_application_cloudflare_secret:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cloudflare-api-token
+        namespace: cert-manager
+      type: Opaque
+      stringData:
+        api-token: "{{ k3s_application_config.cloudflare.api_token }}"
+  no_log: true
+
+- name: Apply the Kubernetes runtime Secret without writing plaintext to disk
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "-"
+    stdin: "{{ k3s_application_runtime_secret | to_json }}"
+  register: k3s_application_runtime_secret_apply
+  changed_when: >-
+    'created' in k3s_application_runtime_secret_apply.stdout or
+    'configured' in k3s_application_runtime_secret_apply.stdout
+  no_log: true
+
+- name: Apply the Kubernetes GHCR pull Secret without writing plaintext to disk
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "-"
+    stdin: "{{ k3s_application_registry_secret | to_json }}"
+  register: k3s_application_registry_secret_apply
+  changed_when: >-
+    'created' in k3s_application_registry_secret_apply.stdout or
+    'configured' in k3s_application_registry_secret_apply.stdout
+  no_log: true
+
+- name: Remove a previously installed bundled Traefik chart
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - delete
+      - helmchart
+      - traefik
+      - traefik-crd
+      - --namespace
+      - kube-system
+      - --ignore-not-found=true
+  register: k3s_application_traefik_delete
+  changed_when: "'deleted' in k3s_application_traefik_delete.stdout"
+  failed_when: false
+
+- name: Check whether the cert-manager Helm definition needs changes
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - diff
+      - -f
+      - "{{ k3s_application_manifest_directory }}/cert-manager-helm.yaml"
+  register: k3s_application_cert_manager_diff
+  changed_when: false
+  failed_when: k3s_application_cert_manager_diff.rc not in [0, 1]
+
+- name: Install or update cert-manager through the K3s Helm controller
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ k3s_application_manifest_directory }}/cert-manager-helm.yaml"
+  register: k3s_application_cert_manager_apply
+  changed_when: >-
+    'created' in k3s_application_cert_manager_apply.stdout or
+    'configured' in k3s_application_cert_manager_apply.stdout
+  when: k3s_application_cert_manager_diff.rc == 1
+
+- name: Wait for Helm to create and roll out cert-manager components
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - rollout
+      - status
+      - "deployment/{{ item }}"
+      - --namespace
+      - cert-manager
+      - "--timeout={{ k3s_application_wait_timeout }}"
+  register: k3s_application_cert_manager_rollout
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: k3s_application_cert_manager_rollout.rc == 0
+  loop:
+    - cert-manager
+    - cert-manager-cainjector
+    - cert-manager-webhook
+
+- name: Apply the Cloudflare token Secret without writing plaintext to disk
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "-"
+    stdin: "{{ k3s_application_cloudflare_secret | to_json }}"
+  register: k3s_application_cloudflare_secret_apply
+  changed_when: >-
+    'created' in k3s_application_cloudflare_secret_apply.stdout or
+    'configured' in k3s_application_cloudflare_secret_apply.stdout
+  no_log: true
+
+- name: Configure the Let's Encrypt issuer and certificate
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ k3s_application_manifest_directory }}/{{ item }}"
+  register: k3s_application_certificate_apply
+  changed_when: >-
+    'created' in k3s_application_certificate_apply.stdout or
+    'configured' in k3s_application_certificate_apply.stdout
+  loop:
+    - cluster-issuer.yaml
+    - certificate.yaml
+
+- name: Wait for the Let's Encrypt certificate
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - wait
+      - --for=condition=Ready
+      - certificate/oilscope-tls
+      - --namespace
+      - "{{ k3s_application_namespace }}"
+      - "--timeout={{ k3s_application_wait_timeout }}"
+  changed_when: false
+
+- name: Apply foundational OilScope manifests
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ k3s_application_manifest_directory }}/{{ item }}"
+  register: k3s_application_foundation_apply
+  changed_when: >-
+    'created' in k3s_application_foundation_apply.stdout or
+    'configured' in k3s_application_foundation_apply.stdout
+  loop:
+    - service-account.yaml
+    - configmap.yaml
+    - rabbitmq.yaml
+    - redis.yaml
+
+- name: Wait for RabbitMQ and Redis
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - rollout
+      - status
+      - "{{ item.resource }}"
+      - --namespace
+      - "{{ item.namespace }}"
+      - "--timeout={{ k3s_application_wait_timeout }}"
+  changed_when: false
+  loop:
+    - resource: statefulset/rabbitmq
+      namespace: "{{ k3s_application_namespace }}"
+    - resource: statefulset/redis
+      namespace: "{{ k3s_application_namespace }}"
+
+- name: Remove the previous completed migration Job
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - delete
+      - job
+      - oilscope-migrate
+      - --namespace
+      - "{{ k3s_application_namespace }}"
+      - --ignore-not-found=true
+  register: k3s_application_migration_delete
+  changed_when: "'deleted' in k3s_application_migration_delete.stdout"
+
+- name: Start the database migration Job
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ k3s_application_manifest_directory }}/migration-job.yaml"
+  register: k3s_application_migration_apply
+  changed_when: >-
+    'created' in k3s_application_migration_apply.stdout or
+    'configured' in k3s_application_migration_apply.stdout
+
+- name: Wait for database migrations to finish
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - wait
+      - --for=condition=complete
+      - job/oilscope-migrate
+      - --namespace
+      - "{{ k3s_application_namespace }}"
+      - "--timeout={{ k3s_application_wait_timeout }}"
+  changed_when: false
+
+- name: Apply application workloads
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - apply
+      - -f
+      - "{{ k3s_application_manifest_directory }}/{{ item }}"
+  register: k3s_application_workload_apply
+  changed_when: >-
+    'created' in k3s_application_workload_apply.stdout or
+    'configured' in k3s_application_workload_apply.stdout
+  loop:
+    - history.yaml
+    - fetcher.yaml
+    - ui.yaml
+    - nginx.yaml
+
+- name: Wait for application Deployments
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - rollout
+      - status
+      - "deployment/{{ item }}"
+      - --namespace
+      - "{{ k3s_application_namespace }}"
+      - "--timeout={{ k3s_application_wait_timeout }}"
+  changed_when: false
+  loop:
+    - history
+    - fetcher
+    - ui
+    - nginx
+
+- name: Wait for the public Let's Encrypt HTTPS endpoint
+  ansible.builtin.uri:
+    url: "https://{{ k3s_application_hostname }}/health"
+    method: GET
+    status_code: 200
+    validate_certs: true
+    return_content: true
+  register: k3s_application_https
+  changed_when: false
+  retries: 60
+  delay: 10
+  until: k3s_application_https.status == 200
+  delegate_to: localhost
+  become: false
+  when: k3s_application_wait_for_https | bool
+
+- name: Show the final OilScope pod status
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - pods
+      - --namespace
+      - "{{ k3s_application_namespace }}"
+      - -o
+      - wide
+  register: k3s_application_pods
+  changed_when: false
+
+- name: Report the final OilScope pod status
+  ansible.builtin.debug:
+    var: k3s_application_pods.stdout_lines

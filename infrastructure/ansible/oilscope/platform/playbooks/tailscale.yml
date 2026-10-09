@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Validate the single-bastion Tailscale topology
+  hosts: localhost
+  gather_facts: false
+  vars:
+    tailscale_project_config: >-
+      {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+  tasks:
+    - name: Require exactly one administrative bastion
+      ansible.builtin.assert:
+        that:
+          - groups.get('bastion', []) | length == 1
+        fail_msg: >-
+          The direct multi-cloud topology requires exactly one administrative
+          bastion for the whole deployment.
+      when: tailscale_project_config.tailscale.enabled | default(false)
+
+    - name: Require one K3s subnet-router candidate in every workload cloud
+      ansible.builtin.assert:
+        that:
+          - >-
+            groups.get('k3s_servers', [])
+            | intersect(groups.get('cloud_' ~ item, []))
+            | length > 0
+        fail_msg: >-
+          Cloud {{ item }} contains workloads but has no K3s server that can
+          advertise its private CIDR through Tailscale.
+      loop:
+        - aws
+        - gcp
+        - azure
+      when:
+        - tailscale_project_config.tailscale.enabled | default(false)
+        - >-
+          groups.get('workloads', [])
+          | intersect(groups.get('cloud_' ~ item, []))
+          | length > 0
+
+- name: Configure the cross-cloud Tailscale network
+  hosts: bastion:workloads
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Read the shared project configuration
+      ansible.builtin.set_fact:
+        tailscale_project_config: >-
+          {{ lookup('ansible.builtin.file', project_config_path) | from_json }}
+
+    - name: Resolve Azure networks reachable by the Azure router
+      ansible.builtin.set_fact:
+        tailscale_azure_routes: >-
+          {{
+            [
+              tailscale_project_config.clouds.azure.network.vnet_cidr
+              | default(tailscale_project_config.network.vpc_cidr)
+            ]
+            + (
+              tailscale_project_config.clouds.azure.regional_networks
+              | default({})
+              | dict2items
+              | map(attribute='value.vnet_cidr')
+              | list
+            )
+          }}
+      when: tailscale_project_config.tailscale.enabled | default(false)
+
+    - name: Resolve the private routes for this host's cloud
+      ansible.builtin.set_fact:
+        tailscale_cloud_routes: >-
+          {{
+            [
+              tailscale_project_config.clouds.aws.network.vpc_cidr
+              | default(tailscale_project_config.network.vpc_cidr)
+            ]
+            if oilscope_cloud == 'aws'
+            else [
+              tailscale_project_config.clouds.gcp.network.vpc_cidr
+              | default(tailscale_project_config.network.vpc_cidr)
+            ]
+            if oilscope_cloud == 'gcp'
+            else tailscale_azure_routes | unique
+          }}
+        tailscale_cloud_servers: >-
+          {{
+            groups.get('k3s_servers', [])
+            | intersect(groups.get('cloud_' ~ oilscope_cloud, []))
+            | sort
+          }}
+      when: tailscale_project_config.tailscale.enabled | default(false)
+
+    - name: Select this cloud's first K3s server as subnet router
+      ansible.builtin.set_fact:
+        tailscale_router_hostname: >-
+          {{ (tailscale_cloud_servers | first) | default('') }}
+      when: tailscale_project_config.tailscale.enabled | default(false)
+
+  roles:
+    - role: oilscope.platform.tailscale
+      tailscale_subnet_router: >-
+        {{ inventory_hostname == tailscale_router_hostname }}
+      tailscale_advertise_routes: >-
+        {{
+          tailscale_cloud_routes
+          if inventory_hostname == tailscale_router_hostname
+          else []
+        }}
+      when: tailscale_project_config.tailscale.enabled | default(false)
+
+- name: Verify the Tailscale mesh before Kubernetes deployment
+  hosts: bastion:workloads
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    tailscale_all_hosts: >-
+      {{ (groups.get('bastion', []) + groups.get('workloads', [])) | unique }}
+  tasks:
+    - name: Verify tailnet connectivity to every other VM
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - ping
+          - --until-direct=false
+          - --c
+          - "2"
+          - --timeout=10s
+          - "{{ hostvars[item].tailscale_ipv4 }}"
+      loop: "{{ tailscale_all_hosts }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - tailscale_project_config.tailscale.enabled | default(false)
+        - item != inventory_hostname
+      changed_when: false
+
+    - name: Verify routed SSH to workloads in every other cloud
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item].internal_ip }}"
+        port: 22
+        connect_timeout: 5
+        timeout: 30
+        state: started
+      loop: "{{ groups.get('workloads', []) }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - tailscale_project_config.tailscale.enabled | default(false)
+        - hostvars[item].oilscope_cloud != oilscope_cloud
+      changed_when: false

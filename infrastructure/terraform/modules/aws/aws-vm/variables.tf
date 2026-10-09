@@ -35,3 +35,11 @@ variable "database_runtime" {
     queue_secret_reference = string
   })
 }
+
+
+variable "tailscale_cloud_init" {
+  description = "Rendered Tailscale cloud-init payloads keyed by logical VM name."
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+}
