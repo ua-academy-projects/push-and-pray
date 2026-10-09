@@ -1,0 +1,27 @@
+# Managed by oilscope.cluster.k3s.
+token: "{{ k3s_token }}"
+node-ip: {{ k3s_node_ip }}
+{% if k3s_cluster_init %}
+cluster-init: true
+{% endif %}
+{% if k3s_server_url %}
+server: {{ k3s_server_url }}
+{% endif %}
+{% if k3s_role == 'server' and k3s_tls_san %}
+tls-san:
+{% for san in k3s_tls_san %}
+  - {{ san }}
+{% endfor %}
+{% endif %}
+{% if k3s_node_labels %}
+node-label:
+{% for node in k3s_node_labels %}
+  - {{ node }}
+{% endfor %}
+{% endif %}
+{% if k3s_role == 'server' and k3s_disable %}
+disable:
+{% for dis in k3s_disable %}
+  - {{ dis }}
+{% endfor %}
+{% endif %}

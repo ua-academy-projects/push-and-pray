@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# tasks file for k3s
+- name: Create k3s directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+
+- name: Create k3s config from template
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_config_path }}"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: Restart k3s
+  diff: false
+
+- name: Install k3s
+  ansible.builtin.import_tasks: install.yml
+
+- name: Start and enable k3s daemon
+  ansible.builtin.systemd_service:
+    name: "{{ 'k3s' if k3s_role == 'server' else 'k3s-agent' }}"
+    enabled: true
+    state: started

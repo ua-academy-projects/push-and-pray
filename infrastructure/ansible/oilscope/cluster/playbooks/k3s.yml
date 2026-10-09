@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Read the k3s token on a server
+  hosts: k3s_server
+  gather_facts: false
+  roles:
+    - role: oilscope.cluster.resolve_secrets
+
+- name: Install k3s on the servers
+  hosts: k3s_server
+  become: true
+  serial: 1
+  vars:
+    k3s_first_server: "{{ groups['k3s_server'] | sort | first }}"
+  roles:
+    - role: oilscope.cluster.k3s
+      vars:
+        k3s_role: server
+        k3s_version: "{{ oilscope_config.cluster.k3s_version }}"
+        k3s_token: "{{ hostvars[groups['k3s_server'][0]].resolve_secrets_result.K3S_TOKEN }}"
+        k3s_cluster_init: "{{ inventory_hostname == k3s_first_server }}"
+        k3s_server_url: "{{ '' if inventory_hostname == k3s_first_server else 'https://' ~ hostvars[k3s_first_server].internal_ip ~ ':6443' }}"
+        k3s_tls_san: ["{{ internal_ip }}", "{{ inventory_hostname }}"]
+        k3s_node_labels: ["cloud={{ oilscope_cloud }}"]
+
+- name: Install k3s on the agents
+  hosts: k3s_agent
+  become: true
+  vars:
+    k3s_first_server: "{{ groups['k3s_server'] | sort | first }}"
+  roles:
+    - role: oilscope.cluster.k3s
+      vars:
+        k3s_role: agent
+        k3s_version: "{{ oilscope_config.cluster.k3s_version }}"
+        k3s_token: "{{ hostvars[groups['k3s_server'][0]].resolve_secrets_result.K3S_TOKEN }}"
+        k3s_server_url: "https://{{ hostvars[k3s_first_server].internal_ip }}:6443"
+        k3s_node_labels: ["cloud={{ oilscope_cloud }}"]
+
+- name: Save the kubeconfig on the controller
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+  vars:
+    k3s_first_server: "{{ groups['k3s_server'] | sort | first }}"
+  tasks:
+    - name: Read the kubeconfig on the first server
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: k3s_kubeconfig_remote
+      when: inventory_hostname == k3s_first_server
+
+    - name: Create the kubeconfig directory on the controller
+      ansible.builtin.file:
+        path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Write it with the server's address
+      ansible.builtin.copy:
+        content: >-
+          {{ k3s_kubeconfig_remote.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ internal_ip ~ ':6443') }}
+        dest: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/oilscope-dev.yaml"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+      when: inventory_hostname == k3s_first_server
