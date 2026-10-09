@@ -136,12 +136,16 @@ resource "google_compute_firewall" "k3s_ingress" {
 
 resource "google_compute_firewall" "technitium_admin" {
   for_each = var.config.deployment_mode == "k3s" ? setintersection(
-    local.k3s_locations,
+    setunion(local.k3s_locations, local.managed_kubernetes_locations),
     toset(keys(local.bastions)),
   ) : toset([])
 
   name    = "${local.resource_prefix}-${each.key}-allow-technitium-admin"
   network = var.networks[each.key].network_id
+
+  source_ranges = contains(local.managed_kubernetes_locations, each.key) ? [
+    var.config.k3s.cluster_cidr,
+  ] : []
 
   source_tags = compact([
     contains(local.k3s_server_locations, each.key) ? "${local.resource_prefix}-${each.key}-k3s-server" : null,

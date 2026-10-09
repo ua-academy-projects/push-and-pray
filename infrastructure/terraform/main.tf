@@ -104,6 +104,33 @@ module "gcp_k3s_ingress" {
   instance_self_links = module.gcp_workloads.instance_self_links
 }
 
+module "gcp_managed_kubernetes" {
+  count = (
+    local.config.deployment_mode == "k3s"
+    && try(local.config.kubernetes.mode, "self_managed") == "managed"
+    && local.config.default_cloud == "gcp"
+  ) ? 1 : 0
+  source = "./modules/gcp-managed-kubernetes"
+
+  config  = local.config
+  network = module.gcp_network.networks[local.config.default_location]
+}
+
+module "gcp_managed_kubernetes_observability" {
+  count = (
+    local.config.deployment_mode == "k3s"
+    && try(local.config.kubernetes.mode, "self_managed") == "managed"
+    && local.config.default_cloud == "gcp"
+  ) ? 1 : 0
+  source = "./modules/gcp-managed-kubernetes-observability"
+
+  config = local.config
+  cluster = {
+    name     = module.gcp_managed_kubernetes[0].cluster.name
+    location = module.gcp_managed_kubernetes[0].cluster.location
+  }
+}
+
 module "gcp_bastion" {
   source = "./modules/gcp-bastion"
 
@@ -173,6 +200,67 @@ module "azure_observability" {
   resource_group_name = module.azure_resource_group.name
 }
 
+module "aws_managed_kubernetes" {
+  count = (
+    local.config.deployment_mode == "k3s"
+    && try(local.config.kubernetes.mode, "self_managed") == "managed"
+    && local.config.default_cloud == "aws"
+  ) ? 1 : 0
+  source = "./modules/aws-managed-kubernetes"
+
+  config                    = local.config
+  network                   = module.aws_network.networks[local.config.default_location]
+  bastion_security_group_id = module.aws_security.security_group_ids[local.config.default_location].bastion
+}
+
+module "aws_managed_kubernetes_observability" {
+  count = (
+    local.config.deployment_mode == "k3s"
+    && try(local.config.kubernetes.mode, "self_managed") == "managed"
+    && local.config.default_cloud == "aws"
+  ) ? 1 : 0
+  source = "./modules/aws-managed-kubernetes-observability"
+
+  config = local.config
+  cluster = {
+    name     = module.aws_managed_kubernetes[0].cluster.name
+    location = module.aws_managed_kubernetes[0].cluster.location
+  }
+
+  depends_on = [module.aws_managed_kubernetes]
+}
+
+module "azure_managed_kubernetes" {
+  count = (
+    local.config.deployment_mode == "k3s"
+    && try(local.config.kubernetes.mode, "self_managed") == "managed"
+    && local.config.default_cloud == "azure"
+  ) ? 1 : 0
+  source = "./modules/azure-managed-kubernetes"
+
+  config                     = local.config
+  network                    = module.azure_network.networks[local.config.default_location]
+  resource_group_name        = module.azure_resource_group.name
+  log_analytics_workspace_id = module.azure_observability.log_analytics_workspace_id
+}
+
+module "azure_managed_kubernetes_observability" {
+  count = (
+    local.config.deployment_mode == "k3s"
+    && try(local.config.kubernetes.mode, "self_managed") == "managed"
+    && local.config.default_cloud == "azure"
+  ) ? 1 : 0
+  source = "./modules/azure-managed-kubernetes-observability"
+
+  config                  = local.config
+  cluster                 = module.azure_managed_kubernetes[0].cluster
+  workspace_id            = module.azure_observability.log_analytics_workspace_id
+  application_insights_id = module.azure_observability.application_insights_id
+  action_group_id         = module.azure_observability.action_group_id
+
+  depends_on = [module.azure_managed_kubernetes]
+}
+
 module "aws_managed_database" {
   count  = local.config.database.mode == "managed" && local.config.default_cloud == "aws" ? 1 : 0
   source = "./modules/aws-managed-database"
@@ -221,9 +309,15 @@ module "cloudflare_dns" {
 
   zone_id  = local.config.dns.cloudflare.zone_id
   hostname = local.config.deployment_mode == "k3s" ? local.config.k3s.application.hostname : try(local.config.vms.ui.public_endpoint.hostname, null)
-  ipv4_address = local.config.deployment_mode == "k3s" ? module.gcp_k3s_ingress.ip_address : try(merge(
-    module.gcp_workloads.public_ips,
-    module.aws_workloads.public_ips,
-    module.azure_workloads.public_ips,
+  ipv4_address = local.config.deployment_mode == "k3s" ? (
+    try(local.config.kubernetes.mode, "self_managed") == "managed" ? (
+      local.config.default_cloud == "gcp" ? one(module.gcp_managed_kubernetes).ingress.address : (
+        local.config.default_cloud == "aws" ? one(module.aws_managed_kubernetes).ingress.address : one(module.azure_managed_kubernetes).ingress.address
+      )
+    ) : module.gcp_k3s_ingress.ip_address
+    ) : try(merge(
+      module.gcp_workloads.public_ips,
+      module.aws_workloads.public_ips,
+      module.azure_workloads.public_ips,
   )["ui"], null)
 }

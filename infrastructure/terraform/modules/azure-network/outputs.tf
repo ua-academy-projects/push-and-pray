@@ -8,6 +8,7 @@ output "networks" {
       vnet_name         = azurerm_virtual_network.this[location].name
       public_subnet_id  = azurerm_subnet.public[location].id
       private_subnet_id = azurerm_subnet.private[location].id
+      nat_public_ip     = azurerm_public_ip.nat[location].ip_address
     }
   }
 }

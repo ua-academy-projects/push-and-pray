@@ -18,7 +18,16 @@ resource "aws_subnet" "public" {
   availability_zone       = each.value.zone
   map_public_ip_on_launch = false
 
-  tags = merge(local.context.labels, { Name = "${local.context.resource_prefix}-${each.key}-public" })
+  tags = merge(
+    local.context.labels,
+    { Name = "${local.context.resource_prefix}-${each.key}-public" },
+    var.config.deployment_mode == "k3s" &&
+    try(var.config.kubernetes.mode, "self_managed") == "managed" &&
+    var.config.default_cloud == "aws" &&
+    each.key == var.config.default_location ? {
+      "kubernetes.io/role/elb" = "1"
+    } : {},
+  )
 }
 
 resource "aws_subnet" "private" {
@@ -30,7 +39,16 @@ resource "aws_subnet" "private" {
   availability_zone       = each.value.zone
   map_public_ip_on_launch = false
 
-  tags = merge(local.context.labels, { Name = "${local.context.resource_prefix}-${each.key}-private" })
+  tags = merge(
+    local.context.labels,
+    { Name = "${local.context.resource_prefix}-${each.key}-private" },
+    var.config.deployment_mode == "k3s" &&
+    try(var.config.kubernetes.mode, "self_managed") == "managed" &&
+    var.config.default_cloud == "aws" &&
+    each.key == var.config.default_location ? {
+      "kubernetes.io/role/internal-elb" = "1"
+    } : {},
+  )
 }
 
 data "aws_availability_zones" "available" {

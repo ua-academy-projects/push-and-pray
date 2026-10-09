@@ -26,6 +26,7 @@ locals {
       instance_profile   = var.instance_profiles.bastion
       key_name           = var.bootstrap_key_names[local.location]
       assign_public_ip   = true
+      source_dest_check  = false
       tags               = ["bastion"]
       data_disks         = {}
       cloud_init = templatefile(

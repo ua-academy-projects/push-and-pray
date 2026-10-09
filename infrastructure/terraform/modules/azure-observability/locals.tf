@@ -1,6 +1,22 @@
 locals {
-  resource_prefix  = "${var.config.name_prefix}-${var.config.environment}"
-  enabled          = length(var.instance_ids) > 0
+  resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
+  azure_workloads = {
+    for name, vm in var.config.vms : name => vm
+    if lookup(vm, "cloud", var.config.default_cloud) == "azure"
+  }
+  azure_bastion_enabled = lookup(
+    var.config.bastion,
+    "cloud",
+    var.config.default_cloud,
+  ) == "azure"
+  azure_instance_names = concat(
+    keys(local.azure_workloads),
+    local.azure_bastion_enabled ? ["bastion"] : [],
+  )
+  azure_instance_ids = {
+    for name in local.azure_instance_names : name => var.instance_ids[name]
+  }
+  enabled          = length(local.azure_workloads) > 0 || local.azure_bastion_enabled
   shared_resources = local.enabled ? { main = true } : {}
   tags = merge(
     {
@@ -12,14 +28,14 @@ locals {
   )
 
   azure_ui = {
-    for name, vm in var.config.vms : name => vm
-    if lookup(vm, "cloud", var.config.default_cloud) == "azure" && contains(vm.tags, "ui")
+    for name, vm in local.azure_workloads : name => vm
+    if contains(vm.tags, "ui")
   }
 
   action_group_ids = [for action_group in values(azurerm_monitor_action_group.this) : action_group.id]
 
   expected_resource_ids = join(", ", [
-    for instance_id in values(var.instance_ids) : jsonencode(lower(instance_id))
+    for instance_id in values(local.azure_instance_ids) : jsonencode(lower(instance_id))
   ])
 
   workbook_metric_panels = [

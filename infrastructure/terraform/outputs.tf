@@ -8,7 +8,21 @@ output "public_ips" {
     module.azure_workloads.public_ips,
     module.azure_bastion.public_ips,
     module.gcp_k3s_ingress.public_ips,
+    local.config.deployment_mode == "k3s" && try(local.config.kubernetes.mode, "self_managed") == "managed" ? {
+      ingress = local.config.default_cloud == "gcp" ? one(module.gcp_managed_kubernetes).ingress.address : (
+        local.config.default_cloud == "aws" ? one(module.aws_managed_kubernetes).ingress.address : one(module.azure_managed_kubernetes).ingress.address
+      )
+    } : {},
   )
+}
+
+output "managed_kubernetes" {
+  description = "Managed Kubernetes cluster connection metadata."
+  value = local.config.deployment_mode == "k3s" && try(local.config.kubernetes.mode, "self_managed") == "managed" ? (
+    local.config.default_cloud == "gcp" ? one(module.gcp_managed_kubernetes).cluster : (
+      local.config.default_cloud == "aws" ? one(module.aws_managed_kubernetes).cluster : one(module.azure_managed_kubernetes).cluster
+    )
+  ) : null
 }
 
 output "managed_database" {

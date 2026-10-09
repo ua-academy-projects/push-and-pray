@@ -81,6 +81,9 @@
     "k3s": {
       "$ref": "#/$defs/k3s"
     },
+    "kubernetes": {
+      "$ref": "#/$defs/kubernetes"
+    },
     "network": {
       "type": "object",
       "additionalProperties": false,
@@ -159,7 +162,7 @@
     },
     "vms": {
       "type": "object",
-      "minProperties": 1,
+      "minProperties": 0,
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },
@@ -232,9 +235,8 @@
     {
       "if": { "properties": { "deployment_mode": { "const": "k3s" } }, "required": ["deployment_mode"] },
       "then": {
-        "required": ["k3s"],
+        "required": ["k3s", "kubernetes"],
         "properties": {
-          "default_cloud": { "const": "gcp" },
           "database": {
             "properties": {
               "mode": { "const": "self_managed" }
@@ -245,7 +247,24 @@
             "properties": {
               "postgresql": { "const": 5432 }
             }
-          },
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deployment_mode": { "const": "k3s" },
+          "kubernetes": {
+            "properties": { "mode": { "const": "self_managed" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["deployment_mode", "kubernetes"]
+      },
+      "then": {
+        "properties": {
+          "default_cloud": { "const": "gcp" },
           "vms": {
             "minProperties": 5,
             "additionalProperties": {
@@ -264,6 +283,23 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "deployment_mode": { "const": "k3s" },
+          "kubernetes": {
+            "properties": { "mode": { "const": "managed" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["deployment_mode", "kubernetes"]
+      },
+      "then": {
+        "properties": {
+          "vms": { "maxProperties": 0 }
+        }
+      }
+    },
+    {
       "if": { "properties": { "default_cloud": { "const": "gcp" } }, "required": ["default_cloud"] },
       "then": {
         "required": ["cloud_settings"],
@@ -274,6 +310,28 @@
           "machine_types": { "properties": { "micro": { "required": ["gcp"] }, "small": { "required": ["gcp"] }, "medium": { "required": ["gcp"] } } },
           "images": { "properties": { "ubuntu_2404": { "required": ["gcp"] }, "ubuntu_2604": { "required": ["gcp"] } } },
           "disk_types": { "properties": { "general_purpose": { "required": ["gcp"] }, "performance": { "required": ["gcp"] } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deployment_mode": { "const": "k3s" },
+          "default_cloud": { "const": "gcp" },
+          "kubernetes": {
+            "properties": { "mode": { "const": "managed" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["deployment_mode", "default_cloud", "kubernetes"]
+      },
+      "then": {
+        "properties": {
+          "kubernetes": {
+            "properties": {
+              "managed": { "required": ["private_ingress_ip"] }
+            }
+          }
         }
       }
     },
@@ -290,6 +348,27 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "default_cloud": { "const": "aws" },
+          "kubernetes": {
+            "properties": { "mode": { "const": "managed" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["default_cloud", "kubernetes"]
+      },
+      "then": {
+        "properties": {
+          "kubernetes": {
+            "properties": {
+              "managed": { "required": ["private_ingress_ip", "aws_control_plane_subnet_cidr"] }
+            }
+          }
+        }
+      }
+    },
+    {
       "if": { "properties": { "default_cloud": { "const": "azure" } }, "required": ["default_cloud"] },
       "then": {
         "required": ["cloud_settings"],
@@ -300,6 +379,27 @@
           "machine_types": { "properties": { "micro": { "required": ["azure"] }, "small": { "required": ["azure"] }, "medium": { "required": ["azure"] } } },
           "images": { "properties": { "ubuntu_2404": { "required": ["azure"] }, "ubuntu_2604": { "required": ["azure"] } } },
           "disk_types": { "properties": { "general_purpose": { "required": ["azure"] }, "performance": { "required": ["azure"] } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "default_cloud": { "const": "azure" },
+          "kubernetes": {
+            "properties": { "mode": { "const": "managed" } },
+            "required": ["mode"]
+          }
+        },
+        "required": ["default_cloud", "kubernetes"]
+      },
+      "then": {
+        "properties": {
+          "kubernetes": {
+            "properties": {
+              "managed": { "required": ["private_ingress_ip", "azure_zones", "azure_sku_tier"] }
+            }
+          }
         }
       }
     },
@@ -394,6 +494,73 @@
     }
   ],
   "$defs": {
+    "kubernetes": {
+      "description": "Selects a self-managed K3s control plane or a provider-managed Kubernetes service.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["self_managed", "managed"]
+        },
+        "managed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "node_count", "machine_type", "disk_size_gb"],
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+$"
+            },
+            "node_count": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "machine_type": {
+              "type": "string",
+              "enum": ["small", "medium"]
+            },
+            "disk_size_gb": {
+              "type": "integer",
+              "minimum": 20
+            },
+            "private_ingress_ip": {
+              "$ref": "#/$defs/ipv4_address"
+            },
+            "aws_control_plane_subnet_cidr": {
+              "$ref": "#/$defs/ipv4_cidr"
+            },
+            "azure_zones": {
+              "description": "Azure availability zones used by the AKS system node pool and its public ingress address.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["1", "2", "3"]
+              },
+              "minItems": 1,
+              "maxItems": 3,
+              "uniqueItems": true
+            },
+            "azure_sku_tier": {
+              "description": "AKS control-plane tier. Standard provides the financially backed uptime SLA.",
+              "type": "string",
+              "enum": ["Free", "Standard"]
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "mode": { "const": "managed" } },
+            "required": ["mode"]
+          },
+          "then": { "required": ["managed"] },
+          "else": { "not": { "required": ["managed"] } }
+        }
+      ]
+    },
     "bastion": {
       "type": "object",
       "additionalProperties": false,
@@ -673,6 +840,11 @@
             "log_retention_days": {
               "type": "integer",
               "enum": [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+            },
+            "notification_email": {
+              "description": "Optional email endpoint for Terraform-managed regional SNS alert topics used by managed EKS observability. AWS sends a confirmation request for each topic.",
+              "type": ["string", "null"],
+              "format": "email"
             },
             "notification_topic_arns": {
               "description": "Existing SNS topic ARNs keyed by AWS region. Subscribe the same operator email to every topic used by this deployment.",

@@ -86,7 +86,7 @@ resource "azurerm_monitor_data_collection_rule" "host" {
 }
 
 resource "azurerm_monitor_data_collection_rule_association" "host" {
-  for_each = var.instance_ids
+  for_each = local.azure_instance_ids
 
   name                    = "${local.resource_prefix}-host"
   target_resource_id      = each.value
@@ -95,7 +95,7 @@ resource "azurerm_monitor_data_collection_rule_association" "host" {
 }
 
 resource "azurerm_monitor_metric_alert" "cpu" {
-  for_each = var.instance_ids
+  for_each = local.azure_instance_ids
 
   name                = "${local.resource_prefix}-${each.key}-high-cpu"
   resource_group_name = var.resource_group_name
@@ -124,7 +124,7 @@ resource "azurerm_monitor_metric_alert" "cpu" {
 }
 
 resource "azurerm_monitor_metric_alert" "availability" {
-  for_each = var.instance_ids
+  for_each = local.azure_instance_ids
 
   name                = "${local.resource_prefix}-${each.key}-unavailable"
   resource_group_name = var.resource_group_name
@@ -423,7 +423,7 @@ resource "azurerm_application_insights_workbook" "this" {
           chartType    = 2
           metricScope  = 0
           resourceType = "microsoft.compute/virtualmachines"
-          resourceIds  = values(var.instance_ids)
+          resourceIds  = values(local.azure_instance_ids)
           timeContext = {
             durationMs = 21600000
           }

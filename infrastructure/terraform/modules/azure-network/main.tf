@@ -34,7 +34,7 @@ resource "azurerm_public_ip" "nat" {
   resource_group_name = var.resource_group_name
   allocation_method   = "Static"
   sku                 = "Standard"
-  zones               = try([each.value.zone], null)
+  zones               = try(each.value.zone, null) == null ? null : [each.value.zone]
   tags                = local.tags
 }
 
@@ -46,7 +46,7 @@ resource "azurerm_nat_gateway" "this" {
   resource_group_name     = var.resource_group_name
   sku_name                = "Standard"
   idle_timeout_in_minutes = 10
-  zones                   = try([each.value.zone], null)
+  zones                   = try(each.value.zone, null) == null ? null : [each.value.zone]
   tags                    = local.tags
 }
 

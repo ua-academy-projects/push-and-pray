@@ -48,8 +48,16 @@ locals {
     for access in values(local.secret_access) : access.secret_key
   ])
 
+  k3s_secret_keys = (
+    var.config.deployment_mode == "k3s"
+    && var.config.default_cloud == "aws"
+    ) ? toset([
+      for secret_id in distinct(values(var.config.k3s.secret_mappings)) :
+      "${var.config.locations[var.config.default_location].aws.region}/${secret_id}"
+  ]) : toset([])
+
   secrets = {
-    for secret_key in local.secret_keys : secret_key => {
+    for secret_key in setunion(local.secret_keys, local.k3s_secret_keys) : secret_key => {
       region    = split("/", secret_key)[0]
       secret_id = split("/", secret_key)[1]
     }

@@ -16,6 +16,7 @@ resource "aws_instance" "this" {
   vpc_security_group_ids      = each.value.security_group_ids
   iam_instance_profile        = try(each.value.instance_profile, null)
   key_name                    = each.value.key_name
+  source_dest_check           = try(each.value.source_dest_check, true)
   user_data                   = try(each.value.cloud_init, null)
   user_data_replace_on_change = try(each.value.cloud_init, null) != null
   root_block_device {

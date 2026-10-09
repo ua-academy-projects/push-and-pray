@@ -1,8 +1,12 @@
 locals {
   resource_prefix = "${var.config.name_prefix}-${var.config.environment}"
-  enabled         = try(var.config.deployment_mode, "compose") == "k3s" && var.config.default_cloud == "gcp"
-  location        = var.config.default_location
-  placement       = local.enabled ? var.config.locations[local.location].gcp : null
+  enabled = (
+    try(var.config.deployment_mode, "compose") == "k3s"
+    && try(var.config.kubernetes.mode, "self_managed") == "self_managed"
+    && var.config.default_cloud == "gcp"
+  )
+  location  = var.config.default_location
+  placement = local.enabled ? var.config.locations[local.location].gcp : null
 
   agents = {
     for name, vm in var.config.vms : name => vm

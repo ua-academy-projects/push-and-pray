@@ -47,6 +47,12 @@ locals {
 
   k3s_locations = setunion(local.k3s_server_locations, local.k3s_agent_locations)
 
+  managed_kubernetes_locations = (
+    try(var.config.deployment_mode, "compose") == "k3s"
+    && try(var.config.kubernetes.mode, "self_managed") == "managed"
+    && var.config.default_cloud == "gcp"
+  ) ? toset([var.config.default_location]) : toset([])
+
   history_locations = toset([
     for location in keys(var.networks) : location
     if contains(keys(local.tags), "${location}/history") && contains(keys(local.tags), "${location}/ui")

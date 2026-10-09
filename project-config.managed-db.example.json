@@ -46,6 +46,7 @@
   "monitoring": {
     "aws": {
       "log_retention_days": 30,
+      "notification_email": null,
       "notification_topic_arns": {
         "eu-north-1": "arn:aws:sns:eu-north-1:123456789012:example-oilscope-alerts",
         "us-east-1": "arn:aws:sns:us-east-1:123456789012:example-oilscope-availability-alerts"

@@ -14,6 +14,7 @@ provider "azurerm" {
     "Microsoft.Compute",
     "Microsoft.KeyVault",
     "Microsoft.ManagedIdentity",
+    "Microsoft.ContainerService",
     "Microsoft.Network",
     "Microsoft.DBforPostgreSQL",
     "Microsoft.Insights",

@@ -20,6 +20,9 @@
   "database": {
     "mode": "self_managed"
   },
+  "kubernetes": {
+    "mode": "self_managed"
+  },
   "k3s": {
     "version": "v1.37.0+k3s1",
     "api_server": {
@@ -68,6 +71,11 @@
     "history_api": 8001,
     "postgresql": 5432,
     "technitium_admin": 5380
+  },
+  "monitoring": {
+    "gcp": {
+      "notification_channel_id": null
+    }
   },
   "bastion": {
     "machine_type": "micro",
