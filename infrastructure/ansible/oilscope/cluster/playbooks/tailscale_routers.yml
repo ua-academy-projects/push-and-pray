@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Every bastion becomes the Tailscale subnet router of its cloud.
+#
+#   ansible-playbook oilscope.cluster.tailscale_routers \
+#     -i infrastructure/ansible/inventory/oilscope.yml
+#
+# The auth key lives in the cloud's secret store as TAILSCALE_AUTHKEY, which
+# only a k3s_server node may read. So the first play reads it there, with the
+# server's own identity, and the second hands it to the bastions in memory -
+# nothing is written to the controller, and the bastions hold no grant at all.
+
+# Through the bastion, not the tailnet: on a fresh environment the tailnet is
+# exactly what this playbook is about to build. The bastion is reachable on
+# its public address either way.
+- name: Read the Tailscale auth key on a server
+  hosts: k3s_server[0]
+  gather_facts: false
+  vars:
+    oilscope_nodes_via_bastion: true
+  roles:
+    - role: oilscope.cluster.resolve_secrets
+
+- name: Turn every bastion into its cloud's Tailscale subnet router
+  hosts: bastion
+  become: true
+  gather_facts: true
+  roles:
+    - role: oilscope.cluster.tailscale
+      vars:
+        tailscale_auth_key: >-
+          {{ hostvars[groups['k3s_server'][0]].resolve_secrets_result.TAILSCALE_AUTHKEY }}

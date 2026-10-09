@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+tailscale_version: ""
+
+tailscale_apt_repository_url: https://pkgs.tailscale.com/stable/ubuntu
+# The repository is laid out by Ubuntu release codename.
+tailscale_apt_suite: "{{ ansible_facts['distribution_release'] }}"
+tailscale_port: 41641
+tailscale_auth_key: ""
+tailscale_auth_key_path: /run/oilscope-tailscale-auth-key
+tailscale_hostname: "{{ inventory_hostname }}"
+
+# Ranges this device offers to the tailnet as a subnet router.
+tailscale_advertise_routes: []
+tailscale_advertise_tags: []
+tailscale_accept_routes: false
+tailscale_snat_subnet_routes: false
+tailscale_accept_dns: false
+tailscale_sysctl_file: /etc/sysctl.d/99-tailscale.conf
+tailscale_sysctl:
+  net.ipv4.ip_forward: "1"
+  net.ipv6.conf.all.forwarding: "1"

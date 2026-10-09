@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Check the role's input
+  ansible.builtin.assert:
+    that:
+      - tailscale_port | int >= 1 and tailscale_port | int <= 65535
+      - tailscale_advertise_routes | reject('match', '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$') | list | length == 0
+      - tailscale_advertise_tags | reject('match', '^tag:[a-z0-9]+(-[a-z0-9]+)*$') | list | length == 0
+    fail_msg: >-
+      tailscale_port must be a port number, every tailscale_advertise_routes
+      entry an IPv4 CIDR, and every tailscale_advertise_tags entry a tag:name
+    quiet: true
+
+- name: Install Tailscale
+  ansible.builtin.import_tasks: install.yml
+
+- name: Let the kernel forward packets between interfaces
+  become: true
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: "{{ tailscale_sysctl_file }}"
+    sysctl_set: true
+    reload: true
+    state: present
+  loop: "{{ tailscale_sysctl | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Configure the Tailscale daemon
+  become: true
+  ansible.builtin.template:
+    src: tailscaled.default.j2
+    dest: /etc/default/tailscaled
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart tailscaled
+
+- name: Keep the Tailscale daemon running
+  become: true
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+# The daemon has to listen on the configured port before the device logs in,
+# or the first connections are announced on the old one.
+- name: Restart the Tailscale daemon if its configuration changed
+  ansible.builtin.meta: flush_handlers
+
+- name: Join the tailnet
+  ansible.builtin.import_tasks: connect.yml

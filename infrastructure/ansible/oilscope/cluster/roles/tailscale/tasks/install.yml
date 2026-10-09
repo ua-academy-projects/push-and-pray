@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+- name: Install what managing the package repository needs
+  become: true
+  ansible.builtin.apt:
+    name: python3-debian
+    state: present
+    cache_valid_time: 3600
+    install_recommends: false
+
+- name: Add the Tailscale package repository
+  become: true
+  ansible.builtin.deb822_repository:
+    name: tailscale
+    types: deb
+    uris: "{{ tailscale_apt_repository_url }}"
+    suites: "{{ tailscale_apt_suite }}"
+    components: main
+    signed_by: "{{ tailscale_apt_repository_url }}/{{ tailscale_apt_suite }}.noarmor.gpg"
+    state: present
+  register: tailscale_repository
+
+- name: Check whether apt knows the Tailscale package
+  ansible.builtin.command:
+    argv:
+      - apt-cache
+      - show
+      - tailscale
+  register: tailscale_apt_known
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# cache_valid_time 0 forces a refresh only together with update_cache: on its
+# own, apt reads 0 as "not set" and refreshes nothing.
+- name: Install the Tailscale package
+  become: true
+  ansible.builtin.apt:
+    name: "tailscale{{ ('=' ~ tailscale_version) if tailscale_version | length > 0 else '' }}"
+    state: present
+    allow_downgrade: true
+    update_cache: true
+    cache_valid_time: >-
+      {{ 0 if tailscale_repository is changed or tailscale_apt_known.rc != 0 else 3600 }}
+    install_recommends: false
+

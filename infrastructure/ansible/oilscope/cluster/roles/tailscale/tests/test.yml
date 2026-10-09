@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Run against a disposable Ubuntu host added to tailscale_test, with
+# TAILSCALE_AUTHKEY exported. A second run must report changed=0.
+- name: Test the tailscale role
+  hosts: tailscale_test
+  become: true
+  roles:
+    - role: oilscope.cluster.tailscale
+      vars:
+        tailscale_auth_key: "{{ lookup('ansible.builtin.env', 'TAILSCALE_AUTHKEY') }}"
+        tailscale_advertise_routes:
+          - 10.0.0.0/16
+        tailscale_advertise_tags:
+          - tag:oilscope-router

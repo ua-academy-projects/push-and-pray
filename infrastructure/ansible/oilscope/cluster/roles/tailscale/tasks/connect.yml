@@ -1,0 +1,169 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+---
+# Both reads tolerate a missing binary, which is what check mode sees on a host
+# the package was never installed on.
+- name: Read the connection state
+  become: true
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - status
+      - --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the current settings
+  become: true
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - debug
+      - prefs
+  register: tailscale_prefs
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# Each field is the name tailscaled stores the matching flag under: RouteAll is
+# --accept-routes, NoSNAT the inverse of --snat-subnet-routes, CorpDNS
+# --accept-dns. Lists are sorted, because the order they were given in means
+# nothing.
+- name: Compare the device with the configuration
+  ansible.builtin.set_fact:
+    tailscale_backend_state: >-
+      {{ (tailscale_status.stdout | from_json).BackendState | default('NoState')
+         if tailscale_status.rc == 0 and tailscale_status.stdout | length > 0
+         else 'NoState' }}
+    tailscale_current_tags: >-
+      {{ (tailscale_current.AdvertiseTags | default([], true)) | sort }}
+    tailscale_current_settings:
+      Hostname: "{{ tailscale_current.Hostname | default('') }}"
+      AdvertiseRoutes: "{{ (tailscale_current.AdvertiseRoutes | default([], true)) | sort }}"
+      RouteAll: "{{ tailscale_current.RouteAll | default(false) | bool }}"
+      NoSNAT: "{{ tailscale_current.NoSNAT | default(false) | bool }}"
+      CorpDNS: "{{ tailscale_current.CorpDNS | default(true) | bool }}"
+    tailscale_wanted_tags: "{{ tailscale_advertise_tags | sort }}"
+    tailscale_wanted_settings:
+      Hostname: "{{ tailscale_hostname }}"
+      AdvertiseRoutes: "{{ tailscale_advertise_routes | sort }}"
+      RouteAll: "{{ tailscale_accept_routes | bool }}"
+      NoSNAT: "{{ not (tailscale_snat_subnet_routes | bool) }}"
+      CorpDNS: "{{ tailscale_accept_dns | bool }}"
+  vars:
+    tailscale_current: >-
+      {{ tailscale_prefs.stdout | from_json
+         if tailscale_prefs.rc == 0 and tailscale_prefs.stdout | length > 0
+         else {} }}
+
+# Tags are bound to the login: tailscale set cannot change them, so new tags
+# mean logging in again with the auth key. An ephemeral device the tailnet
+# removed while it was offline is back to NeedsLogin as well.
+- name: Decide what the device needs
+  ansible.builtin.set_fact:
+    tailscale_needs_login: >-
+      {{ tailscale_backend_state != 'Running'
+         or tailscale_current_tags != tailscale_wanted_tags }}
+    tailscale_needs_settings: >-
+      {{ tailscale_current_settings != tailscale_wanted_settings }}
+
+# The same flags go to both commands, so a device logged in fresh and one
+# reconfigured in place end up identical.
+- name: Spell out the settings as flags
+  ansible.builtin.set_fact:
+    tailscale_settings_args:
+      - --hostname={{ tailscale_hostname }}
+      - --advertise-routes={{ tailscale_advertise_routes | join(',') }}
+      - --accept-routes={{ tailscale_accept_routes | bool | lower }}
+      - --snat-subnet-routes={{ tailscale_snat_subnet_routes | bool | lower }}
+      - --accept-dns={{ tailscale_accept_dns | bool | lower }}
+
+- name: Log in to the tailnet
+  when:
+    - tailscale_needs_login | bool
+    - not ansible_check_mode
+  block:
+    - name: Require an auth key to log in with
+      ansible.builtin.assert:
+        that: tailscale_auth_key | length > 0
+        fail_msg: >-
+          {{ inventory_hostname }} has to log in to the tailnet (state
+          {{ tailscale_backend_state }}), and tailscale_auth_key is empty
+        quiet: true
+
+    # tailscale reads the key from a file named on the command line, so the
+    # key itself never becomes an argument visible in ps.
+    - name: Hand the auth key to tailscale
+      become: true
+      ansible.builtin.copy:
+        content: "{{ tailscale_auth_key }}"
+        dest: "{{ tailscale_auth_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    # --reset returns every flag not named here to its default, so nothing
+    # set by hand on the host survives a login. --force-reauth only matters
+    # for a device that is still running and changes its tags.
+    - name: Log in with the configured settings
+      become: true
+      ansible.builtin.command:
+        argv: >-
+          {{ ['tailscale', 'up', '--reset', '--timeout=120s',
+              '--auth-key=file:' ~ tailscale_auth_key_path,
+              '--advertise-tags=' ~ (tailscale_advertise_tags | join(','))]
+             + tailscale_settings_args
+             + (['--force-reauth'] if tailscale_backend_state == 'Running' else []) }}
+      changed_when: true
+
+  always:
+    - name: Remove the auth key
+      become: true
+      ansible.builtin.file:
+        path: "{{ tailscale_auth_key_path }}"
+        state: absent
+
+- name: Apply the changed settings
+  become: true
+  ansible.builtin.command:
+    argv: "{{ ['tailscale', 'set'] + tailscale_settings_args }}"
+  changed_when: true
+  when:
+    - not tailscale_needs_login | bool
+    - tailscale_needs_settings | bool
+
+- name: Check that the device is connected
+  become: true
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - status
+      - --json
+  register: tailscale_final_status
+  changed_when: false
+  failed_when: >-
+    tailscale_final_status.rc != 0
+    or (tailscale_final_status.stdout | from_json).BackendState != 'Running'
+  check_mode: false
+  when: not ansible_check_mode
+
+# Advertising a route is half of it: the tailnet has to approve it, either
+# through autoApprovers in the policy or by hand in the admin console. Until
+# then nothing is routed, so say so - without failing the run, since approving
+# by hand is a legitimate way to do it.
+- name: Report routes the tailnet has not approved yet
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} advertises
+      {{ tailscale_unapproved_routes | join(', ') }}, which the tailnet has
+      not approved: add {{ tailscale_advertise_tags | join(', ') }} to
+      autoApprovers in the tailnet policy, or approve them in the admin console
+  vars:
+    tailscale_unapproved_routes: >-
+      {{ tailscale_advertise_routes
+         | difference((tailscale_final_status.stdout | from_json).Self.PrimaryRoutes | default([], true)) }}
+  when:
+    - not ansible_check_mode
+    - tailscale_unapproved_routes | length > 0
